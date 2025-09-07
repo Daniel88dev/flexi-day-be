@@ -1,12 +1,16 @@
 import { defineConfig } from "drizzle-kit";
-// @ts-ignore
-import { config } from "./src/config";
+import "dotenv/config";
 
 export default defineConfig({
   schema: ["src/db/schema/auth-schema.ts"],
   out: "src/db/schema/out",
   dialect: "postgresql",
   dbCredentials: {
-    url: config.db.database,
+    url:
+      process.env.DATABASE ??
+      process.env.DATABASE_URL ??
+      (() => {
+        throw new Error("DATABASE (or DATABASE_URL) is required");
+      })(),
   },
 });

@@ -9,6 +9,7 @@ import { config } from "./config.js";
 export const createServer = () => {
   const app = express();
   app
+    .set("trust proxy", 1)
     .use(serverCors)
     .use(helmetHeaders)
     .use(limiter)
