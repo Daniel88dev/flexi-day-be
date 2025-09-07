@@ -6,7 +6,7 @@ const allowedOrigins =
     ? [
         /* todo add production url's */
       ]
-    : [/^http:\/\/localhost:(\d{2,5}})$/];
+    : [/^http:\/\/localhost:(\d{2,5})$/];
 
 export const serverCors = cors({
   origin: allowedOrigins,

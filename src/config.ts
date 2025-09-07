@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-dotenv.config({ quiet: true });
+dotenv.config();
 
 type APIConfig = { port: number; env: "production" | "dev" | "test" };
 

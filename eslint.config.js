@@ -16,7 +16,7 @@ export default [
       "drizzle.config.ts",
       "eslint.config.js",
       "vitest.config.ts",
-      "src/tests/**"
+      "src/tests/**",
     ],
   },
 
@@ -65,6 +65,7 @@ export default [
       // Security plugin: keep useful checks but avoid noisy false positives
       "security/detect-object-injection": "warn",
       "security/detect-non-literal-fs-filename": "warn",
+      "@typescript-eslint/no-floating-promises": "error",
     },
   },
 ];

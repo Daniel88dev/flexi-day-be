@@ -23,13 +23,12 @@ ENV PORT=8080
 
 # install production dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
 RUN mkdir -p /app/logs && chown -R node:node /app/logs
 
 # copy build files and runtime assets
 COPY --from=builder --chown=node:node /app/dist ./dist
-COPY --chown=node:node swagger.yaml ./swagger.yaml
 
 USER node
 EXPOSE 8080

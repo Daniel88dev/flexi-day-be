@@ -17,6 +17,7 @@ export const createServer = () => {
     .use(express.json());
 
   app.get("/health", (_, res) => {
+    res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ ok: true, environment: config.api.env });
   });
 

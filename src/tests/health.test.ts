@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
+// @ts-ignore
+import request from "supertest";
+import { createServer } from "../server";
 
-//TODO remove dummy test with real test cases
-describe("Dummy Test Suite", () => {
-  it("should always pass", () => {
-    expect(true).toBe(true);
+describe("Health endpoint", () => {
+  it("GET /health returns 200", async () => {
+    const res = await request(createServer()).get("/health");
+    expect(res.status).toBe(200);
   });
 });
