@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up environment variables
+        run: |
+          echo "PORT=8080" >> $GITHUB_ENV
+          echo "NODE_ENV=test" >> $GITHUB_ENV
+          echo "DATABASE=postgresql://postgres:password@localhost:5432/testdb" >> $GITHUB_ENV
+          echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> $GITHUB_ENV
+          echo "BETTER_AUTH_URL=http://localhost:8080" >> $GITHUB_ENV
+
+      - name: Generate database schemas
+        run: npm run generate
+
+      - name: Run database migrations
+        run: npm run migrate
+
+      - name: Build application
+        run: npm run build
+
+      - name: Start application
+        run: |
+          npm run start &
+          sleep 10 # wait for the app to start
+
+      - name: Run tests
+        run: npm run test -- --coverage
