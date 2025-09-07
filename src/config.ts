@@ -16,6 +16,13 @@ type Config = {
 const VALID_ENVS = ["production", "dev", "test"] as const;
 type NodeEnv = (typeof VALID_ENVS)[number];
 
+/**
+ * Retrieves an environment variable value or throws if it is not set.
+ *
+ * @param key - The name of the environment variable to read from `process.env`.
+ * @returns The environment variable value as a string.
+ * @throws Error if the environment variable is missing or empty.
+ */
 function envOrThrow(key: string) {
   // eslint-disable-next-line security/detect-object-injection
   const value = process.env[key];
