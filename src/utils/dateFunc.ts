@@ -3,6 +3,13 @@ import AppError from "./appError.js";
 export type DateString = string;
 
 export const formatDateToISOString = (date: Date): DateString => {
+  if (Number.isNaN(date.getTime())) {
+    throw new AppError({
+      message: "Invalid date",
+      logging: true,
+      context: { input: String(date) },
+    });
+  }
   const year = date.getUTCFullYear();
   const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
   const day = date.getUTCDate().toString().padStart(2, "0");

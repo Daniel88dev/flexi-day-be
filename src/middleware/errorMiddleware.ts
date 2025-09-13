@@ -13,18 +13,27 @@ export const errorMiddleware = (
   }
   if (err instanceof CustomError) {
     const { statusCode, errors, logging } = err;
+    const safeStatus =
+      Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599
+        ? statusCode
+        : 500;
     if (logging) {
-      logger.error({
+      const meta = {
         msg: "Controlled Error",
         code: statusCode,
         errors: errors,
         stack: err.stack,
-      });
+      };
+      if (safeStatus >= 500) {
+        logger.error(meta);
+      } else {
+        logger.warn(meta);
+      }
     }
 
     const clientErrors = errors.map((e) => ({ message: e.message }));
 
-    return res.status(statusCode).json({ errors: clientErrors });
+    return res.status(safeStatus).json({ errors: clientErrors });
   }
 
   logger.error({ msg: "Unhandled Error", err: err, stack: err.stack });
