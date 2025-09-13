@@ -1,4 +1,11 @@
-import { pgTable, text, timestamp, date, index } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  date,
+  index,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
 
@@ -21,6 +28,6 @@ export const vacation = pgTable(
   },
   (table) => [
     index("requested_day_idx").on(table.requestedDay),
-    index("vacation_user_day_idx").on(table.userId, table.requestedDay),
+    uniqueIndex("uniq_vacation_user_day").on(table.userId, table.requestedDay),
   ]
 );

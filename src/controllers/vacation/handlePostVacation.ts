@@ -10,11 +10,12 @@ import { formatDateToISOString } from "../../utils/dateFunc.js";
 export const handlePostVacation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPostVacationType = req.body;
 
   const [access] = await getGroupUser(auth.userId, data.groupId);
 
-  if (!access || !access.controlledUser || Boolean(access.deletedAt)) {
+  if (!access || !access.controlledUser) {
     throw new AppError({
       message: "No access for related group",
       logging: true,
@@ -34,7 +35,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       message: "Failed to create vacation",
       logging: true,
       code: 500,
-      context: auth,
+      context: { userId: auth.userId },
       cause: record,
     });
   }

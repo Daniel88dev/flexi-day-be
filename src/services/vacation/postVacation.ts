@@ -5,6 +5,10 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 export const postVacation = async (
   record: VacationInsertType
 ): Promise<VacationType | undefined> => {
-  const [row] = await db.insert(vacation).values(record).returning();
+  const [row] = await db
+    .insert(vacation)
+    .values(record)
+    .onConflictDoNothing()
+    .returning();
   return row;
 };

@@ -1,3 +1,5 @@
+import AppError from "./appError.js";
+
 export type DateString = string;
 
 export const formatDateToISOString = (date: Date): DateString => {
@@ -11,6 +13,13 @@ export const formatStartAndEndDate = (
   year: number,
   month: number
 ): { startDate: DateString; endDate: DateString } => {
+  if (month < 1 || month > 12) {
+    throw new AppError({
+      message: "month must be between 1 and 12",
+      logging: true,
+      context: { month: month, year: year },
+    });
+  }
   const startDate = new Date(Date.UTC(year, month - 1, 1));
   const endDate = new Date(Date.UTC(year, month, 1));
 

@@ -59,7 +59,7 @@ export default [
       // If your codebase sometimes needs any (e.g., external schema/validation), lower severity
       "@typescript-eslint/no-explicit-any": "warn",
 
-      // Disable the type-aware "unsafe" checks (assignment/call/return) if you prefer
+      // Tune type-aware "unsafe" checks: allow but warn on unsafe assignment
       "@typescript-eslint/no-unsafe-assignment": "warn",
 
       // Console is useful on servers and in containers

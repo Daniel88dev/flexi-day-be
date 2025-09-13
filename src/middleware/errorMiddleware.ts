@@ -22,7 +22,9 @@ export const errorMiddleware = (
       });
     }
 
-    return res.status(statusCode).json({ errors });
+    const clientErrors = errors.map((e) => ({ message: e.message }));
+
+    return res.status(statusCode).json({ errors: clientErrors });
   }
 
   logger.error({ msg: "Unhandled Error", err: err, stack: err.stack });
