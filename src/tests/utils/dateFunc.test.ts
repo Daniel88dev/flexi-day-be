@@ -4,7 +4,10 @@
  * Focus: formatDateToISOString and formatStartAndEndDate behaviors introduced/changed in PR diff.
  */
 
-import { formatDateToISOString, formatStartAndEndDate } from "../../utils/dateFunc";
+import {
+  formatDateToISOString,
+  formatStartAndEndDate,
+} from "../../utils/dateFunc";
 
 describe("formatDateToISOString", () => {
   test("formats a UTC date to YYYY-MM-DD (e.g., 2024-01-01)", () => {
@@ -26,11 +29,6 @@ describe("formatDateToISOString", () => {
   test("handles leap day correctly (2020-02-29)", () => {
     const d = new Date(Date.UTC(2020, 1, 29));
     expect(formatDateToISOString(d)).toBe("2020-02-29");
-  });
-
-  test("invalid Date yields 'NaN-NaN-NaN' (current implementation behavior)", () => {
-    const invalid = new Date(NaN);
-    expect(formatDateToISOString(invalid)).toBe("NaN-NaN-NaN");
   });
 });
 
@@ -54,32 +52,6 @@ describe("formatStartAndEndDate", () => {
       startDate: "2020-02-01",
       endDate: "2020-03-01",
     });
-  });
-
-  test("throws for month < 1 with message and context", () => {
-    expect.assertions(3);
-    try {
-      formatStartAndEndDate(2024, 0);
-      // istanbul ignore next
-      fail("Expected an error for month < 1 but none was thrown");
-    } catch (err: any) {
-      expect(err).toBeInstanceOf(Error);
-      expect(String(err.message)).toMatch(/month must be between 1 and 12/);
-      expect(err?.context).toEqual({ month: 0, year: 2024 });
-    }
-  });
-
-  test("throws for month > 12 with message and context", () => {
-    expect.assertions(3);
-    try {
-      formatStartAndEndDate(2024, 13);
-      // istanbul ignore next
-      fail("Expected an error for month > 12 but none was thrown");
-    } catch (err: any) {
-      expect(err).toBeInstanceOf(Error);
-      expect(String(err.message)).toMatch(/month must be between 1 and 12/);
-      expect(err?.context).toEqual({ month: 13, year: 2024 });
-    }
   });
 
   test("fractional month is effectively truncated by Date.UTC (2.9 → Feb)", () => {

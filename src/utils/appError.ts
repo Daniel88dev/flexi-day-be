@@ -45,6 +45,10 @@ export default class AppError extends CustomError {
     return this._code;
   }
 
+  get code() {
+    return this._code;
+  }
+
   get logging() {
     return this._logging;
   }
