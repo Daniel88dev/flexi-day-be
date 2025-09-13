@@ -14,7 +14,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
 
   const [access] = await getGroupUser(auth.userId, data.groupId);
 
-  if (!access || !access.controlledUser || Boolean(access.deleted)) {
+  if (!access || !access.controlledUser || Boolean(access.deletedAt)) {
     throw new AppError({
       message: "No access for related group",
       logging: true,

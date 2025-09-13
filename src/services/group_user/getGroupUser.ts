@@ -14,7 +14,7 @@ export const getGroupUser = async (
       and(
         eq(groupUsers.userId, userId),
         eq(groupUsers.groupId, groupId),
-        isNull(groupUsers.deleted)
+        isNull(groupUsers.deletedAt)
       )
     )
     .limit(1);

@@ -2,11 +2,11 @@ export type GroupUser = {
   id: string;
   groupId: string;
   userId: string;
-  confirmEmail: Date | null;
+  emailConfirmedAt: Date | null;
   viewAccess: boolean;
   adminAccess: boolean;
   controlledUser: boolean;
-  deleted: Date | null;
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
