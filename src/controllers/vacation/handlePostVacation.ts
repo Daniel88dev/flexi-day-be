@@ -29,5 +29,15 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     requestedDay: formatDateToISOString(new Date(data.requestedDay)),
   });
 
-  return res.status(200).json(record[0]);
+  if (!record) {
+    throw new AppError({
+      message: "Failed to create vacation",
+      logging: true,
+      code: 500,
+      context: auth,
+      cause: record,
+    });
+  }
+
+  return res.status(201).json(record);
 };

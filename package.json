@@ -13,7 +13,7 @@
     "test:ui": "vitest --ui --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "db:generate": "NODE_OPTIONS='--import tsx' drizzle-kit generate",
+    "db:generate": "cross-env NODE_OPTIONS=\"--import tsx\" drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
   "repository": {
@@ -49,6 +49,7 @@
     "@types/supertest": "^6.0.3",
     "@vitest/coverage-istanbul": "^3.2.4",
     "@vitest/ui": "^3.2.4",
+    "cross-env": "^10.0.0",
     "drizzle-kit": "^0.31.4",
     "eslint": "^9.35.0",
     "eslint-plugin-security": "^3.0.1",

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { logger } from "./logger.js";
 
 export const bodyValidationMiddleware =
-  (schema: z.ZodTypeAny) =>
+  <T>(schema: z.ZodType<T>) =>
   (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
     if (result.success) {
@@ -15,7 +15,7 @@ export const bodyValidationMiddleware =
         issue.message
       }`,
     }));
-    logger.error("validationMiddleware Error", {
+    logger.error("bodyValidationMiddleware Error", {
       req: req.path,
       errors: errorMessages,
     });

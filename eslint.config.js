@@ -60,7 +60,7 @@ export default [
       "@typescript-eslint/no-explicit-any": "warn",
 
       // Disable the type-aware "unsafe" checks (assignment/call/return) if you prefer
-      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-assignment": "warn",
 
       // Console is useful on servers and in containers
       "no-console": "off",

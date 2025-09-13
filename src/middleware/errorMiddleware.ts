@@ -6,8 +6,11 @@ export const errorMiddleware = (
   err: Error,
   _req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ) => {
+  if (res.headersSent) {
+    return next(err);
+  }
   if (err instanceof CustomError) {
     const { statusCode, errors, logging } = err;
     if (logging) {
@@ -22,7 +25,7 @@ export const errorMiddleware = (
     return res.status(statusCode).json({ errors });
   }
 
-  logger.error({ msg: "Unhandled Error", err: err });
+  logger.error({ msg: "Unhandled Error", err: err, stack: err.stack });
   return res
     .status(500)
     .json({ errors: [{ message: "Internal Server Error" }] });

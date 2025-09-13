@@ -9,15 +9,13 @@ export const getVacations = async (
   endDate: string,
   groupId: string | null = null
 ): Promise<VacationType[]> => {
-  return db
-    .select()
-    .from(vacation)
-    .where(
-      and(
-        eq(vacation.userId, userId),
-        eq(vacation.groupId, groupId ?? "*"),
-        gte(vacation.requestedDay, startDate),
-        lt(vacation.requestedDay, endDate)
-      )
-    );
+  const base = [
+    eq(vacation.userId, userId),
+    gte(vacation.requestedDay, startDate),
+    lt(vacation.requestedDay, endDate),
+  ] as const;
+  const where = groupId
+    ? and(...base, eq(vacation.groupId, groupId))
+    : and(...base);
+  return db.select().from(vacation).where(where);
 };

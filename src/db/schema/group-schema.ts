@@ -1,7 +1,7 @@
 import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 
-export const group = pgTable("group", {
+export const groups = pgTable("groups", {
   id: text("id").primaryKey(),
   groupName: text("group_name").notNull(),
   defaultVacationDays: integer("default_vacation_days").notNull().default(20),
@@ -15,6 +15,7 @@ export const group = pgTable("group", {
   tempApprovalUser: text("temp_approval_user").references(() => user.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
-    .$onUpdate(() => new Date())
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });

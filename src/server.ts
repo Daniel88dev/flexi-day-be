@@ -19,7 +19,7 @@ export const createServer = () => {
     .all("/api/auth/{*any}", toNodeHandler(auth))
     .use(express.json());
 
-  app.use(authSession, vacationRouter);
+  app.use("/api/vacation", authSession, vacationRouter());
 
   app.get("/health", (_, res) => {
     res.setHeader("Cache-Control", "no-store");

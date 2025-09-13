@@ -8,8 +8,8 @@ export abstract class CustomError extends Error {
   abstract readonly errors: CustomErrorContent[];
   abstract readonly logging: boolean;
 
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
 
     Object.setPrototypeOf(this, CustomError.prototype);
   }
@@ -26,12 +26,13 @@ export default class AppError extends CustomError {
     message?: string;
     logging?: boolean;
     context?: { [key: string]: any };
+    cause?: unknown;
   }) {
-    const { code, message, logging } = params || {};
-    super(message || "Bad Request");
-    this._code = code || AppError._statusCode;
-    this._logging = logging || false;
-    this._context = params?.context || {};
+    const { code, message, logging, cause } = params ?? {};
+    super(message || "Bad Request", cause);
+    this._code = code ?? AppError._statusCode;
+    this._logging = logging ?? false;
+    this._context = params?.context ?? {};
 
     Object.setPrototypeOf(this, AppError.prototype);
   }

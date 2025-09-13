@@ -22,7 +22,9 @@ export const authSession = async (
       headers: fromNodeHeaders(req.headers),
     });
     if (!session) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return next(
+        new AppError({ message: "Unauthorized", code: 401, logging: true })
+      );
     }
     req.auth = {
       sessionId: session.session.id,
@@ -33,8 +35,8 @@ export const authSession = async (
     } as AuthSession;
     next();
   } catch (err) {
-    logger.error("getAuthSession", { error: err });
-    return res.status(500).json({ error: "Internal Server Error" });
+    logger.error("authSession", { error: err });
+    return next(err);
   }
 };
 

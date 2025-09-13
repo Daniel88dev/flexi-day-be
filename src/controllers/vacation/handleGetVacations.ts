@@ -4,14 +4,14 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { Request, Response } from "express";
 import { z } from "zod";
 
-const validateMonth = z.coerce
+const validateYear = z.coerce
   .number()
   .int()
   .min(2023)
   .max(2050)
   .prefault(() => new Date().getFullYear());
 
-const validateYear = z.coerce
+const validateMonth = z.coerce
   .number()
   .int()
   .min(1)
@@ -27,12 +27,12 @@ export const handleGetVacations = async (req: Request, res: Response) => {
   const month = validateMonth.parse(req.query.month);
   const groupId = validateUUID.parse(req.query.groupId);
 
-  const test = formatStartAndEndDate(year, month);
+  const range = formatStartAndEndDate(year, month);
 
   const result = await getVacations(
     auth.userId,
-    test.startDate,
-    test.endDate,
+    range.startDate,
+    range.endDate,
     groupId
   );
 

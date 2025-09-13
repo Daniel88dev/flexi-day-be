@@ -1,5 +1,5 @@
 import { v4 as uuid4 } from "uuid";
 
-export const generateRandomUUID = () => {
-  return uuid4();
-};
+type UUID = string;
+
+export const generateRandomUUID = (): UUID => uuid4();
