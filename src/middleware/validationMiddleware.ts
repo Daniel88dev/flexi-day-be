@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { logger } from "./logger.js";
 
-export const validationMiddleware =
+export const bodyValidationMiddleware =
   (schema: z.ZodTypeAny) =>
   (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);

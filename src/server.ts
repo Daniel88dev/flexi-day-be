@@ -5,6 +5,9 @@ import { limiter } from "./middleware/limiter.js";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./utils/auth.js";
 import { config } from "./config.js";
+import { errorMiddleware } from "./middleware/errorMiddleware.js";
+import { vacationRouter } from "./routes/vacationRouter.js";
+import { authSession } from "./middleware/authSession.js";
 
 export const createServer = () => {
   const app = express();
@@ -16,10 +19,14 @@ export const createServer = () => {
     .all("/api/auth/{*any}", toNodeHandler(auth))
     .use(express.json());
 
+  app.use(authSession, vacationRouter);
+
   app.get("/health", (_, res) => {
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ ok: true, environment: config.api.env });
   });
+
+  app.use(errorMiddleware);
 
   return app;
 };
