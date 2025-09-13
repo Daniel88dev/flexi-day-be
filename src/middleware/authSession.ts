@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "../utils/auth.js";
 import { logger } from "./logger.js";
+import AppError from "../utils/appError.js";
 
 export type AuthSession = {
   sessionId: string;
@@ -11,7 +12,7 @@ export type AuthSession = {
   emailVerified: boolean;
 };
 
-export const getAuthSession = async (
+export const authSession = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -35,4 +36,12 @@ export const getAuthSession = async (
     logger.error("getAuthSession", { error: err });
     return res.status(500).json({ error: "Internal Server Error" });
   }
+};
+
+export const getAuth = (req: Request): AuthSession => {
+  if (!req.auth) {
+    throw new AppError({ message: "Unauthorized", logging: true, code: 401 });
+  }
+
+  return req.auth;
 };
