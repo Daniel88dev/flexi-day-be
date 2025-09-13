@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-// @ts-ignore
 import request from "supertest";
+// @ts-ignore
 import { createServer } from "../server";
 
 describe("Health endpoint", () => {
