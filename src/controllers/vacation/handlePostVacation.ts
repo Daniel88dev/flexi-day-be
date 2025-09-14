@@ -13,7 +13,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPostVacationType = req.body;
 
-  const [access] = await getGroupUser(auth.userId, data.groupId);
+  const access = await getGroupUser(auth.userId, data.groupId);
 
   if (!access || !access.controlledUser) {
     throw new AppError({

@@ -31,6 +31,23 @@ try {
   );
 }
 
+/**
+ * Logger instance configured for the application.
+ *
+ * This logger is pre-configured with the following settings:
+ * - Log level: "info"
+ * - Log format: Combines timestamp and JSON format
+ * - Default metadata: Includes service name and build information
+ * - Transports: Outputs to the console and additional file transports
+ *
+ * Default metadata contains:
+ * - `service`: Name of the service ("Flexi Day")
+ * - `buildInfo`: Object containing build information including:
+ *   - `version`: Version of the software
+ *   - `nodeVersion`: Node.js version
+ *
+ * The logger is intended for capturing and managing application logs consistently across the system.
+ */
 export const logger = createLogger({
   level: "info",
   format: format.combine(format.timestamp(), format.json()),
