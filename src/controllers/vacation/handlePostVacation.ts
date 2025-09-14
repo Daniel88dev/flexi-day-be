@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPostVacationType } from "../../services/vacation/types.js";
-import { getGroupUser } from "../../services/group_user/getGroupUser.js";
 import AppError from "../../utils/appError.js";
-import { postVacation } from "../../services/vacation/postVacation.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
+import { createDBServices } from "../../services/DBServices.js";
+
+const services = createDBServices();
 
 export const handlePostVacation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -13,7 +14,10 @@ export const handlePostVacation = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPostVacationType = req.body;
 
-  const access = await getGroupUser(auth.userId, data.groupId);
+  const access = await services.groupUser.getGroupUser(
+    auth.userId,
+    data.groupId
+  );
 
   if (!access || !access.controlledUser) {
     throw new AppError({
@@ -23,11 +27,11 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const record = await postVacation({
+  const record = await services.vacation.postVacation({
     id: generateRandomUUID(),
     userId: auth.userId,
     groupId: data.groupId,
-    requestedDay: formatDateToISOString(new Date(data.requestedDay)),
+    requestedDay: formatDateToISOString(data.requestedDay),
   });
 
   if (!record) {

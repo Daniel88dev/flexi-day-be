@@ -20,7 +20,6 @@ export const groupUsers = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    emailConfirmedAt: timestamp("email_confirmed_at"),
     viewAccess: boolean("view_access").notNull().default(false),
     adminAccess: boolean("admin_access").notNull().default(false),
     controlledUser: boolean("controlled_user").notNull().default(false),

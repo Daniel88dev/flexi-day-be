@@ -6,6 +6,11 @@ export type VacationType = {
   userId: string;
   groupId: string;
   requestedDay: DateString;
+  approvedAt: Date | null;
+  approvedBy: string | null;
+  deletedAt: Date | null;
+  rejectedAt: Date | null;
+  rejectedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
