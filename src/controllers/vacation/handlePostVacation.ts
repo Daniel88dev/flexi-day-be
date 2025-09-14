@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPostVacationType } from "../../services/vacation/types.js";
-import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
@@ -15,7 +14,10 @@ export const handlePostVacation = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPostVacationType = req.body;
 
-  const access = await getGroupUser(auth.userId, data.groupId);
+  const access = await services.groupUser.getGroupUser(
+    auth.userId,
+    data.groupId
+  );
 
   if (!access || !access.controlledUser) {
     throw new AppError({
@@ -29,7 +31,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     id: generateRandomUUID(),
     userId: auth.userId,
     groupId: data.groupId,
-    requestedDay: formatDateToISOString(new Date(data.requestedDay)),
+    requestedDay: formatDateToISOString(data.requestedDay),
   });
 
   if (!record) {

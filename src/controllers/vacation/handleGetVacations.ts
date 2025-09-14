@@ -31,7 +31,7 @@ export const handleGetVacations = async (req: Request, res: Response) => {
 
   const range = formatStartAndEndDate(year, month);
 
-  const result = await services.vacation.getVacation(
+  const result = await services.vacation.getVacations(
     auth.userId,
     range.startDate,
     range.endDate,

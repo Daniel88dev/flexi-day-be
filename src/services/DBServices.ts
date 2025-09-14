@@ -4,7 +4,7 @@ import * as groupServices from "./group/groupServices.js";
 
 export type DBServices = {
   vacation: {
-    getVacation: typeof vacationServices.getVacations;
+    getVacations: typeof vacationServices.getVacations;
     postVacation: typeof vacationServices.postVacation;
     approveVacation: typeof vacationServices.approveVacation;
     rejectVacation: typeof vacationServices.rejectVacation;
@@ -31,7 +31,7 @@ export type DBServices = {
 export const createDBServices = (): DBServices => {
   return {
     vacation: {
-      getVacation: vacationServices.getVacations,
+      getVacations: vacationServices.getVacations,
       postVacation: vacationServices.postVacation,
       approveVacation: vacationServices.approveVacation,
       rejectVacation: vacationServices.rejectVacation,

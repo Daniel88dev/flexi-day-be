@@ -1,7 +1,7 @@
 import type { GroupInsertType, GroupType } from "./types.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 /**
  * Retrieves a group from the database based on the provided group ID.
@@ -16,7 +16,7 @@ export const getGroup = async (
   const [row] = await db
     .select()
     .from(groups)
-    .where(and(eq(groups.id, groupId), isNotNull(groups.deletedAt)));
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)));
 
   return row;
 };
@@ -34,7 +34,7 @@ export const getAllGroups = async (
   return db
     .select()
     .from(groups)
-    .where(and(inArray(groups.id, groupIds), isNotNull(groups.deletedAt)));
+    .where(and(inArray(groups.id, groupIds), isNull(groups.deletedAt)));
 };
 
 /**
@@ -67,7 +67,7 @@ export const updateGroupManager = async (
     .set({
       managerUserId: newManagerId,
     })
-    .where(eq(groups.id, groupId))
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .returning();
 
   return row;
@@ -96,7 +96,7 @@ export const updateGroupApprovalUsers = async (
       mainApprovalUser: newMainApprovalUser,
       tempApprovalUser: newTempApprovalUser,
     })
-    .where(eq(groups.id, groupId))
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .returning();
 
   return row;
@@ -122,7 +122,7 @@ export const deleteGroup = async (
     .set({
       deletedAt: new Date(),
     })
-    .where(eq(groups.id, groupId))
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .returning();
 
   return row;
@@ -150,7 +150,7 @@ export const updateGroupQuotas = async (
       defaultVacationDays: newVacation,
       defaultHomeOfficeDays: newHomeOffice,
     })
-    .where(eq(groups.id, groupId))
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .returning();
 
   return row;

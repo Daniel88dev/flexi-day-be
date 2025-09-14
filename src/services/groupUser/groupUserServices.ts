@@ -47,7 +47,11 @@ export const getGroupUser = async (
 export const createGroupUser = async (
   data: GroupUserInsertType
 ): Promise<GroupUser | undefined> => {
-  const [row] = await db.insert(groupUsers).values(data).returning();
+  const [row] = await db
+    .insert(groupUsers)
+    .values(data)
+    .onConflictDoNothing()
+    .returning();
 
   return row;
 };
@@ -72,7 +76,7 @@ export const updateGroupUserPermissions = async (
   const [row] = await db
     .update(groupUsers)
     .set(permissions)
-    .where(eq(groupUsers.id, id))
+    .where(and(eq(groupUsers.id, id), isNull(groupUsers.deletedAt)))
     .returning();
 
   return row;
@@ -97,7 +101,7 @@ export const deleteGroupUser = async (
     .set({
       deletedAt: new Date(),
     })
-    .where(eq(groupUsers.id, id))
+    .where(and(eq(groupUsers.id, id), isNull(groupUsers.deletedAt)))
     .returning();
 
   return row;

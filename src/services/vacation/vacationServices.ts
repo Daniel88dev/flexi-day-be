@@ -45,7 +45,9 @@ export const postVacation = async (
   const [row] = await db
     .insert(vacation)
     .values(record)
-    .onConflictDoNothing()
+    .onConflictDoNothing({
+      target: [vacation.userId, vacation.requestedDay],
+    })
     .returning();
   return row;
 };
@@ -69,7 +71,7 @@ export const approveVacation = async (
       rejectedBy: null,
       rejectedAt: null,
     })
-    .where(eq(vacation.id, vacationId))
+    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
     .returning();
 
   return row;
@@ -96,7 +98,7 @@ export const rejectVacation = async (
       approvedAt: null,
       approvedBy: null,
     })
-    .where(eq(vacation.id, vacationId))
+    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
     .returning();
 
   return row;
@@ -105,7 +107,7 @@ export const rejectVacation = async (
 /**
  * Asynchronously deletes a vacation record by marking it as deleted in the database.
  *
- * This function updates the vacation record in the database by setting its `deleted` field
+ * This function updates the vacation record in the database by setting its `deletedAt` field
  * to the current date, effectively marking it as deleted. Once updated, it returns the
  * modified vacation record. If no record matches the provided vacation ID, the function
  * returns `undefined`.
@@ -123,7 +125,7 @@ export const deleteVacation = async (
     .set({
       deletedAt: new Date(),
     })
-    .where(eq(vacation.id, vacationId))
+    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
     .returning();
 
   return row;

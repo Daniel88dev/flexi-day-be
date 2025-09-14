@@ -20,7 +20,7 @@ export const vacation = pgTable(
       .notNull()
       .references(() => groups.id, { onDelete: "cascade" }),
     requestedDay: date("requested_day").notNull(),
-    approvedAt: timestamp("approval"),
+    approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",
     }),
