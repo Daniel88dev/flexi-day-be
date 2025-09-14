@@ -13,6 +13,7 @@ export const groups = pgTable("groups", {
     .references(() => user.id),
   mainApprovalUser: text("main_approval_user").references(() => user.id),
   tempApprovalUser: text("temp_approval_user").references(() => user.id),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()

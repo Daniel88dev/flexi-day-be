@@ -1,8 +1,10 @@
-import { getVacations } from "../../services/vacation/getVacations.js";
 import { formatStartAndEndDate } from "../../utils/dateFunc.js";
 import { getAuth } from "../../middleware/authSession.js";
 import type { Request, Response } from "express";
 import { z } from "zod";
+import { createDBServices } from "../../services/DBServices.js";
+
+const services = createDBServices();
 
 const validateYear = z.coerce
   .number()
@@ -29,7 +31,7 @@ export const handleGetVacations = async (req: Request, res: Response) => {
 
   const range = formatStartAndEndDate(year, month);
 
-  const result = await getVacations(
+  const result = await services.vacation.getVacation(
     auth.userId,
     range.startDate,
     range.endDate,
