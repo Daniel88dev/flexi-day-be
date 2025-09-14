@@ -59,6 +59,7 @@ export default class AppError extends CustomError {
     this._code = code ?? AppError._statusCode;
     this._logging = logging ?? false;
     this._context = params?.context ?? {};
+    this.name = "AppError";
 
     Object.setPrototypeOf(this, AppError.prototype);
   }

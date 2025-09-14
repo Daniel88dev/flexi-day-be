@@ -36,7 +36,6 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       logging: true,
       code: 500,
       context: { userId: auth.userId },
-      cause: record,
     });
   }
 

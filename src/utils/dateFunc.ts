@@ -14,7 +14,7 @@ export const formatDateToISOString = (date: Date): DateString => {
     throw new AppError({
       message: "Invalid date",
       logging: true,
-      context: { input: String(date) },
+      context: { input: String(date), inputType: typeof date },
     });
   }
   const year = date.getUTCFullYear();
@@ -39,6 +39,13 @@ export const formatStartAndEndDate = (
   if (month < 1 || month > 12) {
     throw new AppError({
       message: "month must be between 1 and 12",
+      logging: true,
+      context: { month: month, year: year },
+    });
+  }
+  if (!Number.isInteger(year)) {
+    throw new AppError({
+      message: "year must be an integer",
       logging: true,
       context: { month: month, year: year },
     });

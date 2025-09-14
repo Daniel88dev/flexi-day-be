@@ -48,7 +48,7 @@ export const authSession = async (
       userId: session.user.id,
       userName: session.user.name,
       userEmail: session.user.email,
-      emailVerified: session.user.emailVerified,
+      emailVerified: Boolean(session.user.emailVerified),
     } as AuthSession;
     next();
   } catch (err) {

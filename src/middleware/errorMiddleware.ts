@@ -48,7 +48,10 @@ export const errorMiddleware = (
       }
     }
 
-    const clientErrors = errors.map((e) => ({ message: e.message }));
+    const clientErrors =
+      Array.isArray(errors) && errors.length
+        ? errors.map((e) => ({ message: e.message }))
+        : [{ message: err.message }];
 
     return res.status(safeStatus).json({ errors: clientErrors });
   }

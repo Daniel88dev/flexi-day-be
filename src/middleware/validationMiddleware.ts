@@ -41,7 +41,7 @@ export const bodyValidationMiddleware =
         issue.message
       }`,
     }));
-    logger.error("bodyValidationMiddleware Error", {
+    logger.warn("bodyValidationMiddleware Error", {
       req: req.path,
       errors: errorMessages,
     });

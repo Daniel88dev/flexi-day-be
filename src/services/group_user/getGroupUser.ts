@@ -19,7 +19,7 @@ export const getGroupUser = async (
   userId: string,
   groupId: string
 ): Promise<GroupUser | undefined> => {
-  const result = await db
+  const [row] = await db
     .select()
     .from(groupUsers)
     .where(
@@ -31,5 +31,5 @@ export const getGroupUser = async (
     )
     .limit(1);
 
-  return result[0];
+  return row;
 };

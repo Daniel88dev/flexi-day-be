@@ -31,6 +31,9 @@ try {
   );
 }
 
+const appVersion =
+  process.env.APP_VERSION ?? process.env.npm_package_version ?? "unknown";
+
 /**
  * Logger instance configured for the application.
  *
@@ -52,9 +55,9 @@ export const logger = createLogger({
   level: "info",
   format: format.combine(format.timestamp(), format.json()),
   defaultMeta: {
-    service: "Flexi Day",
+    service: process.env.SERVICE_NAME ?? "Flexi Day",
     buildInfo: {
-      version: "0.1.0",
+      version: appVersion,
       nodeVersion: process.version,
     },
   },

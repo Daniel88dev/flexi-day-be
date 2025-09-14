@@ -10,7 +10,7 @@ export const vacationRouter = (): Router => {
 
   /**
    * @openapi
-   * /api/vacations/:
+   * /api/vacation:
    *   get:
    *     tags:
    *       - Vacations
@@ -75,7 +75,7 @@ export const vacationRouter = (): Router => {
 
   /**
    * @openapi
-   * /api/vacations/create-vacation/:
+   * /api/vacation/create-vacation:
    *   post:
    *     tags:
    *       - Vacations
