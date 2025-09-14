@@ -2,12 +2,19 @@ import AppError from "./appError.js";
 
 export type DateString = string;
 
+/**
+ * Converts a given Date object to a string in ISO 8601 date format (YYYY-MM-DD).
+ *
+ * @param {Date} date - The Date object to be converted. Must be a valid Date instance.
+ * @returns {DateString} The ISO 8601 formatted date string (YYYY-MM-DD).
+ * @throws {AppError} Throws an error if the provided Date object is invalid.
+ */
 export const formatDateToISOString = (date: Date): DateString => {
   if (Number.isNaN(date.getTime())) {
     throw new AppError({
       message: "Invalid date",
       logging: true,
-      context: { input: String(date) },
+      context: { input: String(date), inputType: typeof date },
     });
   }
   const year = date.getUTCFullYear();
@@ -16,6 +23,15 @@ export const formatDateToISOString = (date: Date): DateString => {
   return `${year}-${month}-${day}`;
 };
 
+/**
+ * Formats the start and end dates of a given month and year into ISO string representations.
+ *
+ * @param {number} year - The year for which the dates are to be formatted.
+ * @param {number} month - The month (1-indexed, 1 for January, 12 for December) for which the dates are to be formatted.
+ * @throws {AppError} Throws an error if the month is not between 1 and 12.
+ * @returns {{ startDate: DateString, endDate: DateString }} An object containing the start date (first day of the month)
+ * and end date (first day of the next month) in ISO string format.
+ */
 export const formatStartAndEndDate = (
   year: number,
   month: number
@@ -23,6 +39,13 @@ export const formatStartAndEndDate = (
   if (month < 1 || month > 12) {
     throw new AppError({
       message: "month must be between 1 and 12",
+      logging: true,
+      context: { month: month, year: year },
+    });
+  }
+  if (!Number.isInteger(year)) {
+    throw new AppError({
+      message: "year must be an integer",
       logging: true,
       context: { month: month, year: year },
     });
