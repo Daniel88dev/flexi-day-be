@@ -2,7 +2,7 @@ import * as vacationServices from "./vacation/vacationServices.js";
 import * as groupUserServices from "./groupUser/groupUserServices.js";
 import * as groupServices from "./group/groupServices.js";
 
-export type DBServices = {
+export type DBServices = Readonly<{
   vacation: {
     getVacations: typeof vacationServices.getVacations;
     postVacation: typeof vacationServices.postVacation;
@@ -26,7 +26,7 @@ export type DBServices = {
     deleteGroup: typeof groupServices.deleteGroup;
     updateGroupQuotas: typeof groupServices.updateGroupQuotas;
   };
-};
+}>;
 
 export const createDBServices = (): DBServices => {
   return {

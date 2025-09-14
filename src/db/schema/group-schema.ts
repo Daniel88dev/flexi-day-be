@@ -1,6 +1,6 @@
 import { index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
-import { sql } from "drizzle-orm";
+import { isNull } from "drizzle-orm";
 
 export const groups = pgTable(
   "groups",
@@ -26,6 +26,6 @@ export const groups = pgTable(
   (table) => [
     index("idx_groups_deleted_at_active")
       .on(table.deletedAt)
-      .where(sql`${table.deletedAt} IS NULL`),
+      .where(isNull(table.deletedAt)),
   ]
 );
