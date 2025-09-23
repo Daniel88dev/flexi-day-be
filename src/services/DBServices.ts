@@ -1,6 +1,8 @@
 import * as vacationServices from "./vacation/vacationServices.js";
 import * as groupUserServices from "./groupUser/groupUserServices.js";
 import * as groupServices from "./group/groupServices.js";
+import * as userYearQuotasServices from "./userYearQuotas/userYearQuotasServices.js";
+import * as changesServices from "./changes/changesServices.js";
 
 export type DBServices = Readonly<{
   vacation: {
@@ -25,6 +27,16 @@ export type DBServices = Readonly<{
     updateGroupApprovalUsers: typeof groupServices.updateGroupApprovalUsers;
     deleteGroup: typeof groupServices.deleteGroup;
     updateGroupQuotas: typeof groupServices.updateGroupQuotas;
+  };
+  userYearQuotas: {
+    getUserYearGroupQuotas: typeof userYearQuotasServices.getUserYearGroupQuotas;
+    insertUserYearQuotas: typeof userYearQuotasServices.insertUserYearQuotas;
+    decreaseChangeForUserYearQuotas: typeof userYearQuotasServices.decreaseChangeForUserYearQuotas;
+    updateUserYearQuotasById: typeof userYearQuotasServices.updateUserYearQuotasById;
+  };
+  changes: {
+    getChanges: typeof changesServices.getChangesForUser;
+    postChanges: typeof changesServices.postChanges;
   };
 }>;
 
@@ -52,6 +64,17 @@ export const createDBServices = (): DBServices => {
       updateGroupApprovalUsers: groupServices.updateGroupApprovalUsers,
       deleteGroup: groupServices.deleteGroup,
       updateGroupQuotas: groupServices.updateGroupQuotas,
+    },
+    userYearQuotas: {
+      getUserYearGroupQuotas: userYearQuotasServices.getUserYearGroupQuotas,
+      insertUserYearQuotas: userYearQuotasServices.insertUserYearQuotas,
+      decreaseChangeForUserYearQuotas:
+        userYearQuotasServices.decreaseChangeForUserYearQuotas,
+      updateUserYearQuotasById: userYearQuotasServices.updateUserYearQuotasById,
+    },
+    changes: {
+      getChanges: changesServices.getChangesForUser,
+      postChanges: changesServices.postChanges,
     },
   };
 };

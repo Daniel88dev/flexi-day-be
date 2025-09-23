@@ -9,6 +9,8 @@ import {
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
 
+//todo start and end time of vacation (optional)
+
 export const vacation = pgTable(
   "vacation",
   {
