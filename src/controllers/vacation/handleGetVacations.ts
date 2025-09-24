@@ -45,7 +45,7 @@ export const handleGetVacations = async (req: Request, res: Response) => {
     groupId,
     range.startDate,
     range.endDate,
-    auth.userId
+    auth.userId ?? null
   );
 
   return res.status(200).json(result);

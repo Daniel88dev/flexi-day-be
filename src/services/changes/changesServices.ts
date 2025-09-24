@@ -7,8 +7,8 @@ import { and, asc, eq, gte, lt } from "drizzle-orm";
  * Retrieves the changes for a specific group and user within a given date range.
  *
  * @param {string} groupId - The ID of the group for which changes are to be fetched.
- * @param {string} startDate - The start date of the range in ISO 8601 format.
- * @param {string} endDate - The end date of the range in ISO 8601 format.
+ * @param {string} startDate - The inclusive start of the range.
+ * @param {string} endDate - The exclusive end of the range.
  * @param {string|null} [userId=null] - The ID of the user for whom changes are filtered. If null, changes for all users in the group are returned.
  * @returns {Promise<ChangeRecordType[]>} A Promise that resolves to an array of change records matching the specified criteria.
  */
