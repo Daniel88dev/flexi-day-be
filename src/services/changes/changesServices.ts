@@ -1,7 +1,7 @@
 import type { ChangeInsertType, ChangeRecordType } from "./types.js";
 import { db } from "../../db/db.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
-import { and, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, lt } from "drizzle-orm";
 
 /**
  * Retrieves the changes for a specific group and user within a given date range.
@@ -14,24 +14,28 @@ import { and, eq, gte, lt } from "drizzle-orm";
  */
 export const getChangesForUser = async (
   groupId: string,
-  startDate: string,
-  endDate: string,
+  startDate: Date,
+  endDate: Date,
   userId: string | null = null
 ): Promise<ChangeRecordType[]> => {
   const base = [
     eq(changesSchema.groupId, groupId),
-    gte(changesSchema.createdAt, new Date(startDate)),
-    lt(changesSchema.createdAt, new Date(endDate)),
+    gte(changesSchema.createdAt, startDate),
+    lt(changesSchema.createdAt, endDate),
   ] as const;
   const where = userId
     ? and(...base, eq(changesSchema.userId, userId))
     : and(...base);
-  return db.select().from(changesSchema).where(where);
+  return db
+    .select()
+    .from(changesSchema)
+    .where(where)
+    .orderBy(asc(changesSchema.createdAt));
 };
 
 /**
  * Asynchronously posts changes to the database by inserting a new record into the changes schema.
- * Returns the newly inserted record or undefined if the operation fails.
+ * Returns the newly inserted record. Throws on database errors.
  *
  * @param {ChangeInsertType} record - The record to be inserted into the database.
  * @returns {Promise<ChangeRecordType | undefined>} A promise that resolves to the inserted record or undefined.

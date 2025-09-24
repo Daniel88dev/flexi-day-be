@@ -4,9 +4,9 @@ import { and, eq, gte, isNull, lt } from "drizzle-orm";
 import type { VacationInsertType, VacationType } from "./types.js";
 
 /**
- * Retrieves a list of vacations for a specified user within a given date range.
+ * Retrieves a list of vacations for a group within a given date range, optionally filtered by the user.
  *
- * @param {string} [groupId=null] - Group ID to filter vacations by group.
+ * @param {string} groupId - Group ID to filter vacations by group.
  * @param {string} startDate - The start date of the vacation range in the format 'YYYY-MM-DD'.
  * @param {string} endDate - The end date of the vacation range in the format 'YYYY-MM-DD'.
  * @param {string | null} [userId=null] - Optional identifier of the user whose vacations are to be retrieved.
@@ -24,9 +24,8 @@ export const getVacations = async (
     gte(vacation.requestedDay, startDate),
     lt(vacation.requestedDay, endDate),
   ] as const;
-  const where = userId
-    ? and(...base, eq(vacation.userId, userId))
-    : and(...base);
+  const where =
+    userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
   return db.select().from(vacation).where(where);
 };
 

@@ -25,9 +25,10 @@ export const getUserYearGroupQuotas = async (
     eq(userYearQuotas.relatedYear, relatedYear),
     eq(userYearQuotas.groupId, groupId),
   ];
-  const where = userId
-    ? and(...base, eq(userYearQuotas.userId, userId))
-    : and(...base);
+  const where =
+    userId !== null
+      ? and(...base, eq(userYearQuotas.userId, userId))
+      : and(...base);
 
   return db.select().from(userYearQuotas).where(where);
 };
@@ -83,7 +84,7 @@ export const decreaseChangeForUserYearQuotas = async (
 };
 
 /**
- * Updates the yearly quota of vacation days and home office days for a specific user identified by their ID.
+ * Updates the yearly quota of vacation days and home office days for a specific quota record identified by its ID.
  *
  * @param {string} id - The unique identifier of the user whose quotas are being updated.
  * @param {number} vacations - The updated number of vacation days for the user.
