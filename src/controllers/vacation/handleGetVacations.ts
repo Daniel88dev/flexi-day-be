@@ -3,6 +3,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
+import AppError from "../../utils/appError.js";
 
 const services = createDBServices();
 
@@ -29,13 +30,22 @@ export const handleGetVacations = async (req: Request, res: Response) => {
   const month = validateMonth.parse(req.query.month);
   const groupId = validateUUID.parse(req.query.groupId);
 
+  // todo: move groupId validation to middleware and change it to part of URL
+  if (!groupId) {
+    throw new AppError({
+      message: "groupId is required",
+      logging: true,
+      code: 400,
+    });
+  }
+
   const range = formatStartAndEndDate(year, month);
 
   const result = await services.vacation.getVacations(
-    auth.userId,
+    groupId,
     range.startDate,
     range.endDate,
-    groupId
+    auth.userId ?? null
   );
 
   return res.status(200).json(result);

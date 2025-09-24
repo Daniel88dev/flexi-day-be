@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 import { sql } from "drizzle-orm";
+import { groups } from "./group-schema.js";
 
 export const userYearQuotas = pgTable(
   "user_year_quotas",
@@ -17,6 +18,9 @@ export const userYearQuotas = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
     relatedYear: varchar("related_year", { length: 4 }).notNull(),
     vacationDays: integer("vacation_days").notNull().default(20),
     homeOfficeDays: integer("home_office_days").notNull().default(0),
@@ -27,8 +31,9 @@ export const userYearQuotas = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("user_year_quotas_user_year_uidx").on(
+    uniqueIndex("user_group_year_quotas_user_year_uidx").on(
       table.userId,
+      table.groupId,
       table.relatedYear
     ),
     check(
