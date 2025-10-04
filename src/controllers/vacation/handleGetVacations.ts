@@ -3,7 +3,6 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
-import AppError from "../../utils/appError.js";
 
 const services = createDBServices();
 
@@ -21,31 +20,18 @@ const validateMonth = z.coerce
   .max(12)
   .prefault(() => new Date().getMonth() + 1);
 
-const validateUUID = z.uuid().optional().catch(undefined);
-
 export const handleGetVacations = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const year = validateYear.parse(req.query.year);
   const month = validateMonth.parse(req.query.month);
-  const groupId = validateUUID.parse(req.query.groupId);
-
-  // todo: move groupId validation to middleware and change it to part of URL
-  if (!groupId) {
-    throw new AppError({
-      message: "groupId is required",
-      logging: true,
-      code: 400,
-    });
-  }
 
   const range = formatStartAndEndDate(year, month);
 
-  const result = await services.vacation.getVacations(
-    groupId,
+  const result = await services.vacation.getVacationsForUser(
+    auth.userId,
     range.startDate,
-    range.endDate,
-    auth.userId ?? null
+    range.endDate
   );
 
   return res.status(200).json(result);

@@ -6,7 +6,9 @@ import * as changesServices from "./changes/changesServices.js";
 
 export type DBServices = Readonly<{
   vacation: {
-    getVacations: typeof vacationServices.getVacations;
+    getVacationById: typeof vacationServices.getVacationById;
+    getVacationsForGroup: typeof vacationServices.getVacationsForGroup;
+    getVacationsForUser: typeof vacationServices.getVacationsForUser;
     postVacation: typeof vacationServices.postVacation;
     approveVacation: typeof vacationServices.approveVacation;
     rejectVacation: typeof vacationServices.rejectVacation;
@@ -27,6 +29,7 @@ export type DBServices = Readonly<{
     updateGroupApprovalUsers: typeof groupServices.updateGroupApprovalUsers;
     deleteGroup: typeof groupServices.deleteGroup;
     updateGroupQuotas: typeof groupServices.updateGroupQuotas;
+    getApprovalUsers: typeof groupServices.getApprovalUsers;
   };
   userYearQuotas: {
     getUserYearGroupQuotas: typeof userYearQuotasServices.getUserYearGroupQuotas;
@@ -43,7 +46,9 @@ export type DBServices = Readonly<{
 export const createDBServices = (): DBServices => {
   return {
     vacation: {
-      getVacations: vacationServices.getVacations,
+      getVacationById: vacationServices.getVacationById,
+      getVacationsForGroup: vacationServices.getVacationsForGroup,
+      getVacationsForUser: vacationServices.getVacationsForUser,
       postVacation: vacationServices.postVacation,
       approveVacation: vacationServices.approveVacation,
       rejectVacation: vacationServices.rejectVacation,
@@ -64,6 +69,7 @@ export const createDBServices = (): DBServices => {
       updateGroupApprovalUsers: groupServices.updateGroupApprovalUsers,
       deleteGroup: groupServices.deleteGroup,
       updateGroupQuotas: groupServices.updateGroupQuotas,
+      getApprovalUsers: groupServices.getApprovalUsers,
     },
     userYearQuotas: {
       getUserYearGroupQuotas: userYearQuotasServices.getUserYearGroupQuotas,
