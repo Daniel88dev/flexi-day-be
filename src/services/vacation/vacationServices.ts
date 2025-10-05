@@ -4,15 +4,17 @@ import { and, eq, gte, isNull, lt } from "drizzle-orm";
 import type { VacationInsertType, VacationType } from "./types.js";
 
 /**
- * Retrieves a list of vacations for a group within a given date range, optionally filtered by the user.
+ * Retrieves a list of vacations for a specific group within a given date range.
+ * Optionally filters the vacations by a specific user.
  *
- * @param {string} groupId - Group ID to filter vacations by group.
- * @param {string} startDate - The start date of the vacation range in the format 'YYYY-MM-DD'.
- * @param {string} endDate - The end date of the vacation range in the format 'YYYY-MM-DD'.
- * @param {string | null} [userId=null] - Optional identifier of the user whose vacations are to be retrieved.
- * @returns {Promise<VacationType[]>} A promise resolving to an array of vacations matching the specified criteria.
+ * @param {string} groupId - The unique identifier of the group.
+ * @param {string} startDate - The start date of the vacation range (inclusive) in ISO 8601 format.
+ * @param {string} endDate - The end date of the vacation range (exclusive) in ISO 8601 format.
+ * @param {string|null} [userId=null] - The unique identifier of the user to filter the vacations for.
+ *                                       If null, retrieves vacations for all users in the group.
+ * @returns {Promise<VacationType[]>} - A promise that resolves to an array of vacation objects that match the criteria.
  */
-export const getVacations = async (
+export const getVacationsForGroup = async (
   groupId: string,
   startDate: string,
   endDate: string,
@@ -26,6 +28,29 @@ export const getVacations = async (
   ] as const;
   const where =
     userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
+  return db.select().from(vacation).where(where);
+};
+
+/**
+ * Retrieves a list of vacations for a specific user within a specified date range.
+ *
+ * @param {string} userId - The unique identifier of the user.
+ * @param {string} startDate - The starting date of the range (inclusive) in ISO format.
+ * @param {string} endDate - The ending date of the range (exclusive) in ISO format.
+ * @returns {Promise<VacationType[]>} A promise that resolves to an array of vacation records.
+ */
+export const getVacationsForUser = async (
+  userId: string,
+  startDate: string,
+  endDate: string
+): Promise<VacationType[]> => {
+  const base = [
+    eq(vacation.userId, userId),
+    isNull(vacation.deletedAt),
+    gte(vacation.requestedDay, startDate),
+    lt(vacation.requestedDay, endDate),
+  ] as const;
+  const where = and(...base);
   return db.select().from(vacation).where(where);
 };
 
@@ -126,6 +151,26 @@ export const deleteVacation = async (
     })
     .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
     .returning();
+
+  return row;
+};
+
+/**
+ * Retrieves a vacation record by its unique identifier.
+ *
+ * This asynchronous function fetches a vacation entry from the database
+ * that matches the specified vacation ID and has not been marked as deleted.
+ *
+ * @param {string} vacationId - The unique identifier of the vacation to retrieve.
+ * @returns {Promise<VacationType | undefined>} A promise that resolves to the vacation object if found, or undefined if not found or deleted.
+ */
+export const getVacationById = async (
+  vacationId: string
+): Promise<VacationType | undefined> => {
+  const [row] = await db
+    .select()
+    .from(vacation)
+    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)));
 
   return row;
 };

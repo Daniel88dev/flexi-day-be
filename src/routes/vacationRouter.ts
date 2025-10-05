@@ -4,6 +4,7 @@ import { handleGetVacations } from "../controllers/vacation/handleGetVacations.j
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import { validatePostVacation } from "../services/vacation/types.js";
 import { handlePostVacation } from "../controllers/vacation/handlePostVacation.js";
+import { handlePostVacationApproval } from "../controllers/vacation/handlePostVacationApproval.js";
 
 export const vacationRouter = (): Router => {
   const app = Router();
@@ -17,7 +18,6 @@ export const vacationRouter = (): Router => {
    *     summary: Retrieve vacations for the authenticated user
    *     description: |
    *       Returns vacation records for the authenticated user for a given year and month.
-   *       Optionally filter by groupId to limit results to a specific group.
    *       The endpoint uses the authenticated session derived from the request.
    *     operationId: handleGetVacations
    *     security:
@@ -41,14 +41,6 @@ export const vacationRouter = (): Router => {
    *           minimum: 1
    *           maximum: 12
    *           example: 12
-   *       - name: groupId
-   *         in: query
-   *         description: Optional UUID of a group to filter vacations for that group
-   *         required: false
-   *         schema:
-   *           type: string
-   *           format: uuid
-   *           example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
    *     responses:
    *       '200':
    *         description: Array of vacations matching the query
@@ -173,6 +165,59 @@ export const vacationRouter = (): Router => {
     bodyValidationMiddleware(validatePostVacation),
     tryCatch(handlePostVacation)
   );
+
+  /**
+   * @openapi
+   * /api/vacation/approve/{id}:
+   *   post:
+   *     tags:
+   *       - Vacations
+   *     summary: Approve a vacation request
+   *     description: |
+   *       Approves a pending vacation request identified by its UUID.
+   *       Only users who are listed as approvers for the vacation's group (main or temp approver)
+   *       may approve the request. The endpoint requires authentication.
+   *     operationId: handlePostVacationApproval
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         description: UUID of the vacation to approve
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *           example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+   *     responses:
+   *       '200':
+   *         description: Vacation approved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Vacation approved"
+   *       '401':
+   *         description: Unauthorized - missing or invalid authentication
+   *       '403':
+   *         description: Forbidden - the authenticated user is not allowed to approve this vacation
+   *       '404':
+   *         description: Not Found - vacation with given id does not exist
+   *       '422':
+   *         description: Unprocessable Entity - invalid id format (UUID validation)
+   *       '500':
+   *         description: Internal Server Error
+   * components:
+   *   securitySchemes:
+   *     bearerAuth:
+   *       type: http
+   *       scheme: bearer
+   *       bearerFormat: JWT
+   */
+  app.post("/approve/:id", tryCatch(handlePostVacationApproval));
 
   return app;
 };

@@ -5,11 +5,26 @@ import {
   date,
   index,
   uniqueIndex,
+  time,
+  pgEnum,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
+import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
-//todo start and end time of vacation (optional)
+export enum vacationType {
+  Vacation = "VACATION",
+  HomeOffice = "HOME_OFFICE",
+  Sick = "SICK",
+  BankHoliday = "BANK_HOLIDAY",
+  NonPaidLeave = "NON_PAID_LEAVE",
+  PaidTimeOff = "PAID_TIME_OFF",
+  SickLeave = "SICK_LEAVE",
+  StudyLeave = "STUDY_LEAVE",
+  Other = "OTHER",
+}
+
+export const vacationEnum = pgEnum("vacation_type", enumToPgEnum(vacationType));
 
 export const vacation = pgTable(
   "vacation",
@@ -22,6 +37,11 @@ export const vacation = pgTable(
       .notNull()
       .references(() => groups.id, { onDelete: "cascade" }),
     requestedDay: date("requested_day").notNull(),
+    startTime: time("start_time"),
+    endTime: time("end_time"),
+    vacationType: vacationEnum("vacation_type")
+      .notNull()
+      .default(vacationType.Vacation),
     approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",

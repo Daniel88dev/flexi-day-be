@@ -5,6 +5,8 @@ import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
 import { createDBServices } from "../../services/DBServices.js";
+import { vacationType } from "../../db/schema/vacation-schema.js";
+import { logger } from "../../middleware/logger.js";
 
 const services = createDBServices();
 
@@ -32,6 +34,9 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     userId: auth.userId,
     groupId: data.groupId,
     requestedDay: formatDateToISOString(data.requestedDay),
+    startTime: data.startTime,
+    endTime: data.endTime,
+    vacationType: vacationType.Vacation,
   });
 
   if (!record) {
@@ -41,6 +46,16 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       code: 500,
       context: { userId: auth.userId },
     });
+  }
+
+  const groupData = await services.group.getApprovalUsers(data.groupId);
+
+  if (groupData && groupData.mainApprovalUserEmail) {
+    // todo construct and send notification email
+    logger.info("notification email not-sent (not finished");
+  } else if (groupData?.tempApprovalUserEmail) {
+    // todo construct and send notification email
+    logger.info("notification email not-sent (not finished");
   }
 
   return res.status(201).json(record);

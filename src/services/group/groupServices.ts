@@ -2,6 +2,8 @@ import type { GroupInsertType, GroupType } from "./types.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { user } from "../../db/schema/auth-schema.js";
+import { alias } from "drizzle-orm/pg-core";
 
 /**
  * Retrieves a group from the database based on the provided group ID.
@@ -154,4 +156,46 @@ export const updateGroupQuotas = async (
     .returning();
 
   return row;
+};
+
+type GroupApprovalUsersType = {
+  groupId: string;
+  groupName: string;
+  mainApprovalUserId: string | null;
+  mainApprovalUserName: string | null;
+  mainApprovalUserEmail: string | null;
+  tempApprovalUserId: string | null;
+  tempApprovalUserName: string | null;
+  tempApprovalUserEmail: string | null;
+};
+
+export const getApprovalUsers = async (
+  groupId: string
+): Promise<GroupApprovalUsersType | undefined> => {
+  const mainApprovalUser = alias(user, "mainApprovalUser");
+  const tempApprovalUser = alias(user, "tempApprovalUser");
+
+  const [row] = await db
+    .select({
+      groupId: groups.id,
+      groupName: groups.groupName,
+      mainApprovalUserId: mainApprovalUser.id,
+      mainApprovalUserName: mainApprovalUser.name,
+      mainApprovalUserEmail: mainApprovalUser.email,
+      tempApprovalUserId: tempApprovalUser.id,
+      tempApprovalUserName: tempApprovalUser.name,
+      tempApprovalUserEmail: tempApprovalUser.email,
+    })
+    .from(groups)
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
+    .leftJoin(
+      mainApprovalUser,
+      eq(groups.mainApprovalUser, mainApprovalUser.id)
+    )
+    .leftJoin(
+      tempApprovalUser,
+      eq(groups.tempApprovalUser, tempApprovalUser.id)
+    );
+
+  return row ?? undefined;
 };
