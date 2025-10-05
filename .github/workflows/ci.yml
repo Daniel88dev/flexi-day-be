@@ -59,5 +59,8 @@ jobs:
           npm run start &
           sleep 10 # wait for the app to start
 
-      - name: Run tests
-        run: npm run test -- --coverage
+      - name: Run unit tests
+        run: npm run test:unit -- --coverage
+
+      - name: Run e2e tests
+        run: npm run test:e2e
