@@ -3,7 +3,6 @@ import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
-import assert from "node:assert";
 
 const services = createDBServices();
 
@@ -29,7 +28,14 @@ export const handlePostVacationApproval = async (
   const getApprovers = await services.group.getApprovalUsers(
     vacationData.groupId
   );
-  assert(getApprovers, "getApprovers should be always true");
+
+  if (!getApprovers) {
+    throw new AppError({
+      code: 404,
+      message: "Not able to verify approvers",
+      context: { auth, vacationId },
+    });
+  }
 
   if (
     auth.userId !== getApprovers.mainApprovalUserId &&
