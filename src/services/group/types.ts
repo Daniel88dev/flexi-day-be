@@ -11,7 +11,11 @@ export type GroupType = {
   updatedAt: Date;
 };
 
-export type GroupInsertType = Pick<
-  GroupType,
-  "id" | "groupName" | "managerUserId"
->;
+export type GroupInsertType = {
+  id: string;
+  groupName: string;
+  managerUserId: string;
+  defaultVacationDays?: number;
+  defaultHomeOfficeDays?: number;
+  mainApprovalUser?: string;
+};
