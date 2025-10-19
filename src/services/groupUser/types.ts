@@ -10,7 +10,14 @@ export type GroupUser = {
   updatedAt: Date;
 };
 
-export type GroupUserInsertType = Pick<GroupUser, "id" | "groupId" | "userId">;
+export type GroupUserInsertType = {
+  id: string;
+  groupId: string;
+  userId: string;
+  viewAccess?: boolean;
+  adminAccess?: boolean;
+  controlledUser?: boolean;
+};
 
 export type GroupUserPermissions = Pick<
   GroupUser,
