@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import { errorMiddleware } from "./middleware/errorMiddleware.js";
 import { vacationRouter } from "./routes/vacationRouter.js";
 import { authSession } from "./middleware/authSession.js";
+import { groupRouter } from "./routes/groupRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -20,6 +21,7 @@ export const createServer = () => {
     .use(express.json());
 
   app.use("/api/vacation", authSession, vacationRouter());
+  app.use("/api/group", authSession, groupRouter());
 
   app.get("/health", (_, res) => {
     res.setHeader("Cache-Control", "no-store");
