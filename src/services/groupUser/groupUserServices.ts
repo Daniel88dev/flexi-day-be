@@ -1,4 +1,4 @@
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { and, eq, isNull } from "drizzle-orm";
 import type {
@@ -39,15 +39,21 @@ export const getGroupUser = async (
 };
 
 /**
- * Asynchronously creates a new group user entry in the database.
+ * Asynchronously creates a new user in a group within the database.
  *
- * @param {GroupUserInsertType} data - The data object containing the fields required to insert a new group user.
- * @returns {Promise<GroupUser | undefined>} A promise that resolves to the newly created group user entry if successful, or undefined if the operation fails.
+ * Inserts a new entry into the `groupUsers` table using the provided data.
+ * If a conflict occurs (e.g., duplicate entry), the operation will do nothing.
+ * Returns the inserted row if insertion is successful, otherwise `undefined`.
+ *
+ * @param {GroupUserInsertType} data - The data for the new group user to be inserted.
+ * @param {DbTransaction} [tx] - Optional database transaction to use for the operation. If not provided, the default database connection is used.
+ * @returns {Promise<GroupUser | undefined>} A promise that resolves to the inserted group user object or `undefined` if the insertion failed due to a conflict.
  */
 export const createGroupUser = async (
-  data: GroupUserInsertType
+  data: GroupUserInsertType,
+  tx?: DbTransaction
 ): Promise<GroupUser | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .insert(groupUsers)
     .values(data)
     .onConflictDoNothing()

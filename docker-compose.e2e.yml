@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: testdb
     ports:
-      - "5434:5433"
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -23,7 +23,7 @@ services:
     environment:
       PORT: 8080
       NODE_ENV: test
-      DATABASE: postgresql://postgres:password@postgres:5433/testdb
+      DATABASE: postgresql://postgres:password@postgres:5434/testdb
       BETTER_AUTH_SECRET: test-secret-key-for-e2e-testing-only
       BETTER_AUTH_URL: http://localhost:8080
     command: >

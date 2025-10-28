@@ -4,6 +4,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
+import { db } from "../../db/db.js";
 
 const services = createDBServices();
 
@@ -19,40 +20,59 @@ export const handlePostGroup = async (req: Request, res: Response) => {
 
   const data = validatePostGroup.parse(req.body);
 
-  const record = await services.group.createGroup({
-    id: generateRandomUUID(),
-    groupName: data.groupName,
-    managerUserId: auth.userId,
-    defaultVacationDays: data.defaultVacation,
-    defaultHomeOfficeDays: data.defaultHomeOffice,
-    mainApprovalUser: data.mainApprovalUser,
+  const result = await db.transaction(async (tx) => {
+    const record = await services.group.createGroup(
+      {
+        id: generateRandomUUID(),
+        groupName: data.groupName,
+        managerUserId: auth.userId,
+        defaultVacationDays: data.defaultVacation,
+        defaultHomeOfficeDays: data.defaultHomeOffice,
+        mainApprovalUser: data.mainApprovalUser,
+      },
+      tx
+    );
+
+    if (!record) {
+      throw new AppError({
+        message: "Failed to create group",
+        logging: true,
+        code: 500,
+        context: {
+          userId: auth.userId,
+          groupName: data.groupName,
+          defaultVacation: data.defaultVacation,
+          defaultHomeOffice: data.defaultHomeOffice,
+        },
+      });
+    }
+
+    const createGroupUser = await services.groupUser.createGroupUser(
+      {
+        id: generateRandomUUID(),
+        userId: auth.userId,
+        groupId: record.id,
+        viewAccess: true,
+        adminAccess: true,
+      },
+      tx
+    );
+
+    if (!createGroupUser) {
+      throw new AppError({
+        message: "Failed to create group user",
+        logging: true,
+        code: 500,
+        context: {
+          userId: auth.userId,
+          groupId: record.id,
+          viewAccess: true,
+          adminAccess: true,
+        },
+      });
+    }
+
+    return record;
   });
-
-  if (!record) {
-    throw new AppError({
-      message: "Failed to create group",
-      logging: true,
-      code: 500,
-      context: { userId: auth.userId },
-    });
-  }
-
-  const createGroupUser = await services.groupUser.createGroupUser({
-    id: generateRandomUUID(),
-    userId: auth.userId,
-    groupId: record.id,
-    viewAccess: true,
-    adminAccess: true,
-  });
-
-  if (!createGroupUser) {
-    throw new AppError({
-      message: "Failed to create group user",
-      logging: true,
-      code: 500,
-      context: { userId: auth.userId },
-    });
-  }
-
-  return res.status(201).json(record);
+  return res.status(201).json(result);
 };

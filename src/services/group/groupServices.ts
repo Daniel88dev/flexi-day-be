@@ -1,5 +1,5 @@
 import type { GroupInsertType, GroupType } from "./types.js";
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { user } from "../../db/schema/auth-schema.js";
@@ -40,15 +40,20 @@ export const getAllGroups = async (
 };
 
 /**
- * Asynchronously creates a new group record in the database.
+ * Creates a new group entry in the database.
  *
- * @param {GroupInsertType} data - The data to insert as the new group record.
- * @returns {Promise<GroupType | undefined>} A promise that resolves to the newly created group record or undefined if no record is returned.
+ * This function inserts a new group record into the groups table and returns the newly created group object.
+ * If a database transaction instance is provided, the operation will be executed within the given transaction context.
+ *
+ * @param {GroupInsertType} data - The data object representing the group to be inserted.
+ * @param {DbTransaction} [tx] - Optional database transaction instance for handling the operation.
+ * @returns {Promise<GroupType | undefined>} A promise that resolves to the newly created group object, or undefined if the operation fails.
  */
 export const createGroup = async (
-  data: GroupInsertType
+  data: GroupInsertType,
+  tx?: DbTransaction
 ): Promise<GroupType | undefined> => {
-  const [row] = await db.insert(groups).values(data).returning();
+  const [row] = await (tx ?? db).insert(groups).values(data).returning();
   return row;
 };
 

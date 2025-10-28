@@ -24,3 +24,5 @@ export const db: NodePgDatabase<typeof schema> = drizzle({
   },
   schema,
 });
+
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
