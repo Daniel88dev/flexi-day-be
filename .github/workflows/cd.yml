@@ -1,0 +1,91 @@
+name: Build and Push to ECR
+
+on:
+  push:
+    branches: ["main"]
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ecr-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          echo "ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_OUTPUT
+          echo "IMAGE_TAG_SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Ensure ECR repository exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Repository ${ECR_REPOSITORY} already exists"
+          else
+            echo "Creating repository ${ECR_REPOSITORY}"
+            aws ecr create-repository \
+              --repository-name "${ECR_REPOSITORY}" \
+              --image-scanning-configuration scanOnPush=true \
+              --image-tag-mutability MUTABLE \
+              >/dev/null
+          fi
+
+      - name: Build, tag, and push image
+        env:
+          ECR_REGISTRY: ${{ steps.meta.outputs.ECR_REGISTRY }}
+          IMAGE_TAG_SHA: ${{ steps.meta.outputs.IMAGE_TAG_SHA }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+          SHA_IMAGE_FULL_URI="${IMAGE_URI}:${IMAGE_TAG_SHA}"
+
+          echo "Building and pushing base image with SHA tag: ${SHA_IMAGE_FULL_URI}"
+
+          docker buildx create --use --name builder || docker buildx use builder
+
+          docker buildx build --platform linux/amd64 \
+             -t "${SHA_IMAGE_FULL_URI}" \
+             --push .
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            MOVING_TAG="latest"
+          else
+            MOVING_TAG="main"
+          fi
+          MOVING_IMAGE_FULL_URI="${IMAGE_URI}:${MOVING_TAG}"
+
+          echo "Creating and pushing moving tag: ${MOVING_IMAGE_FULL_URI} pointing to ${SHA_IMAGE_FULL_URI}"
+
+          docker buildx imagetools create \
+             --tag "${MOVING_IMAGE_FULL_URI}" \
+             "${SHA_IMAGE_FULL_URI}"
