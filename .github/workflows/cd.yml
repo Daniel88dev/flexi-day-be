@@ -75,6 +75,7 @@ jobs:
 
           docker buildx build --platform linux/amd64 \
              -t "${SHA_IMAGE_FULL_URI}" \
+             --provenance=false \
              --push .
 
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
