@@ -1,0 +1,41 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and fill in your values
+
+# General Configuration
+aws_region   = "eu-central-1"
+environment  = "dev"
+project_name = "flexi-day-be"
+
+# VPC Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["eu-central-1a", "eu-central-1b"]  # RDS requires subnets in at least 2 AZs
+
+# RDS Configuration
+db_instance_class          = "db.t3.micro"  # Use db.t3.small or larger for production
+db_allocated_storage       = 20
+db_name                    = "flexiday"
+db_username                = "postgres"
+db_port                    = 5432
+db_backup_retention_period = 7
+db_multi_az                = false  # Set to true for production
+
+# EC2 Configuration
+ec2_instance_type = "t3.micro"  # Use t3.medium or larger for production
+ec2_key_name      = ""  # Optional: SSH key pair name (leave empty to use SSM only)
+ec2_volume_size   = 30
+
+# ECR Configuration
+# Note: Using existing ECR repository created by GitHub Actions
+ecr_repository_name = "daniel88dev/flexi-day-be"
+docker_image_tag    = "main"
+
+# Application Configuration
+app_port = 3000
+
+# Security - IMPORTANT: Restrict this to your IP range in production!
+allowed_cidr_blocks = ["0.0.0.0/0"]  # Change to ["YOUR_IP/32"] for production
+
+# Better Auth Configuration
+# IMPORTANT: Set these values before deploying!
+better_auth_secret = ""  # Generate a secure random string (64+ characters)
+better_auth_url    = ""  # Your application URL (e.g., https://yourdomain.com)
