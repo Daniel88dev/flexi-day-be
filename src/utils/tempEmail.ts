@@ -14,7 +14,7 @@ export const tempEmailSend = async (emailData: TempEmailType) => {
     return;
   }
   await new Promise((resolve) => setTimeout(resolve, 25));
-  logger.info("tempEmail.send", {
+  logger.debug("tempEmail.send", {
     to: emailData.to,
     subject: emailData.subject,
     bodyPreviewChars: Math.min(emailData.text.length, 100),

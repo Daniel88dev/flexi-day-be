@@ -64,10 +64,9 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         logging: true,
         code: 500,
         context: {
+          url: req.url,
           userId: auth.userId,
           groupId: record.id,
-          viewAccess: true,
-          adminAccess: true,
         },
       });
     }

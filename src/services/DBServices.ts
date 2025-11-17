@@ -16,10 +16,17 @@ export type DBServices = Readonly<{
   };
   groupUser: {
     getGroupUser: typeof groupUserServices.getGroupUser;
+    getGroupUsers: typeof groupUserServices.getGroupUsers;
     createGroupUser: typeof groupUserServices.createGroupUser;
     updateGroupUserPermissions: typeof groupUserServices.updateGroupUserPermissions;
     deleteGroupUser: typeof groupUserServices.deleteGroupUser;
     getAllGroupsForUser: typeof groupUserServices.getAllGroupsForUser;
+  };
+  inviteLinks: {
+    createInviteLink: typeof groupUserServices.createInviteLink;
+    getInviteLinksForGroup: typeof groupUserServices.getInviteLinksForGroup;
+    getInviteLinkByCode: typeof groupUserServices.getInviteLinkByCode;
+    useInviteLink: typeof groupUserServices.useInviteLink;
   };
   group: {
     getGroup: typeof groupServices.getGroup;
@@ -56,10 +63,17 @@ export const createDBServices = (): DBServices => {
     },
     groupUser: {
       getGroupUser: groupUserServices.getGroupUser,
+      getGroupUsers: groupUserServices.getGroupUsers,
       createGroupUser: groupUserServices.createGroupUser,
       updateGroupUserPermissions: groupUserServices.updateGroupUserPermissions,
       deleteGroupUser: groupUserServices.deleteGroupUser,
       getAllGroupsForUser: groupUserServices.getAllGroupsForUser,
+    },
+    inviteLinks: {
+      createInviteLink: groupUserServices.createInviteLink,
+      getInviteLinksForGroup: groupUserServices.getInviteLinksForGroup,
+      getInviteLinkByCode: groupUserServices.getInviteLinkByCode,
+      useInviteLink: groupUserServices.useInviteLink,
     },
     group: {
       getGroup: groupServices.getGroup,
