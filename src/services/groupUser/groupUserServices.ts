@@ -5,7 +5,10 @@ import type {
   GroupUser,
   GroupUserInsertType,
   GroupUserPermissions,
+  InviteLink,
+  InviteLinkInsertType,
 } from "./types.js";
+import { inviteLink } from "../../db/schema/invite-link-schema.js";
 
 /**
  * Retrieves a user and their association with a specified group.
@@ -70,19 +73,29 @@ export const createGroupUser = async (
  * group user record if the update operation is successful. If no matching user is found,
  * it returns undefined.
  *
- * @param {string} id - The unique identifier of the group user whose permissions are to be updated.
+ * @param {string} userId - The unique identifier of the group user whose permissions are to be updated.
+ * @param groupId - Identification of GroupId for user update
  * @param {GroupUserPermissions} permissions - The new permissions to be set for the group user.
+ * @param tx - Optional database transaction to use for the operation.
  * @returns {Promise<GroupUser | undefined>} A promise that resolves to the updated group user object
  * if the update succeeds, or undefined if no record is found.
  */
 export const updateGroupUserPermissions = async (
-  id: string,
-  permissions: GroupUserPermissions
+  userId: string,
+  groupId: string,
+  permissions: GroupUserPermissions,
+  tx?: DbTransaction
 ): Promise<GroupUser | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .update(groupUsers)
     .set(permissions)
-    .where(and(eq(groupUsers.id, id), isNull(groupUsers.deletedAt)))
+    .where(
+      and(
+        eq(groupUsers.groupId, groupId),
+        eq(groupUsers.userId, userId),
+        isNull(groupUsers.deletedAt)
+      )
+    )
     .returning();
 
   return row;
@@ -132,4 +145,51 @@ export const getAllGroupsForUser = async (
     })
     .from(groupUsers)
     .where(and(eq(groupUsers.userId, userId), isNull(groupUsers.deletedAt)));
+};
+
+export const getGroupUsers = async (groupId: string): Promise<GroupUser[]> => {
+  return db
+    .select()
+    .from(groupUsers)
+    .where(and(eq(groupUsers.groupId, groupId), isNull(groupUsers.deletedAt)));
+};
+
+export const createInviteLink = async (
+  data: InviteLinkInsertType
+): Promise<InviteLink | undefined> => {
+  const [row] = await db.insert(inviteLink).values(data).returning();
+
+  return row;
+};
+
+export const getInviteLinksForGroup = async (
+  groupId: string
+): Promise<InviteLink[]> => {
+  return db.select().from(inviteLink).where(eq(inviteLink.groupId, groupId));
+};
+
+export const getInviteLinkByCode = async (
+  code: string,
+  tx?: DbTransaction
+): Promise<InviteLink | undefined> => {
+  const [row] = await (tx ?? db)
+    .select()
+    .from(inviteLink)
+    .where(eq(inviteLink.code, code))
+    .limit(1);
+
+  return row;
+};
+
+export const useInviteLink = async (
+  code: string,
+  tx?: DbTransaction
+): Promise<InviteLink | undefined> => {
+  const [row] = await (tx ?? db)
+    .update(inviteLink)
+    .set({ usedAt: new Date() })
+    .where(and(eq(inviteLink.code, code), isNull(inviteLink.usedAt)))
+    .returning();
+
+  return row;
 };
