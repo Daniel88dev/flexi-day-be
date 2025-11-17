@@ -4,6 +4,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPutGroupUserUpdateType } from "../../services/groupUser/types.js";
 import AppError from "../../utils/appError.js";
 import { logger } from "../../middleware/logger.js";
+import { db } from "../../db/db.js";
 
 const services = createDBServices();
 
@@ -27,30 +28,33 @@ export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
     });
   }
 
-  for (const userRecord of data.data) {
-    const updatedUser = await services.groupUser.updateGroupUserPermissions(
-      userRecord.userId,
-      data.groupId,
-      {
-        viewAccess: userRecord.viewAccess,
-        adminAccess: userRecord.adminAccess,
-        controlledUser: userRecord.controlledUser,
+  await db.transaction(async (tx) => {
+    for (const userRecord of data.data) {
+      const updatedUser = await services.groupUser.updateGroupUserPermissions(
+        userRecord.userId,
+        data.groupId,
+        {
+          viewAccess: userRecord.viewAccess,
+          adminAccess: userRecord.adminAccess,
+          controlledUser: userRecord.controlledUser,
+        },
+        tx
+      );
+
+      if (!updatedUser) {
+        throw new AppError({
+          message: "Failed to update group user permissions",
+          logging: true,
+          code: 400,
+          context: { url: req.url, user: auth.userId, data: data },
+        });
       }
-    );
 
-    if (!updatedUser) {
-      throw new AppError({
-        message: "Failed to update group user permissions",
-        logging: true,
-        code: 500,
-        context: { url: req.url, user: auth.userId, data: data },
-      });
+      logger.debug("updateGroupUserPermissions", updatedUser);
+
+      // todo update history record
     }
-
-    logger.debug("updateGroupUserPermissions", updatedUser);
-
-    // todo update history record
-  }
+  });
 
   return res.status(200).json({ message: "Group users updated successfully" });
 };

@@ -76,15 +76,17 @@ export const createGroupUser = async (
  * @param {string} userId - The unique identifier of the group user whose permissions are to be updated.
  * @param groupId - Identification of GroupId for user update
  * @param {GroupUserPermissions} permissions - The new permissions to be set for the group user.
+ * @param tx - Optional database transaction to use for the operation.
  * @returns {Promise<GroupUser | undefined>} A promise that resolves to the updated group user object
  * if the update succeeds, or undefined if no record is found.
  */
 export const updateGroupUserPermissions = async (
   userId: string,
   groupId: string,
-  permissions: GroupUserPermissions
+  permissions: GroupUserPermissions,
+  tx?: DbTransaction
 ): Promise<GroupUser | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .update(groupUsers)
     .set(permissions)
     .where(
@@ -186,7 +188,7 @@ export const useInviteLink = async (
   const [row] = await (tx ?? db)
     .update(inviteLink)
     .set({ usedAt: new Date() })
-    .where(eq(inviteLink.code, code))
+    .where(and(eq(inviteLink.code, code), isNull(inviteLink.usedAt)))
     .returning();
 
   return row;

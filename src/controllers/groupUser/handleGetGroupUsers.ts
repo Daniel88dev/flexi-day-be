@@ -3,6 +3,7 @@ import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { validateUserGroupAccess } from "./utils.js";
 import { z } from "zod";
+import AppError from "../../utils/appError.js";
 
 const services = createDBServices();
 
@@ -14,9 +15,16 @@ export const handleGetGroupUsers = async (req: Request, res: Response) => {
     .safeParse(req.params.groupId);
 
   if (parseError) {
-    return res
-      .status(400)
-      .json({ message: "Invalid groupId format", error: parseError });
+    throw new AppError({
+      message: "Invalid groupId format",
+      logging: true,
+      code: 400,
+      context: {
+        url: req.url,
+        userId: auth.userId,
+        groupId: req.params.groupId,
+      },
+    });
   }
 
   const access = await validateUserGroupAccess(auth.userId, groupId);

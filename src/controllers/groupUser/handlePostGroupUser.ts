@@ -16,9 +16,10 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
     .safeParse(req.params.validationCode);
 
   if (validationCodeError) {
-    return res.status(400).json({
+    throw new AppError({
       message: "Invalid validation code format",
-      error: validationCodeError,
+      logging: true,
+      code: 400,
     });
   }
 
@@ -33,9 +34,16 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       Boolean(validateLink.usedAt) ||
       validateLink.expiresAt <= new Date()
     ) {
-      return res
-        .status(404)
-        .json({ message: "Invalid or expired validation code" });
+      throw new AppError({
+        message: "Invalid or expired validation code",
+        logging: true,
+        code: 404,
+        context: {
+          url: req.url,
+          userId: auth.userId,
+          validationCode: validationCode,
+        },
+      });
     }
 
     const createGroupUser = await services.groupUser.createGroupUser(
