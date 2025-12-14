@@ -1,4 +1,4 @@
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { and, eq, gte, isNull, lt } from "drizzle-orm";
 import type { VacationInsertType, VacationType } from "./types.js";
@@ -81,13 +81,15 @@ export const postVacation = async (
  *
  * @param {string} vacationId - The unique identifier of the vacation request to be approved.
  * @param {string} approvingPerson - The identifier of the person approving the vacation request.
+ * @param tx - Optional database transaction to use for the operation.
  * @returns {Promise<VacationType | undefined>} A promise resolving to the updated vacation object if the operation is successful, or undefined if no record was updated.
  */
 export const approveVacation = async (
   vacationId: string,
-  approvingPerson: string
+  approvingPerson: string,
+  tx?: DbTransaction
 ): Promise<VacationType | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .update(vacation)
     .set({
       approvedBy: approvingPerson,
@@ -162,12 +164,14 @@ export const deleteVacation = async (
  * that matches the specified vacation ID and has not been marked as deleted.
  *
  * @param {string} vacationId - The unique identifier of the vacation to retrieve.
+ * @param tx - Optional database transaction to use for the operation.
  * @returns {Promise<VacationType | undefined>} A promise that resolves to the vacation object if found, or undefined if not found or deleted.
  */
 export const getVacationById = async (
-  vacationId: string
+  vacationId: string,
+  tx?: DbTransaction
 ): Promise<VacationType | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .select()
     .from(vacation)
     .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)));

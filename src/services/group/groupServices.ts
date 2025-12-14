@@ -175,12 +175,13 @@ type GroupApprovalUsersType = {
 };
 
 export const getApprovalUsers = async (
-  groupId: string
+  groupId: string,
+  tx?: DbTransaction
 ): Promise<GroupApprovalUsersType | undefined> => {
   const mainApprovalUser = alias(user, "mainApprovalUser");
   const tempApprovalUser = alias(user, "tempApprovalUser");
 
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .select({
       groupId: groups.id,
       groupName: groups.groupName,
