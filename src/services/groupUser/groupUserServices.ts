@@ -19,14 +19,16 @@ import { inviteLink } from "../../db/schema/invite-link-schema.js";
  *
  * @param {string} userId - The unique identifier of the user.
  * @param {string} groupId - The unique identifier of the group.
+ * @param tx - Optional database transaction to use for the operation.
  * @returns {Promise<GroupUser | undefined>} A promise that resolves to the user's group association details,
  * or undefined if no matching record is found.
  */
 export const getGroupUser = async (
   userId: string,
-  groupId: string
+  groupId: string,
+  tx?: DbTransaction
 ): Promise<GroupUser | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .select()
     .from(groupUsers)
     .where(

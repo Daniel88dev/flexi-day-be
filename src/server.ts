@@ -10,6 +10,7 @@ import { vacationRouter } from "./routes/vacationRouter.js";
 import { authSession } from "./middleware/authSession.js";
 import { groupRouter } from "./routes/groupRouter.js";
 import { groupUsersRouter } from "./routes/groupUsersRouter.js";
+import { quotasRouter } from "./routes/quotasRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -24,6 +25,7 @@ export const createServer = () => {
   app.use("/api/vacation", authSession, vacationRouter());
   app.use("/api/group", authSession, groupRouter());
   app.use("/api/group-user", authSession, groupUsersRouter());
+  app.use("/api/quotas", authSession, quotasRouter());
 
   app.get("/health", (_, res) => {
     res.setHeader("Cache-Control", "no-store");

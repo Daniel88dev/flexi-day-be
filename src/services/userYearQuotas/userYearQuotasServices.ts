@@ -3,7 +3,7 @@ import type {
   UserYearQuotasType,
   UserYearQuotasUpdateType,
 } from "./types.js";
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { and, eq, sql } from "drizzle-orm";
 
@@ -14,12 +14,14 @@ import { and, eq, sql } from "drizzle-orm";
  * @param {string} relatedYear - The related year for which the quotas are fetched.
  * @param {string} groupId - The identifier of the group to fetch quotas for.
  * @param {string | null} userId - The identifier of the user, or null to fetch quotas without filtering by user.
+ * @param tx - Optional database transaction to use for the operation.
  * @returns {Promise<UserYearQuotasType[]>} A promise that resolves to an array of user year quotas.
  */
 export const getUserYearGroupQuotas = async (
   relatedYear: string,
   groupId: string,
-  userId: string | null
+  userId: string | null,
+  tx?: DbTransaction
 ): Promise<UserYearQuotasType[]> => {
   const base = [
     eq(userYearQuotas.relatedYear, relatedYear),
@@ -30,7 +32,7 @@ export const getUserYearGroupQuotas = async (
       ? and(...base, eq(userYearQuotas.userId, userId))
       : and(...base);
 
-  return db.select().from(userYearQuotas).where(where);
+  return (tx ?? db).select().from(userYearQuotas).where(where);
 };
 
 /**
