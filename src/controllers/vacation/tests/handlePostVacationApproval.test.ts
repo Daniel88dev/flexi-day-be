@@ -14,6 +14,12 @@ vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
+vi.mock("../../../db/db.js", () => ({
+  db: {
+    transaction: vi.fn((callback) => callback({})),
+  },
+}));
+
 vi.mock("../../../services/DBServices.js", () => ({
   createDBServices: () => ({
     vacation: {
@@ -67,12 +73,14 @@ describe("handlePostVacationApproval", () => {
 
     expect(getAuth).toHaveBeenCalledWith(req);
     expect(mockGetVacationById).toHaveBeenCalledWith(
-      "550e8400-e29b-41d4-a716-446655440000"
+      "550e8400-e29b-41d4-a716-446655440000",
+      {}
     );
-    expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123");
+    expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123", {});
     expect(mockApproveVacation).toHaveBeenCalledWith(
       "550e8400-e29b-41d4-a716-446655440000",
-      "user_123"
+      "user_123",
+      {}
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ message: "Vacation approved" });
@@ -112,7 +120,8 @@ describe("handlePostVacationApproval", () => {
 
     expect(mockApproveVacation).toHaveBeenCalledWith(
       "550e8400-e29b-41d4-a716-446655440000",
-      "temp_user_456"
+      "temp_user_456",
+      {}
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ message: "Vacation approved" });
@@ -259,6 +268,6 @@ describe("handlePostVacationApproval", () => {
 
     await handlePostVacationApproval(req, res);
 
-    expect(mockGetApprovalUsers).toHaveBeenCalledWith("specific_group_789");
+    expect(mockGetApprovalUsers).toHaveBeenCalledWith("specific_group_789", {});
   });
 });
