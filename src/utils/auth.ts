@@ -3,6 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db/db.js";
 import { tempEmailSend } from "./tempEmail.js";
 import { haveIBeenPwned, openAPI } from "better-auth/plugins";
+import { config } from "../config.js";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -33,7 +34,8 @@ export const auth = betterAuth({
   rateLimit: {
     enabled: true,
     window: 10,
-    max: 5,
+    max: 50,
   },
+  trustedOrigins: config?.auth?.trustedOrigins ?? [],
   plugins: [haveIBeenPwned(), openAPI()],
 });

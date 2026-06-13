@@ -5,7 +5,7 @@ type APIConfig = { port: number; env: "production" | "dev" | "test" };
 
 type DBConfig = { database: string };
 
-type AuthConfig = { secret: string; url: string };
+type AuthConfig = { secret: string; url: string; trustedOrigins: string[] };
 
 type Config = {
   api: APIConfig;
@@ -62,6 +62,7 @@ export const config: Config = {
       ? {
           secret: envOrThrow("BETTER_AUTH_SECRET"),
           url: envOrThrow("BETTER_AUTH_URL"),
+          trustedOrigins: ["*"],
         }
       : undefined,
 };
