@@ -62,7 +62,9 @@ export const config: Config = {
       ? {
           secret: envOrThrow("BETTER_AUTH_SECRET"),
           url: envOrThrow("BETTER_AUTH_URL"),
-          trustedOrigins: process.env.TRUSTED_ORIGINS?.split(",") ?? ["http://localhost:3000"],,
+          trustedOrigins: process.env.TRUSTED_ORIGINS?.split(",") ?? [
+            "http://localhost:3000",
+          ],
         }
       : undefined,
 };
