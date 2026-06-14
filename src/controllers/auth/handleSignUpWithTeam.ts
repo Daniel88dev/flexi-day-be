@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { auth } from "../../utils/auth.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
@@ -30,10 +30,17 @@ export type ValidatedSignUpWithTeamType = z.infer<
  * `verification` rows are keyed by the email (`identifier`), so we wipe them
  * separately. Failures here are logged but never re-thrown — the caller is
  * already on an error path and the original cause is what matters.
+ *
+ * We match the user row on (id OR email): id is the fast primary-key path,
+ * email is the fallback the malformed-success branch must rely on when
+ * better-auth returned 2xx but no parseable user id. `user.email` is uniquely
+ * indexed, so this is at most one row.
  */
 const rollbackAuthUser = async (userId: string, email: string) => {
   try {
-    await db.delete(user).where(eq(user.id, userId));
+    await db
+      .delete(user)
+      .where(or(eq(user.id, userId), eq(user.email, email)));
     await db.delete(verification).where(eq(verification.identifier, email));
   } catch (cleanupErr) {
     logger.error("sign-up-with-team rollback failed", {

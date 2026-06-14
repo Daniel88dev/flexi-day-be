@@ -33,8 +33,10 @@ const addOneDay = (iso: string): string => {
  * `dashboard-summary.pendingApprovalsCount` so both stay consistent — the
  * stat-card count must always equal the list length.
  *
- * Input rows must be ordered by (userId, groupId, requestedDay) — which is
- * how `getPendingApprovalsForApprover` returns them.
+ * Input rows must be ordered by (userId, groupId, vacationType, requestedDay)
+ * — every key the collapse predicate compares against, plus the date last so
+ * contiguous days within the same (user, group, type) appear adjacent.
+ * `getPendingApprovalsForApprover` returns rows in exactly this order.
  */
 export const collapsePendingApprovals = (
   rows: PendingApprovalRow[]

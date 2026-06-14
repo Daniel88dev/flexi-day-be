@@ -358,6 +358,7 @@ export const getPendingApprovalsForApprover = async (
     .orderBy(
       asc(vacation.userId),
       asc(vacation.groupId),
+      asc(vacation.vacationType),
       asc(vacation.requestedDay)
     );
 };
