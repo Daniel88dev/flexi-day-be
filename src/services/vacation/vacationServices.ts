@@ -1,25 +1,76 @@
+import AppError from "../../utils/appError.js";
 import { db, type DbTransaction } from "../../db/db.js";
-import { vacation } from "../../db/schema/vacation-schema.js";
-import { and, eq, gte, isNull, lt } from "drizzle-orm";
-import type { VacationInsertType, VacationType } from "./types.js";
+import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
+import {
+  and,
+  asc,
+  count,
+  countDistinct,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
+import type {
+  VacationInsertType,
+  VacationListItem,
+  VacationType,
+} from "./types.js";
+import { user } from "../../db/schema/auth-schema.js";
+import { groups } from "../../db/schema/group-schema.js";
+import {
+  buildUserSummary,
+  type UserSummary,
+} from "../../utils/userPresentation.js";
+
+type VacationRowWithUser = VacationType & {
+  userName: string;
+};
+
+const toListItem = (row: VacationRowWithUser): VacationListItem => {
+  const { userName, ...rest } = row;
+  const userSummary: UserSummary = buildUserSummary({
+    id: row.userId,
+    name: userName,
+  });
+  return { ...rest, user: userSummary };
+};
+
+const baseVacationSelection = {
+  id: vacation.id,
+  userId: vacation.userId,
+  groupId: vacation.groupId,
+  requestedDay: vacation.requestedDay,
+  startTime: vacation.startTime,
+  endTime: vacation.endTime,
+  vacationType: vacation.vacationType,
+  approvedAt: vacation.approvedAt,
+  approvedBy: vacation.approvedBy,
+  deletedAt: vacation.deletedAt,
+  rejectedAt: vacation.rejectedAt,
+  rejectedBy: vacation.rejectedBy,
+  rejectionReason: vacation.rejectionReason,
+  note: vacation.note,
+  createdAt: vacation.createdAt,
+  updatedAt: vacation.updatedAt,
+  userName: user.name,
+};
 
 /**
- * Retrieves a list of vacations for a specific group within a given date range.
- * Optionally filters the vacations by a specific user.
- *
- * @param {string} groupId - The unique identifier of the group.
- * @param {string} startDate - The start date of the vacation range (inclusive) in ISO 8601 format.
- * @param {string} endDate - The end date of the vacation range (exclusive) in ISO 8601 format.
- * @param {string|null} [userId=null] - The unique identifier of the user to filter the vacations for.
- *                                       If null, retrieves vacations for all users in the group.
- * @returns {Promise<VacationType[]>} - A promise that resolves to an array of vacation objects that match the criteria.
+ * Retrieves a list of vacations for a specific group within a given date range,
+ * enriched with the requesting user's display summary. Optionally filters by user.
  */
 export const getVacationsForGroup = async (
   groupId: string,
   startDate: string,
   endDate: string,
   userId: string | null = null
-): Promise<VacationType[]> => {
+): Promise<VacationListItem[]> => {
   const base = [
     eq(vacation.groupId, groupId),
     isNull(vacation.deletedAt),
@@ -28,45 +79,52 @@ export const getVacationsForGroup = async (
   ] as const;
   const where =
     userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
-  return db.select().from(vacation).where(where);
+
+  const rows = await db
+    .select(baseVacationSelection)
+    .from(vacation)
+    .innerJoin(user, eq(vacation.userId, user.id))
+    .where(where)
+    .orderBy(asc(vacation.requestedDay));
+
+  return rows.map(toListItem);
 };
 
 /**
- * Retrieves a list of vacations for a specific user within a specified date range.
- *
- * @param {string} userId - The unique identifier of the user.
- * @param {string} startDate - The starting date of the range (inclusive) in ISO format.
- * @param {string} endDate - The ending date of the range (exclusive) in ISO format.
- * @returns {Promise<VacationType[]>} A promise that resolves to an array of vacation records.
+ * Retrieves a list of vacations for a specific user within a specified date range,
+ * enriched with the user's display summary.
  */
 export const getVacationsForUser = async (
   userId: string,
   startDate: string,
   endDate: string
-): Promise<VacationType[]> => {
-  const base = [
+): Promise<VacationListItem[]> => {
+  const where = and(
     eq(vacation.userId, userId),
     isNull(vacation.deletedAt),
     gte(vacation.requestedDay, startDate),
-    lt(vacation.requestedDay, endDate),
-  ] as const;
-  const where = and(...base);
-  return db.select().from(vacation).where(where);
+    lt(vacation.requestedDay, endDate)
+  );
+
+  const rows = await db
+    .select(baseVacationSelection)
+    .from(vacation)
+    .innerJoin(user, eq(vacation.userId, user.id))
+    .where(where)
+    .orderBy(asc(vacation.requestedDay));
+
+  return rows.map(toListItem);
 };
 
 /**
- * Handles the insertion of vacation data into the database.
- * If a conflict occurs during insertion (e.g., duplicate records),
- * no action is taken, and the function safely returns undefined.
- *
- * @param {VacationInsertType} record - The vacation data to be inserted into the database.
- * @returns {Promise<VacationType | undefined>} A promise resolving to the inserted vacation record
- * if successful, or undefined if no action was taken due to a conflict.
+ * Inserts a single vacation row. Returns undefined on unique-constraint
+ * collisions so callers can decide how to handle them.
  */
 export const postVacation = async (
-  record: VacationInsertType
+  record: VacationInsertType,
+  tx?: DbTransaction
 ): Promise<VacationType | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .insert(vacation)
     .values(record)
     .onConflictDoNothing({
@@ -77,13 +135,47 @@ export const postVacation = async (
 };
 
 /**
- * Approves a vacation request by updating its approval details in the database.
- *
- * @param {string} vacationId - The unique identifier of the vacation request to be approved.
- * @param {string} approvingPerson - The identifier of the person approving the vacation request.
- * @param tx - Optional database transaction to use for the operation.
- * @returns {Promise<VacationType | undefined>} A promise resolving to the updated vacation object if the operation is successful, or undefined if no record was updated.
+ * Inserts many per-day vacation rows in a single statement. All-or-nothing:
+ * if any (userId, requestedDay) already exists, throws — and because the
+ * caller wraps this in `db.transaction`, the partial inserts are rolled back.
+ * That avoids the silent partial-commit case where a multi-day request that
+ * overlaps one existing day would otherwise persist the remaining days and
+ * still look like a success.
  */
+export const postVacationBulk = async (
+  records: VacationInsertType[],
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (records.length === 0) return [];
+  const inserted = await (tx ?? db)
+    .insert(vacation)
+    .values(records)
+    .onConflictDoNothing({
+      target: [vacation.userId, vacation.requestedDay],
+    })
+    .returning();
+
+  if (inserted.length !== records.length) {
+    const insertedDays = new Set(inserted.map((r) => r.requestedDay));
+    const conflictingDays = records
+      .map((r) => r.requestedDay)
+      .filter((d) => !insertedDays.has(d));
+    throw new AppError({
+      code: 409,
+      message: "One or more days in the requested range are already booked",
+      logging: true,
+      context: {
+        conflictingDays,
+        requested: records.length,
+        inserted: inserted.length,
+      },
+      publicContext: { conflictingDays },
+    });
+  }
+
+  return inserted;
+};
+
 export const approveVacation = async (
   vacationId: string,
   approvingPerson: string,
@@ -96,6 +188,7 @@ export const approveVacation = async (
       approvedAt: new Date(),
       rejectedBy: null,
       rejectedAt: null,
+      rejectionReason: null,
     })
     .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
     .returning();
@@ -104,23 +197,79 @@ export const approveVacation = async (
 };
 
 /**
- * Rejects a vacation request by updating the vacation record in the database.
- * The function sets the rejection timestamp, records the person who rejected the request,
- * and clears any prior approval or approver information.
- *
- * @param {string} vacationId - The unique identifier of the vacation request to be rejected.
- * @param {string} rejectingPerson - The name or identifier of the person rejecting the vacation request.
- * @returns {Promise<VacationType | undefined>} A promise that resolves to the updated vacation record if the operation is successful, or undefined if no record was updated.
+ * Bulk-approves many vacation rows in a single statement. Returns the rows
+ * that were actually updated — callers can compare against the input ids to
+ * detect any that no longer matched (already approved/rejected/deleted).
  */
-export const rejectVacation = async (
-  vacationId: string,
-  rejectingPerson: string
-): Promise<VacationType | undefined> => {
-  const [row] = await db
+export const approveVacationsBulk = async (
+  vacationIds: string[],
+  approvingPerson: string,
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .update(vacation)
+    .set({
+      approvedBy: approvingPerson,
+      approvedAt: new Date(),
+      rejectedBy: null,
+      rejectedAt: null,
+      rejectionReason: null,
+    })
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .returning();
+};
+
+/**
+ * Bulk-rejects many vacation rows in a single statement. See approveVacationsBulk.
+ */
+export const rejectVacationsBulk = async (
+  vacationIds: string[],
+  rejectingPerson: string,
+  reason: string | null = null,
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
     .update(vacation)
     .set({
       rejectedAt: new Date(),
       rejectedBy: rejectingPerson,
+      rejectionReason: reason,
+      approvedAt: null,
+      approvedBy: null,
+    })
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .returning();
+};
+
+/**
+ * Fetches vacation rows by id (active rows only). Used during bulk approve /
+ * reject to authorize the caller against every distinct group in the batch.
+ */
+export const getVacationsByIds = async (
+  vacationIds: string[],
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .select()
+    .from(vacation)
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)));
+};
+
+export const rejectVacation = async (
+  vacationId: string,
+  rejectingPerson: string,
+  reason: string | null = null,
+  tx?: DbTransaction
+): Promise<VacationType | undefined> => {
+  const [row] = await (tx ?? db)
+    .update(vacation)
+    .set({
+      rejectedAt: new Date(),
+      rejectedBy: rejectingPerson,
+      rejectionReason: reason,
       approvedAt: null,
       approvedBy: null,
     })
@@ -130,23 +279,11 @@ export const rejectVacation = async (
   return row;
 };
 
-/**
- * Asynchronously deletes a vacation record by marking it as deleted in the database.
- *
- * This function updates the vacation record in the database by setting its `deletedAt` field
- * to the current date, effectively marking it as deleted. Once updated, it returns the
- * modified vacation record. If no record matches the provided vacation ID, the function
- * returns `undefined`.
- *
- * @param {string} vacationId - The unique identifier of the vacation record to be deleted.
- * @returns {Promise<VacationType | undefined>} A promise that resolves to the updated vacation record
- *                                              if a matching record is found, or `undefined` if no matching
- *                                              record exists.
- */
 export const deleteVacation = async (
-  vacationId: string
+  vacationId: string,
+  tx?: DbTransaction
 ): Promise<VacationType | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .update(vacation)
     .set({
       deletedAt: new Date(),
@@ -157,16 +294,6 @@ export const deleteVacation = async (
   return row;
 };
 
-/**
- * Retrieves a vacation record by its unique identifier.
- *
- * This asynchronous function fetches a vacation entry from the database
- * that matches the specified vacation ID and has not been marked as deleted.
- *
- * @param {string} vacationId - The unique identifier of the vacation to retrieve.
- * @param tx - Optional database transaction to use for the operation.
- * @returns {Promise<VacationType | undefined>} A promise that resolves to the vacation object if found, or undefined if not found or deleted.
- */
 export const getVacationById = async (
   vacationId: string,
   tx?: DbTransaction
@@ -177,4 +304,148 @@ export const getVacationById = async (
     .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)));
 
   return row;
+};
+
+export type PendingApprovalRow = {
+  vacationId: string;
+  userId: string;
+  userName: string;
+  groupId: string;
+  groupName: string;
+  vacationType: vacationType;
+  requestedDay: string;
+  note: string | null;
+  submittedAt: Date;
+};
+
+/**
+ * Returns pending (not yet approved, not rejected, not deleted) vacation rows
+ * for groups where the caller is a manager / main approver / temp approver.
+ * Rows are ordered by user/group/day so the caller can collapse contiguous
+ * ranges into single approval entries.
+ */
+export const getPendingApprovalsForApprover = async (
+  approverUserId: string
+): Promise<PendingApprovalRow[]> => {
+  return db
+    .select({
+      vacationId: vacation.id,
+      userId: vacation.userId,
+      userName: user.name,
+      groupId: vacation.groupId,
+      groupName: groups.groupName,
+      vacationType: vacation.vacationType,
+      requestedDay: vacation.requestedDay,
+      note: vacation.note,
+      submittedAt: vacation.createdAt,
+    })
+    .from(vacation)
+    .innerJoin(groups, eq(vacation.groupId, groups.id))
+    .innerJoin(user, eq(vacation.userId, user.id))
+    .where(
+      and(
+        isNull(vacation.deletedAt),
+        isNull(vacation.approvedAt),
+        isNull(vacation.rejectedAt),
+        isNull(groups.deletedAt),
+        or(
+          eq(groups.managerUserId, approverUserId),
+          eq(groups.mainApprovalUser, approverUserId),
+          eq(groups.tempApprovalUser, approverUserId)
+        )
+      )
+    )
+    .orderBy(
+      asc(vacation.userId),
+      asc(vacation.groupId),
+      asc(vacation.vacationType),
+      asc(vacation.requestedDay)
+    );
+};
+
+/**
+ * Counts the distinct users with an approved vacation overlapping `today` in
+ * any of the supplied group ids.
+ */
+export const countUsersOutOnDay = async (
+  groupIds: string[],
+  isoDate: string
+): Promise<number> => {
+  if (groupIds.length === 0) return 0;
+  const [row] = await db
+    .select({ value: countDistinct(vacation.userId) })
+    .from(vacation)
+    .where(
+      and(
+        inArray(vacation.groupId, groupIds),
+        isNull(vacation.deletedAt),
+        isNotNull(vacation.approvedAt),
+        eq(vacation.requestedDay, isoDate)
+      )
+    );
+  return Number(row?.value ?? 0);
+};
+
+/**
+ * Counts approved vacations (excluding bank holidays) overlapping the given
+ * inclusive range across the supplied groups. Used to estimate upcoming load.
+ */
+export const countApprovedVacationsInRange = async (
+  groupIds: string[],
+  fromIsoInclusive: string,
+  toIsoInclusive: string
+): Promise<number> => {
+  if (groupIds.length === 0) return 0;
+  const [row] = await db
+    .select({ value: count() })
+    .from(vacation)
+    .where(
+      and(
+        inArray(vacation.groupId, groupIds),
+        isNull(vacation.deletedAt),
+        isNotNull(vacation.approvedAt),
+        gte(vacation.requestedDay, fromIsoInclusive),
+        lte(vacation.requestedDay, toIsoInclusive)
+      )
+    );
+  return Number(row?.value ?? 0);
+};
+
+/**
+ * Aggregates user vacation usage per vacation type for the supplied groups
+ * and year. Approved (or non-rejected) usage is split into "used" and
+ * "pending" buckets matching the `BalanceWidget` shape.
+ */
+export const aggregateUserUsageForYear = async (
+  userId: string,
+  groupIds: string[],
+  year: number
+): Promise<{ type: vacationType; used: number; pending: number }[]> => {
+  if (groupIds.length === 0) return [];
+  const yearStart = `${year.toString().padStart(4, "0")}-01-01`;
+  const yearEnd = `${(year + 1).toString().padStart(4, "0")}-01-01`;
+
+  const rows = await db
+    .select({
+      type: vacation.vacationType,
+      used: sql<number>`COUNT(*) FILTER (WHERE ${vacation.approvedAt} IS NOT NULL)`,
+      pending: sql<number>`COUNT(*) FILTER (WHERE ${vacation.approvedAt} IS NULL AND ${vacation.rejectedAt} IS NULL)`,
+    })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, userId),
+        inArray(vacation.groupId, groupIds),
+        isNull(vacation.deletedAt),
+        gte(vacation.requestedDay, yearStart),
+        lt(vacation.requestedDay, yearEnd)
+      )
+    )
+    .groupBy(vacation.vacationType);
+
+  return rows.map((r) => ({
+    type: r.type,
+    used: Number(r.used),
+    pending: Number(r.pending),
+  }));
 };

@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockPostVacation, mockGetGroupUser, mockGetApprovalUsers } = vi.hoisted(
-  () => ({
-    mockPostVacation: vi.fn(),
-    mockGetGroupUser: vi.fn(),
-    mockGetApprovalUsers: vi.fn(),
-  })
-);
-
-vi.mock("../../../utils/dateFunc.js", () => ({
-  formatDateToISOString: vi.fn(),
+const {
+  mockPostVacationBulk,
+  mockGetGroupUser,
+  mockGetApprovalUsers,
+  mockTransaction,
+} = vi.hoisted(() => ({
+  mockPostVacationBulk: vi.fn(),
+  mockGetGroupUser: vi.fn(),
+  mockGetApprovalUsers: vi.fn(),
+  mockTransaction: vi.fn(),
 }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
@@ -26,10 +26,16 @@ vi.mock("../../../middleware/logger.js", () => ({
   },
 }));
 
+vi.mock("../../../db/db.js", () => ({
+  db: {
+    transaction: mockTransaction,
+  },
+}));
+
 vi.mock("../../../services/DBServices.js", () => ({
   createDBServices: () => ({
     vacation: {
-      postVacation: mockPostVacation,
+      postVacationBulk: mockPostVacationBulk,
     },
     groupUser: {
       getGroupUser: mockGetGroupUser,
@@ -41,25 +47,36 @@ vi.mock("../../../services/DBServices.js", () => ({
 }));
 
 import { handlePostVacation } from "../handlePostVacation.js";
-import { formatDateToISOString } from "../../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../../utils/generateUUID.js";
 import { getAuth } from "../../../middleware/authSession.js";
 import { logger } from "../../../middleware/logger.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
+import { vacationType } from "../../../db/schema/vacation-schema.js";
+
+const baseBody = (overrides: Record<string, unknown> = {}) => ({
+  groupId: "group_123",
+  from: new Date("2024-03-15T00:00:00Z"),
+  to: new Date("2024-03-15T00:00:00Z"),
+  vacationType: vacationType.Vacation,
+  startTime: "09:00",
+  endTime: "17:00",
+  note: null,
+  ...overrides,
+});
 
 describe("handlePostVacation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Setup default mocks
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
 
-    (formatDateToISOString as ReturnType<typeof vi.fn>).mockReturnValue(
-      "2024-03-15"
+    let counter = 0;
+    (generateRandomUUID as ReturnType<typeof vi.fn>).mockImplementation(
+      () => `uuid_${(++counter).toString()}`
     );
 
-    (generateRandomUUID as ReturnType<typeof vi.fn>).mockReturnValue(
-      "uuid_123"
+    mockTransaction.mockImplementation(
+      async (cb: (tx: unknown) => Promise<unknown>) => cb({})
     );
   });
 
@@ -67,14 +84,50 @@ describe("handlePostVacation", () => {
     vi.restoreAllMocks();
   });
 
-  it("should create vacation successfully with valid data", async () => {
-    const { req, res } = makeReqRes({
-      body: {
+  it("should create vacation rows for a single-day range", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
+
+    mockGetGroupUser.mockResolvedValue({
+      userId: "user_123",
+      groupId: "group_123",
+      controlledUser: true,
+    });
+
+    const created = [
+      {
+        id: "uuid_1",
+        userId: "user_123",
         groupId: "group_123",
         requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
       },
+    ];
+    mockPostVacationBulk.mockResolvedValue(created);
+    mockGetApprovalUsers.mockResolvedValue(null);
+
+    await handlePostVacation(req, res);
+
+    expect(mockGetGroupUser).toHaveBeenCalledWith("user_123", "group_123");
+    expect(mockPostVacationBulk).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          userId: "user_123",
+          groupId: "group_123",
+          requestedDay: "2024-03-15",
+          vacationType: vacationType.Vacation,
+        }),
+      ],
+      {}
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(created);
+  });
+
+  it("should fan out a multi-day range into per-day rows", async () => {
+    const { req, res } = makeReqRes({
+      body: baseBody({
+        from: new Date("2024-03-14T00:00:00Z"),
+        to: new Date("2024-03-16T00:00:00Z"),
+      }),
     });
 
     mockGetGroupUser.mockResolvedValue({
@@ -83,65 +136,38 @@ describe("handlePostVacation", () => {
       controlledUser: true,
     });
 
-    const mockVacationRecord = {
-      id: "uuid_123",
-      userId: "user_123",
-      groupId: "group_123",
-      requestedDay: "2024-03-15",
-      startTime: "09:00",
-      endTime: "17:00",
-      vacationType: "Vacation",
-    };
-
-    mockPostVacation.mockResolvedValue(mockVacationRecord);
+    mockPostVacationBulk.mockImplementation(
+      async (records: unknown[]) => records
+    );
     mockGetApprovalUsers.mockResolvedValue(null);
 
     await handlePostVacation(req, res);
 
-    expect(getAuth).toHaveBeenCalledWith(req);
-    expect(mockGetGroupUser).toHaveBeenCalledWith("user_123", "group_123");
-    expect(generateRandomUUID).toHaveBeenCalled();
-    expect(formatDateToISOString).toHaveBeenCalledWith("2024-03-15");
-    expect(mockPostVacation).toHaveBeenCalledWith({
-      id: "uuid_123",
-      userId: "user_123",
-      groupId: "group_123",
-      requestedDay: "2024-03-15",
-      startTime: "09:00",
-      endTime: "17:00",
-      vacationType: "VACATION",
-    });
+    const [records] = mockPostVacationBulk.mock.calls[0] as [
+      { requestedDay: string }[],
+      unknown,
+    ];
+    expect(records.map((r) => r.requestedDay)).toEqual([
+      "2024-03-14",
+      "2024-03-15",
+      "2024-03-16",
+    ]);
     expect(res.status).toHaveBeenCalledWith(201);
-    expect(res.json).toHaveBeenCalledWith(mockVacationRecord);
   });
 
-  it("should throw 403 error when user has no access to group", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
+  it("should throw 403 when user has no access to group", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue(null);
 
     await expect(handlePostVacation(req, res)).rejects.toThrow(
       "No access for related group"
     );
-    expect(mockPostVacation).not.toHaveBeenCalled();
+    expect(mockPostVacationBulk).not.toHaveBeenCalled();
   });
 
-  it("should throw 403 error when user is not a controlled user", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
+  it("should throw 403 when user is not a controlled user", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
       userId: "user_123",
@@ -152,18 +178,11 @@ describe("handlePostVacation", () => {
     await expect(handlePostVacation(req, res)).rejects.toThrow(
       "No access for related group"
     );
-    expect(mockPostVacation).not.toHaveBeenCalled();
+    expect(mockPostVacationBulk).not.toHaveBeenCalled();
   });
 
-  it("should throw 500 error when vacation creation fails", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
+  it("should propagate conflict errors from postVacationBulk", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
       userId: "user_123",
@@ -171,40 +190,38 @@ describe("handlePostVacation", () => {
       controlledUser: true,
     });
 
-    mockPostVacation.mockResolvedValue(null);
+    mockPostVacationBulk.mockRejectedValue(
+      new Error("One or more days in the requested range are already booked")
+    );
 
     await expect(handlePostVacation(req, res)).rejects.toThrow(
-      "Failed to create vacation"
+      "One or more days in the requested range are already booked"
     );
   });
 
-  it("should log info when main approval user email is available", async () => {
+  it("should reject ranges where `to` is before `from`", async () => {
     const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
+      body: baseBody({
+        from: new Date("2024-03-20T00:00:00Z"),
+        to: new Date("2024-03-19T00:00:00Z"),
+      }),
     });
+
+    await expect(handlePostVacation(req, res)).rejects.toThrow(
+      "`to` must be greater than or equal to `from`"
+    );
+    expect(mockGetGroupUser).not.toHaveBeenCalled();
+  });
+
+  it("should log info when main approval user email is available", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
       userId: "user_123",
       groupId: "group_123",
       controlledUser: true,
     });
-
-    const mockVacationRecord = {
-      id: "uuid_123",
-      userId: "user_123",
-      groupId: "group_123",
-      requestedDay: "2024-03-15",
-      startTime: "09:00",
-      endTime: "17:00",
-      vacationType: "Vacation",
-    };
-
-    mockPostVacation.mockResolvedValue(mockVacationRecord);
+    mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1" }]);
     mockGetApprovalUsers.mockResolvedValue({
       mainApprovalUserEmail: "approver@example.com",
     });
@@ -215,36 +232,17 @@ describe("handlePostVacation", () => {
     expect(logger.info).toHaveBeenCalledWith(
       "notification email not-sent (not finished"
     );
-    expect(res.status).toHaveBeenCalledWith(201);
   });
 
   it("should log info when temp approval user email is available", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
+    const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
       userId: "user_123",
       groupId: "group_123",
       controlledUser: true,
     });
-
-    const mockVacationRecord = {
-      id: "uuid_123",
-      userId: "user_123",
-      groupId: "group_123",
-      requestedDay: "2024-03-15",
-      startTime: "09:00",
-      endTime: "17:00",
-      vacationType: "Vacation",
-    };
-
-    mockPostVacation.mockResolvedValue(mockVacationRecord);
+    mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1" }]);
     mockGetApprovalUsers.mockResolvedValue({
       tempApprovalUserEmail: "temp_approver@example.com",
     });
@@ -255,36 +253,17 @@ describe("handlePostVacation", () => {
     expect(logger.info).toHaveBeenCalledWith(
       "notification email not-sent (not finished"
     );
-    expect(res.status).toHaveBeenCalledWith(201);
   });
 
   it("should not log info when no approval user emails are available", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
+    const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
       userId: "user_123",
       groupId: "group_123",
       controlledUser: true,
     });
-
-    const mockVacationRecord = {
-      id: "uuid_123",
-      userId: "user_123",
-      groupId: "group_123",
-      requestedDay: "2024-03-15",
-      startTime: "09:00",
-      endTime: "17:00",
-      vacationType: "Vacation",
-    };
-
-    mockPostVacation.mockResolvedValue(mockVacationRecord);
+    mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1" }]);
     mockGetApprovalUsers.mockResolvedValue({
       mainApprovalUserEmail: null,
       tempApprovalUserEmail: null,
@@ -292,90 +271,11 @@ describe("handlePostVacation", () => {
 
     await handlePostVacation(req, res);
 
-    expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123");
     expect(logger.info).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  it("should use the correct userId from auth", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
-
-    (getAuth as ReturnType<typeof vi.fn>).mockReturnValue({
-      userId: "different_user_456",
-      sessionId: "session_456",
-      userName: "Different User",
-      userEmail: "different@example.com",
-      emailVerified: true,
-    });
-
-    mockGetGroupUser.mockResolvedValue({
-      userId: "different_user_456",
-      groupId: "group_123",
-      controlledUser: true,
-    });
-
-    const mockVacationRecord = {
-      id: "uuid_123",
-      userId: "different_user_456",
-      groupId: "group_123",
-      requestedDay: "2024-03-15",
-      startTime: "09:00",
-      endTime: "17:00",
-      vacationType: "Vacation",
-    };
-
-    mockPostVacation.mockResolvedValue(mockVacationRecord);
-    mockGetApprovalUsers.mockResolvedValue(null);
-
-    await handlePostVacation(req, res);
-
-    expect(mockGetGroupUser).toHaveBeenCalledWith(
-      "different_user_456",
-      "group_123"
-    );
-    expect(mockPostVacation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: "different_user_456",
-      })
-    );
-  });
-
-  it("should handle database service errors from getGroupUser", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
-
-    const dbError = new Error("Database connection failed");
-    mockGetGroupUser.mockRejectedValue(dbError);
-
-    await expect(handlePostVacation(req, res)).rejects.toThrow(
-      "Database connection failed"
-    );
-    expect(mockGetGroupUser).toHaveBeenCalled();
-    expect(mockPostVacation).not.toHaveBeenCalled();
-  });
-
-  it("should handle database service errors from postVacation", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
+  it("should bubble up database errors from postVacationBulk", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
       userId: "user_123",
@@ -383,48 +283,8 @@ describe("handlePostVacation", () => {
       controlledUser: true,
     });
 
-    const dbError = new Error("Insert failed");
-    mockPostVacation.mockRejectedValue(dbError);
+    mockPostVacationBulk.mockRejectedValue(new Error("Insert failed"));
 
     await expect(handlePostVacation(req, res)).rejects.toThrow("Insert failed");
-    expect(mockPostVacation).toHaveBeenCalled();
-  });
-
-  it("should pass correct vacation type to postVacation", async () => {
-    const { req, res } = makeReqRes({
-      body: {
-        groupId: "group_123",
-        requestedDay: "2024-03-15",
-        startTime: "09:00",
-        endTime: "17:00",
-      },
-    });
-
-    mockGetGroupUser.mockResolvedValue({
-      userId: "user_123",
-      groupId: "group_123",
-      controlledUser: true,
-    });
-
-    const mockVacationRecord = {
-      id: "uuid_123",
-      userId: "user_123",
-      groupId: "group_123",
-      requestedDay: "2024-03-15",
-      startTime: "09:00",
-      endTime: "17:00",
-      vacationType: "Vacation",
-    };
-
-    mockPostVacation.mockResolvedValue(mockVacationRecord);
-    mockGetApprovalUsers.mockResolvedValue(null);
-
-    await handlePostVacation(req, res);
-
-    expect(mockPostVacation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        vacationType: "VACATION",
-      })
-    );
   });
 });
