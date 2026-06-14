@@ -1,6 +1,6 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, countDistinct, eq, inArray, isNull } from "drizzle-orm";
 import type {
   GroupUser,
   GroupUserInsertType,
@@ -154,6 +154,23 @@ export const getGroupUsers = async (groupId: string): Promise<GroupUser[]> => {
     .select()
     .from(groupUsers)
     .where(and(eq(groupUsers.groupId, groupId), isNull(groupUsers.deletedAt)));
+};
+
+/**
+ * Returns the number of distinct users that belong to any of the supplied
+ * groups. Used by the dashboard "team size" stat card.
+ */
+export const countDistinctUsersInGroups = async (
+  groupIds: string[]
+): Promise<number> => {
+  if (groupIds.length === 0) return 0;
+  const [row] = await db
+    .select({ value: countDistinct(groupUsers.userId) })
+    .from(groupUsers)
+    .where(
+      and(inArray(groupUsers.groupId, groupIds), isNull(groupUsers.deletedAt))
+    );
+  return Number(row?.value ?? 0);
 };
 
 export const createInviteLink = async (

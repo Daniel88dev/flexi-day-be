@@ -5,7 +5,7 @@ import type {
 } from "./types.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 /**
  * Retrieves user year group quotas based on the provided related year, group ID,
@@ -93,6 +93,37 @@ export const decreaseChangeForUserYearQuotas = async (
  * @param {number} homeOffice - The updated number of home office days for the user.
  * @returns {Promise<UserYearQuotasType | undefined>} A promise that resolves to the updated user year quotas if successful, or undefined if no matching record is found.
  */
+/**
+ * Sums quota allocations for the supplied user across the supplied groups for
+ * a given year. Returns zeros when no quota rows exist yet.
+ */
+export const sumUserQuotasForYear = async (
+  userId: string,
+  groupIds: string[],
+  relatedYear: string
+): Promise<{ vacationDays: number; homeOfficeDays: number }> => {
+  if (groupIds.length === 0) {
+    return { vacationDays: 0, homeOfficeDays: 0 };
+  }
+  const [row] = await db
+    .select({
+      vacationDays: sql<number>`COALESCE(SUM(${userYearQuotas.vacationDays}), 0)`,
+      homeOfficeDays: sql<number>`COALESCE(SUM(${userYearQuotas.homeOfficeDays}), 0)`,
+    })
+    .from(userYearQuotas)
+    .where(
+      and(
+        eq(userYearQuotas.userId, userId),
+        eq(userYearQuotas.relatedYear, relatedYear),
+        inArray(userYearQuotas.groupId, groupIds)
+      )
+    );
+  return {
+    vacationDays: Number(row?.vacationDays ?? 0),
+    homeOfficeDays: Number(row?.homeOfficeDays ?? 0),
+  };
+};
+
 export const updateUserYearQuotasById = async (
   id: string,
   vacations: number,

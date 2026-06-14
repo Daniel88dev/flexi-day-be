@@ -51,6 +51,8 @@ export const vacation = pgTable(
     rejectedBy: text("rejected_by").references(() => user.id, {
       onDelete: "set null",
     }),
+    rejectionReason: text("rejection_reason"),
+    note: text("note"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
