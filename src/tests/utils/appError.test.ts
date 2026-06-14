@@ -14,7 +14,9 @@ describe("AppError", () => {
     expect(err.statusCode).toBe(400);
     expect(err.logging).toBe(false);
     expect(err.message).toBe("Bad Request");
-    expect(err.errors).toEqual([{ message: "Bad Request", context: {} }]);
+    expect(err.errors).toEqual([
+      { message: "Bad Request", context: {}, publicContext: {} },
+    ]);
 
     expect(typeof err.stack).toBe("string");
   });
@@ -28,7 +30,9 @@ describe("AppError", () => {
     expect(err.logging).toBe(true);
     expect(err.message).toBe("Invalid input");
     expect((err as any).cause).toBe(cause);
-    expect(err.errors).toEqual([{ message: "Invalid input", context: ctx }]);
+    expect(err.errors).toEqual([
+      { message: "Invalid input", context: ctx, publicContext: {} },
+    ]);
   });
 
   it('falls back to default message when provided an empty string', () => {
@@ -41,7 +45,9 @@ describe("AppError", () => {
     const err = new AppError({ code: 0 });
     expect(err.statusCode).toBe(0);
     expect(err.logging).toBe(false);
-    expect(err.errors).toEqual([{ message: "Bad Request", context: {} }]);
+    expect(err.errors).toEqual([
+      { message: "Bad Request", context: {}, publicContext: {} },
+    ]);
   });
 
   it("exposes dynamic message in errors getter (reflects message changes)", () => {

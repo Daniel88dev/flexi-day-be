@@ -3,6 +3,8 @@ import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetVacations } from "../controllers/vacation/handleGetVacations.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
+  validateBulkApproveVacation,
+  validateBulkRejectVacation,
   validatePostVacation,
   validateRejectVacation,
 } from "../services/vacation/types.js";
@@ -10,6 +12,8 @@ import { handlePostVacation } from "../controllers/vacation/handlePostVacation.j
 import { handlePostVacationApproval } from "../controllers/vacation/handlePostVacationApproval.js";
 import { handlePostVacationReject } from "../controllers/vacation/handlePostVacationReject.js";
 import { handleDeleteVacation } from "../controllers/vacation/handleDeleteVacation.js";
+import { handleBulkApproveVacation } from "../controllers/vacation/handleBulkApproveVacation.js";
+import { handleBulkRejectVacation } from "../controllers/vacation/handleBulkRejectVacation.js";
 
 export const vacationRouter = (): Router => {
   const app = Router();
@@ -200,6 +204,49 @@ export const vacationRouter = (): Router => {
 
   /**
    * @openapi
+   * /api/vacation/approve:
+   *   post:
+   *     tags:
+   *       - Vacations
+   *     summary: Atomically approve many vacation rows in one transaction
+   *     description: |
+   *       Used together with `/api/users/me/approvals`, which returns
+   *       contiguous day rows collapsed into a single approval entry whose
+   *       `vacationIds` array names every row in the range. Sending that
+   *       array here guarantees the whole range is approved together or not
+   *       at all.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - ids
+   *             properties:
+   *               ids:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: uuid
+   *     responses:
+   *       '200':
+   *         description: All requested vacations approved
+   *       '403':
+   *         description: Not allowed to approve one or more rows
+   *       '404':
+   *         description: One or more vacations not found
+   */
+  app.post(
+    "/approve",
+    bodyValidationMiddleware(validateBulkApproveVacation),
+    tryCatch(handleBulkApproveVacation)
+  );
+
+  /**
+   * @openapi
    * /api/vacation/reject/{id}:
    *   post:
    *     tags:
@@ -231,6 +278,45 @@ export const vacationRouter = (): Router => {
     "/reject/:id",
     bodyValidationMiddleware(validateRejectVacation),
     tryCatch(handlePostVacationReject)
+  );
+
+  /**
+   * @openapi
+   * /api/vacation/reject:
+   *   post:
+   *     tags:
+   *       - Vacations
+   *     summary: Atomically reject many vacation rows in one transaction
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - ids
+   *             properties:
+   *               ids:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: uuid
+   *               reason:
+   *                 type: string
+   *     responses:
+   *       '200':
+   *         description: All requested vacations rejected
+   *       '403':
+   *         description: Not allowed to reject one or more rows
+   *       '404':
+   *         description: One or more vacations not found
+   */
+  app.post(
+    "/reject",
+    bodyValidationMiddleware(validateBulkRejectVacation),
+    tryCatch(handleBulkRejectVacation)
   );
 
   /**

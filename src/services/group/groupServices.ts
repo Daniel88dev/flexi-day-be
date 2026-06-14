@@ -1,7 +1,7 @@
 import type { GroupInsertType, GroupType } from "./types.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { user } from "../../db/schema/auth-schema.js";
 import { alias } from "drizzle-orm/pg-core";
 
@@ -172,6 +172,35 @@ type GroupApprovalUsersType = {
   tempApprovalUserId: string | null;
   tempApprovalUserName: string | null;
   tempApprovalUserEmail: string | null;
+};
+
+/**
+ * Returns the subset of supplied group ids on which the given user is an
+ * authorized approver (manager, main, or temp approver). Used by bulk
+ * approve/reject to verify the caller can act on every distinct group in a
+ * batch in a single query.
+ */
+export const getGroupsWhereUserCanApprove = async (
+  groupIds: string[],
+  approverUserId: string,
+  tx?: DbTransaction
+): Promise<string[]> => {
+  if (groupIds.length === 0) return [];
+  const rows = await (tx ?? db)
+    .select({ id: groups.id })
+    .from(groups)
+    .where(
+      and(
+        inArray(groups.id, groupIds),
+        isNull(groups.deletedAt),
+        or(
+          eq(groups.managerUserId, approverUserId),
+          eq(groups.mainApprovalUser, approverUserId),
+          eq(groups.tempApprovalUser, approverUserId)
+        )
+      )
+    );
+  return rows.map((r) => r.id);
 };
 
 export const getApprovalUsers = async (

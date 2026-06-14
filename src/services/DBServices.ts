@@ -15,9 +15,11 @@ export type DBServices = Readonly<{
     postVacationBulk: typeof vacationServices.postVacationBulk;
     approveVacation: typeof vacationServices.approveVacation;
     rejectVacation: typeof vacationServices.rejectVacation;
+    approveVacationsBulk: typeof vacationServices.approveVacationsBulk;
+    rejectVacationsBulk: typeof vacationServices.rejectVacationsBulk;
+    getVacationsByIds: typeof vacationServices.getVacationsByIds;
     deleteVacation: typeof vacationServices.deleteVacation;
     getPendingApprovalsForApprover: typeof vacationServices.getPendingApprovalsForApprover;
-    countPendingApprovalsForApprover: typeof vacationServices.countPendingApprovalsForApprover;
     countUsersOutOnDay: typeof vacationServices.countUsersOutOnDay;
     countApprovedVacationsInRange: typeof vacationServices.countApprovedVacationsInRange;
     aggregateUserUsageForYear: typeof vacationServices.aggregateUserUsageForYear;
@@ -46,6 +48,7 @@ export type DBServices = Readonly<{
     deleteGroup: typeof groupServices.deleteGroup;
     updateGroupQuotas: typeof groupServices.updateGroupQuotas;
     getApprovalUsers: typeof groupServices.getApprovalUsers;
+    getGroupsWhereUserCanApprove: typeof groupServices.getGroupsWhereUserCanApprove;
   };
   userYearQuotas: {
     getUserYearGroupQuotas: typeof userYearQuotasServices.getUserYearGroupQuotas;
@@ -64,6 +67,7 @@ export type DBServices = Readonly<{
   notification: {
     listNotificationsForUser: typeof notificationServices.listNotificationsForUser;
     markNotificationRead: typeof notificationServices.markNotificationRead;
+    getNotificationForUser: typeof notificationServices.getNotificationForUser;
     createNotification: typeof notificationServices.createNotification;
   };
 }>;
@@ -78,11 +82,12 @@ export const createDBServices = (): DBServices => {
       postVacationBulk: vacationServices.postVacationBulk,
       approveVacation: vacationServices.approveVacation,
       rejectVacation: vacationServices.rejectVacation,
+      approveVacationsBulk: vacationServices.approveVacationsBulk,
+      rejectVacationsBulk: vacationServices.rejectVacationsBulk,
+      getVacationsByIds: vacationServices.getVacationsByIds,
       deleteVacation: vacationServices.deleteVacation,
       getPendingApprovalsForApprover:
         vacationServices.getPendingApprovalsForApprover,
-      countPendingApprovalsForApprover:
-        vacationServices.countPendingApprovalsForApprover,
       countUsersOutOnDay: vacationServices.countUsersOutOnDay,
       countApprovedVacationsInRange:
         vacationServices.countApprovedVacationsInRange,
@@ -112,6 +117,7 @@ export const createDBServices = (): DBServices => {
       deleteGroup: groupServices.deleteGroup,
       updateGroupQuotas: groupServices.updateGroupQuotas,
       getApprovalUsers: groupServices.getApprovalUsers,
+      getGroupsWhereUserCanApprove: groupServices.getGroupsWhereUserCanApprove,
     },
     userYearQuotas: {
       getUserYearGroupQuotas: userYearQuotasServices.getUserYearGroupQuotas,
@@ -131,6 +137,7 @@ export const createDBServices = (): DBServices => {
     notification: {
       listNotificationsForUser: notificationServices.listNotificationsForUser,
       markNotificationRead: notificationServices.markNotificationRead,
+      getNotificationForUser: notificationServices.getNotificationForUser,
       createNotification: notificationServices.createNotification,
     },
   };

@@ -13,6 +13,10 @@ import { logger } from "../../middleware/logger.js";
 
 const services = createDBServices();
 
+// One full year. Caps the per-day fan-out so a pathological `from`/`to` pair
+// can't allocate tens of thousands of rows or stall a bulk insert.
+const MAX_VACATION_RANGE_DAYS = 366;
+
 export const handlePostVacation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
@@ -28,6 +32,19 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       logging: true,
       code: 422,
       context: { from: fromIso, to: toIso },
+    });
+  }
+
+  const rangeDays =
+    Math.round(
+      (data.to.getTime() - data.from.getTime()) / (24 * 60 * 60 * 1000)
+    ) + 1;
+  if (rangeDays > MAX_VACATION_RANGE_DAYS) {
+    throw new AppError({
+      message: `Vacation range too large (max ${MAX_VACATION_RANGE_DAYS.toString()} days)`,
+      logging: true,
+      code: 422,
+      context: { from: fromIso, to: toIso, rangeDays },
     });
   }
 
@@ -79,14 +96,27 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const groupData = await services.group.getApprovalUsers(data.groupId);
+  // Best-effort notification lookup. The rows above are already committed,
+  // so any failure here must NOT bubble up: a 5xx would tempt the client to
+  // retry a non-idempotent endpoint (the insert uses onConflictDoNothing, so
+  // the retry would return an empty set and our "no rows created" guard would
+  // mislead the caller into thinking nothing was booked).
+  try {
+    const groupData = await services.group.getApprovalUsers(data.groupId);
 
-  if (groupData && groupData.mainApprovalUserEmail) {
-    // todo construct and send notification email
-    logger.info("notification email not-sent (not finished");
-  } else if (groupData?.tempApprovalUserEmail) {
-    // todo construct and send notification email
-    logger.info("notification email not-sent (not finished");
+    if (groupData && groupData.mainApprovalUserEmail) {
+      // todo construct and send notification email
+      logger.info("notification email not-sent (not finished");
+    } else if (groupData?.tempApprovalUserEmail) {
+      // todo construct and send notification email
+      logger.info("notification email not-sent (not finished");
+    }
+  } catch (notifyErr) {
+    logger.error("post-commit approval-user lookup failed", {
+      userId: auth.userId,
+      groupId: data.groupId,
+      error: notifyErr,
+    });
   }
 
   return res.status(201).json(created);

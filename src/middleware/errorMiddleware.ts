@@ -48,9 +48,17 @@ export const errorMiddleware = (
       }
     }
 
+    // Only `publicContext` is forwarded to the client. The internal `context`
+    // field (which may carry auth/PII) stays in logs above and is dropped here.
     const clientErrors =
       Array.isArray(errors) && errors.length
-        ? errors.map((e) => ({ message: e.message }))
+        ? errors.map((e) => {
+            const hasPublic =
+              e.publicContext && Object.keys(e.publicContext).length > 0;
+            return hasPublic
+              ? { message: e.message, context: e.publicContext }
+              : { message: e.message };
+          })
         : [{ message: err.message }];
 
     return res.status(safeStatus).json({ errors: clientErrors });

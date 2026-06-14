@@ -181,7 +181,7 @@ describe("handlePostVacation", () => {
     expect(mockPostVacationBulk).not.toHaveBeenCalled();
   });
 
-  it("should throw 500 when no rows are created", async () => {
+  it("should propagate conflict errors from postVacationBulk", async () => {
     const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
@@ -190,10 +190,12 @@ describe("handlePostVacation", () => {
       controlledUser: true,
     });
 
-    mockPostVacationBulk.mockResolvedValue([]);
+    mockPostVacationBulk.mockRejectedValue(
+      new Error("One or more days in the requested range are already booked")
+    );
 
     await expect(handlePostVacation(req, res)).rejects.toThrow(
-      "Failed to create vacation"
+      "One or more days in the requested range are already booked"
     );
   });
 

@@ -12,6 +12,8 @@ export const bankHolidayRouter = (): Router => {
    *     tags:
    *       - BankHolidays
    *     summary: List bank holidays for a country (and optional region) and year
+   *     security:
+   *       - bearerAuth: []
    *     parameters:
    *       - name: year
    *         in: query
@@ -31,6 +33,8 @@ export const bankHolidayRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Array of bank holidays
+   *       '401':
+   *         description: Unauthorized - missing or invalid authentication
    */
   app.get("/", tryCatch(handleGetBankHolidays));
 

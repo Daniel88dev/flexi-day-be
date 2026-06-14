@@ -21,7 +21,19 @@ export const handlePostNotificationRead = async (
     auth.userId
   );
 
-  if (!updated) {
+  if (updated) {
+    return res.status(200).json({ message: "Notification marked as read" });
+  }
+
+  // Update returned nothing: either the row doesn't exist for this user, or
+  // it was already read. The endpoint is logically idempotent, so treat
+  // "already read" as success and preserve the original `readAt`.
+  const existing = await services.notification.getNotificationForUser(
+    notificationId,
+    auth.userId
+  );
+
+  if (!existing) {
     throw new AppError({
       code: 404,
       message: "Notification not found",
@@ -29,5 +41,5 @@ export const handlePostNotificationRead = async (
     });
   }
 
-  return res.status(200).json({ message: "Notification marked as read" });
+  return res.status(200).json({ message: "Notification already read" });
 };

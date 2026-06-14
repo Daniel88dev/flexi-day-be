@@ -62,3 +62,22 @@ export const validateRejectVacation = z.object({
 export type ValidatedRejectVacationType = z.infer<
   typeof validateRejectVacation
 >;
+
+const ids = z.array(z.uuid()).min(1).max(366);
+
+export const validateBulkApproveVacation = z.object({
+  ids,
+});
+
+export type ValidatedBulkApproveVacationType = z.infer<
+  typeof validateBulkApproveVacation
+>;
+
+export const validateBulkRejectVacation = z.object({
+  ids,
+  reason: z.string().max(1000).optional(),
+});
+
+export type ValidatedBulkRejectVacationType = z.infer<
+  typeof validateBulkRejectVacation
+>;

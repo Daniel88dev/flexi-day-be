@@ -1,3 +1,4 @@
+import AppError from "../../utils/appError.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
 import {
@@ -134,21 +135,45 @@ export const postVacation = async (
 };
 
 /**
- * Inserts many per-day vacation rows in a single statement. Conflicts on
- * (userId, requestedDay) are skipped.
+ * Inserts many per-day vacation rows in a single statement. All-or-nothing:
+ * if any (userId, requestedDay) already exists, throws — and because the
+ * caller wraps this in `db.transaction`, the partial inserts are rolled back.
+ * That avoids the silent partial-commit case where a multi-day request that
+ * overlaps one existing day would otherwise persist the remaining days and
+ * still look like a success.
  */
 export const postVacationBulk = async (
   records: VacationInsertType[],
   tx?: DbTransaction
 ): Promise<VacationType[]> => {
   if (records.length === 0) return [];
-  return (tx ?? db)
+  const inserted = await (tx ?? db)
     .insert(vacation)
     .values(records)
     .onConflictDoNothing({
       target: [vacation.userId, vacation.requestedDay],
     })
     .returning();
+
+  if (inserted.length !== records.length) {
+    const insertedDays = new Set(inserted.map((r) => r.requestedDay));
+    const conflictingDays = records
+      .map((r) => r.requestedDay)
+      .filter((d) => !insertedDays.has(d));
+    throw new AppError({
+      code: 409,
+      message: "One or more days in the requested range are already booked",
+      logging: true,
+      context: {
+        conflictingDays,
+        requested: records.length,
+        inserted: inserted.length,
+      },
+      publicContext: { conflictingDays },
+    });
+  }
+
+  return inserted;
 };
 
 export const approveVacation = async (
@@ -169,6 +194,68 @@ export const approveVacation = async (
     .returning();
 
   return row;
+};
+
+/**
+ * Bulk-approves many vacation rows in a single statement. Returns the rows
+ * that were actually updated — callers can compare against the input ids to
+ * detect any that no longer matched (already approved/rejected/deleted).
+ */
+export const approveVacationsBulk = async (
+  vacationIds: string[],
+  approvingPerson: string,
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .update(vacation)
+    .set({
+      approvedBy: approvingPerson,
+      approvedAt: new Date(),
+      rejectedBy: null,
+      rejectedAt: null,
+      rejectionReason: null,
+    })
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .returning();
+};
+
+/**
+ * Bulk-rejects many vacation rows in a single statement. See approveVacationsBulk.
+ */
+export const rejectVacationsBulk = async (
+  vacationIds: string[],
+  rejectingPerson: string,
+  reason: string | null = null,
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .update(vacation)
+    .set({
+      rejectedAt: new Date(),
+      rejectedBy: rejectingPerson,
+      rejectionReason: reason,
+      approvedAt: null,
+      approvedBy: null,
+    })
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .returning();
+};
+
+/**
+ * Fetches vacation rows by id (active rows only). Used during bulk approve /
+ * reject to authorize the caller against every distinct group in the batch.
+ */
+export const getVacationsByIds = async (
+  vacationIds: string[],
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .select()
+    .from(vacation)
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)));
 };
 
 export const rejectVacation = async (
@@ -273,32 +360,6 @@ export const getPendingApprovalsForApprover = async (
       asc(vacation.groupId),
       asc(vacation.requestedDay)
     );
-};
-
-/**
- * Counts pending approval rows (raw row count) the caller can act on.
- */
-export const countPendingApprovalsForApprover = async (
-  approverUserId: string
-): Promise<number> => {
-  const [row] = await db
-    .select({ value: count() })
-    .from(vacation)
-    .innerJoin(groups, eq(vacation.groupId, groups.id))
-    .where(
-      and(
-        isNull(vacation.deletedAt),
-        isNull(vacation.approvedAt),
-        isNull(vacation.rejectedAt),
-        isNull(groups.deletedAt),
-        or(
-          eq(groups.managerUserId, approverUserId),
-          eq(groups.mainApprovalUser, approverUserId),
-          eq(groups.tempApprovalUser, approverUserId)
-        )
-      )
-    );
-  return Number(row?.value ?? 0);
 };
 
 /**

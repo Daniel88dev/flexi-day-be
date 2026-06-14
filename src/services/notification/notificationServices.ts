@@ -26,8 +26,11 @@ export const listNotificationsForUser = async (
 };
 
 /**
- * Marks a notification as read for the given user. Returns the updated row,
- * or undefined when the user does not own a matching unread notification.
+ * Marks a notification as read. Only updates rows whose `readAt` is still
+ * NULL, so the original first-read timestamp is preserved when the endpoint
+ * is hit again. Returns undefined when nothing matched — that can mean the
+ * row does not exist, the caller does not own it, or it was already read.
+ * Use `getNotificationForUser` to disambiguate.
  */
 export const markNotificationRead = async (
   notificationId: string,
@@ -40,11 +43,34 @@ export const markNotificationRead = async (
     .where(
       and(
         eq(notifications.id, notificationId),
-        eq(notifications.userId, userId)
+        eq(notifications.userId, userId),
+        isNull(notifications.readAt)
       )
     )
     .returning();
 
+  return row;
+};
+
+/**
+ * Fetches a single notification row owned by the given user, regardless of
+ * read state. Used to distinguish "not found" from "already read" on the
+ * mark-read endpoint.
+ */
+export const getNotificationForUser = async (
+  notificationId: string,
+  userId: string,
+  tx?: DbTransaction
+): Promise<NotificationRecord | undefined> => {
+  const [row] = await (tx ?? db)
+    .select()
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.id, notificationId),
+        eq(notifications.userId, userId)
+      )
+    );
   return row;
 };
 
