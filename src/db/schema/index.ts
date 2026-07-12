@@ -6,6 +6,11 @@ import { vacation } from "./vacation-schema.js";
 import { inviteLink } from "./invite-link-schema.js";
 import { bankHolidays } from "./bank-holiday-schema.js";
 import { notifications } from "./notification-schema.js";
+import {
+  calendarSync,
+  calendarSyncTeams,
+  calendarSyncTypes,
+} from "./calendar-sync-schema.js";
 
 export const schema = {
   account,
@@ -19,4 +24,7 @@ export const schema = {
   inviteLink,
   bankHolidays,
   notifications,
+  calendarSync,
+  calendarSyncTeams,
+  calendarSyncTypes,
 };
