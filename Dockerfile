@@ -35,10 +35,6 @@ ENV NODE_EXTRA_CA_CERTS=/app/rds-global-bundle.pem
 # copy build files and runtime assets
 COPY --from=builder --chown=node:node /app/dist ./dist
 
-# drizzle migration files for opt-in startup migrations (RUN_MIGRATIONS=true)
-COPY --from=builder --chown=node:node /app/src/db/schema/out ./migrations
-ENV MIGRATIONS_FOLDER=/app/migrations
-
 USER node
 EXPOSE 8080
 

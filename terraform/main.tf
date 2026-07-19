@@ -2,12 +2,12 @@
 # Infrastructure resources are organized into separate files:
 # - provider.tf: AWS provider configuration
 # - variables.tf: Input variables
-# - vpc.tf: VPC, private subnets, DB subnet group (no internet access)
-# - security-groups.tf: App Runner connector SG and RDS SG
+# - vpc.tf: VPC, public subnets, IGW, DB subnet group
+# - security-groups.tf: RDS security group
 # - iam.tf: App Runner ECR-access and instance roles
 # - secrets.tf: Secrets Manager (DATABASE url, BETTER_AUTH_SECRET)
-# - rds.tf: RDS PostgreSQL instance (private)
-# - apprunner.tf: App Runner service, VPC connector, autoscaling
+# - rds.tf: RDS PostgreSQL instance (public endpoint, manual migrations)
+# - apprunner.tf: App Runner service (default egress), autoscaling
 # - dns.tf: Route 53 records + custom domain association (api.flexi-day.com)
 # - outputs.tf: Output values
 

@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../db/db.js";
 import { tempEmailSend } from "./tempEmail.js";
-import { openAPI } from "better-auth/plugins";
+import { haveIBeenPwned, openAPI } from "better-auth/plugins";
 import { config } from "../config.js";
 
 export const auth = betterAuth({
@@ -37,8 +37,5 @@ export const auth = betterAuth({
     max: 50,
   },
   trustedOrigins: config?.auth?.trustedOrigins ?? [],
-  // haveIBeenPwned() removed: the deployed environment has no outbound
-  // internet access (App Runner VPC egress without NAT), so the call to
-  // api.pwnedpasswords.com would hang. Re-add once egress/NAT exists.
-  plugins: [openAPI()],
+  plugins: [haveIBeenPwned(), openAPI()],
 });

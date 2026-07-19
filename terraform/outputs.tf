@@ -31,14 +31,14 @@ output "vpc_id" {
   value       = aws_vpc.main.id
 }
 
-output "private_subnet_ids" {
-  description = "IDs of private subnets"
-  value       = aws_subnet.private[*].id
+output "public_subnet_ids" {
+  description = "IDs of public subnets"
+  value       = aws_subnet.public[*].id
 }
 
 # RDS
 output "rds_endpoint" {
-  description = "RDS instance endpoint (only reachable from inside the VPC)"
+  description = "RDS instance endpoint (publicly reachable, TLS + password protected)"
   value       = aws_db_instance.main.endpoint
 }
 
@@ -64,12 +64,15 @@ output "get_database_url_command" {
 }
 
 # Security groups
-output "app_security_group_id" {
-  description = "SG attached to the App Runner VPC connector"
-  value       = aws_security_group.app.id
-}
-
 output "rds_security_group_id" {
   description = "SG protecting RDS"
   value       = aws_security_group.rds.id
+}
+
+# Manual migration helper: run from the repo root on your machine.
+# sslmode=no-verify -> encrypted connection without needing the RDS CA
+# bundle installed locally (the app itself does full verification).
+output "manual_migration_command" {
+  description = "Command to run drizzle migrations from your machine"
+  value       = "DATABASE=\"$(aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.database_url.name} --region ${var.aws_region} --query SecretString --output text)?sslmode=no-verify\" npm run db:migrate"
 }
