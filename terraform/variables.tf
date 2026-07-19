@@ -8,7 +8,7 @@ variable "aws_region" {
 variable "environment" {
   description = "Environment name (dev, staging, production)"
   type        = string
-  default     = "dev"
+  default     = "production"
 }
 
 variable "project_name" {
@@ -73,61 +73,73 @@ variable "db_multi_az" {
   default     = false
 }
 
-# EC2 Configuration
-variable "ec2_instance_type" {
-  description = "EC2 instance type"
-  type        = string
-  default     = "t3.micro"
-}
-
-variable "ec2_key_name" {
-  description = "EC2 key pair name for SSH access"
-  type        = string
-  default     = ""
-}
-
-variable "ec2_volume_size" {
-  description = "Root volume size in GB"
-  type        = number
-  default     = 30
-}
-
 # ECR Configuration
 variable "ecr_repository_name" {
-  description = "ECR repository name (existing repository created via GitHub Actions)"
+  description = "ECR repository name (existing repository, images pushed by GitHub Actions)"
   type        = string
   default     = "daniel88dev/flexi-day-be"
 }
 
 variable "docker_image_tag" {
-  description = "Docker image tag to deploy"
+  description = "ECR tag App Runner watches; every push to this tag auto-deploys ('main' on branch pushes, 'latest' on version tags)"
   type        = string
-  default     = "latest"
+  default     = "main"
 }
 
-# Application Configuration
+# App Runner Configuration
 variable "app_port" {
-  description = "Application port"
+  description = "Port the container listens on (Dockerfile default)"
   type        = number
-  default     = 3000
+  default     = 8080
 }
 
-variable "allowed_cidr_blocks" {
-  description = "CIDR blocks allowed to access the application"
+variable "apprunner_cpu" {
+  description = "vCPU per instance (256 = 0.25 vCPU)"
+  type        = string
+  default     = "256"
+}
+
+variable "apprunner_memory" {
+  description = "Memory per instance in MB (512 = 0.5 GB)"
+  type        = string
+  default     = "512"
+}
+
+variable "apprunner_max_size" {
+  description = "Maximum number of App Runner instances (cost cap)"
+  type        = number
+  default     = 2
+}
+
+# Domain Configuration
+variable "hosted_zone_name" {
+  description = "Route 53 public hosted zone name"
+  type        = string
+  default     = "flexi-day.com"
+}
+
+variable "api_domain_name" {
+  description = "Fully-qualified domain for the API"
+  type        = string
+  default     = "api.flexi-day.com"
+}
+
+variable "manage_dns_validation_records" {
+  description = "Set to true AFTER the first apply. The cert-validation records can only be created once the custom domain association exists (see dns.tf)."
+  type        = bool
+  default     = false
+}
+
+variable "trusted_origins" {
+  description = "Frontend origins allowed for CORS / Better Auth (TRUSTED_ORIGINS env)"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # Change this to your specific IP ranges for production
+  default     = ["https://flexi-day.com", "https://www.flexi-day.com"]
 }
 
 # Better Auth Configuration
 variable "better_auth_secret" {
-  description = "Better Auth secret key"
+  description = "Better Auth secret; leave empty to auto-generate a random one"
   type        = string
   sensitive   = true
-  default     = ""
-}
-
-variable "better_auth_url" {
-  description = "Better Auth URL (e.g., https://yourdomain.com)"
-  type        = string
   default     = ""
 }

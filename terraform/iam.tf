@@ -1,6 +1,13 @@
-# IAM Role for EC2 Instance
-resource "aws_iam_role" "ec2" {
-  name = "${var.project_name}-${var.environment}-ec2-role"
+# IAM roles for App Runner. There are two distinct roles:
+#
+# 1. "access role"  - assumed by App Runner's BUILD service to pull the
+#    container image from your private ECR repository.
+# 2. "instance role" - assumed by the RUNNING application instances; used
+#    here to resolve the Secrets Manager values injected as env vars.
+
+# --- 1. ECR access role -----------------------------------------------------
+resource "aws_iam_role" "apprunner_ecr_access" {
+  name = "${var.project_name}-${var.environment}-apprunner-ecr-access"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -9,52 +16,48 @@ resource "aws_iam_role" "ec2" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = "ec2.amazonaws.com"
+          Service = "build.apprunner.amazonaws.com"
         }
       }
     ]
   })
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-ec2-role"
+    Name = "${var.project_name}-${var.environment}-apprunner-ecr-access"
   }
 }
 
-# IAM Instance Profile for EC2
-resource "aws_iam_instance_profile" "ec2" {
-  name = "${var.project_name}-${var.environment}-ec2-profile"
-  role = aws_iam_role.ec2.name
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-ec2-profile"
-  }
+resource "aws_iam_role_policy_attachment" "apprunner_ecr_access" {
+  role       = aws_iam_role.apprunner_ecr_access.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
 }
 
-# Policy for RDS IAM Authentication
-resource "aws_iam_role_policy" "rds_iam_auth" {
-  name = "${var.project_name}-${var.environment}-rds-iam-auth"
-  role = aws_iam_role.ec2.id
+# --- 2. Instance role -------------------------------------------------------
+resource "aws_iam_role" "apprunner_instance" {
+  name = "${var.project_name}-${var.environment}-apprunner-instance"
 
-  policy = jsonencode({
+  assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Action = "sts:AssumeRole"
         Effect = "Allow"
-        Action = [
-          "rds-db:connect"
-        ]
-        Resource = [
-          "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${aws_db_instance.main.resource_id}/*"
-        ]
+        Principal = {
+          Service = "tasks.apprunner.amazonaws.com"
+        }
       }
     ]
   })
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-apprunner-instance"
+  }
 }
 
-# Policy for Secrets Manager Access
-resource "aws_iam_role_policy" "secrets_manager" {
-  name = "${var.project_name}-${var.environment}-secrets-manager"
-  role = aws_iam_role.ec2.id
+# Allow the running service to read the two secrets injected as env vars
+resource "aws_iam_role_policy" "apprunner_secrets" {
+  name = "${var.project_name}-${var.environment}-apprunner-secrets"
+  role = aws_iam_role.apprunner_instance.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -66,63 +69,12 @@ resource "aws_iam_role_policy" "secrets_manager" {
           "secretsmanager:DescribeSecret"
         ]
         Resource = [
-          aws_secretsmanager_secret.db_credentials.arn
+          aws_secretsmanager_secret.database_url.arn,
+          aws_secretsmanager_secret.better_auth_secret.arn
         ]
       }
     ]
   })
-}
-
-# Policy for ECR Access
-resource "aws_iam_role_policy" "ecr_access" {
-  name = "${var.project_name}-${var.environment}-ecr-access"
-  role = aws_iam_role.ec2.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ecr:GetAuthorizationToken",
-          "ecr:BatchCheckLayerAvailability",
-          "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage",
-          "ecr:DescribeRepositories",
-          "ecr:ListImages"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-# Policy for CloudWatch Logs (optional but recommended)
-resource "aws_iam_role_policy" "cloudwatch_logs" {
-  name = "${var.project_name}-${var.environment}-cloudwatch-logs"
-  role = aws_iam_role.ec2.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents",
-          "logs:DescribeLogStreams"
-        ]
-        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/ec2/${var.project_name}-${var.environment}:*"
-      }
-    ]
-  })
-}
-
-# Policy for Systems Manager (for parameter store and session manager)
-resource "aws_iam_role_policy_attachment" "ssm_managed_instance_core" {
-  role       = aws_iam_role.ec2.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # Data source to get current AWS account ID

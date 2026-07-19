@@ -27,8 +27,17 @@ RUN npm ci --omit=dev --ignore-scripts
 
 RUN mkdir -p /app/logs && chown -R node:node /app/logs
 
+# AWS RDS CA bundle so TLS verification (rejectUnauthorized: true) succeeds
+# against RDS. NODE_EXTRA_CA_CERTS adds it to Node's default trust store.
+RUN wget -qO /app/rds-global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+ENV NODE_EXTRA_CA_CERTS=/app/rds-global-bundle.pem
+
 # copy build files and runtime assets
 COPY --from=builder --chown=node:node /app/dist ./dist
+
+# drizzle migration files for opt-in startup migrations (RUN_MIGRATIONS=true)
+COPY --from=builder --chown=node:node /app/src/db/schema/out ./migrations
+ENV MIGRATIONS_FOLDER=/app/migrations
 
 USER node
 EXPOSE 8080
