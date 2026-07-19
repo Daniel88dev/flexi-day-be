@@ -77,5 +77,26 @@ resource "aws_iam_role_policy" "apprunner_secrets" {
   })
 }
 
+# --- Developer database access via IAM authentication ----------------------
+# Lets the named IAM user connect to Postgres as the "${var.db_iam_login}"
+# database role using a short-lived token (aws rds generate-db-auth-token)
+# instead of the master password. The matching Postgres role must exist and
+# have been GRANTed rds_iam.
+resource "aws_iam_user_policy" "developer_rds_connect" {
+  name = "${var.project_name}-${var.environment}-rds-iam-connect"
+  user = var.developer_iam_username
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["rds-db:connect"]
+        Resource = "arn:aws:rds-db:${var.aws_region}:${data.aws_caller_identity.current.account_id}:dbuser:${aws_db_instance.main.resource_id}/${var.db_iam_login}"
+      }
+    ]
+  })
+}
+
 # Data source to get current AWS account ID
 data "aws_caller_identity" "current" {}
