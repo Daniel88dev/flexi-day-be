@@ -15,6 +15,9 @@ import { authExtRouter } from "./routes/authExtRouter.js";
 import { usersRouter } from "./routes/usersRouter.js";
 import { bankHolidayRouter } from "./routes/bankHolidayRouter.js";
 import { notificationRouter } from "./routes/notificationRouter.js";
+import { calendarSyncRouter } from "./routes/calendarSyncRouter.js";
+import { tryCatch } from "./middleware/tryCatch.js";
+import { handleGetCalendarFeed } from "./controllers/calendarSync/handleGetCalendarFeed.js";
 
 export const createServer = () => {
   const app = express();
@@ -38,6 +41,12 @@ export const createServer = () => {
   app.use("/api/users", authSession, usersRouter());
   app.use("/api/bank-holidays", authSession, bankHolidayRouter());
   app.use("/api/notifications", authSession, notificationRouter());
+  app.use("/api/calendar-sync", authSession, calendarSyncRouter());
+
+  // Public, token-authenticated iCalendar feed. Deliberately NOT behind
+  // `authSession`: calendar clients subscribe with just the secret token in
+  // the URL and cannot send session cookies.
+  app.get("/calendars/:token.ics", tryCatch(handleGetCalendarFeed));
 
   app.get("/health", (_, res) => {
     res.setHeader("Cache-Control", "no-store");

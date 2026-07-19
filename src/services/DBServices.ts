@@ -5,6 +5,7 @@ import * as userYearQuotasServices from "./userYearQuotas/userYearQuotasServices
 import * as changesServices from "./changes/changesServices.js";
 import * as bankHolidayServices from "./bankHoliday/bankHolidayServices.js";
 import * as notificationServices from "./notification/notificationServices.js";
+import * as calendarSyncServices from "./calendarSync/calendarSyncServices.js";
 
 export type DBServices = Readonly<{
   vacation: {
@@ -69,6 +70,18 @@ export type DBServices = Readonly<{
     markNotificationRead: typeof notificationServices.markNotificationRead;
     getNotificationForUser: typeof notificationServices.getNotificationForUser;
     createNotification: typeof notificationServices.createNotification;
+  };
+  calendarSync: {
+    generateFeedToken: typeof calendarSyncServices.generateFeedToken;
+    createCalendarSync: typeof calendarSyncServices.createCalendarSync;
+    getCalendarSyncForUser: typeof calendarSyncServices.getCalendarSyncForUser;
+    getCalendarSyncById: typeof calendarSyncServices.getCalendarSyncById;
+    getCalendarSyncByToken: typeof calendarSyncServices.getCalendarSyncByToken;
+    updateCalendarSync: typeof calendarSyncServices.updateCalendarSync;
+    softDeleteCalendarSync: typeof calendarSyncServices.softDeleteCalendarSync;
+    regenerateToken: typeof calendarSyncServices.regenerateToken;
+    touchLastFetched: typeof calendarSyncServices.touchLastFetched;
+    getFeedRecords: typeof calendarSyncServices.getFeedRecords;
   };
 }>;
 
@@ -139,6 +152,18 @@ export const createDBServices = (): DBServices => {
       markNotificationRead: notificationServices.markNotificationRead,
       getNotificationForUser: notificationServices.getNotificationForUser,
       createNotification: notificationServices.createNotification,
+    },
+    calendarSync: {
+      generateFeedToken: calendarSyncServices.generateFeedToken,
+      createCalendarSync: calendarSyncServices.createCalendarSync,
+      getCalendarSyncForUser: calendarSyncServices.getCalendarSyncForUser,
+      getCalendarSyncById: calendarSyncServices.getCalendarSyncById,
+      getCalendarSyncByToken: calendarSyncServices.getCalendarSyncByToken,
+      updateCalendarSync: calendarSyncServices.updateCalendarSync,
+      softDeleteCalendarSync: calendarSyncServices.softDeleteCalendarSync,
+      regenerateToken: calendarSyncServices.regenerateToken,
+      touchLastFetched: calendarSyncServices.touchLastFetched,
+      getFeedRecords: calendarSyncServices.getFeedRecords,
     },
   };
 };
