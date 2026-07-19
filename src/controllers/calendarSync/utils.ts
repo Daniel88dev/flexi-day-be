@@ -4,7 +4,8 @@ import type {
   CalendarSyncFull,
   ValidatedCreateCalendarSync,
 } from "../../services/calendarSync/types.js";
-import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
+import { config } from "../../config.js";
+import AppError from "../../utils/appError.js";
 
 /** Human-readable labels for each leave type, used in feed event summaries. */
 export const VACATION_TYPE_LABELS: Record<vacationType, string> = {
@@ -20,12 +21,21 @@ export const VACATION_TYPE_LABELS: Record<vacationType, string> = {
 };
 
 /**
- * Public base URL used to build feed links. Prefers `FEED_BASE_URL`, otherwise
- * derives it from the incoming request (works behind the configured proxy).
+ * Public base URL used to build feed links. Prefers `FEED_BASE_URL`. In
+ * production a configured value is mandatory — falling back to the request's
+ * `Host` header there would let a spoofed header produce an attacker-controlled
+ * feed URL. Outside production the request-derived host is used for convenience.
  */
 export const feedBaseUrl = (req: Request): string => {
   const configured = process.env.FEED_BASE_URL;
   if (configured) return configured.replace(/\/+$/, "");
+  if (config.api.env === "production") {
+    throw new AppError({
+      code: 500,
+      message: "FEED_BASE_URL must be configured in production",
+      logging: true,
+    });
+  }
   return `${req.protocol}://${req.get("host")}`;
 };
 
@@ -70,14 +80,15 @@ export const serializeConfig = (
 
 /**
  * Validates that every requested team belongs to the user. Returns the list of
- * team ids to persist: for `ME` scope teams are ignored (empty), for `TEAM`
- * scope any team the user is not a member of is rejected by returning null.
+ * team ids to persist. Membership is validated regardless of scope so that
+ * teams selected for a `TEAM` feed are preserved (and restorable on edit) even
+ * while the feed is temporarily switched to `ME` scope. Any team the user is
+ * not a member of is rejected by returning null.
  */
 export const resolveTeamIds = (
   data: ValidatedCreateCalendarSync,
   userGroupIds: Set<string>
 ): string[] | null => {
-  if (data.scope === calendarSyncScope.Me) return [];
   for (const id of data.teamIds) {
     if (!userGroupIds.has(id)) return null;
   }

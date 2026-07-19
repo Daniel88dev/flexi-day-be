@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { db, type DbTransaction } from "../../db/db.js";
 import {
   calendarSync,
@@ -6,7 +7,7 @@ import {
 } from "../../db/schema/calendar-sync-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
 import type {
@@ -21,12 +22,8 @@ import type {
  * Generates a new secret feed token. Format mirrors the front-end mock:
  * `flx_live_` followed by 40 hex characters.
  */
-export const generateFeedToken = (): string => {
-  const hex = "0123456789abcdef";
-  let s = "";
-  for (let i = 0; i < 40; i++) s += hex[Math.floor(Math.random() * 16)];
-  return `flx_live_${s}`;
-};
+export const generateFeedToken = (): string =>
+  `flx_live_${randomBytes(20).toString("hex")}`;
 
 /** Assembles base rows + their teams + types into full domain objects. */
 const assembleConfigs = async (
@@ -287,11 +284,19 @@ export const getFeedRecords = async (
   const includedTypes = config.types.map((t) => t.vacationType);
   if (includedTypes.length === 0) return [];
 
+  // Bound the feed to a rolling window so both the query cost and the generated
+  // .ics size stay constant as approved history accumulates. All future dates
+  // plus the last 12 months of history are exposed.
+  const windowStart = new Date();
+  windowStart.setUTCMonth(windowStart.getUTCMonth() - 12);
+  const windowStartDay = windowStart.toISOString().slice(0, 10);
+
   const filters = [
     isNull(vacation.deletedAt),
     isNull(vacation.rejectedAt),
     isNotNull(vacation.approvedAt),
     inArray(vacation.vacationType, includedTypes),
+    gte(vacation.requestedDay, windowStartDay),
   ];
 
   if (config.scope === calendarSyncScope.Me) {

@@ -32,16 +32,39 @@ const escapeText = (value: string): string =>
     .replace(/,/g, "\\,")
     .replace(/\r?\n/g, "\\n");
 
-/** Folds a content line to <=75 octets with CRLF + space continuation. */
+const encoder = new TextEncoder();
+
+/**
+ * Splits off a prefix of `s` whose UTF-8 encoding is at most `limit` octets,
+ * never breaking a Unicode code point (so surrogate pairs stay intact).
+ * Returns `[chunk, rest]`.
+ */
+const takeOctets = (s: string, limit: number): [string, string] => {
+  let end = 0;
+  let bytes = 0;
+  for (const char of s) {
+    const charBytes = encoder.encode(char).length;
+    if (bytes + charBytes > limit) break;
+    bytes += charBytes;
+    end += char.length;
+  }
+  return [s.slice(0, end), s.slice(end)];
+};
+
+/**
+ * Folds a content line to <=75 octets with CRLF + space continuation. Folding
+ * is measured in UTF-8 octets per RFC 5545 §3.1 (not JS string length), so
+ * multi-byte characters are counted correctly and never split mid code point.
+ */
 const foldLine = (line: string): string => {
-  if (line.length <= 75) return line;
+  if (encoder.encode(line).length <= 75) return line;
   const parts: string[] = [];
-  let remaining = line;
-  parts.push(remaining.slice(0, 75));
-  remaining = remaining.slice(75);
-  while (remaining.length > 74) {
-    parts.push(" " + remaining.slice(0, 74));
-    remaining = remaining.slice(74);
+  let [chunk, remaining] = takeOctets(line, 75);
+  parts.push(chunk);
+  // Continuation lines start with a space, leaving 74 octets of content.
+  while (encoder.encode(remaining).length > 74) {
+    [chunk, remaining] = takeOctets(remaining, 74);
+    parts.push(" " + chunk);
   }
   if (remaining.length > 0) parts.push(" " + remaining);
   return parts.join("\r\n");

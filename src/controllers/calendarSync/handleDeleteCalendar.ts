@@ -12,7 +12,11 @@ const validateUUID = z.uuid();
 export const handleDeleteCalendar = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const id = validateUUID.parse(req.params.id);
+  const parsedId = validateUUID.safeParse(req.params.id);
+  if (!parsedId.success) {
+    throw new AppError({ code: 400, message: "Invalid calendar id" });
+  }
+  const id = parsedId.data;
 
   const deleted = await services.calendarSync.softDeleteCalendarSync(
     id,
@@ -23,7 +27,7 @@ export const handleDeleteCalendar = async (req: Request, res: Response) => {
     throw new AppError({
       code: 404,
       message: "Calendar not found",
-      context: { auth, id },
+      context: { userId: auth.userId, id },
     });
   }
 

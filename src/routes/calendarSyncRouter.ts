@@ -34,6 +34,48 @@ export const calendarSyncRouter = (): Router => {
    *     summary: Create a calendar-sync feed
    *     security:
    *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - name
+   *               - types
+   *             properties:
+   *               name:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 120
+   *               scope:
+   *                 type: string
+   *                 enum: [ME, TEAM]
+   *                 default: ME
+   *               distinguishMine:
+   *                 type: boolean
+   *                 default: false
+   *               teamIds:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: uuid
+   *               types:
+   *                 type: array
+   *                 minItems: 1
+   *                 items:
+   *                   type: object
+   *                   required:
+   *                     - type
+   *                     - color
+   *                   properties:
+   *                     type:
+   *                       type: string
+   *                     color:
+   *                       type: string
+   *                       description: Swatch palette key (e.g. "violet")
+   *                     mineColor:
+   *                       type: string
    *     responses:
    *       '201':
    *         description: The created config, including its full feed URL
@@ -82,6 +124,48 @@ export const calendarSyncRouter = (): Router => {
    *         schema:
    *           type: string
    *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - name
+   *               - types
+   *             properties:
+   *               name:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 120
+   *               scope:
+   *                 type: string
+   *                 enum: [ME, TEAM]
+   *                 default: ME
+   *               distinguishMine:
+   *                 type: boolean
+   *                 default: false
+   *               teamIds:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: uuid
+   *               types:
+   *                 type: array
+   *                 minItems: 1
+   *                 items:
+   *                   type: object
+   *                   required:
+   *                     - type
+   *                     - color
+   *                   properties:
+   *                     type:
+   *                       type: string
+   *                     color:
+   *                       type: string
+   *                       description: Swatch palette key (e.g. "violet")
+   *                     mineColor:
+   *                       type: string
    *     responses:
    *       '200':
    *         description: The updated config

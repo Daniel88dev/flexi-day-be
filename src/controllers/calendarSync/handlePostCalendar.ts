@@ -22,7 +22,7 @@ export const handlePostCalendar = async (req: Request, res: Response) => {
     throw new AppError({
       code: 403,
       message: "You can only include teams you belong to",
-      context: { auth, teamIds: data.teamIds },
+      context: { userId: auth.userId, teamIds: data.teamIds },
     });
   }
 
