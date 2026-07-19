@@ -4,19 +4,10 @@
 # e.g. "main"). Every time CI pushes a new image to that tag, App Runner
 # automatically rolls out a new deployment (auto_deployments_enabled).
 # Manual redeploy: aws apprunner start-deployment --service-arn <arn>
-
-# VPC connector: gives the service network interfaces inside the private
-# subnets so it can reach RDS. NOTE: with egress_type = "VPC", ALL outbound
-# traffic from the app is routed into the VPC — which has no internet path.
-resource "aws_apprunner_vpc_connector" "main" {
-  vpc_connector_name = "${var.project_name}-${var.environment}-vpc-connector"
-  subnets            = aws_subnet.private[*].id
-  security_groups    = [aws_security_group.app.id]
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-vpc-connector"
-  }
-}
+#
+# Networking: default public egress. The app reaches RDS over its public
+# endpoint (TLS-verified) and has normal outbound internet access (Have I
+# Been Pwned checks, future email provider). No VPC connector needed.
 
 # Cap scaling so a traffic spike (or attack) can't run up the bill.
 resource "aws_apprunner_auto_scaling_configuration_version" "main" {
@@ -52,7 +43,6 @@ resource "aws_apprunner_service" "main" {
           PORT            = tostring(var.app_port)
           BETTER_AUTH_URL = "https://${var.api_domain_name}"
           TRUSTED_ORIGINS = join(",", var.trusted_origins)
-          RUN_MIGRATIONS  = "true"
         }
 
         # Resolved at instance start via the instance role; each env var
@@ -80,20 +70,10 @@ resource "aws_apprunner_service" "main" {
     unhealthy_threshold = 5
   }
 
-  network_configuration {
-    ingress_configuration {
-      is_publicly_accessible = true
-    }
-    egress_configuration {
-      egress_type       = "VPC"
-      vpc_connector_arn = aws_apprunner_vpc_connector.main.arn
-    }
-  }
-
   auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.main.arn
 
   # Secret values must exist before the first deployment resolves them, and
-  # the DB must accept connections for startup migrations to succeed.
+  # the schema must be migrated manually before the app can serve traffic.
   depends_on = [
     aws_secretsmanager_secret_version.database_url,
     aws_secretsmanager_secret_version.better_auth_secret,

@@ -19,11 +19,12 @@ resource "aws_db_instance" "main" {
   password = random_password.db_password.result
   port     = var.db_port
 
-  # Network Configuration: private subnets, no public endpoint. Only the
-  # App Runner VPC connector's security group can reach it.
+  # Network Configuration: public endpoint so App Runner (default egress)
+  # and developer machines (manual migrations) can reach it. Protected by
+  # the security group note in security-groups.tf.
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false
+  publicly_accessible    = true
 
   # High Availability
   multi_az = var.db_multi_az
