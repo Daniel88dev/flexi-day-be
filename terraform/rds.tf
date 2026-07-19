@@ -3,8 +3,10 @@ resource "aws_db_instance" "main" {
   identifier = "${var.project_name}-${var.environment}-db"
 
   # Engine Configuration
+  # Major version only: RDS picks the current minor and
+  # auto_minor_version_upgrade keeps it patched.
   engine                = "postgres"
-  engine_version        = "17.7"
+  engine_version        = "17"
   instance_class        = var.db_instance_class
   allocated_storage     = var.db_allocated_storage
   storage_type          = "gp3"
@@ -17,10 +19,11 @@ resource "aws_db_instance" "main" {
   password = random_password.db_password.result
   port     = var.db_port
 
-  # Network Configuration
+  # Network Configuration: private subnets, no public endpoint. Only the
+  # App Runner VPC connector's security group can reach it.
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = true
+  publicly_accessible    = false
 
   # High Availability
   multi_az = var.db_multi_az
@@ -30,7 +33,7 @@ resource "aws_db_instance" "main" {
   backup_window             = "03:00-04:00"
   maintenance_window        = "mon:04:00-mon:05:00"
   skip_final_snapshot       = var.environment != "production"
-  final_snapshot_identifier = var.environment == "production" ? "${var.project_name}-${var.environment}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
+  final_snapshot_identifier = var.environment == "production" ? "${var.project_name}-${var.environment}-final-snapshot" : null
 
   # Performance Insights
   performance_insights_enabled          = true
@@ -40,9 +43,6 @@ resource "aws_db_instance" "main" {
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
   monitoring_interval             = 60
   monitoring_role_arn             = aws_iam_role.rds_monitoring.arn
-
-  # IAM Database Authentication
-  iam_database_authentication_enabled = true
 
   # Parameter and Option Groups
   parameter_group_name = aws_db_parameter_group.main.name
@@ -67,19 +67,22 @@ resource "aws_db_instance" "main" {
 }
 
 # DB Parameter Group for PostgreSQL
-# Using minimal configuration to avoid issues with static vs dynamic parameters
 resource "aws_db_parameter_group" "main" {
   name   = "${var.project_name}-${var.environment}-pg-params"
   family = "postgres17"
 
   description = "Parameter group for flexi-day-be PostgreSQL database"
 
-  # Only including dynamic parameters that can be changed without restart
-  # You can add more parameters later via AWS Console if needed
-
   parameter {
     name         = "log_min_duration_statement"
     value        = "1000" # Log queries taking more than 1 second
+    apply_method = "immediate"
+  }
+
+  # Reject non-TLS connections; the app connects with SSL verification on.
+  parameter {
+    name         = "rds.force_ssl"
+    value        = "1"
     apply_method = "immediate"
   }
 
@@ -110,13 +113,12 @@ resource "aws_iam_role" "rds_monitoring" {
   }
 }
 
-# Attach AWS managed policy for RDS Enhanced Monitoring
 resource "aws_iam_role_policy_attachment" "rds_monitoring" {
   role       = aws_iam_role.rds_monitoring.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
-# CloudWatch Log Group for PostgreSQL logs
+# CloudWatch Log Groups for PostgreSQL logs
 resource "aws_cloudwatch_log_group" "postgresql" {
   name              = "/aws/rds/instance/${var.project_name}-${var.environment}-db/postgresql"
   retention_in_days = 7

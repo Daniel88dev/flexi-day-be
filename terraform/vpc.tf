@@ -9,30 +9,15 @@ resource "aws_vpc" "main" {
   }
 }
 
-# Internet Gateway
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-igw"
-  }
-}
-
-# Public Subnets (for EC2 and NAT Gateway)
-resource "aws_subnet" "public" {
-  count                   = length(var.availability_zones)
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
-  availability_zone       = var.availability_zones[count.index]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-public-subnet-${count.index + 1}"
-    Type = "Public"
-  }
-}
-
-# Private Subnets (for RDS)
+# Private Subnets (for RDS and the App Runner VPC connector).
+#
+# Deliberately NO internet gateway, NAT gateway, or public subnets:
+# - Inbound HTTPS is terminated by App Runner outside the VPC.
+# - The app reaches RDS through the VPC connector (private traffic only).
+# - Nothing inside this VPC needs the internet. If the app ever needs
+#   outbound internet (e.g. an email provider API), add an IGW + NAT gateway
+#   and a default route here, or a VPC interface endpoint for the specific
+#   AWS service (e.g. SES).
 resource "aws_subnet" "private" {
   count             = length(var.availability_zones)
   vpc_id            = aws_vpc.main.id
@@ -45,65 +30,15 @@ resource "aws_subnet" "private" {
   }
 }
 
-# Elastic IP for NAT Gateway
-resource "aws_eip" "nat" {
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-nat-eip"
-  }
-
-  depends_on = [aws_internet_gateway.main]
-}
-
-# NAT Gateway (for private subnets to access internet for updates)
-resource "aws_nat_gateway" "main" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public[0].id
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-nat-gw"
-  }
-
-  depends_on = [aws_internet_gateway.main]
-}
-
-# Public Route Table
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
-  }
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-public-rt"
-  }
-}
-
-# Private Route Table
+# Private Route Table (local VPC routes only)
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main.id
-  }
 
   tags = {
     Name = "${var.project_name}-${var.environment}-private-rt"
   }
 }
 
-# Associate Public Subnets with Public Route Table
-resource "aws_route_table_association" "public" {
-  count          = length(aws_subnet.public)
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
-}
-
-# Associate Private Subnets with Private Route Table
 resource "aws_route_table_association" "private" {
   count          = length(aws_subnet.private)
   subnet_id      = aws_subnet.private[count.index].id

@@ -1,85 +1,56 @@
-# Random password for RDS master user
+# Random password for RDS master user.
+# The password is URL-encoded when embedded in the connection string, so any
+# special character is safe here.
 resource "random_password" "db_password" {
-  length  = 32
-  special = true
-  # Avoid characters that might cause issues in connection strings
+  length           = 32
+  special          = true
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# Secrets Manager Secret for Database Credentials
-resource "aws_secretsmanager_secret" "db_credentials" {
-  name                    = "${var.project_name}-${var.environment}-db-credentials"
-  description             = "Database credentials for flexi-day-be application"
-  recovery_window_in_days = 7
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-db-credentials"
-  }
-}
-
-# Secrets Manager Secret Version with Database Credentials
-resource "aws_secretsmanager_secret_version" "db_credentials" {
-  secret_id = aws_secretsmanager_secret.db_credentials.id
-
-  secret_string = jsonencode({
-    username             = var.db_username
-    password             = random_password.db_password.result
-    engine               = "postgres"
-    host                 = aws_db_instance.main.address
-    port                 = aws_db_instance.main.port
-    dbname               = var.db_name
-    dbInstanceIdentifier = aws_db_instance.main.id
-    # Connection string for the application
-    connection_string = "postgresql://${var.db_username}:${random_password.db_password.result}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${var.db_name}"
-  })
-}
-
-# Secrets Manager Secret for Application Configuration
-resource "aws_secretsmanager_secret" "app_config" {
-  name                    = "${var.project_name}-${var.environment}-app-config"
-  description             = "Application configuration secrets for flexi-day-be"
-  recovery_window_in_days = 7
-
-  tags = {
-    Name = "${var.project_name}-${var.environment}-app-config"
-  }
-}
-
-# Application Configuration Secret Version
-resource "aws_secretsmanager_secret_version" "app_config" {
-  secret_id = aws_secretsmanager_secret.app_config.id
-
-  secret_string = jsonencode({
-    BETTER_AUTH_SECRET = var.better_auth_secret != "" ? var.better_auth_secret : random_password.better_auth_secret.result
-    BETTER_AUTH_URL    = var.better_auth_url
-    NODE_ENV           = var.environment == "production" ? "production" : "dev"
-  })
-}
-
-# Random password for Better Auth Secret (if not provided)
+# Random Better Auth secret (used unless var.better_auth_secret is set)
 resource "random_password" "better_auth_secret" {
   length  = 64
-  special = true
+  special = false
 }
 
-# IAM Policy for EC2 to access app config secret
-resource "aws_iam_role_policy" "app_config_access" {
-  name = "${var.project_name}-${var.environment}-app-config-access"
-  role = aws_iam_role.ec2.id
+# App Runner injects each secret as ONE env var containing the secret's full
+# string value (it cannot extract a key out of a JSON secret), so each env
+# var gets its own plain-string secret.
+#
+# recovery_window_in_days = 0 deletes secrets immediately on destroy. With
+# the default 7-30 day recovery window, a destroy + re-apply cycle fails
+# because the secret name is still "scheduled for deletion".
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = [
-          aws_secretsmanager_secret.app_config.arn
-        ]
-      }
-    ]
-  })
+resource "aws_secretsmanager_secret" "database_url" {
+  name                    = "${var.project_name}-${var.environment}-database-url"
+  description             = "PostgreSQL connection string for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-database-url"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "database_url" {
+  secret_id     = aws_secretsmanager_secret.database_url.id
+  secret_string = "postgresql://${var.db_username}:${urlencode(random_password.db_password.result)}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${var.db_name}"
+}
+
+resource "aws_secretsmanager_secret" "better_auth_secret" {
+  name                    = "${var.project_name}-${var.environment}-better-auth-secret"
+  description             = "Better Auth signing secret for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-better-auth-secret"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "better_auth_secret" {
+  secret_id = aws_secretsmanager_secret.better_auth_secret.id
+  secret_string = (
+    var.better_auth_secret != ""
+    ? var.better_auth_secret
+    : random_password.better_auth_secret.result
+  )
 }
