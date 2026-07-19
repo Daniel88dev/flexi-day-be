@@ -136,6 +136,19 @@ variable "trusted_origins" {
   default     = ["https://flexi-day.com", "https://www.flexi-day.com"]
 }
 
+# Developer DB access (IAM authentication)
+variable "developer_iam_username" {
+  description = "IAM user allowed to connect to the DB with IAM auth tokens"
+  type        = string
+  default     = "daniel-learning"
+}
+
+variable "db_iam_login" {
+  description = "Postgres role name used for IAM-authenticated developer access"
+  type        = string
+  default     = "daniel"
+}
+
 # Better Auth Configuration
 variable "better_auth_secret" {
   description = "Better Auth secret; leave empty to auto-generate a random one"

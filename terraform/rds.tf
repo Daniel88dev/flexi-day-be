@@ -48,6 +48,10 @@ resource "aws_db_instance" "main" {
   # Parameter and Option Groups
   parameter_group_name = aws_db_parameter_group.main.name
 
+  # IAM Database Authentication (used for developer access with short-lived
+  # tokens; the app itself keeps using password auth)
+  iam_database_authentication_enabled = true
+
   # Enable auto minor version upgrade
   auto_minor_version_upgrade = true
 
