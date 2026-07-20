@@ -77,10 +77,19 @@ resource "aws_iam_role_policy" "apprunner_secrets" {
   })
 }
 
-# Allow the running service to send transactional email via SESv2. SESv2
-# authorizes against the sender identity, the templates and the configuration
-# set. `ses:SendEmail` covers SESv2; `ses:SendTemplatedEmail` covers the
-# classic API if ever used.
+# Allow the running service to send transactional email via SESv2.
+#
+# Resource MUST be "*": templated sends (SESv2 SendEmail with a Template maps
+# to the `ses:SendTemplatedEmail` action) evaluate the IAM resource against the
+# *recipient* identity, not the sender — and in the SES sandbox every send is
+# checked this way. Recipients are arbitrary user emails, so they can't be
+# enumerated in an ARN list; scoping to `identity/flexi-day.com` denied every
+# real signup. Sending is still constrained by SES itself (the From address
+# must be a verified identity, or SES rejects the message), and the
+# `ses:FromAddress` condition below restricts which sender this role may use.
+#
+# `ses:SendEmail` covers SESv2; `ses:SendTemplatedEmail` is what the templated
+# path actually authorizes against.
 resource "aws_iam_role_policy" "apprunner_ses" {
   name = "${var.project_name}-${var.environment}-apprunner-ses"
   role = aws_iam_role.apprunner_instance.id
@@ -94,11 +103,12 @@ resource "aws_iam_role_policy" "apprunner_ses" {
           "ses:SendEmail",
           "ses:SendTemplatedEmail"
         ]
-        Resource = [
-          "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/flexi-day.com",
-          "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:template/flexi-day-*",
-          "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/flexi-day-emails-*"
-        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "ses:FromAddress" = var.email_from
+          }
+        }
       }
     ]
   })

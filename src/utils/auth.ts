@@ -29,12 +29,18 @@ export const auth = betterAuth({
   emailVerification: {
     sendVerificationEmail: async ({ user, url }, _request) => {
       try {
+        const confirmationUrl = new URL(url);
+        confirmationUrl.searchParams.set(
+          "callbackURL",
+          new URL("/email-verified/", config.email.appUrl).toString()
+        );
+
         await emailSender.sendTemplated({
           to: user.email,
           template: "email-confirmation",
           data: {
             name: user.name,
-            confirmationUrl: url,
+            confirmationUrl: confirmationUrl.toString(),
             expiresIn: VERIFICATION_EXPIRES_IN,
           },
         });
