@@ -12,6 +12,10 @@ type EmailConfig = {
   templateStage: "dev" | "prod";
   region: string;
   configurationSet?: string;
+  // Frontend app base URL. better-auth redirects the browser here
+  // (`/email-verified/`) after verifying an email token, so it MUST be within
+  // `auth.trustedOrigins` or better-auth rejects the redirect.
+  appUrl: string;
 };
 
 type Config = {
@@ -92,5 +96,10 @@ export const config: Config = {
     templateStage: parseTemplateStage(),
     region: process.env.AWS_REGION ?? "eu-central-1",
     configurationSet: process.env.SES_CONFIGURATION_SET,
+    appUrl:
+      process.env.APP_URL ??
+      (environment === "production"
+        ? "https://www.flexi-day.com"
+        : "http://localhost:3000"),
   },
 };
