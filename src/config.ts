@@ -7,10 +7,18 @@ type DBConfig = { database: string };
 
 type AuthConfig = { secret: string; url: string; trustedOrigins: string[] };
 
+type EmailConfig = {
+  from: string;
+  templateStage: "dev" | "prod";
+  region: string;
+  configurationSet?: string;
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
   auth?: AuthConfig;
+  email: EmailConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -43,6 +51,18 @@ const parseNodeEnv = (value: string): NodeEnv => {
 
 const environment = parseNodeEnv(envOrThrow("NODE_ENV"));
 
+const parseTemplateStage = (): "dev" | "prod" => {
+  const raw = process.env.EMAIL_TEMPLATE_STAGE?.toLowerCase();
+  if (raw === "dev" || raw === "prod") return raw;
+  if (raw !== undefined) {
+    throw new Error(
+      `Invalid EMAIL_TEMPLATE_STAGE: "${raw}". Expected "dev" or "prod"`
+    );
+  }
+  // Default the SES template stage from the runtime environment.
+  return environment === "production" ? "prod" : "dev";
+};
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -67,4 +87,10 @@ export const config: Config = {
           ],
         }
       : undefined,
+  email: {
+    from: process.env.EMAIL_FROM ?? "no-reply@flexi-day.com",
+    templateStage: parseTemplateStage(),
+    region: process.env.AWS_REGION ?? "eu-central-1",
+    configurationSet: process.env.SES_CONFIGURATION_SET,
+  },
 };

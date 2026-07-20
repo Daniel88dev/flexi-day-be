@@ -124,6 +124,12 @@ variable "api_domain_name" {
   default     = "api.flexi-day.com"
 }
 
+variable "email_from" {
+  description = "Verified SES sender address for transactional email. Must be on the verified flexi-day.com domain."
+  type        = string
+  default     = "no-reply@flexi-day.com"
+}
+
 variable "manage_dns_validation_records" {
   description = "Set to true AFTER the first apply. The cert-validation records can only be created once the custom domain association exists (see dns.tf)."
   type        = bool

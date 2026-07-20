@@ -77,6 +77,33 @@ resource "aws_iam_role_policy" "apprunner_secrets" {
   })
 }
 
+# Allow the running service to send transactional email via SESv2. SESv2
+# authorizes against the sender identity, the templates and the configuration
+# set. `ses:SendEmail` covers SESv2; `ses:SendTemplatedEmail` covers the
+# classic API if ever used.
+resource "aws_iam_role_policy" "apprunner_ses" {
+  name = "${var.project_name}-${var.environment}-apprunner-ses"
+  role = aws_iam_role.apprunner_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:SendEmail",
+          "ses:SendTemplatedEmail"
+        ]
+        Resource = [
+          "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/flexi-day.com",
+          "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:template/flexi-day-*",
+          "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/flexi-day-emails-*"
+        ]
+      }
+    ]
+  })
+}
+
 # --- Developer database access via IAM authentication ----------------------
 # Lets the named IAM user connect to Postgres as the "${var.db_iam_login}"
 # database role using a short-lived token (aws rds generate-db-auth-token)
