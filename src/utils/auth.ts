@@ -4,6 +4,12 @@ import { db } from "../db/db.js";
 import { tempEmailSend } from "./tempEmail.js";
 import { haveIBeenPwned, openAPI } from "better-auth/plugins";
 import { config } from "../config.js";
+import { emailSender } from "../services/email/index.js";
+import { logger } from "../middleware/logger.js";
+
+// better-auth's default verification-token expiry is 3600 s. Keep this string
+// in sync if `emailVerification.expiresIn` is ever configured below.
+const VERIFICATION_EXPIRES_IN = "1 hour";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -21,12 +27,23 @@ export const auth = betterAuth({
     },
   },
   emailVerification: {
-    sendVerificationEmail: async ({ user, url, token }, _request) => {
-      await tempEmailSend({
-        to: user.email,
-        subject: "Verify your email address",
-        text: `Click the link to verify your email: ${url}, token: ${token}`,
-      });
+    sendVerificationEmail: async ({ user, url }, _request) => {
+      try {
+        await emailSender.sendTemplated({
+          to: user.email,
+          template: "email-confirmation",
+          data: {
+            name: user.name,
+            confirmationUrl: url,
+            expiresIn: VERIFICATION_EXPIRES_IN,
+          },
+        });
+      } catch (error) {
+        logger.error("Failed to send verification email", {
+          userId: user.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
     sendOnSignUp: true,
     autoSignInAfterVerification: true,

@@ -43,6 +43,13 @@ resource "aws_apprunner_service" "main" {
           PORT            = tostring(var.app_port)
           BETTER_AUTH_URL = "https://${var.api_domain_name}"
           TRUSTED_ORIGINS = join(",", var.trusted_origins)
+
+          # Transactional email (SESv2). Templates are stage-suffixed and
+          # region-scoped; the instance role grants ses:SendEmail (see iam.tf).
+          AWS_REGION            = var.aws_region
+          EMAIL_FROM            = var.email_from
+          EMAIL_TEMPLATE_STAGE  = var.environment == "production" ? "prod" : "dev"
+          SES_CONFIGURATION_SET = var.environment == "production" ? "flexi-day-emails-production" : "flexi-day-emails-dev"
         }
 
         # Resolved at instance start via the instance role; each env var
