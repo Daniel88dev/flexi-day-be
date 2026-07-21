@@ -10,10 +10,7 @@ const services = createDBServices();
 
 const validateUUID = z.uuid();
 
-export const handlePostVacationReject = async (
-  req: Request,
-  res: Response
-) => {
+export const handlePostVacationReject = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const vacationId = validateUUID.parse(req.params.id);
@@ -22,10 +19,7 @@ export const handlePostVacationReject = async (
   const body: ValidatedRejectVacationType = req.body ?? {};
 
   await db.transaction(async (tx) => {
-    const vacationData = await services.vacation.getVacationById(
-      vacationId,
-      tx
-    );
+    const vacationData = await services.vacation.getVacationById(vacationId, tx);
     if (!vacationData) {
       throw new AppError({
         code: 404,
@@ -34,10 +28,7 @@ export const handlePostVacationReject = async (
       });
     }
 
-    const approvers = await services.group.getApprovalUsers(
-      vacationData.groupId,
-      tx
-    );
+    const approvers = await services.group.getApprovalUsers(vacationData.groupId, tx);
 
     if (!approvers) {
       throw new AppError({
@@ -58,12 +49,7 @@ export const handlePostVacationReject = async (
       });
     }
 
-    await services.vacation.rejectVacation(
-      vacationId,
-      auth.userId,
-      body.reason ?? null,
-      tx
-    );
+    await services.vacation.rejectVacation(vacationId, auth.userId, body.reason ?? null, tx);
   });
 
   return res.status(200).json({ message: "Vacation rejected" });

@@ -15,10 +15,7 @@ export const handleGetCalendar = async (req: Request, res: Response) => {
 
   const id = validateUUID.parse(req.params.id);
 
-  const config = await services.calendarSync.getCalendarSyncById(
-    id,
-    auth.userId
-  );
+  const config = await services.calendarSync.getCalendarSyncById(id, auth.userId);
 
   if (!config) {
     throw new AppError({

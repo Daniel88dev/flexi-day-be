@@ -22,19 +22,13 @@ export const handleGetUserQuota = async (req: Request, res: Response) => {
 
   const groupId = z.uuid().parse(req.params.groupId);
 
-  const { data: parsedParams, error: paramsError } = queryParams.safeParse(
-    req.query
-  );
+  const { data: parsedParams, error: paramsError } = queryParams.safeParse(req.query);
   if (paramsError) {
     return res.status(400).json({ error: paramsError.message });
   }
 
   const result = await db.transaction(async (tx) => {
-    const access = await services.groupUser.getGroupUser(
-      auth.userId,
-      groupId,
-      tx
-    );
+    const access = await services.groupUser.getGroupUser(auth.userId, groupId, tx);
 
     if (!access || !access.viewAccess) {
       throw new AppError({

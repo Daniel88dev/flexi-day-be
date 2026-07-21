@@ -7,9 +7,9 @@ const services = createDBServices();
 export const handleGetGroups = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const groups = (
-    await services.groupUser.getAllGroupsForUser(auth.userId)
-  ).map((group) => group.groupId);
+  const groups = (await services.groupUser.getAllGroupsForUser(auth.userId)).map(
+    (group) => group.groupId
+  );
 
   const result = await services.group.getAllGroups(groups);
 

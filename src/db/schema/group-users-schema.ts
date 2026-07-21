@@ -1,11 +1,4 @@
-import {
-  boolean,
-  index,
-  pgTable,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { groups } from "./group-schema.js";
 import { user } from "./auth-schema.js";
 import { sql } from "drizzle-orm";

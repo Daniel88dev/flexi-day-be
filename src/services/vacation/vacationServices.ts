@@ -16,17 +16,10 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import type {
-  VacationInsertType,
-  VacationListItem,
-  VacationType,
-} from "./types.js";
+import type { VacationInsertType, VacationListItem, VacationType } from "./types.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
-import {
-  buildUserSummary,
-  type UserSummary,
-} from "../../utils/userPresentation.js";
+import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
 
 type VacationRowWithUser = VacationType & {
   userName: string;
@@ -77,8 +70,7 @@ export const getVacationsForGroup = async (
     gte(vacation.requestedDay, startDate),
     lt(vacation.requestedDay, endDate),
   ] as const;
-  const where =
-    userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
+  const where = userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
 
   const rows = await db
     .select(baseVacationSelection)
@@ -157,9 +149,7 @@ export const postVacationBulk = async (
 
   if (inserted.length !== records.length) {
     const insertedDays = new Set(inserted.map((r) => r.requestedDay));
-    const conflictingDays = records
-      .map((r) => r.requestedDay)
-      .filter((d) => !insertedDays.has(d));
+    const conflictingDays = records.map((r) => r.requestedDay).filter((d) => !insertedDays.has(d));
     throw new AppError({
       code: 409,
       message: "One or more days in the requested range are already booked",
@@ -367,10 +357,7 @@ export const getPendingApprovalsForApprover = async (
  * Counts the distinct users with an approved vacation overlapping `today` in
  * any of the supplied group ids.
  */
-export const countUsersOutOnDay = async (
-  groupIds: string[],
-  isoDate: string
-): Promise<number> => {
+export const countUsersOutOnDay = async (groupIds: string[], isoDate: string): Promise<number> => {
   if (groupIds.length === 0) return 0;
   const [row] = await db
     .select({ value: countDistinct(vacation.userId) })

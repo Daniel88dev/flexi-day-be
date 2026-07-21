@@ -7,10 +7,7 @@ import type { ValidatedBulkRejectVacationType } from "../../services/vacation/ty
 
 const services = createDBServices();
 
-export const handleBulkRejectVacation = async (
-  req: Request,
-  res: Response
-) => {
+export const handleBulkRejectVacation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -30,16 +27,10 @@ export const handleBulkRejectVacation = async (
 
     const distinctGroupIds = Array.from(new Set(rows.map((r) => r.groupId)));
     const allowedGroupIds = new Set(
-      await services.group.getGroupsWhereUserCanApprove(
-        distinctGroupIds,
-        auth.userId,
-        tx
-      )
+      await services.group.getGroupsWhereUserCanApprove(distinctGroupIds, auth.userId, tx)
     );
 
-    const unauthorizedGroups = distinctGroupIds.filter(
-      (id) => !allowedGroupIds.has(id)
-    );
+    const unauthorizedGroups = distinctGroupIds.filter((id) => !allowedGroupIds.has(id));
     if (unauthorizedGroups.length > 0) {
       throw new AppError({
         code: 403,
@@ -48,12 +39,7 @@ export const handleBulkRejectVacation = async (
       });
     }
 
-    return services.vacation.rejectVacationsBulk(
-      uniqueIds,
-      auth.userId,
-      data.reason ?? null,
-      tx
-    );
+    return services.vacation.rejectVacationsBulk(uniqueIds, auth.userId, data.reason ?? null, tx);
   });
 
   return res.status(200).json({

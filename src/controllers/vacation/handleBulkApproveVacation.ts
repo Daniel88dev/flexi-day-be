@@ -13,10 +13,7 @@ const services = createDBServices();
  * sends the full `vacationIds` array so a partial failure cannot leave half
  * the range approved.
  */
-export const handleBulkApproveVacation = async (
-  req: Request,
-  res: Response
-) => {
+export const handleBulkApproveVacation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -36,16 +33,10 @@ export const handleBulkApproveVacation = async (
 
     const distinctGroupIds = Array.from(new Set(rows.map((r) => r.groupId)));
     const allowedGroupIds = new Set(
-      await services.group.getGroupsWhereUserCanApprove(
-        distinctGroupIds,
-        auth.userId,
-        tx
-      )
+      await services.group.getGroupsWhereUserCanApprove(distinctGroupIds, auth.userId, tx)
     );
 
-    const unauthorizedGroups = distinctGroupIds.filter(
-      (id) => !allowedGroupIds.has(id)
-    );
+    const unauthorizedGroups = distinctGroupIds.filter((id) => !allowedGroupIds.has(id));
     if (unauthorizedGroups.length > 0) {
       throw new AppError({
         code: 403,

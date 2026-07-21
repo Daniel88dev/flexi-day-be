@@ -24,16 +24,9 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
   }
 
   const result = await db.transaction(async (tx) => {
-    const validateLink = await services.inviteLinks.getInviteLinkByCode(
-      validationCode,
-      tx
-    );
+    const validateLink = await services.inviteLinks.getInviteLinkByCode(validationCode, tx);
 
-    if (
-      !validateLink ||
-      Boolean(validateLink.usedAt) ||
-      validateLink.expiresAt <= new Date()
-    ) {
+    if (!validateLink || Boolean(validateLink.usedAt) || validateLink.expiresAt <= new Date()) {
       throw new AppError({
         message: "Invalid or expired validation code",
         logging: true,
@@ -72,10 +65,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
-    const updateInviteLink = await services.inviteLinks.useInviteLink(
-      validationCode,
-      tx
-    );
+    const updateInviteLink = await services.inviteLinks.useInviteLink(validationCode, tx);
 
     if (!updateInviteLink) {
       throw new AppError({

@@ -9,19 +9,13 @@ const services = createDBServices();
 
 const validateUUID = z.uuid();
 
-export const handlePostVacationApproval = async (
-  req: Request,
-  res: Response
-) => {
+export const handlePostVacationApproval = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const vacationId = validateUUID.parse(req.params.id);
 
   await db.transaction(async (tx) => {
-    const vacationData = await services.vacation.getVacationById(
-      vacationId,
-      tx
-    );
+    const vacationData = await services.vacation.getVacationById(vacationId, tx);
     if (!vacationData) {
       throw new AppError({
         code: 404,
@@ -30,10 +24,7 @@ export const handlePostVacationApproval = async (
       });
     }
 
-    const getApprovers = await services.group.getApprovalUsers(
-      vacationData.groupId,
-      tx
-    );
+    const getApprovers = await services.group.getApprovalUsers(vacationData.groupId, tx);
 
     if (!getApprovers) {
       throw new AppError({

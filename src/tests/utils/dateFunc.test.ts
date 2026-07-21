@@ -4,10 +4,7 @@
  * Focus: formatDateToISOString and formatStartAndEndDate behaviors introduced/changed in PR diff.
  */
 
-import {
-  formatDateToISOString,
-  formatStartAndEndDate,
-} from "../../utils/dateFunc";
+import { formatDateToISOString, formatStartAndEndDate } from "../../utils/dateFunc";
 
 describe("formatDateToISOString", () => {
   test("formats a UTC date to YYYY-MM-DD (e.g., 2024-01-01)", () => {

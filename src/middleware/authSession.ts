@@ -29,19 +29,13 @@ export type AuthSession = {
  * @param {Response} res - The response object, unused in this middleware but passed as part of the signature.
  * @param {NextFunction} next - Function used to pass control to the next middleware or error handler.
  */
-export const authSession = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const authSession = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
     });
     if (!session) {
-      return next(
-        new AppError({ message: "Unauthorized", code: 401, logging: true })
-      );
+      return next(new AppError({ message: "Unauthorized", code: 401, logging: true }));
     }
     req.auth = {
       sessionId: session.session.id,

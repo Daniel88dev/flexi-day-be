@@ -6,21 +6,16 @@ import { collapsePendingApprovals } from "../../services/vacation/collapsePendin
 
 const services = createDBServices();
 
-export const handleGetMyDashboardSummary = async (
-  req: Request,
-  res: Response
-) => {
+export const handleGetMyDashboardSummary = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const visibleGroupIds = (
-    await services.groupUser.getAllGroupsForUser(auth.userId)
-  ).map((row) => row.groupId);
+  const visibleGroupIds = (await services.groupUser.getAllGroupsForUser(auth.userId)).map(
+    (row) => row.groupId
+  );
 
   const today = new Date();
   const todayIso = formatDateToISOString(
-    new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-    )
+    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
   );
 
   // 14-day window starting today: today + the next 13 days. The underlying
@@ -34,24 +29,16 @@ export const handleGetMyDashboardSummary = async (
 
   // Same collapse semantics as `GET /api/users/me/approvals` so the stat card
   // matches what the approver actually sees in the widget.
-  const [
-    pendingApprovalRows,
-    outTodayCount,
-    upcomingNext14DaysCount,
-    teamSize,
-  ] = await Promise.all([
-    services.vacation.getPendingApprovalsForApprover(auth.userId),
-    services.vacation.countUsersOutOnDay(visibleGroupIds, todayIso),
-    services.vacation.countApprovedVacationsInRange(
-      visibleGroupIds,
-      todayIso,
-      upcomingEndIso
-    ),
-    services.groupUser.countDistinctUsersInGroups(visibleGroupIds),
-  ]);
+  const [pendingApprovalRows, outTodayCount, upcomingNext14DaysCount, teamSize] = await Promise.all(
+    [
+      services.vacation.getPendingApprovalsForApprover(auth.userId),
+      services.vacation.countUsersOutOnDay(visibleGroupIds, todayIso),
+      services.vacation.countApprovedVacationsInRange(visibleGroupIds, todayIso, upcomingEndIso),
+      services.groupUser.countDistinctUsersInGroups(visibleGroupIds),
+    ]
+  );
 
-  const pendingApprovalsCount =
-    collapsePendingApprovals(pendingApprovalRows).length;
+  const pendingApprovalsCount = collapsePendingApprovals(pendingApprovalRows).length;
 
   const workingTodayCount = Math.max(teamSize - outTodayCount, 0);
 

@@ -23,14 +23,8 @@ export const getChangesForUser = async (
     gte(changesSchema.createdAt, startDate),
     lt(changesSchema.createdAt, endDate),
   ] as const;
-  const where = userId
-    ? and(...base, eq(changesSchema.userId, userId))
-    : and(...base);
-  return db
-    .select()
-    .from(changesSchema)
-    .where(where)
-    .orderBy(asc(changesSchema.createdAt));
+  const where = userId ? and(...base, eq(changesSchema.userId, userId)) : and(...base);
+  return db.select().from(changesSchema).where(where).orderBy(asc(changesSchema.createdAt));
 };
 
 /**

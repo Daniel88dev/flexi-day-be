@@ -10,9 +10,7 @@ const services = createDBServices();
 export const handleGetGroupUsers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const { data: groupId, error: parseError } = z
-    .uuid()
-    .safeParse(req.params.groupId);
+  const { data: groupId, error: parseError } = z.uuid().safeParse(req.params.groupId);
 
   if (parseError) {
     throw new AppError({

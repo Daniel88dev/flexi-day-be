@@ -26,11 +26,7 @@ export type IcsCalendar = {
 
 /** Escapes a value per RFC 5545 §3.3.11 (TEXT). */
 const escapeText = (value: string): string =>
-  value
-    .replace(/\\/g, "\\\\")
-    .replace(/;/g, "\\;")
-    .replace(/,/g, "\\,")
-    .replace(/\r?\n/g, "\\n");
+  value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 
 const encoder = new TextEncoder();
 
@@ -82,7 +78,10 @@ const nextDayValue = (isoDate: string): string => {
 
 /** UTC timestamp in iCalendar form, e.g. `20260711T120000Z`. */
 const toTimestamp = (date: Date): string =>
-  date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  date
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}/, "");
 
 /**
  * Renders an iCalendar document. Events are emitted as all-day (VALUE=DATE)

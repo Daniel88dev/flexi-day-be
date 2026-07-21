@@ -27,9 +27,7 @@ import { logger } from "./logger.js";
  * @template T - The type of the data expected in the request body.
  */
 export const bodyValidationMiddleware =
-  <T>(
-    schema: z.ZodType<T>
-  ): ((req: Request, res: Response, next: NextFunction) => void) =>
+  <T>(schema: z.ZodType<T>): ((req: Request, res: Response, next: NextFunction) => void) =>
   (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
     if (result.success) {
@@ -37,15 +35,11 @@ export const bodyValidationMiddleware =
       return next();
     }
     const errorMessages = result.error.issues.map((issue) => ({
-      message: `${issue.path.length ? issue.path.join(".") : "(root)"}: ${
-        issue.message
-      }`,
+      message: `${issue.path.length ? issue.path.join(".") : "(root)"}: ${issue.message}`,
     }));
     logger.warn("bodyValidationMiddleware Error", {
       req: req.path,
       errors: errorMessages,
     });
-    return res
-      .status(422)
-      .json({ error: "Invalid data", details: errorMessages });
+    return res.status(422).json({ error: "Invalid data", details: errorMessages });
   };

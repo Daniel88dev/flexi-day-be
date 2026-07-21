@@ -1,10 +1,7 @@
 import type { vacationType } from "../../db/schema/vacation-schema.js";
 import type { PendingApprovalRow } from "./vacationServices.js";
 import { countBusinessDaysInclusive } from "../../utils/dateFunc.js";
-import {
-  buildUserSummary,
-  type UserSummary,
-} from "../../utils/userPresentation.js";
+import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
 
 export type PendingApprovalEntry = {
   vacationIds: string[];
@@ -38,9 +35,7 @@ const addOneDay = (iso: string): string => {
  * contiguous days within the same (user, group, type) appear adjacent.
  * `getPendingApprovalsForApprover` returns rows in exactly this order.
  */
-export const collapsePendingApprovals = (
-  rows: PendingApprovalRow[]
-): PendingApprovalEntry[] => {
+export const collapsePendingApprovals = (rows: PendingApprovalRow[]): PendingApprovalEntry[] => {
   const result: PendingApprovalEntry[] = [];
 
   for (const row of rows) {
@@ -70,10 +65,7 @@ export const collapsePendingApprovals = (
       vacationType: row.vacationType,
       from: row.requestedDay,
       to: row.requestedDay,
-      businessDays: countBusinessDaysInclusive(
-        row.requestedDay,
-        row.requestedDay
-      ),
+      businessDays: countBusinessDaysInclusive(row.requestedDay, row.requestedDay),
       note: row.note,
       submittedAt: row.submittedAt.toISOString(),
     });

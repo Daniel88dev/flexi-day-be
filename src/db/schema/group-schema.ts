@@ -8,9 +8,7 @@ export const groups = pgTable(
     id: text("id").primaryKey(),
     groupName: text("group_name").notNull(),
     defaultVacationDays: integer("default_vacation_days").notNull().default(20),
-    defaultHomeOfficeDays: integer("default_home_office_days")
-      .notNull()
-      .default(0),
+    defaultHomeOfficeDays: integer("default_home_office_days").notNull().default(0),
     managerUserId: text("manager_user_id")
       .notNull()
       .references(() => user.id),
@@ -24,8 +22,6 @@ export const groups = pgTable(
       .notNull(),
   },
   (table) => [
-    index("idx_groups_deleted_at_active")
-      .on(table.deletedAt)
-      .where(isNull(table.deletedAt)),
+    index("idx_groups_deleted_at_active").on(table.deletedAt).where(isNull(table.deletedAt)),
   ]
 );

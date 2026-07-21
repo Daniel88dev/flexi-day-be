@@ -15,10 +15,7 @@ export const handleDeleteVacation = async (req: Request, res: Response) => {
   const vacationId = validateUUID.parse(req.params.id);
 
   await db.transaction(async (tx) => {
-    const vacationData = await services.vacation.getVacationById(
-      vacationId,
-      tx
-    );
+    const vacationData = await services.vacation.getVacationById(vacationId, tx);
 
     if (!vacationData) {
       throw new AppError({

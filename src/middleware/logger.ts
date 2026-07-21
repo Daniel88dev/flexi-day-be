@@ -31,8 +31,7 @@ try {
   );
 }
 
-const appVersion =
-  process.env.APP_VERSION ?? process.env.npm_package_version ?? "unknown";
+const appVersion = process.env.APP_VERSION ?? process.env.npm_package_version ?? "unknown";
 
 /**
  * Logger instance configured for the application.

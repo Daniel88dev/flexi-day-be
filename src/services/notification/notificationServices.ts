@@ -1,10 +1,7 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { notifications } from "../../db/schema/notification-schema.js";
 import { and, desc, eq, isNull } from "drizzle-orm";
-import type {
-  NotificationInsertType,
-  NotificationRecord,
-} from "./types.js";
+import type { NotificationInsertType, NotificationRecord } from "./types.js";
 
 /**
  * Lists notifications for a user, optionally limiting to unread ones, ordered
@@ -18,11 +15,7 @@ export const listNotificationsForUser = async (
     ? and(eq(notifications.userId, userId), isNull(notifications.readAt))
     : eq(notifications.userId, userId);
 
-  return db
-    .select()
-    .from(notifications)
-    .where(where)
-    .orderBy(desc(notifications.createdAt));
+  return db.select().from(notifications).where(where).orderBy(desc(notifications.createdAt));
 };
 
 /**
@@ -65,12 +58,7 @@ export const getNotificationForUser = async (
   const [row] = await (tx ?? db)
     .select()
     .from(notifications)
-    .where(
-      and(
-        eq(notifications.id, notificationId),
-        eq(notifications.userId, userId)
-      )
-    );
+    .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)));
   return row;
 };
 
@@ -82,9 +70,6 @@ export const createNotification = async (
   record: NotificationInsertType,
   tx?: DbTransaction
 ): Promise<NotificationRecord | undefined> => {
-  const [row] = await (tx ?? db)
-    .insert(notifications)
-    .values(record)
-    .returning();
+  const [row] = await (tx ?? db).insert(notifications).values(record).returning();
   return row;
 };

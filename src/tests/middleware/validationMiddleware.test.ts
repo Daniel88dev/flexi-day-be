@@ -32,7 +32,7 @@ const createMockRes = () => {
   return res;
 };
 
-const createReq = (body: any, path = "/test") => ({ body, path } as any);
+const createReq = (body: any, path = "/test") => ({ body, path }) as any;
 
 beforeEach(() => {
   if (globalThis.jest?.clearAllMocks) globalThis.jest.clearAllMocks();

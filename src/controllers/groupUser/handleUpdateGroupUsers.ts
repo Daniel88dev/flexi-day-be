@@ -14,10 +14,7 @@ export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPutGroupUserUpdateType = req.body;
 
-  const access = await services.groupUser.getGroupUser(
-    auth.userId,
-    data.groupId
-  );
+  const access = await services.groupUser.getGroupUser(auth.userId, data.groupId);
 
   if (!access || !access.adminAccess) {
     throw new AppError({

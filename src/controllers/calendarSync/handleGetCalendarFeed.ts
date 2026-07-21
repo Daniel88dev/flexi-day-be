@@ -9,9 +9,7 @@ const services = createDBServices();
 
 // Feed tokens are `flx_live_` + 40 hex chars. Reject anything else before
 // touching the database so scanners don't generate lookups.
-const validateToken = z
-  .string()
-  .regex(/^flx_live_[a-f0-9]{40}$/, "Invalid feed token");
+const validateToken = z.string().regex(/^flx_live_[a-f0-9]{40}$/, "Invalid feed token");
 
 /**
  * Public, token-authenticated iCalendar feed. Mounted OUTSIDE `authSession`:
@@ -25,9 +23,7 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
     throw new AppError({ code: 404, message: "Calendar feed not found" });
   }
 
-  const config = await services.calendarSync.getCalendarSyncByToken(
-    parsed.data
-  );
+  const config = await services.calendarSync.getCalendarSyncByToken(parsed.data);
 
   if (!config) {
     throw new AppError({
@@ -61,10 +57,7 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
   }
 
   res.setHeader("Content-Type", "text/calendar; charset=utf-8");
-  res.setHeader(
-    "Content-Disposition",
-    `inline; filename="${config.id}.ics"`
-  );
+  res.setHeader("Content-Disposition", `inline; filename="${config.id}.ics"`);
   res.setHeader("Cache-Control", "private, max-age=300");
   return res.status(200).send(body);
 };

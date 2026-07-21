@@ -24,13 +24,7 @@ export type VacationType = {
 
 export type VacationInsertType = Pick<
   VacationType,
-  | "id"
-  | "userId"
-  | "groupId"
-  | "requestedDay"
-  | "startTime"
-  | "endTime"
-  | "vacationType"
+  "id" | "userId" | "groupId" | "requestedDay" | "startTime" | "endTime" | "vacationType"
 > & {
   note?: string | null;
 };
@@ -39,9 +33,7 @@ export type VacationListItem = VacationType & {
   user: UserSummary;
 };
 
-const vacationKindEnum = z.enum(
-  Object.values(vacationType) as [vacationType, ...vacationType[]]
-);
+const vacationKindEnum = z.enum(Object.values(vacationType) as [vacationType, ...vacationType[]]);
 
 export const validatePostVacation = z.object({
   groupId: z.uuid(),
@@ -59,9 +51,7 @@ export const validateRejectVacation = z.object({
   reason: z.string().max(1000).optional(),
 });
 
-export type ValidatedRejectVacationType = z.infer<
-  typeof validateRejectVacation
->;
+export type ValidatedRejectVacationType = z.infer<typeof validateRejectVacation>;
 
 const ids = z.array(z.uuid()).min(1).max(366);
 
@@ -69,15 +59,11 @@ export const validateBulkApproveVacation = z.object({
   ids,
 });
 
-export type ValidatedBulkApproveVacationType = z.infer<
-  typeof validateBulkApproveVacation
->;
+export type ValidatedBulkApproveVacationType = z.infer<typeof validateBulkApproveVacation>;
 
 export const validateBulkRejectVacation = z.object({
   ids,
   reason: z.string().max(1000).optional(),
 });
 
-export type ValidatedBulkRejectVacationType = z.infer<
-  typeof validateBulkRejectVacation
->;
+export type ValidatedBulkRejectVacationType = z.infer<typeof validateBulkRejectVacation>;

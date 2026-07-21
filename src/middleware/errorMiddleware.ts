@@ -19,21 +19,14 @@ import { logger } from "./logger.js";
  * - Unhandled errors are logged as critical errors and a generic 500 Internal Server Error
  *   response is returned to the client.
  */
-export const errorMiddleware = (
-  err: Error,
-  _req: Request,
-  res: Response,
-  next: NextFunction
-) => {
+export const errorMiddleware = (err: Error, _req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {
     return next(err);
   }
   if (err instanceof CustomError) {
     const { statusCode, errors, logging } = err;
     const safeStatus =
-      Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599
-        ? statusCode
-        : 500;
+      Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 500;
     if (logging) {
       const meta = {
         msg: "Controlled Error",
@@ -53,8 +46,7 @@ export const errorMiddleware = (
     const clientErrors =
       Array.isArray(errors) && errors.length
         ? errors.map((e) => {
-            const hasPublic =
-              e.publicContext && Object.keys(e.publicContext).length > 0;
+            const hasPublic = e.publicContext && Object.keys(e.publicContext).length > 0;
             return hasPublic
               ? { message: e.message, context: e.publicContext }
               : { message: e.message };
@@ -65,7 +57,5 @@ export const errorMiddleware = (
   }
 
   logger.error({ msg: "Unhandled Error", err: err, stack: err.stack });
-  return res
-    .status(500)
-    .json({ errors: [{ message: "Internal Server Error" }] });
+  return res.status(500).json({ errors: [{ message: "Internal Server Error" }] });
 };

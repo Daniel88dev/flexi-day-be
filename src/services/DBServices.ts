@@ -99,11 +99,9 @@ export const createDBServices = (): DBServices => {
       rejectVacationsBulk: vacationServices.rejectVacationsBulk,
       getVacationsByIds: vacationServices.getVacationsByIds,
       deleteVacation: vacationServices.deleteVacation,
-      getPendingApprovalsForApprover:
-        vacationServices.getPendingApprovalsForApprover,
+      getPendingApprovalsForApprover: vacationServices.getPendingApprovalsForApprover,
       countUsersOutOnDay: vacationServices.countUsersOutOnDay,
-      countApprovedVacationsInRange:
-        vacationServices.countApprovedVacationsInRange,
+      countApprovedVacationsInRange: vacationServices.countApprovedVacationsInRange,
       aggregateUserUsageForYear: vacationServices.aggregateUserUsageForYear,
     },
     groupUser: {
@@ -135,8 +133,7 @@ export const createDBServices = (): DBServices => {
     userYearQuotas: {
       getUserYearGroupQuotas: userYearQuotasServices.getUserYearGroupQuotas,
       insertUserYearQuotas: userYearQuotasServices.insertUserYearQuotas,
-      decreaseChangeForUserYearQuotas:
-        userYearQuotasServices.decreaseChangeForUserYearQuotas,
+      decreaseChangeForUserYearQuotas: userYearQuotasServices.decreaseChangeForUserYearQuotas,
       updateUserYearQuotasById: userYearQuotasServices.updateUserYearQuotasById,
       sumUserQuotasForYear: userYearQuotasServices.sumUserQuotasForYear,
     },

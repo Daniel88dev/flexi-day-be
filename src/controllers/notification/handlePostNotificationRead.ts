@@ -8,18 +8,12 @@ const services = createDBServices();
 
 const validateUUID = z.uuid();
 
-export const handlePostNotificationRead = async (
-  req: Request,
-  res: Response
-) => {
+export const handlePostNotificationRead = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const notificationId = validateUUID.parse(req.params.id);
 
-  const updated = await services.notification.markNotificationRead(
-    notificationId,
-    auth.userId
-  );
+  const updated = await services.notification.markNotificationRead(notificationId, auth.userId);
 
   if (updated) {
     return res.status(200).json({ message: "Notification marked as read" });
@@ -28,10 +22,7 @@ export const handlePostNotificationRead = async (
   // Update returned nothing: either the row doesn't exist for this user, or
   // it was already read. The endpoint is logically idempotent, so treat
   // "already read" as success and preserve the original `readAt`.
-  const existing = await services.notification.getNotificationForUser(
-    notificationId,
-    auth.userId
-  );
+  const existing = await services.notification.getNotificationForUser(notificationId, auth.userId);
 
   if (!existing) {
     throw new AppError({

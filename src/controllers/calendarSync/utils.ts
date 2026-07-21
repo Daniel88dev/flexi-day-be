@@ -44,8 +44,7 @@ export const feedUrl = (baseUrl: string, token: string): string =>
   `${baseUrl}/calendars/${token}.ics`;
 
 /** Masks a token for list responses so the secret is never fully echoed. */
-export const maskToken = (token: string): string =>
-  `${token.slice(0, 9)}${"•".repeat(18)}`;
+export const maskToken = (token: string): string => `${token.slice(0, 9)}${"•".repeat(18)}`;
 
 /**
  * Shapes a config for API responses. `revealToken` controls whether the full
@@ -67,13 +66,9 @@ export const serializeConfig = (
     color: t.color,
     mineColor: t.mineColor,
   })),
-  feedUrl: revealToken
-    ? feedUrl(baseUrl, config.token)
-    : feedUrl(baseUrl, maskToken(config.token)),
+  feedUrl: revealToken ? feedUrl(baseUrl, config.token) : feedUrl(baseUrl, maskToken(config.token)),
   tokenMasked: !revealToken,
-  lastFetchedAt: config.lastFetchedAt
-    ? config.lastFetchedAt.toISOString()
-    : null,
+  lastFetchedAt: config.lastFetchedAt ? config.lastFetchedAt.toISOString() : null,
   createdAt: config.createdAt.toISOString(),
   updatedAt: config.updatedAt.toISOString(),
 });
