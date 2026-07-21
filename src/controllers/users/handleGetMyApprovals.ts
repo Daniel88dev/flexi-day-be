@@ -8,9 +8,7 @@ const services = createDBServices();
 export const handleGetMyApprovals = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const rows = await services.vacation.getPendingApprovalsForApprover(
-    auth.userId
-  );
+  const rows = await services.vacation.getPendingApprovalsForApprover(auth.userId);
 
   return res.status(200).json(collapsePendingApprovals(rows));
 };

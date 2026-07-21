@@ -1,11 +1,4 @@
-import {
-  date,
-  index,
-  pgTable,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { date, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const bankHolidays = pgTable(
   "bank_holidays",

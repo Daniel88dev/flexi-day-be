@@ -38,10 +38,7 @@ export const getAvatarColorForUserId = (userId: string): string => {
   return `hsl(${hue.toString()}, 65%, 50%)`;
 };
 
-export const buildUserSummary = (input: {
-  id: string;
-  name: string;
-}): UserSummary => ({
+export const buildUserSummary = (input: { id: string; name: string }): UserSummary => ({
   id: input.id,
   name: input.name,
   initials: getInitialsFromName(input.name),

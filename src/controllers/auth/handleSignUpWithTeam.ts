@@ -19,9 +19,7 @@ export const validateSignUpWithTeam = z.object({
   teamName: z.string().min(1).max(120),
 });
 
-export type ValidatedSignUpWithTeamType = z.infer<
-  typeof validateSignUpWithTeam
->;
+export type ValidatedSignUpWithTeamType = z.infer<typeof validateSignUpWithTeam>;
 
 /**
  * Best-effort cleanup of an auth user we just provisioned via better-auth when
@@ -38,9 +36,7 @@ export type ValidatedSignUpWithTeamType = z.infer<
  */
 const rollbackAuthUser = async (userId: string, email: string) => {
   try {
-    await db
-      .delete(user)
-      .where(or(eq(user.id, userId), eq(user.email, email)));
+    await db.delete(user).where(or(eq(user.id, userId), eq(user.email, email)));
     await db.delete(verification).where(eq(verification.identifier, email));
   } catch (cleanupErr) {
     logger.error("sign-up-with-team rollback failed", {
@@ -66,9 +62,9 @@ export const handleSignUpWithTeam = async (req: Request, res: Response) => {
   });
 
   if (!signUpResult.ok) {
-    const errorPayload = (await signUpResult.json().catch(() => null)) as
-      | { message?: string }
-      | null;
+    const errorPayload = (await signUpResult.json().catch(() => null)) as {
+      message?: string;
+    } | null;
     throw new AppError({
       message: errorPayload?.message ?? "Failed to sign up",
       logging: true,

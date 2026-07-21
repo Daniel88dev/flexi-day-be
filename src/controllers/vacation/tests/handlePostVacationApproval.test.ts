@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const {
-  mockGetVacationById,
-  mockGetApprovalUsers,
-  mockApproveVacation,
-} = vi.hoisted(() => ({
+const { mockGetVacationById, mockGetApprovalUsers, mockApproveVacation } = vi.hoisted(() => ({
   mockGetVacationById: vi.fn(),
   mockGetApprovalUsers: vi.fn(),
   mockApproveVacation: vi.fn(),
@@ -72,10 +68,7 @@ describe("handlePostVacationApproval", () => {
     await handlePostVacationApproval(req, res);
 
     expect(getAuth).toHaveBeenCalledWith(req);
-    expect(mockGetVacationById).toHaveBeenCalledWith(
-      "550e8400-e29b-41d4-a716-446655440000",
-      {}
-    );
+    expect(mockGetVacationById).toHaveBeenCalledWith("550e8400-e29b-41d4-a716-446655440000", {});
     expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123", {});
     expect(mockApproveVacation).toHaveBeenCalledWith(
       "550e8400-e29b-41d4-a716-446655440000",
@@ -143,9 +136,7 @@ describe("handlePostVacationApproval", () => {
 
     mockGetVacationById.mockResolvedValue(null);
 
-    await expect(handlePostVacationApproval(req, res)).rejects.toThrow(
-      "Vacation not found"
-    );
+    await expect(handlePostVacationApproval(req, res)).rejects.toThrow("Vacation not found");
     expect(mockGetApprovalUsers).not.toHaveBeenCalled();
     expect(mockApproveVacation).not.toHaveBeenCalled();
   });
@@ -239,9 +230,7 @@ describe("handlePostVacationApproval", () => {
     const dbError = new Error("Failed to update vacation");
     mockApproveVacation.mockRejectedValue(dbError);
 
-    await expect(handlePostVacationApproval(req, res)).rejects.toThrow(
-      "Failed to update vacation"
-    );
+    await expect(handlePostVacationApproval(req, res)).rejects.toThrow("Failed to update vacation");
   });
 
   it("should use groupId from vacation data to fetch approvers", async () => {

@@ -1,12 +1,4 @@
-import {
-  boolean,
-  index,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, index, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
@@ -23,10 +15,7 @@ export enum calendarSyncScope {
   Team = "TEAM",
 }
 
-export const calendarSyncScopeEnum = pgEnum(
-  "calendar_sync_scope",
-  enumToPgEnum(calendarSyncScope)
-);
+export const calendarSyncScopeEnum = pgEnum("calendar_sync_scope", enumToPgEnum(calendarSyncScope));
 
 /**
  * A calendar-sync feed configuration owned by a user. Each row corresponds to
@@ -41,9 +30,7 @@ export const calendarSync = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    scope: calendarSyncScopeEnum("scope")
-      .notNull()
-      .default(calendarSyncScope.Me),
+    scope: calendarSyncScopeEnum("scope").notNull().default(calendarSyncScope.Me),
     // When true and scope is TEAM, the owner's own records use the per-type
     // `mineColor` so they stand out from the rest of the team's.
     distinguishMine: boolean("distinguish_mine").notNull().default(false),
@@ -84,10 +71,7 @@ export const calendarSyncTeams = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("calendar_sync_teams_config_group_uniq").on(
-      table.calendarSyncId,
-      table.groupId
-    ),
+    uniqueIndex("calendar_sync_teams_config_group_uniq").on(table.calendarSyncId, table.groupId),
     index("idx_calendar_sync_teams_config").on(table.calendarSyncId),
   ]
 );

@@ -27,6 +27,4 @@ export const validateNotificationListQuery = z.object({
     .optional(),
 });
 
-export type ValidatedNotificationListQuery = z.infer<
-  typeof validateNotificationListQuery
->;
+export type ValidatedNotificationListQuery = z.infer<typeof validateNotificationListQuery>;

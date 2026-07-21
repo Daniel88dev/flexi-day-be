@@ -46,10 +46,7 @@ export async function createTestUser(
   const userId = uuidv4();
 
   // Check if user already exists
-  const existingUser = await db
-    .select()
-    .from(user)
-    .where(eq(user.email, email));
+  const existingUser = await db.select().from(user).where(eq(user.email, email));
 
   if (existingUser.length > 0) {
     return {
@@ -106,21 +103,9 @@ export async function setupTestEnvironment(): Promise<TestContext> {
   const app = createServer();
 
   // Create test users
-  const user1 = await createTestUser(
-    "user1@test.com",
-    "Test User 1",
-    "password123"
-  );
-  const user2 = await createTestUser(
-    "user2@test.com",
-    "Test User 2",
-    "password123"
-  );
-  const approverUser = await createTestUser(
-    "approver@test.com",
-    "Approver User",
-    "password123"
-  );
+  const user1 = await createTestUser("user1@test.com", "Test User 1", "password123");
+  const user2 = await createTestUser("user2@test.com", "Test User 2", "password123");
+  const approverUser = await createTestUser("approver@test.com", "Approver User", "password123");
 
   // Create test group
   const group = await createTestGroup("Test Group", user1.id, approverUser.id);
@@ -152,11 +137,7 @@ export async function cleanupTestData() {
 /**
  * Creates a vacation for testing
  */
-export async function createTestVacation(
-  userId: string,
-  groupId: string,
-  requestedDay: string
-) {
+export async function createTestVacation(userId: string, groupId: string, requestedDay: string) {
   const vacationId = uuidv4();
 
   await db.insert(vacation).values({

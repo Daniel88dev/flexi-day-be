@@ -81,11 +81,7 @@ describe("handleGetVacations", () => {
 
     expect(getAuth).toHaveBeenCalledWith(req);
     expect(formatStartAndEndDate).toHaveBeenCalledWith(2024, 3);
-    expect(mockGetVacationsForUser).toHaveBeenCalledWith(
-      "user_123",
-      "2024-01-01",
-      "2024-01-31"
-    );
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31");
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(mockVacations);
   });
@@ -122,10 +118,7 @@ describe("handleGetVacations", () => {
 
     await handleGetVacations(req, res);
 
-    expect(formatStartAndEndDate).toHaveBeenCalledWith(
-      currentYear,
-      currentMonth
-    );
+    expect(formatStartAndEndDate).toHaveBeenCalledWith(currentYear, currentMonth);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -145,11 +138,7 @@ describe("handleGetVacations", () => {
 
     await handleGetVacations(req, res);
 
-    expect(mockGetVacationsForUser).toHaveBeenCalledWith(
-      "user_123",
-      "2024-01-01",
-      "2024-01-31"
-    );
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31");
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith([]);
   });
@@ -195,9 +184,7 @@ describe("handleGetVacations", () => {
     const dbError = new Error("Database connection failed");
     mockGetVacationsForUser.mockRejectedValue(dbError);
 
-    await expect(handleGetVacations(req, res)).rejects.toThrow(
-      "Database connection failed"
-    );
+    await expect(handleGetVacations(req, res)).rejects.toThrow("Database connection failed");
     expect(mockGetVacationsForUser).toHaveBeenCalled();
   });
 
@@ -231,10 +218,6 @@ describe("handleGetVacations", () => {
 
     await handleGetVacations(req, res);
 
-    expect(mockGetVacationsForUser).toHaveBeenCalledWith(
-      "user_123",
-      "2024-07-01",
-      "2024-07-31"
-    );
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-07-01", "2024-07-31");
   });
 });

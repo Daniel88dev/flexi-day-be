@@ -18,10 +18,7 @@ export const handleDeleteCalendar = async (req: Request, res: Response) => {
   }
   const id = parsedId.data;
 
-  const deleted = await services.calendarSync.softDeleteCalendarSync(
-    id,
-    auth.userId
-  );
+  const deleted = await services.calendarSync.softDeleteCalendarSync(id, auth.userId);
 
   if (!deleted) {
     throw new AppError({

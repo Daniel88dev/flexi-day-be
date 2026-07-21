@@ -30,9 +30,7 @@ describe("Vacation API E2E Tests", () => {
 
   describe("GET /api/vacation", () => {
     it("should return 401 when not authenticated", async () => {
-      const response = await request(context.app)
-        .get("/api/vacation")
-        .expect(401);
+      const response = await request(context.app).get("/api/vacation").expect(401);
 
       // Better-auth returns errors object
       expect(response.body).toBeDefined();
@@ -100,12 +98,10 @@ describe("Vacation API E2E Tests", () => {
     });
 
     it("should return 422 when request body is invalid", async () => {
-      const response = await request(context.app)
-        .post("/api/vacation/create-vacation")
-        .send({
-          groupId: "not-a-uuid",
-          requestedDay: "invalid-date",
-        });
+      const response = await request(context.app).post("/api/vacation/create-vacation").send({
+        groupId: "not-a-uuid",
+        requestedDay: "invalid-date",
+      });
 
       expect([401, 422]).toContain(response.status);
     });
@@ -121,12 +117,10 @@ describe("Vacation API E2E Tests", () => {
         updatedAt: new Date(),
       });
 
-      const response = await request(context.app)
-        .post("/api/vacation/create-vacation")
-        .send({
-          groupId: context.group.id,
-          requestedDay: "2025-12-24",
-        });
+      const response = await request(context.app).post("/api/vacation/create-vacation").send({
+        groupId: context.group.id,
+        requestedDay: "2025-12-24",
+      });
 
       // Without proper auth, this will return 401
       expect([401, 201]).toContain(response.status);
@@ -134,12 +128,10 @@ describe("Vacation API E2E Tests", () => {
 
     it("should return 403 when user has no access to the group", async () => {
       // user2 is not in the group
-      const response = await request(context.app)
-        .post("/api/vacation/create-vacation")
-        .send({
-          groupId: context.group.id,
-          requestedDay: "2025-12-24",
-        });
+      const response = await request(context.app).post("/api/vacation/create-vacation").send({
+        groupId: context.group.id,
+        requestedDay: "2025-12-24",
+      });
 
       expect([401, 403]).toContain(response.status);
     });
@@ -150,11 +142,7 @@ describe("Vacation API E2E Tests", () => {
 
     beforeEach(async () => {
       // Create a test vacation to approve using helper
-      vacationId = await createTestVacation(
-        context.user1.id,
-        context.group.id,
-        "2025-12-24"
-      );
+      vacationId = await createTestVacation(context.user1.id, context.group.id, "2025-12-24");
     });
 
     it("should return 401 when not authenticated", async () => {
@@ -166,31 +154,27 @@ describe("Vacation API E2E Tests", () => {
     });
 
     it("should return 422 when vacation id is not a valid UUID", async () => {
-      const response = await request(context.app)
-        .post("/api/vacation/approve/not-a-uuid");
+      const response = await request(context.app).post("/api/vacation/approve/not-a-uuid");
 
       expect([401, 422]).toContain(response.status);
     });
 
     it("should return 404 when vacation does not exist", async () => {
       const nonExistentId = uuidv4();
-      const response = await request(context.app)
-        .post(`/api/vacation/approve/${nonExistentId}`);
+      const response = await request(context.app).post(`/api/vacation/approve/${nonExistentId}`);
 
       expect([401, 404]).toContain(response.status);
     });
 
     it("should approve vacation when user is authorized approver", async () => {
-      const response = await request(context.app)
-        .post(`/api/vacation/approve/${vacationId}`);
+      const response = await request(context.app).post(`/api/vacation/approve/${vacationId}`);
 
       // Without proper auth, returns 401
       expect([401, 200]).toContain(response.status);
     });
 
     it("should return 403 when user is not authorized to approve", async () => {
-      const response = await request(context.app)
-        .post(`/api/vacation/approve/${vacationId}`);
+      const response = await request(context.app).post(`/api/vacation/approve/${vacationId}`);
 
       expect([401, 403]).toContain(response.status);
     });

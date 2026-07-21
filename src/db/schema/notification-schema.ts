@@ -9,10 +9,7 @@ export enum notificationType {
   BalanceLow = "balance_low",
 }
 
-export const notificationTypeEnum = pgEnum(
-  "notification_type",
-  enumToPgEnum(notificationType)
-);
+export const notificationTypeEnum = pgEnum("notification_type", enumToPgEnum(notificationType));
 
 export const notifications = pgTable(
   "notifications",

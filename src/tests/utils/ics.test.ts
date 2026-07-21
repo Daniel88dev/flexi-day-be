@@ -55,9 +55,7 @@ describe("buildIcsCalendar", () => {
       ],
     });
     expect(out).toContain("SUMMARY:Trip\\; away");
-    expect(out).toContain(
-      "DESCRIPTION:note\\, with\\, commas \\\\ backslash"
-    );
+    expect(out).toContain("DESCRIPTION:note\\, with\\, commas \\\\ backslash");
   });
 
   test("joins multiple categories with commas", () => {
@@ -81,8 +79,6 @@ describe("buildIcsCalendar", () => {
       events: [{ uid: "e@f", startDate: "2026-06-01", summary: "x" }],
     });
     // every line break is a CRLF, none are bare LF
-    expect(out.split("\n").every((line) => line === "" || line.endsWith("\r"))).toBe(
-      true
-    );
+    expect(out.split("\n").every((line) => line === "" || line.endsWith("\r"))).toBe(true);
   });
 });

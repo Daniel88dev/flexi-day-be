@@ -21,10 +21,7 @@ export type GroupUserInsertType = {
   controlledUser?: boolean;
 };
 
-export type GroupUserPermissions = Pick<
-  GroupUser,
-  "viewAccess" | "adminAccess" | "controlledUser"
->;
+export type GroupUserPermissions = Pick<GroupUser, "viewAccess" | "adminAccess" | "controlledUser">;
 
 export type InviteLink = {
   id: string;
@@ -55,6 +52,4 @@ export const validatePutGroupUserUpdate = z.object({
   ),
 });
 
-export type ValidatedPutGroupUserUpdateType = z.infer<
-  typeof validatePutGroupUserUpdate
->;
+export type ValidatedPutGroupUserUpdateType = z.infer<typeof validatePutGroupUserUpdate>;

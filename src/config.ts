@@ -48,9 +48,7 @@ const parseNodeEnv = (value: string): NodeEnv => {
   const v = value.toLowerCase();
   if (v === "prod") return "production"; // backward-compat
   if ((VALID_ENVS as readonly string[]).includes(v)) return v as NodeEnv;
-  throw new Error(
-    `Invalid NODE_ENV: "${value}". Expected one of ${VALID_ENVS.join(", ")}`
-  );
+  throw new Error(`Invalid NODE_ENV: "${value}". Expected one of ${VALID_ENVS.join(", ")}`);
 };
 
 const environment = parseNodeEnv(envOrThrow("NODE_ENV"));
@@ -59,9 +57,7 @@ const parseTemplateStage = (): "dev" | "prod" => {
   const raw = process.env.EMAIL_TEMPLATE_STAGE?.toLowerCase();
   if (raw === "dev" || raw === "prod") return raw;
   if (raw !== undefined) {
-    throw new Error(
-      `Invalid EMAIL_TEMPLATE_STAGE: "${raw}". Expected "dev" or "prod"`
-    );
+    throw new Error(`Invalid EMAIL_TEMPLATE_STAGE: "${raw}". Expected "dev" or "prod"`);
   }
   // Default the SES template stage from the runtime environment.
   return environment === "production" ? "prod" : "dev";
@@ -72,8 +68,7 @@ export const config: Config = {
     port: (() => {
       const raw = envOrThrow("PORT");
       const n = Number.parseInt(raw, 10);
-      if (!Number.isFinite(n) || n <= 0)
-        throw new Error(`Invalid PORT: "${raw}"`);
+      if (!Number.isFinite(n) || n <= 0) throw new Error(`Invalid PORT: "${raw}"`);
       return n;
     })(),
     env: environment,
@@ -86,9 +81,7 @@ export const config: Config = {
       ? {
           secret: envOrThrow("BETTER_AUTH_SECRET"),
           url: envOrThrow("BETTER_AUTH_URL"),
-          trustedOrigins: process.env.TRUSTED_ORIGINS?.split(",") ?? [
-            "http://localhost:3000",
-          ],
+          trustedOrigins: process.env.TRUSTED_ORIGINS?.split(",") ?? ["http://localhost:3000"],
         }
       : undefined,
   email: {
@@ -98,8 +91,6 @@ export const config: Config = {
     configurationSet: process.env.SES_CONFIGURATION_SET,
     appUrl:
       process.env.APP_URL ??
-      (environment === "production"
-        ? "https://www.flexi-day.com"
-        : "http://localhost:3000"),
+      (environment === "production" ? "https://www.flexi-day.com" : "http://localhost:3000"),
   },
 };

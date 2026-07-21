@@ -87,20 +87,16 @@ export const validateCreateCalendarSync = z
     teamIds: z.array(z.uuid()).default([]),
     types: z.array(typeEntrySchema).min(1),
   })
-  .refine(
-    (data) =>
-      data.scope !== calendarSyncScope.Team || data.teamIds.length > 0,
-    { message: "At least one team is required for team scope", path: ["teamIds"] }
-  )
-  .refine(
-    (data) =>
-      new Set(data.types.map((t) => t.type)).size === data.types.length,
-    { message: "Duplicate record types are not allowed", path: ["types"] }
-  );
+  .refine((data) => data.scope !== calendarSyncScope.Team || data.teamIds.length > 0, {
+    message: "At least one team is required for team scope",
+    path: ["teamIds"],
+  })
+  .refine((data) => new Set(data.types.map((t) => t.type)).size === data.types.length, {
+    message: "Duplicate record types are not allowed",
+    path: ["types"],
+  });
 
-export type ValidatedCreateCalendarSync = z.infer<
-  typeof validateCreateCalendarSync
->;
+export type ValidatedCreateCalendarSync = z.infer<typeof validateCreateCalendarSync>;
 
 /** Update accepts the same shape as create; the whole config is replaced. */
 export const validateUpdateCalendarSync = validateCreateCalendarSync;

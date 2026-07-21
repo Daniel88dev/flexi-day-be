@@ -48,12 +48,8 @@ describe("sesEmailSender", () => {
 
     expect(input.Destination.ToAddresses).toEqual(["user@example.com"]);
     // NODE_ENV is "test" in the vitest env, so the stage defaults to "dev".
-    expect(input.Content.Template.TemplateName).toBe(
-      "flexi-day-email-confirmation-dev"
-    );
-    expect(JSON.parse(input.Content.Template.TemplateData)).toEqual(
-      validEmail.data
-    );
+    expect(input.Content.Template.TemplateName).toBe("flexi-day-email-confirmation-dev");
+    expect(JSON.parse(input.Content.Template.TemplateData)).toEqual(validEmail.data);
   });
 
   it("throws and does not send when a template variable is blank", async () => {

@@ -1,16 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const {
-  mockPostVacationBulk,
-  mockGetGroupUser,
-  mockGetApprovalUsers,
-  mockTransaction,
-} = vi.hoisted(() => ({
-  mockPostVacationBulk: vi.fn(),
-  mockGetGroupUser: vi.fn(),
-  mockGetApprovalUsers: vi.fn(),
-  mockTransaction: vi.fn(),
-}));
+const { mockPostVacationBulk, mockGetGroupUser, mockGetApprovalUsers, mockTransaction } =
+  vi.hoisted(() => ({
+    mockPostVacationBulk: vi.fn(),
+    mockGetGroupUser: vi.fn(),
+    mockGetApprovalUsers: vi.fn(),
+    mockTransaction: vi.fn(),
+  }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
   generateRandomUUID: vi.fn(),
@@ -75,9 +71,7 @@ describe("handlePostVacation", () => {
       () => `uuid_${(++counter).toString()}`
     );
 
-    mockTransaction.mockImplementation(
-      async (cb: (tx: unknown) => Promise<unknown>) => cb({})
-    );
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({}));
   });
 
   afterEach(() => {
@@ -136,22 +130,13 @@ describe("handlePostVacation", () => {
       controlledUser: true,
     });
 
-    mockPostVacationBulk.mockImplementation(
-      async (records: unknown[]) => records
-    );
+    mockPostVacationBulk.mockImplementation(async (records: unknown[]) => records);
     mockGetApprovalUsers.mockResolvedValue(null);
 
     await handlePostVacation(req, res);
 
-    const [records] = mockPostVacationBulk.mock.calls[0] as [
-      { requestedDay: string }[],
-      unknown,
-    ];
-    expect(records.map((r) => r.requestedDay)).toEqual([
-      "2024-03-14",
-      "2024-03-15",
-      "2024-03-16",
-    ]);
+    const [records] = mockPostVacationBulk.mock.calls[0] as [{ requestedDay: string }[], unknown];
+    expect(records.map((r) => r.requestedDay)).toEqual(["2024-03-14", "2024-03-15", "2024-03-16"]);
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
@@ -160,9 +145,7 @@ describe("handlePostVacation", () => {
 
     mockGetGroupUser.mockResolvedValue(null);
 
-    await expect(handlePostVacation(req, res)).rejects.toThrow(
-      "No access for related group"
-    );
+    await expect(handlePostVacation(req, res)).rejects.toThrow("No access for related group");
     expect(mockPostVacationBulk).not.toHaveBeenCalled();
   });
 
@@ -175,9 +158,7 @@ describe("handlePostVacation", () => {
       controlledUser: false,
     });
 
-    await expect(handlePostVacation(req, res)).rejects.toThrow(
-      "No access for related group"
-    );
+    await expect(handlePostVacation(req, res)).rejects.toThrow("No access for related group");
     expect(mockPostVacationBulk).not.toHaveBeenCalled();
   });
 
@@ -229,9 +210,7 @@ describe("handlePostVacation", () => {
     await handlePostVacation(req, res);
 
     expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123");
-    expect(logger.info).toHaveBeenCalledWith(
-      "notification email not-sent (not finished"
-    );
+    expect(logger.info).toHaveBeenCalledWith("notification email not-sent (not finished");
   });
 
   it("should log info when temp approval user email is available", async () => {
@@ -250,9 +229,7 @@ describe("handlePostVacation", () => {
     await handlePostVacation(req, res);
 
     expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123");
-    expect(logger.info).toHaveBeenCalledWith(
-      "notification email not-sent (not finished"
-    );
+    expect(logger.info).toHaveBeenCalledWith("notification email not-sent (not finished");
   });
 
   it("should not log info when no approval user emails are available", async () => {

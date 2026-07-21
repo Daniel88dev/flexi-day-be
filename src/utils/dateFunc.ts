@@ -44,10 +44,7 @@ export const isBusinessDay = (date: Date): boolean => {
  * Counts the number of business days (Mon-Fri) between two inclusive ISO
  * dates. Returns 0 when end < start.
  */
-export const countBusinessDaysInclusive = (
-  from: DateString,
-  to: DateString
-): number => {
+export const countBusinessDaysInclusive = (from: DateString, to: DateString): number => {
   const start = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
@@ -66,10 +63,7 @@ export const countBusinessDaysInclusive = (
  * Expands an inclusive date range into the ordered list of ISO date strings
  * it contains.
  */
-export const expandDateRangeInclusive = (
-  from: DateString,
-  to: DateString
-): DateString[] => {
+export const expandDateRangeInclusive = (from: DateString, to: DateString): DateString[] => {
   const start = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];

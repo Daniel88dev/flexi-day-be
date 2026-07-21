@@ -9,12 +9,8 @@ const services = createDBServices();
 export const handleGetCalendars = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const configs = await services.calendarSync.getCalendarSyncForUser(
-    auth.userId
-  );
+  const configs = await services.calendarSync.getCalendarSyncForUser(auth.userId);
 
   const baseUrl = feedBaseUrl(req);
-  return res
-    .status(200)
-    .json(configs.map((c) => serializeConfig(c, baseUrl, false)));
+  return res.status(200).json(configs.map((c) => serializeConfig(c, baseUrl, false)));
 };

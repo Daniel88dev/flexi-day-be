@@ -12,9 +12,7 @@ import { alias } from "drizzle-orm/pg-core";
  * @returns {Promise<GroupType | undefined>} A promise that resolves to the group object
  *                                           if found and not marked as deleted, or undefined if not found.
  */
-export const getGroup = async (
-  groupId: string
-): Promise<GroupType | undefined> => {
+export const getGroup = async (groupId: string): Promise<GroupType | undefined> => {
   const [row] = await db
     .select()
     .from(groups)
@@ -30,9 +28,7 @@ export const getGroup = async (
  * @param {string[]} groupIds - An array of group IDs to fetch from the database.
  * @returns {Promise<GroupType[]>} A promise that resolves with an array of groups matching the provided IDs.
  */
-export const getAllGroups = async (
-  groupIds: string[]
-): Promise<GroupType[]> => {
+export const getAllGroups = async (groupIds: string[]): Promise<GroupType[]> => {
   return db
     .select()
     .from(groups)
@@ -121,9 +117,7 @@ export const updateGroupApprovalUsers = async (
  * @returns {Promise<GroupType | undefined>} A promise that resolves to the updated group record,
  * or `undefined` if no group with the given ID is found.
  */
-export const deleteGroup = async (
-  groupId: string
-): Promise<GroupType | undefined> => {
+export const deleteGroup = async (groupId: string): Promise<GroupType | undefined> => {
   const [row] = await db
     .update(groups)
     .set({
@@ -223,14 +217,8 @@ export const getApprovalUsers = async (
     })
     .from(groups)
     .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
-    .leftJoin(
-      mainApprovalUser,
-      eq(groups.mainApprovalUser, mainApprovalUser.id)
-    )
-    .leftJoin(
-      tempApprovalUser,
-      eq(groups.tempApprovalUser, tempApprovalUser.id)
-    );
+    .leftJoin(mainApprovalUser, eq(groups.mainApprovalUser, mainApprovalUser.id))
+    .leftJoin(tempApprovalUser, eq(groups.tempApprovalUser, tempApprovalUser.id));
 
   return row ?? undefined;
 };

@@ -39,9 +39,7 @@ export const vacation = pgTable(
     requestedDay: date("requested_day").notNull(),
     startTime: time("start_time"),
     endTime: time("end_time"),
-    vacationType: vacationEnum("vacation_type")
-      .notNull()
-      .default(vacationType.Vacation),
+    vacationType: vacationEnum("vacation_type").notNull().default(vacationType.Vacation),
     approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",

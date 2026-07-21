@@ -30,9 +30,7 @@ export const createServer = () => {
   app.use("/api/auth/sign-up-with-team", express.json());
   app.use("/api/auth", authExtRouter());
 
-  app
-    .all("/api/auth/{*any}", toNodeHandler(auth))
-    .use(express.json());
+  app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());
 
   app.use("/api/vacation", authSession, vacationRouter());
   app.use("/api/group", authSession, groupRouter());

@@ -22,25 +22,16 @@ import type {
  * Generates a new secret feed token. Format mirrors the front-end mock:
  * `flx_live_` followed by 40 hex characters.
  */
-export const generateFeedToken = (): string =>
-  `flx_live_${randomBytes(20).toString("hex")}`;
+export const generateFeedToken = (): string => `flx_live_${randomBytes(20).toString("hex")}`;
 
 /** Assembles base rows + their teams + types into full domain objects. */
-const assembleConfigs = async (
-  rows: CalendarSyncRecord[]
-): Promise<CalendarSyncFull[]> => {
+const assembleConfigs = async (rows: CalendarSyncRecord[]): Promise<CalendarSyncFull[]> => {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
 
   const [teamRows, typeRows] = await Promise.all([
-    db
-      .select()
-      .from(calendarSyncTeams)
-      .where(inArray(calendarSyncTeams.calendarSyncId, ids)),
-    db
-      .select()
-      .from(calendarSyncTypes)
-      .where(inArray(calendarSyncTypes.calendarSyncId, ids)),
+    db.select().from(calendarSyncTeams).where(inArray(calendarSyncTeams.calendarSyncId, ids)),
+    db.select().from(calendarSyncTypes).where(inArray(calendarSyncTypes.calendarSyncId, ids)),
   ]);
 
   const teamsById = new Map<string, string[]>();
@@ -75,12 +66,8 @@ const writeChildren = async (
   types: CalendarSyncTypeEntry[],
   tx: DbTransaction
 ): Promise<void> => {
-  await tx
-    .delete(calendarSyncTeams)
-    .where(eq(calendarSyncTeams.calendarSyncId, calendarSyncId));
-  await tx
-    .delete(calendarSyncTypes)
-    .where(eq(calendarSyncTypes.calendarSyncId, calendarSyncId));
+  await tx.delete(calendarSyncTeams).where(eq(calendarSyncTeams.calendarSyncId, calendarSyncId));
+  await tx.delete(calendarSyncTypes).where(eq(calendarSyncTypes.calendarSyncId, calendarSyncId));
 
   // De-dupe teamIds defensively; the unique index would otherwise reject.
   const uniqueTeamIds = [...new Set(teamIds)];
@@ -132,9 +119,7 @@ export const createCalendarSync = async (
 };
 
 /** Lists the caller's live configs, newest first, assembled with children. */
-export const getCalendarSyncForUser = async (
-  userId: string
-): Promise<CalendarSyncFull[]> => {
+export const getCalendarSyncForUser = async (userId: string): Promise<CalendarSyncFull[]> => {
   const rows = await db
     .select()
     .from(calendarSync)
@@ -153,11 +138,7 @@ export const getCalendarSyncById = async (
     .select()
     .from(calendarSync)
     .where(
-      and(
-        eq(calendarSync.id, id),
-        eq(calendarSync.userId, userId),
-        isNull(calendarSync.deletedAt)
-      )
+      and(eq(calendarSync.id, id), eq(calendarSync.userId, userId), isNull(calendarSync.deletedAt))
     );
   if (!row) return undefined;
   const [full] = await assembleConfigs([row]);
@@ -230,11 +211,7 @@ export const softDeleteCalendarSync = async (
     .update(calendarSync)
     .set({ deletedAt: new Date() })
     .where(
-      and(
-        eq(calendarSync.id, id),
-        eq(calendarSync.userId, userId),
-        isNull(calendarSync.deletedAt)
-      )
+      and(eq(calendarSync.id, id), eq(calendarSync.userId, userId), isNull(calendarSync.deletedAt))
     )
     .returning();
   return row;
@@ -253,11 +230,7 @@ export const regenerateToken = async (
     .update(calendarSync)
     .set({ token: newToken })
     .where(
-      and(
-        eq(calendarSync.id, id),
-        eq(calendarSync.userId, userId),
-        isNull(calendarSync.deletedAt)
-      )
+      and(eq(calendarSync.id, id), eq(calendarSync.userId, userId), isNull(calendarSync.deletedAt))
     )
     .returning();
   if (!row) return undefined;
@@ -267,10 +240,7 @@ export const regenerateToken = async (
 
 /** Records that a feed was fetched — surfaced as "last fetched" in the UI. */
 export const touchLastFetched = async (id: string): Promise<void> => {
-  await db
-    .update(calendarSync)
-    .set({ lastFetchedAt: new Date() })
-    .where(eq(calendarSync.id, id));
+  await db.update(calendarSync).set({ lastFetchedAt: new Date() }).where(eq(calendarSync.id, id));
 };
 
 /**
@@ -278,9 +248,7 @@ export const touchLastFetched = async (id: string): Promise<void> => {
  * filtered by its scope, teams and included types, enriched with the owner's
  * display name for the event summary.
  */
-export const getFeedRecords = async (
-  config: CalendarSyncFull
-): Promise<CalendarFeedRecord[]> => {
+export const getFeedRecords = async (config: CalendarSyncFull): Promise<CalendarFeedRecord[]> => {
   const includedTypes = config.types.map((t) => t.vacationType);
   if (includedTypes.length === 0) return [];
 

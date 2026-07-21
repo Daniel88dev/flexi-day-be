@@ -10,10 +10,7 @@ export type BankHolidayType = {
   updatedAt: Date;
 };
 
-export type BankHolidayInsertType = Pick<
-  BankHolidayType,
-  "id" | "date" | "name" | "country"
-> & {
+export type BankHolidayInsertType = Pick<BankHolidayType, "id" | "date" | "name" | "country"> & {
   region?: string | null;
 };
 
@@ -32,6 +29,4 @@ export const validateBankHolidayQuery = z.object({
   region: z.string().min(1).max(64).optional(),
 });
 
-export type ValidatedBankHolidayQuery = z.infer<
-  typeof validateBankHolidayQuery
->;
+export type ValidatedBankHolidayQuery = z.infer<typeof validateBankHolidayQuery>;

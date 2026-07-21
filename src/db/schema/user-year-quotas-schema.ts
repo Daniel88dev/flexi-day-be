@@ -36,10 +36,7 @@ export const userYearQuotas = pgTable(
       table.groupId,
       table.relatedYear
     ),
-    check(
-      "user_year_quotas_related_year_chk",
-      sql`${table.relatedYear} ~ '^[0-9]{4}$'`
-    ),
+    check("user_year_quotas_related_year_chk", sql`${table.relatedYear} ~ '^[0-9]{4}$'`),
     "user_year_quotas_related_year_range_chk",
     sql`${table.relatedYear}::int BETWEEN 2025 AND 2100`,
   ]

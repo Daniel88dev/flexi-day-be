@@ -1,7 +1,7 @@
 // Auto-generated tests for AppError
 // Detected test framework: vitest
 import { describe, it, expect } from "vitest";
-import AppError, { CustomError } from '../../utils/appError';
+import AppError, { CustomError } from "../../utils/appError";
 
 describe("AppError", () => {
   it("constructs with defaults (message, statusCode, logging, context, errors)", () => {
@@ -14,9 +14,7 @@ describe("AppError", () => {
     expect(err.statusCode).toBe(400);
     expect(err.logging).toBe(false);
     expect(err.message).toBe("Bad Request");
-    expect(err.errors).toEqual([
-      { message: "Bad Request", context: {}, publicContext: {} },
-    ]);
+    expect(err.errors).toEqual([{ message: "Bad Request", context: {}, publicContext: {} }]);
 
     expect(typeof err.stack).toBe("string");
   });
@@ -24,18 +22,22 @@ describe("AppError", () => {
   it("uses provided code, message, logging, context, and cause", () => {
     const cause = new Error("root cause");
     const ctx = { field: "name", detail: "Required" };
-    const err = new AppError({ code: 422, message: "Invalid input", logging: true, context: ctx, cause });
+    const err = new AppError({
+      code: 422,
+      message: "Invalid input",
+      logging: true,
+      context: ctx,
+      cause,
+    });
 
     expect(err.statusCode).toBe(422);
     expect(err.logging).toBe(true);
     expect(err.message).toBe("Invalid input");
     expect((err as any).cause).toBe(cause);
-    expect(err.errors).toEqual([
-      { message: "Invalid input", context: ctx, publicContext: {} },
-    ]);
+    expect(err.errors).toEqual([{ message: "Invalid input", context: ctx, publicContext: {} }]);
   });
 
-  it('falls back to default message when provided an empty string', () => {
+  it("falls back to default message when provided an empty string", () => {
     const err = new AppError({ message: "" });
     expect(err.message).toBe("Bad Request");
     expect(err.errors[0].message).toBe("Bad Request");
@@ -45,9 +47,7 @@ describe("AppError", () => {
     const err = new AppError({ code: 0 });
     expect(err.statusCode).toBe(0);
     expect(err.logging).toBe(false);
-    expect(err.errors).toEqual([
-      { message: "Bad Request", context: {}, publicContext: {} },
-    ]);
+    expect(err.errors).toEqual([{ message: "Bad Request", context: {}, publicContext: {} }]);
   });
 
   it("exposes dynamic message in errors getter (reflects message changes)", () => {

@@ -23,14 +23,8 @@ export const getUserYearGroupQuotas = async (
   userId: string | null,
   tx?: DbTransaction
 ): Promise<UserYearQuotasType[]> => {
-  const base = [
-    eq(userYearQuotas.relatedYear, relatedYear),
-    eq(userYearQuotas.groupId, groupId),
-  ];
-  const where =
-    userId !== null
-      ? and(...base, eq(userYearQuotas.userId, userId))
-      : and(...base);
+  const base = [eq(userYearQuotas.relatedYear, relatedYear), eq(userYearQuotas.groupId, groupId)];
+  const where = userId !== null ? and(...base, eq(userYearQuotas.userId, userId)) : and(...base);
 
   return (tx ?? db).select().from(userYearQuotas).where(where);
 };
@@ -48,11 +42,7 @@ export const getUserYearGroupQuotas = async (
 export const insertUserYearQuotas = async (
   records: UserYearQuotasInsertType[]
 ): Promise<UserYearQuotasType[]> => {
-  return db
-    .insert(userYearQuotas)
-    .values(records)
-    .onConflictDoNothing()
-    .returning();
+  return db.insert(userYearQuotas).values(records).onConflictDoNothing().returning();
 };
 
 /**

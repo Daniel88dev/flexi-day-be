@@ -3,10 +3,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPostVacationType } from "../../services/vacation/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import {
-  expandDateRangeInclusive,
-  formatDateToISOString,
-} from "../../utils/dateFunc.js";
+import { expandDateRangeInclusive, formatDateToISOString } from "../../utils/dateFunc.js";
 import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
 import { logger } from "../../middleware/logger.js";
@@ -36,9 +33,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
   }
 
   const rangeDays =
-    Math.round(
-      (data.to.getTime() - data.from.getTime()) / (24 * 60 * 60 * 1000)
-    ) + 1;
+    Math.round((data.to.getTime() - data.from.getTime()) / (24 * 60 * 60 * 1000)) + 1;
   if (rangeDays > MAX_VACATION_RANGE_DAYS) {
     throw new AppError({
       message: `Vacation range too large (max ${MAX_VACATION_RANGE_DAYS.toString()} days)`,
@@ -48,10 +43,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const access = await services.groupUser.getGroupUser(
-    auth.userId,
-    data.groupId
-  );
+  const access = await services.groupUser.getGroupUser(auth.userId, data.groupId);
 
   if (!access || !access.controlledUser) {
     throw new AppError({
@@ -83,9 +75,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     note: data.note,
   }));
 
-  const created = await db.transaction((tx) =>
-    services.vacation.postVacationBulk(records, tx)
-  );
+  const created = await db.transaction((tx) => services.vacation.postVacationBulk(records, tx));
 
   if (created.length === 0) {
     throw new AppError({

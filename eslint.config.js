@@ -18,7 +18,7 @@ export default [
       "vitest.config.ts",
       "**/tests/**",
       "**/*.test.ts",
-      "**/*.spec.ts"
+      "**/*.spec.ts",
     ],
   },
 
