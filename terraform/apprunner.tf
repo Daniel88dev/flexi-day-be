@@ -42,6 +42,7 @@ resource "aws_apprunner_service" "main" {
           NODE_ENV        = var.environment == "production" ? "production" : "dev"
           PORT            = tostring(var.app_port)
           BETTER_AUTH_URL = "https://${var.api_domain_name}"
+          FEED_BASE_URL   = "https://${var.api_domain_name}"
           TRUSTED_ORIGINS = join(",", var.trusted_origins)
 
           # Transactional email (SESv2). Templates are stage-suffixed and

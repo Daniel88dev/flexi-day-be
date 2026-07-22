@@ -73,6 +73,7 @@ jobs:
 
           docker buildx build --platform linux/amd64 \
              -t "${SHA_IMAGE_FULL_URI}" \
+             --build-arg APP_VERSION="${IMAGE_TAG_SHA}" \
              --provenance=false \
              --push .
 

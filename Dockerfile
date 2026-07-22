@@ -21,6 +21,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
+# Stamp the build so logs report which image is running (buildInfo.version).
+# Passed from CI (--build-arg APP_VERSION=<git sha>); defaults to "unknown".
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
+
 # install production dependencies
 COPY package*.json ./
 RUN npm ci --omit=dev --ignore-scripts

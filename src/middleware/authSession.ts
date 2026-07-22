@@ -43,7 +43,7 @@ export const authSession = async (req: Request, res: Response, next: NextFunctio
       userName: session.user.name,
       userEmail: session.user.email,
       emailVerified: Boolean(session.user.emailVerified),
-    } as AuthSession;
+    };
     next();
   } catch (err) {
     logger.error("authSession", { error: err });
