@@ -5,7 +5,15 @@ type APIConfig = { port: number; env: "production" | "dev" | "test" };
 
 type DBConfig = { database: string };
 
-type AuthConfig = { secret: string; url: string; trustedOrigins: string[] };
+type AuthConfig = {
+  secret: string;
+  url: string;
+  trustedOrigins: string[];
+  // Google OAuth. Optional: absent in test and until the credentials are
+  // provisioned. The client secret is sensitive; the client id is not.
+  googleClientId?: string;
+  googleClientSecret?: string;
+};
 
 type EmailConfig = {
   from: string;
@@ -82,6 +90,8 @@ export const config: Config = {
           secret: envOrThrow("BETTER_AUTH_SECRET"),
           url: envOrThrow("BETTER_AUTH_URL"),
           trustedOrigins: process.env.TRUSTED_ORIGINS?.split(",") ?? ["http://localhost:3000"],
+          googleClientId: process.env.GOOGLE_CLIENT_ID,
+          googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
         }
       : undefined,
   email: {

@@ -68,10 +68,13 @@ resource "aws_iam_role_policy" "apprunner_secrets" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = [
-          aws_secretsmanager_secret.database_url.arn,
-          aws_secretsmanager_secret.better_auth_secret.arn
-        ]
+        Resource = concat(
+          [
+            aws_secretsmanager_secret.database_url.arn,
+            aws_secretsmanager_secret.better_auth_secret.arn
+          ],
+          aws_secretsmanager_secret.google_client_secret[*].arn
+        )
       }
     ]
   })
