@@ -1,5 +1,5 @@
 import type { ChangeInsertType, ChangeRecordType } from "./types.js";
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 
@@ -35,9 +35,10 @@ export const getChangesForUser = async (
  * @returns {Promise<ChangeRecordType | undefined>} A promise that resolves to the inserted record or undefined.
  */
 export const postChanges = async (
-  record: ChangeInsertType
+  record: ChangeInsertType,
+  tx?: DbTransaction
 ): Promise<ChangeRecordType | undefined> => {
-  const [row] = await db.insert(changesSchema).values(record).returning();
+  const [row] = await (tx ?? db).insert(changesSchema).values(record).returning();
 
   return row;
 };

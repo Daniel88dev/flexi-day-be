@@ -56,6 +56,7 @@ export type DBServices = Readonly<{
     insertUserYearQuotas: typeof userYearQuotasServices.insertUserYearQuotas;
     decreaseChangeForUserYearQuotas: typeof userYearQuotasServices.decreaseChangeForUserYearQuotas;
     updateUserYearQuotasById: typeof userYearQuotasServices.updateUserYearQuotasById;
+    upsertUserYearQuota: typeof userYearQuotasServices.upsertUserYearQuota;
     sumUserQuotasForYear: typeof userYearQuotasServices.sumUserQuotasForYear;
   };
   changes: {
@@ -135,6 +136,7 @@ export const createDBServices = (): DBServices => {
       insertUserYearQuotas: userYearQuotasServices.insertUserYearQuotas,
       decreaseChangeForUserYearQuotas: userYearQuotasServices.decreaseChangeForUserYearQuotas,
       updateUserYearQuotasById: userYearQuotasServices.updateUserYearQuotasById,
+      upsertUserYearQuota: userYearQuotasServices.upsertUserYearQuota,
       sumUserQuotasForYear: userYearQuotasServices.sumUserQuotasForYear,
     },
     changes: {

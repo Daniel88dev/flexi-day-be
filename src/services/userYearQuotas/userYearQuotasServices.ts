@@ -2,6 +2,7 @@ import type {
   UserYearQuotasInsertType,
   UserYearQuotasType,
   UserYearQuotasUpdateType,
+  UserYearQuotasUpsertType,
 } from "./types.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
@@ -112,6 +113,32 @@ export const sumUserQuotasForYear = async (
     vacationDays: Number(row?.vacationDays ?? 0),
     homeOfficeDays: Number(row?.homeOfficeDays ?? 0),
   };
+};
+
+/**
+ * Sets a member's allowance for one year, creating the row when the member
+ * has no quota for that year yet. Admin quota edits are the only writer of
+ * absolute values — `decreaseChangeForUserYearQuotas` applies deltas — so the
+ * conflict target is the (user, group, year) uniqueness the table already
+ * enforces.
+ */
+export const upsertUserYearQuota = async (
+  data: UserYearQuotasUpsertType,
+  tx?: DbTransaction
+): Promise<UserYearQuotasType | undefined> => {
+  const [row] = await (tx ?? db)
+    .insert(userYearQuotas)
+    .values(data)
+    .onConflictDoUpdate({
+      target: [userYearQuotas.userId, userYearQuotas.groupId, userYearQuotas.relatedYear],
+      set: {
+        vacationDays: data.vacationDays,
+        homeOfficeDays: data.homeOfficeDays,
+      },
+    })
+    .returning();
+
+  return row;
 };
 
 export const updateUserYearQuotasById = async (
