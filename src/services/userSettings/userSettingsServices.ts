@@ -1,7 +1,7 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { userSettings } from "../../db/schema/user-settings-schema.js";
 import { eq, inArray } from "drizzle-orm";
-import { DEFAULT_USER_SETTINGS, type UserSettingsRecord } from "./types.js";
+import type { UserSettingsRecord } from "./types.js";
 
 export const getUserSettings = async (
   userId: string,
@@ -39,8 +39,8 @@ export const upsertUserSettings = async (
 
 /**
  * Which of the supplied users still want workflow email. Users with no
- * settings row are opted in, matching {@link DEFAULT_USER_SETTINGS} — the
- * notifier calls this before every send.
+ * settings row are opted in, matching `DEFAULT_USER_SETTINGS` — the notifier
+ * calls this before every send.
  */
 export const filterUsersAcceptingEmail = async (userIds: string[]): Promise<Set<string>> => {
   const accepting = new Set(userIds);

@@ -5,6 +5,7 @@ import * as groupServices from "./group/groupServices.js";
 import * as userYearQuotasServices from "./userYearQuotas/userYearQuotasServices.js";
 import * as changesServices from "./changes/changesServices.js";
 import * as userSettingsServices from "./userSettings/userSettingsServices.js";
+import * as userServices from "./user/userServices.js";
 import * as bankHolidayServices from "./bankHoliday/bankHolidayServices.js";
 import * as notificationServices from "./notification/notificationServices.js";
 import * as calendarSyncServices from "./calendarSync/calendarSyncServices.js";
@@ -70,6 +71,10 @@ export type DBServices = Readonly<{
   changes: {
     getChanges: typeof changesServices.getChangesForUser;
     postChanges: typeof changesServices.postChanges;
+  };
+  user: {
+    getUserById: typeof userServices.getUserById;
+    getUsersByIds: typeof userServices.getUsersByIds;
   };
   userSettings: {
     getUserSettings: typeof userSettingsServices.getUserSettings;
@@ -161,6 +166,10 @@ export const createDBServices = (): DBServices => {
     changes: {
       getChanges: changesServices.getChangesForUser,
       postChanges: changesServices.postChanges,
+    },
+    user: {
+      getUserById: userServices.getUserById,
+      getUsersByIds: userServices.getUsersByIds,
     },
     userSettings: {
       getUserSettings: userSettingsServices.getUserSettings,

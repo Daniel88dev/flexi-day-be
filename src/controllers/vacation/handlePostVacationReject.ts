@@ -7,6 +7,7 @@ import { db } from "../../db/db.js";
 import type { ValidatedRejectVacationType } from "../../services/vacation/types.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
+import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
 
 const services = createDBServices();
 
@@ -20,7 +21,7 @@ export const handlePostVacationReject = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body: ValidatedRejectVacationType = req.body ?? {};
 
-  await db.transaction(async (tx) => {
+  const rejected = await db.transaction(async (tx) => {
     const vacationData = await services.vacation.getVacationById(vacationId, tx);
     if (!vacationData) {
       throw new AppError({
@@ -51,7 +52,12 @@ export const handlePostVacationReject = async (req: Request, res: Response) => {
       });
     }
 
-    await services.vacation.rejectVacation(vacationId, auth.userId, body.reason ?? null, tx);
+    const row = await services.vacation.rejectVacation(
+      vacationId,
+      auth.userId,
+      body.reason ?? null,
+      tx
+    );
 
     await services.vacationEvent.createVacationEvent(
       {
@@ -63,7 +69,20 @@ export const handlePostVacationReject = async (req: Request, res: Response) => {
       },
       tx
     );
+
+    return row;
   });
+
+  // Post-commit and best-effort: the notifier logs its own failures so a mail
+  // problem cannot turn a completed rejection into an error for the approver.
+  if (rejected) {
+    await notifyVacationDecision(
+      [rejected],
+      "rejected",
+      { id: auth.userId, name: auth.userName },
+      body.reason ?? null
+    );
+  }
 
   return res.status(200).json({ message: "Vacation rejected" });
 };

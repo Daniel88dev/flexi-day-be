@@ -3,7 +3,16 @@ import type { EmailSender } from "./emailSender.js";
 import { sesEmailSender } from "./sesEmailSender.js";
 import { logEmailSender } from "./logEmailSender.js";
 
-export type { EmailSender, TemplatedEmail, EmailConfirmationData } from "./emailSender.js";
+export type {
+  EmailSender,
+  EmailTemplateName,
+  TemplatedEmail,
+  EmailConfirmationData,
+  VacationApprovalRequestData,
+  VacationApprovedData,
+  VacationCancelledData,
+  VacationRejectedData,
+} from "./emailSender.js";
 
 /**
  * The active email sender. Tests use the log-only sender so they never hit

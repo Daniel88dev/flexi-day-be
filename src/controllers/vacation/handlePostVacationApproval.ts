@@ -6,6 +6,7 @@ import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
+import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
 
 const services = createDBServices();
 
@@ -16,7 +17,7 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
 
   const vacationId = validateUUID.parse(req.params.id);
 
-  await db.transaction(async (tx) => {
+  const approved = await db.transaction(async (tx) => {
     const vacationData = await services.vacation.getVacationById(vacationId, tx);
     if (!vacationData) {
       throw new AppError({
@@ -47,7 +48,7 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
       });
     }
 
-    await services.vacation.approveVacation(vacationId, auth.userId, tx);
+    const row = await services.vacation.approveVacation(vacationId, auth.userId, tx);
 
     await services.vacationEvent.createVacationEvent(
       {
@@ -58,7 +59,18 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
       },
       tx
     );
+
+    return row;
   });
+
+  // Post-commit and best-effort: the notifier logs its own failures so a mail
+  // problem cannot turn a completed approval into an error for the approver.
+  if (approved) {
+    await notifyVacationDecision([approved], "approved", {
+      id: auth.userId,
+      name: auth.userName,
+    });
+  }
 
   return res.status(200).json({ message: "Vacation approved" });
 };

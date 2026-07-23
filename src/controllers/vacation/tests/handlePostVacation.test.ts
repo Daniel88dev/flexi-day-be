@@ -6,12 +6,14 @@ const {
   mockGetApprovalUsers,
   mockTransaction,
   mockCreateVacationEvents,
+  mockNotifyVacationRequested,
 } = vi.hoisted(() => ({
   mockPostVacationBulk: vi.fn(),
   mockGetGroupUser: vi.fn(),
   mockGetApprovalUsers: vi.fn(),
   mockTransaction: vi.fn(),
   mockCreateVacationEvents: vi.fn(),
+  mockNotifyVacationRequested: vi.fn(),
 }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
@@ -22,10 +24,8 @@ vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
-vi.mock("../../../middleware/logger.js", () => ({
-  logger: {
-    info: vi.fn(),
-  },
+vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
+  notifyVacationRequested: mockNotifyVacationRequested,
 }));
 
 vi.mock("../../../db/db.js", () => ({
@@ -54,7 +54,6 @@ vi.mock("../../../services/DBServices.js", () => ({
 import { handlePostVacation } from "../handlePostVacation.js";
 import { generateRandomUUID } from "../../../utils/generateUUID.js";
 import { getAuth } from "../../../middleware/authSession.js";
-import { logger } from "../../../middleware/logger.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
 import { vacationType } from "../../../db/schema/vacation-schema.js";
 
@@ -203,7 +202,7 @@ describe("handlePostVacation", () => {
     expect(mockGetGroupUser).not.toHaveBeenCalled();
   });
 
-  it("should log info when main approval user email is available", async () => {
+  it("hands the committed rows to the approval notifier", async () => {
     const { req, res } = makeReqRes({ body: baseBody() });
 
     mockGetGroupUser.mockResolvedValue({
@@ -212,52 +211,14 @@ describe("handlePostVacation", () => {
       controlledUser: true,
     });
     mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1" }]);
-    mockGetApprovalUsers.mockResolvedValue({
-      mainApprovalUserEmail: "approver@example.com",
-    });
 
     await handlePostVacation(req, res);
 
-    expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123");
-    expect(logger.info).toHaveBeenCalledWith("notification email not-sent (not finished");
-  });
-
-  it("should log info when temp approval user email is available", async () => {
-    const { req, res } = makeReqRes({ body: baseBody() });
-
-    mockGetGroupUser.mockResolvedValue({
-      userId: "user_123",
-      groupId: "group_123",
-      controlledUser: true,
-    });
-    mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1" }]);
-    mockGetApprovalUsers.mockResolvedValue({
-      tempApprovalUserEmail: "temp_approver@example.com",
-    });
-
-    await handlePostVacation(req, res);
-
-    expect(mockGetApprovalUsers).toHaveBeenCalledWith("group_123");
-    expect(logger.info).toHaveBeenCalledWith("notification email not-sent (not finished");
-  });
-
-  it("should not log info when no approval user emails are available", async () => {
-    const { req, res } = makeReqRes({ body: baseBody() });
-
-    mockGetGroupUser.mockResolvedValue({
-      userId: "user_123",
-      groupId: "group_123",
-      controlledUser: true,
-    });
-    mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1" }]);
-    mockGetApprovalUsers.mockResolvedValue({
-      mainApprovalUserEmail: null,
-      tempApprovalUserEmail: null,
-    });
-
-    await handlePostVacation(req, res);
-
-    expect(logger.info).not.toHaveBeenCalled();
+    expect(mockNotifyVacationRequested).toHaveBeenCalledWith(
+      [{ id: "uuid_1" }],
+      { id: mockAuthData.userId, name: mockAuthData.userName },
+      null
+    );
   });
 
   it("should bubble up database errors from postVacationBulk", async () => {

@@ -8,6 +8,7 @@ import type { ValidatedCancelVacationType } from "../../services/vacation/types.
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { resolveVacationPermissions } from "./utils.js";
+import { notifyVacationCancelled } from "../../services/vacation/vacationNotifier.js";
 
 const services = createDBServices();
 
@@ -27,7 +28,7 @@ export const handleDeleteVacation = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const body: ValidatedCancelVacationType = req.body ?? {};
 
-  await db.transaction(async (tx) => {
+  const cancelled = await db.transaction(async (tx) => {
     const vacationData = await services.vacation.getVacationById(vacationId, tx);
 
     if (!vacationData) {
@@ -69,7 +70,18 @@ export const handleDeleteVacation = async (req: Request, res: Response) => {
       },
       tx
     );
+
+    return vacationData;
   });
+
+  // Post-commit and best-effort; the notifier logs its own failures. Only
+  // already-approved days are worth an email — it passes the pre-cancellation
+  // row so it can tell.
+  await notifyVacationCancelled(
+    cancelled,
+    { id: auth.userId, name: auth.userName },
+    body.reason ?? null
+  );
 
   return res.status(200).json({ message: "Vacation cancelled" });
 };

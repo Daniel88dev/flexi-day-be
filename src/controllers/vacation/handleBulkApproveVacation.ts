@@ -6,6 +6,7 @@ import { db } from "../../db/db.js";
 import type { ValidatedBulkApproveVacationType } from "../../services/vacation/types.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
+import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
 
 const services = createDBServices();
 
@@ -61,6 +62,10 @@ export const handleBulkApproveVacation = async (req: Request, res: Response) => 
 
     return updated;
   });
+
+  // Post-commit and best-effort; the notifier logs its own failures. A bulk
+  // decision can span several requesters, so it fans out one mail per person.
+  await notifyVacationDecision(approved, "approved", { id: auth.userId, name: auth.userName });
 
   return res.status(200).json({
     message: "Vacations approved",
