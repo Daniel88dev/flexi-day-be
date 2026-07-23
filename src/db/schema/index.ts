@@ -7,6 +7,7 @@ import { inviteLink } from "./invite-link-schema.js";
 import { bankHolidays } from "./bank-holiday-schema.js";
 import { notifications } from "./notification-schema.js";
 import { calendarSync, calendarSyncTeams, calendarSyncTypes } from "./calendar-sync-schema.js";
+import { vacationEvents } from "./vacation-event-schema.js";
 
 export const schema = {
   account,
@@ -17,6 +18,7 @@ export const schema = {
   groups,
   userYearQuotas,
   vacation,
+  vacationEvents,
   inviteLink,
   bankHolidays,
   notifications,

@@ -5,9 +5,11 @@ import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js"
 import {
   validateBulkApproveVacation,
   validateBulkRejectVacation,
+  validateCancelVacation,
   validatePostVacation,
   validateRejectVacation,
 } from "../services/vacation/types.js";
+import { handleGetVacation } from "../controllers/vacation/handleGetVacation.js";
 import { handlePostVacation } from "../controllers/vacation/handlePostVacation.js";
 import { handlePostVacationApproval } from "../controllers/vacation/handlePostVacationApproval.js";
 import { handlePostVacationReject } from "../controllers/vacation/handlePostVacationReject.js";
@@ -82,6 +84,38 @@ export const vacationRouter = (): Router => {
    *               $ref: '#/components/schemas/UserSummary'
    */
   app.get("/", tryCatch(handleGetVacations));
+
+  /**
+   * @openapi
+   * /api/vacation/{id}:
+   *   get:
+   *     tags:
+   *       - Vacations
+   *     summary: Retrieve one vacation with its history
+   *     description: |
+   *       Returns the request enriched with the requester, the group name and
+   *       the decision makers, the append-only event timeline (created,
+   *       approved, rejected, cancelled), and the actions this caller may take
+   *       (`canApprove`, `canCancel`). Cancelled requests remain retrievable so
+   *       the timeline can explain what happened to them.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: The vacation, its history and the caller's permissions
+   *       '403':
+   *         description: Not allowed to view this vacation
+   *       '404':
+   *         description: Vacation not found
+   */
+  app.get("/:id", tryCatch(handleGetVacation));
 
   /**
    * @openapi
@@ -327,8 +361,10 @@ export const vacationRouter = (): Router => {
    *       - Vacations
    *     summary: Cancel (soft delete) a vacation request
    *     description: |
-   *       Soft deletes the vacation row by setting `deletedAt`. The caller must own
-   *       the row or have admin access on the parent group.
+   *       Soft deletes the vacation row by setting `deletedAt`, including
+   *       already-approved requests. The caller must own the row, or have admin
+   *       access or approval rights on the parent group. An optional `reason`
+   *       is stored on the cancellation event.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -338,6 +374,15 @@ export const vacationRouter = (): Router => {
    *         schema:
    *           type: string
    *           format: uuid
+   *     requestBody:
+   *       required: false
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               reason:
+   *                 type: string
    *     responses:
    *       '200':
    *         description: Vacation cancelled
@@ -346,7 +391,11 @@ export const vacationRouter = (): Router => {
    *       '404':
    *         description: Vacation not found
    */
-  app.delete("/:id", tryCatch(handleDeleteVacation));
+  app.delete(
+    "/:id",
+    bodyValidationMiddleware(validateCancelVacation),
+    tryCatch(handleDeleteVacation)
+  );
 
   return app;
 };

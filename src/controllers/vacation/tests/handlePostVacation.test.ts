@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockPostVacationBulk, mockGetGroupUser, mockGetApprovalUsers, mockTransaction } =
-  vi.hoisted(() => ({
-    mockPostVacationBulk: vi.fn(),
-    mockGetGroupUser: vi.fn(),
-    mockGetApprovalUsers: vi.fn(),
-    mockTransaction: vi.fn(),
-  }));
+const {
+  mockPostVacationBulk,
+  mockGetGroupUser,
+  mockGetApprovalUsers,
+  mockTransaction,
+  mockCreateVacationEvents,
+} = vi.hoisted(() => ({
+  mockPostVacationBulk: vi.fn(),
+  mockGetGroupUser: vi.fn(),
+  mockGetApprovalUsers: vi.fn(),
+  mockTransaction: vi.fn(),
+  mockCreateVacationEvents: vi.fn(),
+}));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
   generateRandomUUID: vi.fn(),
@@ -32,6 +38,9 @@ vi.mock("../../../services/DBServices.js", () => ({
   createDBServices: () => ({
     vacation: {
       postVacationBulk: mockPostVacationBulk,
+    },
+    vacationEvent: {
+      createVacationEvents: mockCreateVacationEvents,
     },
     groupUser: {
       getGroupUser: mockGetGroupUser,

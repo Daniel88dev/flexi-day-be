@@ -4,6 +4,8 @@ import { getAuth } from "../../middleware/authSession.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 
 const services = createDBServices();
 
@@ -46,6 +48,16 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
     }
 
     await services.vacation.approveVacation(vacationId, auth.userId, tx);
+
+    await services.vacationEvent.createVacationEvent(
+      {
+        id: generateRandomUUID(),
+        vacationId,
+        eventType: vacationEventType.Approved,
+        actorUserId: auth.userId,
+      },
+      tx
+    );
   });
 
   return res.status(200).json({ message: "Vacation approved" });

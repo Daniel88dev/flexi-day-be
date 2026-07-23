@@ -16,9 +16,15 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import type { VacationInsertType, VacationListItem, VacationType } from "./types.js";
+import type {
+  VacationDetail,
+  VacationInsertType,
+  VacationListItem,
+  VacationType,
+} from "./types.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { alias } from "drizzle-orm/pg-core";
 import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
 
 type VacationRowWithUser = VacationType & {
@@ -282,6 +288,53 @@ export const deleteVacation = async (
     .returning();
 
   return row;
+};
+
+/**
+ * Loads a single vacation with everything the detail view shows: the
+ * requester, the group name, and the decision makers. Unlike
+ * {@link getVacationById} this deliberately includes cancelled (soft-deleted)
+ * rows — the whole point of the detail view is to explain what happened to a
+ * request, which includes its cancellation.
+ */
+export const getVacationDetailById = async (
+  vacationId: string,
+  tx?: DbTransaction
+): Promise<VacationDetail | undefined> => {
+  const approver = alias(user, "approvedByUser");
+  const rejecter = alias(user, "rejectedByUser");
+
+  const [row] = await (tx ?? db)
+    .select({
+      ...baseVacationSelection,
+      groupName: groups.groupName,
+      approvedByName: approver.name,
+      rejectedByName: rejecter.name,
+    })
+    .from(vacation)
+    .innerJoin(user, eq(vacation.userId, user.id))
+    .innerJoin(groups, eq(vacation.groupId, groups.id))
+    .leftJoin(approver, eq(vacation.approvedBy, approver.id))
+    .leftJoin(rejecter, eq(vacation.rejectedBy, rejecter.id))
+    .where(eq(vacation.id, vacationId))
+    .limit(1);
+
+  if (!row) return undefined;
+
+  const { groupName, approvedByName, rejectedByName, ...vacationRow } = row;
+
+  return {
+    ...toListItem(vacationRow),
+    groupName,
+    approvedByUser:
+      vacationRow.approvedBy && approvedByName
+        ? buildUserSummary({ id: vacationRow.approvedBy, name: approvedByName })
+        : null,
+    rejectedByUser:
+      vacationRow.rejectedBy && rejectedByName
+        ? buildUserSummary({ id: vacationRow.rejectedBy, name: rejectedByName })
+        : null,
+  };
 };
 
 export const getVacationById = async (

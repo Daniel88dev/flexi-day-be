@@ -7,6 +7,7 @@ import { expandDateRangeInclusive, formatDateToISOString } from "../../utils/dat
 import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
 import { logger } from "../../middleware/logger.js";
+import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 
 const services = createDBServices();
 
@@ -75,7 +76,19 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     note: data.note,
   }));
 
-  const created = await db.transaction((tx) => services.vacation.postVacationBulk(records, tx));
+  const created = await db.transaction(async (tx) => {
+    const rows = await services.vacation.postVacationBulk(records, tx);
+    await services.vacationEvent.createVacationEvents(
+      rows.map((row) => ({
+        id: generateRandomUUID(),
+        vacationId: row.id,
+        eventType: vacationEventType.Created,
+        actorUserId: auth.userId,
+      })),
+      tx
+    );
+    return rows;
+  });
 
   if (created.length === 0) {
     throw new AppError({

@@ -5,6 +5,8 @@ import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedRejectVacationType } from "../../services/vacation/types.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 
 const services = createDBServices();
 
@@ -50,6 +52,17 @@ export const handlePostVacationReject = async (req: Request, res: Response) => {
     }
 
     await services.vacation.rejectVacation(vacationId, auth.userId, body.reason ?? null, tx);
+
+    await services.vacationEvent.createVacationEvent(
+      {
+        id: generateRandomUUID(),
+        vacationId,
+        eventType: vacationEventType.Rejected,
+        actorUserId: auth.userId,
+        reason: body.reason ?? null,
+      },
+      tx
+    );
   });
 
   return res.status(200).json({ message: "Vacation rejected" });

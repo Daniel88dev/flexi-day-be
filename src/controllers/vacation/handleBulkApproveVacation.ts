@@ -4,6 +4,8 @@ import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedBulkApproveVacationType } from "../../services/vacation/types.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 
 const services = createDBServices();
 
@@ -45,7 +47,19 @@ export const handleBulkApproveVacation = async (req: Request, res: Response) => 
       });
     }
 
-    return services.vacation.approveVacationsBulk(uniqueIds, auth.userId, tx);
+    const updated = await services.vacation.approveVacationsBulk(uniqueIds, auth.userId, tx);
+
+    await services.vacationEvent.createVacationEvents(
+      updated.map((row) => ({
+        id: generateRandomUUID(),
+        vacationId: row.id,
+        eventType: vacationEventType.Approved,
+        actorUserId: auth.userId,
+      })),
+      tx
+    );
+
+    return updated;
   });
 
   return res.status(200).json({
