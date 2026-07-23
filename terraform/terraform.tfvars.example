@@ -40,3 +40,12 @@ trusted_origins = ["https://flexi-day.com", "https://www.flexi-day.com"]
 # Better Auth secret: leave empty to auto-generate a random 64-char secret
 # (stored only in Secrets Manager + terraform state).
 better_auth_secret = ""
+
+# Google OAuth: leave both empty to disable Google sign-in. When set, the
+# client id is injected as a plain env var and the client secret is stored in
+# Secrets Manager. Register this redirect URI in the Google Cloud console:
+#   https://api.flexi-day.com/api/auth/callback/google
+# Prefer setting these via env vars (TF_VAR_google_client_secret) rather than
+# committing them here.
+google_client_id     = ""
+google_client_secret = ""

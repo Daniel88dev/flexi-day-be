@@ -11,10 +11,24 @@ import { logger } from "../middleware/logger.js";
 // in sync if `emailVerification.expiresIn` is ever configured below.
 const VERIFICATION_EXPIRES_IN = "1 hour";
 
+// Register the Google provider only when both credentials are present, so
+// non-production/test environments (and any deploy before the secrets are
+// wired) start cleanly instead of failing with an empty client id/secret.
+const socialProviders =
+  config?.auth?.googleClientId && config?.auth?.googleClientSecret
+    ? {
+        google: {
+          clientId: config.auth.googleClientId,
+          clientSecret: config.auth.googleClientSecret,
+        },
+      }
+    : undefined;
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
+  socialProviders,
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,

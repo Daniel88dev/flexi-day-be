@@ -38,27 +38,39 @@ resource "aws_apprunner_service" "main" {
       image_configuration {
         port = tostring(var.app_port)
 
-        runtime_environment_variables = {
-          NODE_ENV        = var.environment == "production" ? "production" : "dev"
-          PORT            = tostring(var.app_port)
-          BETTER_AUTH_URL = "https://${var.api_domain_name}"
-          FEED_BASE_URL   = "https://${var.api_domain_name}"
-          TRUSTED_ORIGINS = join(",", var.trusted_origins)
+        runtime_environment_variables = merge(
+          {
+            NODE_ENV        = var.environment == "production" ? "production" : "dev"
+            PORT            = tostring(var.app_port)
+            BETTER_AUTH_URL = "https://${var.api_domain_name}"
+            FEED_BASE_URL   = "https://${var.api_domain_name}"
+            TRUSTED_ORIGINS = join(",", var.trusted_origins)
 
-          # Transactional email (SESv2). Templates are stage-suffixed and
-          # region-scoped; the instance role grants ses:SendEmail (see iam.tf).
-          AWS_REGION            = var.aws_region
-          EMAIL_FROM            = var.email_from
-          EMAIL_TEMPLATE_STAGE  = var.environment == "production" ? "prod" : "dev"
-          SES_CONFIGURATION_SET = var.environment == "production" ? "flexi-day-emails-production" : "flexi-day-emails-dev"
-        }
+            # Transactional email (SESv2). Templates are stage-suffixed and
+            # region-scoped; the instance role grants ses:SendEmail (see iam.tf).
+            AWS_REGION            = var.aws_region
+            EMAIL_FROM            = var.email_from
+            EMAIL_TEMPLATE_STAGE  = var.environment == "production" ? "prod" : "dev"
+            SES_CONFIGURATION_SET = var.environment == "production" ? "flexi-day-emails-production" : "flexi-day-emails-dev"
+          },
+          # Google OAuth client id is public; only set when Google sign-in is
+          # enabled. The matching client secret is injected below via Secrets
+          # Manager. better-auth builds the callback as
+          # {BETTER_AUTH_URL}/api/auth/callback/google.
+          var.google_client_id != "" ? { GOOGLE_CLIENT_ID = var.google_client_id } : {}
+        )
 
         # Resolved at instance start via the instance role; each env var
         # receives the referenced secret's full string value.
-        runtime_environment_secrets = {
-          DATABASE           = aws_secretsmanager_secret.database_url.arn
-          BETTER_AUTH_SECRET = aws_secretsmanager_secret.better_auth_secret.arn
-        }
+        runtime_environment_secrets = merge(
+          {
+            DATABASE           = aws_secretsmanager_secret.database_url.arn
+            BETTER_AUTH_SECRET = aws_secretsmanager_secret.better_auth_secret.arn
+          },
+          var.google_client_id != "" ? {
+            GOOGLE_CLIENT_SECRET = aws_secretsmanager_secret.google_client_secret[0].arn
+          } : {}
+        )
       }
     }
   }
@@ -85,6 +97,7 @@ resource "aws_apprunner_service" "main" {
   depends_on = [
     aws_secretsmanager_secret_version.database_url,
     aws_secretsmanager_secret_version.better_auth_secret,
+    aws_secretsmanager_secret_version.google_client_secret,
     aws_iam_role_policy.apprunner_secrets,
     aws_db_instance.main
   ]

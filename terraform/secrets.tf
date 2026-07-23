@@ -7,10 +7,25 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# Random Better Auth secret (used unless var.better_auth_secret is set)
+# Scheduled rotation window for the Better Auth secret. `time_rotating` stores
+# a rotation timestamp in state and only advances it once the window elapses;
+# incidental `terraform apply` runs in between leave it unchanged. Advancing it
+# is the ONLY thing that rotates the secret below (and thus signs out every
+# active session + invalidates pending verify/reset tokens once per window).
+resource "time_rotating" "better_auth_secret_rotation" {
+  rotation_days = var.better_auth_rotation_days
+}
+
+# Random Better Auth secret (used unless var.better_auth_secret is set).
+# `keepers` ties the value to the rotation window: the secret is regenerated
+# only when time_rotating advances, i.e. at most once per rotation_days.
 resource "random_password" "better_auth_secret" {
   length  = 64
   special = false
+
+  keepers = {
+    rotated_at = time_rotating.better_auth_secret_rotation.rotation_rfc3339
+  }
 }
 
 # App Runner injects each secret as ONE env var containing the secret's full
@@ -53,4 +68,25 @@ resource "aws_secretsmanager_secret_version" "better_auth_secret" {
     ? var.better_auth_secret
     : random_password.better_auth_secret.result
   )
+}
+
+# Google OAuth client secret. Only provisioned when Google sign-in is enabled
+# (i.e. google_client_id is set), so the whole integration is opt-in and an
+# empty secret_string never reaches Secrets Manager. The client id itself is
+# public and injected as a plain env var in apprunner.tf.
+resource "aws_secretsmanager_secret" "google_client_secret" {
+  count                   = var.google_client_id != "" ? 1 : 0
+  name                    = "${var.project_name}-${var.environment}-google-client-secret"
+  description             = "Google OAuth client secret for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-google-client-secret"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "google_client_secret" {
+  count         = var.google_client_id != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.google_client_secret[0].id
+  secret_string = var.google_client_secret
 }

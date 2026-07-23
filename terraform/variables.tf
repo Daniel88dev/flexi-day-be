@@ -157,7 +157,27 @@ variable "db_iam_login" {
 
 # Better Auth Configuration
 variable "better_auth_secret" {
-  description = "Better Auth secret; leave empty to auto-generate a random one"
+  description = "Better Auth secret; leave empty to auto-generate a rotating one (see better_auth_rotation_days)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "better_auth_rotation_days" {
+  description = "Rotation window (days) for the auto-generated Better Auth secret. Only applies when better_auth_secret is empty. Advancing the window signs out all users once."
+  type        = number
+  default     = 90
+}
+
+# Google OAuth Configuration
+variable "google_client_id" {
+  description = "Google OAuth client ID (public; injected as a plain env var). Leave empty to disable Google sign-in."
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth client secret (stored in Secrets Manager). Required if google_client_id is set."
   type        = string
   sensitive   = true
   default     = ""
