@@ -3,6 +3,10 @@ import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetMyApprovals } from "../controllers/users/handleGetMyApprovals.js";
 import { handleGetMyDashboardSummary } from "../controllers/users/handleGetMyDashboardSummary.js";
 import { handleGetMyBalances } from "../controllers/users/handleGetMyBalances.js";
+import { handleGetMySettings } from "../controllers/users/handleGetMySettings.js";
+import { handlePutMySettings } from "../controllers/users/handlePutMySettings.js";
+import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
+import { validatePutUserSettings } from "../services/userSettings/types.js";
 
 export const usersRouter = (): Router => {
   const app = Router();
@@ -57,6 +61,60 @@ export const usersRouter = (): Router => {
    *         description: Balance buckets per vacation type
    */
   app.get("/me/balances", tryCatch(handleGetMyBalances));
+
+  /**
+   * @openapi
+   * /api/users/me/settings:
+   *   get:
+   *     tags:
+   *       - Users
+   *     summary: The caller's preferences
+   *     description: |
+   *       Users without a stored row are on the defaults
+   *       (`emailNotifications: true`).
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: Preference flags
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 emailNotifications:
+   *                   type: boolean
+   *   put:
+   *     tags:
+   *       - Users
+   *     summary: Update the caller's preferences
+   *     description: |
+   *       Turning `emailNotifications` off suppresses workflow mail (approval
+   *       requests, decisions, cancellations). Account mail such as email
+   *       confirmation is unaffected.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - emailNotifications
+   *             properties:
+   *               emailNotifications:
+   *                 type: boolean
+   *     responses:
+   *       '200':
+   *         description: The stored preferences
+   */
+  app.get("/me/settings", tryCatch(handleGetMySettings));
+  app.put(
+    "/me/settings",
+    bodyValidationMiddleware(validatePutUserSettings),
+    tryCatch(handlePutMySettings)
+  );
 
   return app;
 };

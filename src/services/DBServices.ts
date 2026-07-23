@@ -4,6 +4,7 @@ import * as groupUserServices from "./groupUser/groupUserServices.js";
 import * as groupServices from "./group/groupServices.js";
 import * as userYearQuotasServices from "./userYearQuotas/userYearQuotasServices.js";
 import * as changesServices from "./changes/changesServices.js";
+import * as userSettingsServices from "./userSettings/userSettingsServices.js";
 import * as bankHolidayServices from "./bankHoliday/bankHolidayServices.js";
 import * as notificationServices from "./notification/notificationServices.js";
 import * as calendarSyncServices from "./calendarSync/calendarSyncServices.js";
@@ -69,6 +70,11 @@ export type DBServices = Readonly<{
   changes: {
     getChanges: typeof changesServices.getChangesForUser;
     postChanges: typeof changesServices.postChanges;
+  };
+  userSettings: {
+    getUserSettings: typeof userSettingsServices.getUserSettings;
+    upsertUserSettings: typeof userSettingsServices.upsertUserSettings;
+    filterUsersAcceptingEmail: typeof userSettingsServices.filterUsersAcceptingEmail;
   };
   bankHoliday: {
     listBankHolidays: typeof bankHolidayServices.listBankHolidays;
@@ -155,6 +161,11 @@ export const createDBServices = (): DBServices => {
     changes: {
       getChanges: changesServices.getChangesForUser,
       postChanges: changesServices.postChanges,
+    },
+    userSettings: {
+      getUserSettings: userSettingsServices.getUserSettings,
+      upsertUserSettings: userSettingsServices.upsertUserSettings,
+      filterUsersAcceptingEmail: userSettingsServices.filterUsersAcceptingEmail,
     },
     bankHoliday: {
       listBankHolidays: bankHolidayServices.listBankHolidays,
