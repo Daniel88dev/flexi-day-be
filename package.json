@@ -37,7 +37,7 @@
   "homepage": "https://github.com/Daniel88dev/flexi-day-be#readme",
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1090.0",
-    "better-auth": "^1.3.26",
+    "better-auth": "^1.6.13",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.6",
