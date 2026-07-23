@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { UserSummary } from "../../utils/userPresentation.js";
 
 export type GroupUser = {
   id: string;
@@ -22,6 +23,15 @@ export type GroupUserInsertType = {
 };
 
 export type GroupUserPermissions = Pick<GroupUser, "viewAccess" | "adminAccess" | "controlledUser">;
+
+/**
+ * A membership row enriched with the member's identity. The members list is
+ * useless without it — the raw row only carries a `userId`.
+ */
+export type GroupUserListItem = GroupUser & {
+  user: UserSummary;
+  email: string;
+};
 
 export type InviteLink = {
   id: string;
