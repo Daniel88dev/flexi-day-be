@@ -1,8 +1,11 @@
 import * as vacationServices from "./vacation/vacationServices.js";
+import * as vacationEventServices from "./vacationEvent/vacationEventServices.js";
 import * as groupUserServices from "./groupUser/groupUserServices.js";
 import * as groupServices from "./group/groupServices.js";
 import * as userYearQuotasServices from "./userYearQuotas/userYearQuotasServices.js";
 import * as changesServices from "./changes/changesServices.js";
+import * as userSettingsServices from "./userSettings/userSettingsServices.js";
+import * as userServices from "./user/userServices.js";
 import * as bankHolidayServices from "./bankHoliday/bankHolidayServices.js";
 import * as notificationServices from "./notification/notificationServices.js";
 import * as calendarSyncServices from "./calendarSync/calendarSyncServices.js";
@@ -10,6 +13,7 @@ import * as calendarSyncServices from "./calendarSync/calendarSyncServices.js";
 export type DBServices = Readonly<{
   vacation: {
     getVacationById: typeof vacationServices.getVacationById;
+    getVacationDetailById: typeof vacationServices.getVacationDetailById;
     getVacationsForGroup: typeof vacationServices.getVacationsForGroup;
     getVacationsForUser: typeof vacationServices.getVacationsForUser;
     postVacation: typeof vacationServices.postVacation;
@@ -24,6 +28,11 @@ export type DBServices = Readonly<{
     countUsersOutOnDay: typeof vacationServices.countUsersOutOnDay;
     countApprovedVacationsInRange: typeof vacationServices.countApprovedVacationsInRange;
     aggregateUserUsageForYear: typeof vacationServices.aggregateUserUsageForYear;
+  };
+  vacationEvent: {
+    createVacationEvent: typeof vacationEventServices.createVacationEvent;
+    createVacationEvents: typeof vacationEventServices.createVacationEvents;
+    getVacationEvents: typeof vacationEventServices.getVacationEvents;
   };
   groupUser: {
     getGroupUser: typeof groupUserServices.getGroupUser;
@@ -56,11 +65,21 @@ export type DBServices = Readonly<{
     insertUserYearQuotas: typeof userYearQuotasServices.insertUserYearQuotas;
     decreaseChangeForUserYearQuotas: typeof userYearQuotasServices.decreaseChangeForUserYearQuotas;
     updateUserYearQuotasById: typeof userYearQuotasServices.updateUserYearQuotasById;
+    upsertUserYearQuota: typeof userYearQuotasServices.upsertUserYearQuota;
     sumUserQuotasForYear: typeof userYearQuotasServices.sumUserQuotasForYear;
   };
   changes: {
     getChanges: typeof changesServices.getChangesForUser;
     postChanges: typeof changesServices.postChanges;
+  };
+  user: {
+    getUserById: typeof userServices.getUserById;
+    getUsersByIds: typeof userServices.getUsersByIds;
+  };
+  userSettings: {
+    getUserSettings: typeof userSettingsServices.getUserSettings;
+    upsertUserSettings: typeof userSettingsServices.upsertUserSettings;
+    filterUsersAcceptingEmail: typeof userSettingsServices.filterUsersAcceptingEmail;
   };
   bankHoliday: {
     listBankHolidays: typeof bankHolidayServices.listBankHolidays;
@@ -89,6 +108,7 @@ export const createDBServices = (): DBServices => {
   return {
     vacation: {
       getVacationById: vacationServices.getVacationById,
+      getVacationDetailById: vacationServices.getVacationDetailById,
       getVacationsForGroup: vacationServices.getVacationsForGroup,
       getVacationsForUser: vacationServices.getVacationsForUser,
       postVacation: vacationServices.postVacation,
@@ -103,6 +123,11 @@ export const createDBServices = (): DBServices => {
       countUsersOutOnDay: vacationServices.countUsersOutOnDay,
       countApprovedVacationsInRange: vacationServices.countApprovedVacationsInRange,
       aggregateUserUsageForYear: vacationServices.aggregateUserUsageForYear,
+    },
+    vacationEvent: {
+      createVacationEvent: vacationEventServices.createVacationEvent,
+      createVacationEvents: vacationEventServices.createVacationEvents,
+      getVacationEvents: vacationEventServices.getVacationEvents,
     },
     groupUser: {
       getGroupUser: groupUserServices.getGroupUser,
@@ -135,11 +160,21 @@ export const createDBServices = (): DBServices => {
       insertUserYearQuotas: userYearQuotasServices.insertUserYearQuotas,
       decreaseChangeForUserYearQuotas: userYearQuotasServices.decreaseChangeForUserYearQuotas,
       updateUserYearQuotasById: userYearQuotasServices.updateUserYearQuotasById,
+      upsertUserYearQuota: userYearQuotasServices.upsertUserYearQuota,
       sumUserQuotasForYear: userYearQuotasServices.sumUserQuotasForYear,
     },
     changes: {
       getChanges: changesServices.getChangesForUser,
       postChanges: changesServices.postChanges,
+    },
+    user: {
+      getUserById: userServices.getUserById,
+      getUsersByIds: userServices.getUsersByIds,
+    },
+    userSettings: {
+      getUserSettings: userSettingsServices.getUserSettings,
+      upsertUserSettings: userSettingsServices.upsertUserSettings,
+      filterUsersAcceptingEmail: userSettingsServices.filterUsersAcceptingEmail,
     },
     bankHoliday: {
       listBankHolidays: bankHolidayServices.listBankHolidays,

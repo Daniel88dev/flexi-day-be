@@ -6,7 +6,8 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { expandDateRangeInclusive, formatDateToISOString } from "../../utils/dateFunc.js";
 import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
-import { logger } from "../../middleware/logger.js";
+import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
+import { notifyVacationRequested } from "../../services/vacation/vacationNotifier.js";
 
 const services = createDBServices();
 
@@ -75,7 +76,19 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     note: data.note,
   }));
 
-  const created = await db.transaction((tx) => services.vacation.postVacationBulk(records, tx));
+  const created = await db.transaction(async (tx) => {
+    const rows = await services.vacation.postVacationBulk(records, tx);
+    await services.vacationEvent.createVacationEvents(
+      rows.map((row) => ({
+        id: generateRandomUUID(),
+        vacationId: row.id,
+        eventType: vacationEventType.Created,
+        actorUserId: auth.userId,
+      })),
+      tx
+    );
+    return rows;
+  });
 
   if (created.length === 0) {
     throw new AppError({
@@ -86,28 +99,17 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  // Best-effort notification lookup. The rows above are already committed,
-  // so any failure here must NOT bubble up: a 5xx would tempt the client to
-  // retry a non-idempotent endpoint (the insert uses onConflictDoNothing, so
-  // the retry would return an empty set and our "no rows created" guard would
-  // mislead the caller into thinking nothing was booked).
-  try {
-    const groupData = await services.group.getApprovalUsers(data.groupId);
-
-    if (groupData && groupData.mainApprovalUserEmail) {
-      // todo construct and send notification email
-      logger.info("notification email not-sent (not finished");
-    } else if (groupData?.tempApprovalUserEmail) {
-      // todo construct and send notification email
-      logger.info("notification email not-sent (not finished");
-    }
-  } catch (notifyErr) {
-    logger.error("post-commit approval-user lookup failed", {
-      userId: auth.userId,
-      groupId: data.groupId,
-      error: notifyErr,
-    });
-  }
+  // Best-effort notification. The rows above are already committed, so any
+  // failure here must NOT bubble up: a 5xx would tempt the client to retry a
+  // non-idempotent endpoint (the insert uses onConflictDoNothing, so the retry
+  // would return an empty set and our "no rows created" guard would mislead
+  // the caller into thinking nothing was booked). notifyVacationRequested
+  // swallows and logs its own errors.
+  await notifyVacationRequested(
+    created,
+    { id: auth.userId, name: auth.userName },
+    data.note ?? null
+  );
 
   return res.status(201).json(created);
 };

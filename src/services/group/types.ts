@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type GroupType = {
   id: string;
   groupName: string;
@@ -19,3 +21,10 @@ export type GroupInsertType = {
   defaultHomeOfficeDays?: number;
   mainApprovalUser?: string;
 };
+
+export const validatePutGroupQuotas = z.object({
+  defaultVacationDays: z.number().int().min(0).max(365),
+  defaultHomeOfficeDays: z.number().int().min(0).max(365),
+});
+
+export type ValidatedPutGroupQuotasType = z.infer<typeof validatePutGroupQuotas>;

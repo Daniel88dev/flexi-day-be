@@ -1,14 +1,17 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { and, countDistinct, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, countDistinct, eq, inArray, isNull } from "drizzle-orm";
 import type {
   GroupUser,
   GroupUserInsertType,
+  GroupUserListItem,
   GroupUserPermissions,
   InviteLink,
   InviteLinkInsertType,
 } from "./types.js";
 import { inviteLink } from "../../db/schema/invite-link-schema.js";
+import { user } from "../../db/schema/auth-schema.js";
+import { buildUserSummary } from "../../utils/userPresentation.js";
 
 /**
  * Retrieves a user and their association with a specified group.
@@ -141,11 +144,34 @@ export const getAllGroupsForUser = async (userId: string): Promise<{ groupId: st
     .where(and(eq(groupUsers.userId, userId), isNull(groupUsers.deletedAt)));
 };
 
-export const getGroupUsers = async (groupId: string): Promise<GroupUser[]> => {
-  return db
-    .select()
+/**
+ * Lists the active members of a group together with their identity, so the
+ * members screen can show names instead of raw user ids.
+ */
+export const getGroupUsers = async (groupId: string): Promise<GroupUserListItem[]> => {
+  const rows = await db
+    .select({
+      id: groupUsers.id,
+      groupId: groupUsers.groupId,
+      userId: groupUsers.userId,
+      viewAccess: groupUsers.viewAccess,
+      adminAccess: groupUsers.adminAccess,
+      controlledUser: groupUsers.controlledUser,
+      deletedAt: groupUsers.deletedAt,
+      createdAt: groupUsers.createdAt,
+      updatedAt: groupUsers.updatedAt,
+      userName: user.name,
+      email: user.email,
+    })
     .from(groupUsers)
-    .where(and(eq(groupUsers.groupId, groupId), isNull(groupUsers.deletedAt)));
+    .innerJoin(user, eq(groupUsers.userId, user.id))
+    .where(and(eq(groupUsers.groupId, groupId), isNull(groupUsers.deletedAt)))
+    .orderBy(asc(user.name));
+
+  return rows.map(({ userName, ...rest }) => ({
+    ...rest,
+    user: buildUserSummary({ id: rest.userId, name: userName }),
+  }));
 };
 
 /**

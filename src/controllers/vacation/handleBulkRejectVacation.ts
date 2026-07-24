@@ -4,6 +4,9 @@ import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedBulkRejectVacationType } from "../../services/vacation/types.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
+import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
 
 const services = createDBServices();
 
@@ -39,8 +42,35 @@ export const handleBulkRejectVacation = async (req: Request, res: Response) => {
       });
     }
 
-    return services.vacation.rejectVacationsBulk(uniqueIds, auth.userId, data.reason ?? null, tx);
+    const updated = await services.vacation.rejectVacationsBulk(
+      uniqueIds,
+      auth.userId,
+      data.reason ?? null,
+      tx
+    );
+
+    await services.vacationEvent.createVacationEvents(
+      updated.map((row) => ({
+        id: generateRandomUUID(),
+        vacationId: row.id,
+        eventType: vacationEventType.Rejected,
+        actorUserId: auth.userId,
+        reason: data.reason ?? null,
+      })),
+      tx
+    );
+
+    return updated;
   });
+
+  // Post-commit and best-effort; the notifier logs its own failures. A bulk
+  // decision can span several requesters, so it fans out one mail per person.
+  await notifyVacationDecision(
+    rejected,
+    "rejected",
+    { id: auth.userId, name: auth.userName },
+    data.reason ?? null
+  );
 
   return res.status(200).json({
     message: "Vacations rejected",

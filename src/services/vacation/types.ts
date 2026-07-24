@@ -33,6 +33,26 @@ export type VacationListItem = VacationType & {
   user: UserSummary;
 };
 
+/**
+ * A single request as shown on the detail view: the row, who it belongs to,
+ * which group it was booked in, and who decided on it.
+ */
+export type VacationDetail = VacationListItem & {
+  groupName: string;
+  approvedByUser: UserSummary | null;
+  rejectedByUser: UserSummary | null;
+};
+
+/** Optional cancellation reason, accepted on DELETE /api/vacation/:id. */
+export const validateCancelVacation = z
+  .object({
+    reason: z.string().max(1000).optional(),
+  })
+  .nullish()
+  .transform((value) => value ?? {});
+
+export type ValidatedCancelVacationType = z.infer<typeof validateCancelVacation>;
+
 const vacationKindEnum = z.enum(Object.values(vacationType) as [vacationType, ...vacationType[]]);
 
 export const validatePostVacation = z.object({
@@ -47,9 +67,15 @@ export const validatePostVacation = z.object({
 
 export type ValidatedPostVacationType = z.infer<typeof validatePostVacation>;
 
-export const validateRejectVacation = z.object({
-  reason: z.string().max(1000).optional(),
-});
+// Reject and cancel both take an optional reason, so clients legitimately send
+// no body at all — in which case express leaves `req.body` undefined. Accept
+// that and normalise it to an empty object rather than failing validation.
+export const validateRejectVacation = z
+  .object({
+    reason: z.string().max(1000).optional(),
+  })
+  .nullish()
+  .transform((value) => value ?? {});
 
 export type ValidatedRejectVacationType = z.infer<typeof validateRejectVacation>;
 

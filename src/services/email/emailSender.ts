@@ -9,25 +9,76 @@
  */
 
 /**
- * A templated email to send. `template` is the logical template name; the
- * adapter maps it to the concrete, stage-suffixed SES template name.
- */
-export interface TemplatedEmail {
-  to: string;
-  template: "email-confirmation";
-  data: EmailConfirmationData;
-}
-
-/**
  * Variables required by the `email-confirmation` SES template. SES renders
  * missing variables as empty strings, so all fields must be present and
- * non-empty before sending.
+ * non-empty before sending — that applies to every template below too.
  */
 export interface EmailConfirmationData {
   name: string;
   confirmationUrl: string;
   expiresIn: string;
 }
+
+/** `vacation-approval-request`: sent to a group approver. */
+export interface VacationApprovalRequestData {
+  approverName: string;
+  employeeName: string;
+  teamName: string;
+  leaveType: string;
+  dateRange: string;
+  dayCount: string;
+  /** Never empty — pass a placeholder such as "—" when there is no note. */
+  note: string;
+  requestUrl: string;
+}
+
+/** `vacation-approved`: sent to the requester. */
+export interface VacationApprovedData {
+  employeeName: string;
+  approverName: string;
+  teamName: string;
+  leaveType: string;
+  dateRange: string;
+  dayCount: string;
+  requestUrl: string;
+}
+
+/** `vacation-rejected`: sent to the requester. */
+export interface VacationRejectedData extends VacationApprovedData {
+  /** Never empty — pass a placeholder such as "—" when no reason was given. */
+  reason: string;
+}
+
+/**
+ * `vacation-cancelled`: sent to the requester when someone else cancels their
+ * approved time off, or to the approvers when the requester cancels it.
+ */
+export interface VacationCancelledData {
+  recipientName: string;
+  employeeName: string;
+  cancelledByName: string;
+  teamName: string;
+  leaveType: string;
+  dateRange: string;
+  dayCount: string;
+  /** Never empty — pass a placeholder such as "—" when no reason was given. */
+  reason: string;
+  requestUrl: string;
+}
+
+/**
+ * A templated email to send. `template` is the logical template name; the
+ * adapter maps it to the concrete, stage-suffixed SES template name. The
+ * union keeps each template's variables tied to its name.
+ */
+export type TemplatedEmail =
+  | { to: string; template: "email-confirmation"; data: EmailConfirmationData }
+  | { to: string; template: "vacation-approval-request"; data: VacationApprovalRequestData }
+  | { to: string; template: "vacation-approved"; data: VacationApprovedData }
+  | { to: string; template: "vacation-rejected"; data: VacationRejectedData }
+  | { to: string; template: "vacation-cancelled"; data: VacationCancelledData };
+
+export type EmailTemplateName = TemplatedEmail["template"];
 
 export interface EmailSender {
   sendTemplated(email: TemplatedEmail): Promise<void>;

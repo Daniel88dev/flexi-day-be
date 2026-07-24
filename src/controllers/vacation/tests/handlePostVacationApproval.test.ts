@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const { mockGetVacationById, mockGetApprovalUsers, mockApproveVacation } = vi.hoisted(() => ({
+const {
+  mockGetVacationById,
+  mockGetApprovalUsers,
+  mockApproveVacation,
+  mockCreateVacationEvent,
+} = vi.hoisted(() => ({
   mockGetVacationById: vi.fn(),
   mockGetApprovalUsers: vi.fn(),
   mockApproveVacation: vi.fn(),
+  mockCreateVacationEvent: vi.fn(),
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({
@@ -24,6 +30,9 @@ vi.mock("../../../services/DBServices.js", () => ({
     },
     group: {
       getApprovalUsers: mockGetApprovalUsers,
+    },
+    vacationEvent: {
+      createVacationEvent: mockCreateVacationEvent,
     },
   }),
 }));

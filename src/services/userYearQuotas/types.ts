@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type UserYearQuotasType = {
   id: string;
   userId: string;
@@ -12,7 +14,9 @@ export type UserYearQuotasType = {
 export type UserYearQuotasInsertType = Pick<
   UserYearQuotasType,
   "id" | "userId" | "groupId" | "relatedYear" | "homeOfficeDays"
->;
+> & {
+  vacationDays?: number;
+};
 
 export type UserYearQuotasUpdateType = {
   userId: string;
@@ -21,3 +25,25 @@ export type UserYearQuotasUpdateType = {
   vacationChange: number;
   homeOfficeChange: number;
 };
+
+export type UserYearQuotasUpsertType = {
+  id: string;
+  userId: string;
+  groupId: string;
+  relatedYear: string;
+  vacationDays: number;
+  homeOfficeDays: number;
+};
+
+/**
+ * Body of the admin "set this member's allowance for a year" endpoint. The
+ * year range mirrors the `user_year_quotas_related_year_range_chk` constraint.
+ */
+export const validatePutUserQuota = z.object({
+  userId: z.uuid(),
+  year: z.coerce.number().int().min(2025).max(2100),
+  vacationDays: z.number().int().min(0).max(365),
+  homeOfficeDays: z.number().int().min(0).max(365),
+});
+
+export type ValidatedPutUserQuotaType = z.infer<typeof validatePutUserQuota>;
