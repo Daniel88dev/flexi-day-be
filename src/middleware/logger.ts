@@ -1,4 +1,6 @@
 import { createLogger, format, transports } from "winston";
+import TransportStream from "winston-transport";
+import * as Sentry from "@sentry/node";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -31,6 +33,18 @@ try {
   );
 }
 
+// Bridge winston -> Sentry Logs. Sentry is initialized in `instrument.ts`
+// (loaded via `node --import` BEFORE the app graph), so `isEnabled()` here
+// reliably reflects the enabled path (production, or SENTRY_ENABLE=true).
+// When off (local dev/tests) this stays empty and winston behaves as before.
+// Every `logger.info/warn/error` is then forwarded to Sentry with the SDK's
+// `enableLogs: true`, carrying our `defaultMeta` (service, buildInfo) as attributes.
+const sentryTransports: TransportStream[] = [];
+if (Sentry.isEnabled()) {
+  const SentryWinstonTransport = Sentry.createSentryWinstonTransport(TransportStream);
+  sentryTransports.push(new SentryWinstonTransport());
+}
+
 const appVersion = process.env.APP_VERSION ?? process.env.npm_package_version ?? "unknown";
 
 /**
@@ -60,5 +74,5 @@ export const logger = createLogger({
       nodeVersion: process.version,
     },
   },
-  transports: [new transports.Console(), ...fileTransports],
+  transports: [new transports.Console(), ...fileTransports, ...sentryTransports],
 });
