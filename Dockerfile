@@ -13,11 +13,9 @@ COPY drizzle.config.ts ./
 COPY src ./src
 RUN npm run build
 
-# Sentry source maps: inject debug IDs into the built JS and upload the maps so
-# production stack traces resolve to TypeScript source. Skipped when the
-# sentry_auth_token build secret is absent (e.g. local `docker build`), so the
-# image still builds without Sentry credentials. APP_VERSION (git SHA) is the
-# release, matching `release` in src/instrument.ts.
+# Sentry source maps: inject debug IDs and upload the maps so prod stack traces
+# resolve to TS source. Skipped when the sentry_auth_token secret is absent (e.g.
+# local docker build). APP_VERSION (git SHA) is the release; must match instrument.ts.
 ARG APP_VERSION=unknown
 ARG SENTRY_ORG=freelancer-ldp
 ARG SENTRY_PROJECT=flexi-day-be
@@ -39,8 +37,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Stamp the build so logs report which image is running (buildInfo.version).
-# Passed from CI (--build-arg APP_VERSION=<git sha>); defaults to "unknown".
+# Stamps buildInfo.version and the Sentry release. Passed from CI (--build-arg APP_VERSION=<git sha>).
 ARG APP_VERSION=unknown
 ENV APP_VERSION=${APP_VERSION}
 

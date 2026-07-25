@@ -4,15 +4,7 @@ import { schema } from "./schema/index.js";
 
 const isProd = config.api.env === "production";
 
-/**
- * Represents the database instance initialized using the `drizzle` function.
- * This is used to manage database connections, execute queries, and interact
- * with the defined database schema.
- *
- * The database connection is configured using the provided connection details.
- * In production environments, SSL is enabled with `rejectUnauthorized` set to true.
- * Drops SSL for non-production environments.
- */
+// Production verifies TLS against RDS (rejectUnauthorized); no SSL elsewhere.
 export const db: NodePgDatabase<typeof schema> = drizzle({
   connection: {
     connectionString: config.db.database,

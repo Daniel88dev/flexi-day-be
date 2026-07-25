@@ -8,16 +8,6 @@ import { db, type DbTransaction } from "../../db/db.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
-/**
- * Retrieves user year group quotas based on the provided related year, group ID,
- * and optionally the user ID.
- *
- * @param {string} relatedYear - The related year for which the quotas are fetched.
- * @param {string} groupId - The identifier of the group to fetch quotas for.
- * @param {string | null} userId - The identifier of the user, or null to fetch quotas without filtering by user.
- * @param tx - Optional database transaction to use for the operation.
- * @returns {Promise<UserYearQuotasType[]>} A promise that resolves to an array of user year quotas.
- */
 export const getUserYearGroupQuotas = async (
   relatedYear: string,
   groupId: string,
@@ -30,31 +20,12 @@ export const getUserYearGroupQuotas = async (
   return (tx ?? db).select().from(userYearQuotas).where(where);
 };
 
-/**
- * Asynchronously inserts user year quota records into the database.
- *
- * @param {UserYearQuotasInsertType[]} records - An array of user year quota records to be inserted.
- * @returns {Promise<UserYearQuotasType[]>} A promise resolving to an array of inserted user year quota records.
- *
- * The function inserts the provided `records` into the `userYearQuotas` table in the database.
- * If any record conflicts with existing entries (based on the table's unique constraints),
- * the conflicting entries will be ignored without interruption of the operation.
- */
 export const insertUserYearQuotas = async (
   records: UserYearQuotasInsertType[]
 ): Promise<UserYearQuotasType[]> => {
   return db.insert(userYearQuotas).values(records).onConflictDoNothing().returning();
 };
 
-/**
- * Updates the user year quotas by decreasing the values of vacation days and home office days
- * based on the provided changes. The update is performed for a specific user, group, and year.
- *
- * @param {UserYearQuotasUpdateType} data - An object containing the user ID, group ID, year,
- * and the values by which vacation days and home office days should be decreased.
- * @returns {Promise<UserYearQuotasType | undefined>} A promise that resolves to the updated
- * user year quotas object if successful, or undefined if no matching record is found.
- */
 export const decreaseChangeForUserYearQuotas = async (
   data: UserYearQuotasUpdateType
 ): Promise<UserYearQuotasType | undefined> => {
@@ -76,14 +47,6 @@ export const decreaseChangeForUserYearQuotas = async (
   return row;
 };
 
-/**
- * Updates the yearly quota of vacation days and home office days for a specific quota record identified by its ID.
- *
- * @param {string} id - The unique identifier of the user whose quotas are being updated.
- * @param {number} vacations - The updated number of vacation days for the user.
- * @param {number} homeOffice - The updated number of home office days for the user.
- * @returns {Promise<UserYearQuotasType | undefined>} A promise that resolves to the updated user year quotas if successful, or undefined if no matching record is found.
- */
 /**
  * Sums quota allocations for the supplied user across the supplied groups for
  * a given year. Returns zeros when no quota rows exist yet.
