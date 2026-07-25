@@ -63,6 +63,7 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.meta.outputs.ECR_REGISTRY }}
           IMAGE_TAG_SHA: ${{ steps.meta.outputs.IMAGE_TAG_SHA }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}"
           SHA_IMAGE_FULL_URI="${IMAGE_URI}:${IMAGE_TAG_SHA}"
@@ -74,6 +75,7 @@ jobs:
           docker buildx build --platform linux/amd64 \
              -t "${SHA_IMAGE_FULL_URI}" \
              --build-arg APP_VERSION="${IMAGE_TAG_SHA}" \
+             --secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
              --provenance=false \
              --push .
 
