@@ -14,6 +14,7 @@ export enum vacationEventType {
   Approved = "APPROVED",
   Rejected = "REJECTED",
   Cancelled = "CANCELLED",
+  Comment = "COMMENT",
 }
 
 export const vacationEventTypeEnum = pgEnum("vacation_event_type", enumToPgEnum(vacationEventType));

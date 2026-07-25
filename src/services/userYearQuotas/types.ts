@@ -40,7 +40,9 @@ export type UserYearQuotasUpsertType = {
  * year range mirrors the `user_year_quotas_related_year_range_chk` constraint.
  */
 export const validatePutUserQuota = z.object({
-  userId: z.uuid(),
+  // better-auth user ids are opaque non-UUID strings, so validate as a
+  // non-empty string rather than z.uuid().
+  userId: z.string().min(1),
   year: z.coerce.number().int().min(2025).max(2100),
   vacationDays: z.number().int().min(0).max(365),
   homeOfficeDays: z.number().int().min(0).max(365),

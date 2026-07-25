@@ -7,6 +7,7 @@ import { db } from "../../db/db.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
+import type { ValidatedApproveVacationType } from "../../services/vacation/types.js";
 
 const services = createDBServices();
 
@@ -16,6 +17,9 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
   const auth = getAuth(req);
 
   const vacationId = validateUUID.parse(req.params.id);
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const body: ValidatedApproveVacationType = req.body ?? {};
 
   const approved = await db.transaction(async (tx) => {
     const vacationData = await services.vacation.getVacationById(vacationId, tx);
@@ -56,6 +60,7 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
         vacationId,
         eventType: vacationEventType.Approved,
         actorUserId: auth.userId,
+        reason: body.reason ?? null,
       },
       tx
     );

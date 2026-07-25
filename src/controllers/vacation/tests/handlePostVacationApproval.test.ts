@@ -1,16 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const {
-  mockGetVacationById,
-  mockGetApprovalUsers,
-  mockApproveVacation,
-  mockCreateVacationEvent,
-} = vi.hoisted(() => ({
-  mockGetVacationById: vi.fn(),
-  mockGetApprovalUsers: vi.fn(),
-  mockApproveVacation: vi.fn(),
-  mockCreateVacationEvent: vi.fn(),
-}));
+const { mockGetVacationById, mockGetApprovalUsers, mockApproveVacation, mockCreateVacationEvent } =
+  vi.hoisted(() => ({
+    mockGetVacationById: vi.fn(),
+    mockGetApprovalUsers: vi.fn(),
+    mockApproveVacation: vi.fn(),
+    mockCreateVacationEvent: vi.fn(),
+  }));
 
 vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
@@ -127,6 +123,33 @@ describe("handlePostVacationApproval", () => {
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ message: "Vacation approved" });
+  });
+
+  it("stores the approver's note on the APPROVED event", async () => {
+    const { req, res } = makeReqRes({
+      params: { id: "550e8400-e29b-41d4-a716-446655440000" },
+      body: { reason: "Enjoy the break" },
+    });
+
+    mockGetVacationById.mockResolvedValue({
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      userId: "vacation_user_123",
+      groupId: "group_123",
+      requestedDay: "2024-03-15",
+      vacationType: "Vacation",
+    });
+    mockGetApprovalUsers.mockResolvedValue({
+      mainApprovalUserId: "user_123",
+      tempApprovalUserId: "temp_user_456",
+    });
+    mockApproveVacation.mockResolvedValue(undefined);
+
+    await handlePostVacationApproval(req, res);
+
+    expect(mockCreateVacationEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "APPROVED", reason: "Enjoy the break" }),
+      {}
+    );
   });
 
   it("should throw validation error for invalid UUID format", async () => {

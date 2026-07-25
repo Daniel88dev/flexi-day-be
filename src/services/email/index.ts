@@ -12,6 +12,7 @@ export type {
   VacationApprovedData,
   VacationCancelledData,
   VacationRejectedData,
+  VacationCommentData,
 } from "./emailSender.js";
 
 /**
