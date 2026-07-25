@@ -1,4 +1,5 @@
 import express from "express";
+import * as Sentry from "@sentry/node";
 import { serverCors } from "./middleware/cors.js";
 import { helmetHeaders } from "./middleware/headers.js";
 import { limiter } from "./middleware/limiter.js";
@@ -50,6 +51,20 @@ export const createServer = () => {
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ ok: true, environment: config.api.env });
   });
+
+  // Verification-only endpoint: throws so Sentry can capture a test error.
+  // Never mounted in production to avoid exposing a public error route.
+  if (config.api.env !== "production") {
+    app.get("/debug-sentry", () => {
+      Sentry.logger.info("User triggered test error", { action: "test_error_endpoint" });
+      throw new Error("My first Sentry error!");
+    });
+  }
+
+  // The Sentry error handler must be registered after all controllers and
+  // before any other error middleware. It reports 5xx errors; controlled
+  // 4xx CustomErrors are left for errorMiddleware to serialize.
+  Sentry.setupExpressErrorHandler(app);
 
   app.use(errorMiddleware);
 

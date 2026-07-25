@@ -5,6 +5,8 @@
     "module": "NodeNext",
     "rootDir": "./src",
     "outDir": "./dist",
+    "sourceMap": true,
+    "inlineSources": true,
     "strict": true,
     "moduleResolution": "NodeNext",
     "esModuleInterop": true,
