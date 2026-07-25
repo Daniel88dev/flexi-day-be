@@ -23,8 +23,11 @@ if (enabled) {
     integrations: [nodeProfilingIntegration()],
     // Required for the winston -> Sentry Logs bridge in middleware/logger.ts.
     enableLogs: true,
-    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 1.0),
-    profileSessionSampleRate: 1.0,
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0.2),
+    // Profiling is trace-lifecycle-bound: it runs for the duration of every sampled
+    // trace. Keep this low or an always-on server burns through the profile-hours
+    // quota (24h/day/instance at 1.0). Overridable for targeted debugging.
+    profileSessionSampleRate: Number(process.env.SENTRY_PROFILE_SESSION_SAMPLE_RATE ?? 0.1),
     profileLifecycle: "trace",
     debug: process.env.SENTRY_DEBUG === "true",
   });
