@@ -54,7 +54,9 @@ export const validatePutGroupUserUpdate = z.object({
   groupId: z.uuid(),
   data: z.array(
     z.object({
-      userId: z.uuid(),
+      // better-auth user ids are opaque non-UUID strings, so validate as a
+      // non-empty string rather than z.uuid().
+      userId: z.string().min(1),
       viewAccess: z.boolean(),
       adminAccess: z.boolean(),
       controlledUser: z.boolean(),

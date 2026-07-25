@@ -34,7 +34,8 @@ import { getAuth } from "../../../middleware/authSession.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
 
 const groupId = "550e8400-e29b-41d4-a716-446655440000";
-const memberId = "550e8400-e29b-41d4-a716-446655440001";
+// better-auth user ids are opaque non-UUID strings, not UUIDs.
+const memberId = "aBcD1234eFgH5678iJkL9012mNoP3456";
 
 const body = { userId: memberId, year: 2026, vacationDays: 25, homeOfficeDays: 60 };
 

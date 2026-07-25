@@ -79,6 +79,24 @@ export const validateRejectVacation = z
 
 export type ValidatedRejectVacationType = z.infer<typeof validateRejectVacation>;
 
+// Approve optionally carries a note that is stored on the timeline event, so —
+// like reject/cancel — a missing body is normalised to an empty object.
+export const validateApproveVacation = z
+  .object({
+    reason: z.string().max(1000).optional(),
+  })
+  .nullish()
+  .transform((value) => value ?? {});
+
+export type ValidatedApproveVacationType = z.infer<typeof validateApproveVacation>;
+
+// A comment always carries a message — an empty comment is meaningless.
+export const validateCommentVacation = z.object({
+  message: z.string().trim().min(1).max(1000),
+});
+
+export type ValidatedCommentVacationType = z.infer<typeof validateCommentVacation>;
+
 const ids = z.array(z.uuid()).min(1).max(366);
 
 export const validateBulkApproveVacation = z.object({

@@ -3,9 +3,11 @@ import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetVacations } from "../controllers/vacation/handleGetVacations.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
+  validateApproveVacation,
   validateBulkApproveVacation,
   validateBulkRejectVacation,
   validateCancelVacation,
+  validateCommentVacation,
   validatePostVacation,
   validateRejectVacation,
 } from "../services/vacation/types.js";
@@ -13,6 +15,7 @@ import { handleGetVacation } from "../controllers/vacation/handleGetVacation.js"
 import { handlePostVacation } from "../controllers/vacation/handlePostVacation.js";
 import { handlePostVacationApproval } from "../controllers/vacation/handlePostVacationApproval.js";
 import { handlePostVacationReject } from "../controllers/vacation/handlePostVacationReject.js";
+import { handlePostVacationComment } from "../controllers/vacation/handlePostVacationComment.js";
 import { handleDeleteVacation } from "../controllers/vacation/handleDeleteVacation.js";
 import { handleBulkApproveVacation } from "../controllers/vacation/handleBulkApproveVacation.js";
 import { handleBulkRejectVacation } from "../controllers/vacation/handleBulkRejectVacation.js";
@@ -230,11 +233,24 @@ export const vacationRouter = (): Router => {
    *         schema:
    *           type: string
    *           format: uuid
+   *     requestBody:
+   *       required: false
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               reason:
+   *                 type: string
    *     responses:
    *       '200':
    *         description: Vacation approved
    */
-  app.post("/approve/:id", tryCatch(handlePostVacationApproval));
+  app.post(
+    "/approve/:id",
+    bodyValidationMiddleware(validateApproveVacation),
+    tryCatch(handlePostVacationApproval)
+  );
 
   /**
    * @openapi
@@ -312,6 +328,52 @@ export const vacationRouter = (): Router => {
     "/reject/:id",
     bodyValidationMiddleware(validateRejectVacation),
     tryCatch(handlePostVacationReject)
+  );
+
+  /**
+   * @openapi
+   * /api/vacation/comment/{id}:
+   *   post:
+   *     tags:
+   *       - Vacations
+   *     summary: Add a comment to a vacation request
+   *     description: |
+   *       Appends a comment to the request timeline without changing its
+   *       decision. Any caller who can view the request may comment. The other
+   *       party — the request owner, or the group's approvers when the owner
+   *       comments — is notified by email and in-app.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - message
+   *             properties:
+   *               message:
+   *                 type: string
+   *     responses:
+   *       '200':
+   *         description: Comment added
+   *       '403':
+   *         description: Not allowed to view this vacation
+   *       '404':
+   *         description: Vacation not found
+   */
+  app.post(
+    "/comment/:id",
+    bodyValidationMiddleware(validateCommentVacation),
+    tryCatch(handlePostVacationComment)
   );
 
   /**

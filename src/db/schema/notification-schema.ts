@@ -7,6 +7,7 @@ export enum notificationType {
   ApprovalDecided = "approval_decided",
   CalendarConflict = "calendar_conflict",
   BalanceLow = "balance_low",
+  Comment = "comment",
 }
 
 export const notificationTypeEnum = pgEnum("notification_type", enumToPgEnum(notificationType));

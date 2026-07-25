@@ -262,6 +262,82 @@ export const notifyVacationDecision = async (
 };
 
 /**
+ * Notifies the "other side" that a comment was posted on a request. When an
+ * approver (or admin) comments, the requester hears about it; when the
+ * requester comments on their own request, the group's approvers do. The
+ * commenter is never notified about their own comment.
+ */
+export const notifyVacationComment = async (
+  row: VacationRow,
+  actor: { id: string; name: string },
+  message: string
+): Promise<void> => {
+  try {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
+    const summary = summarize([row]);
+    if (!summary) return;
+
+    const group = await services.group.getApprovalUsers(row.groupId);
+    if (!group) return;
+
+    const employee = await services.user.getUserById(row.userId);
+    if (!employee) return;
+
+    const recipients: UserContact[] =
+      actor.id === row.userId
+        ? [
+            {
+              id: group.mainApprovalUserId,
+              name: group.mainApprovalUserName,
+              email: group.mainApprovalUserEmail,
+            },
+            {
+              id: group.tempApprovalUserId,
+              name: group.tempApprovalUserName,
+              email: group.tempApprovalUserEmail,
+            },
+          ].filter(
+            (a): a is UserContact =>
+              Boolean(a.id) && Boolean(a.name) && Boolean(a.email) && a.id !== actor.id
+          )
+        : [employee].filter((e) => e.id !== actor.id);
+
+    const unique = [...new Map(recipients.map((r) => [r.id, r])).values()];
+    if (unique.length === 0) return;
+
+    await deliver(
+      unique.map((recipient) => ({
+        userId: recipient.id,
+        email: {
+          to: recipient.email,
+          template: "vacation-comment",
+          data: {
+            recipientName: recipient.name,
+            employeeName: employee.name,
+            commenterName: actor.name,
+            teamName: group.groupName,
+            leaveType: summary.leaveType,
+            dateRange: summary.dateRange,
+            message: trimmed,
+            requestUrl: summary.requestUrl,
+          },
+        },
+        notification: {
+          type: notificationType.Comment,
+          title: `${actor.name} commented on a request`,
+          body: `${employee.name} · ${summary.leaveType} · ${summary.dateRange}`,
+          href: summary.requestUrl,
+        },
+      }))
+    );
+  } catch (error) {
+    logger.error("notifyVacationComment failed", { error, vacationId: row.id });
+  }
+};
+
+/**
  * Notifies about a cancelled request that had already been approved. Pending
  * requests are dropped silently — nobody was counting on them yet.
  *

@@ -67,6 +67,23 @@ export interface VacationCancelledData {
 }
 
 /**
+ * `vacation-comment`: sent to the other party when someone comments on a
+ * request — to the requester when an approver comments, or to the approvers
+ * when the requester comments.
+ */
+export interface VacationCommentData {
+  recipientName: string;
+  employeeName: string;
+  commenterName: string;
+  teamName: string;
+  leaveType: string;
+  dateRange: string;
+  /** Never empty — the comment text. */
+  message: string;
+  requestUrl: string;
+}
+
+/**
  * A templated email to send. `template` is the logical template name; the
  * adapter maps it to the concrete, stage-suffixed SES template name. The
  * union keeps each template's variables tied to its name.
@@ -76,7 +93,8 @@ export type TemplatedEmail =
   | { to: string; template: "vacation-approval-request"; data: VacationApprovalRequestData }
   | { to: string; template: "vacation-approved"; data: VacationApprovedData }
   | { to: string; template: "vacation-rejected"; data: VacationRejectedData }
-  | { to: string; template: "vacation-cancelled"; data: VacationCancelledData };
+  | { to: string; template: "vacation-cancelled"; data: VacationCancelledData }
+  | { to: string; template: "vacation-comment"; data: VacationCommentData };
 
 export type EmailTemplateName = TemplatedEmail["template"];
 
