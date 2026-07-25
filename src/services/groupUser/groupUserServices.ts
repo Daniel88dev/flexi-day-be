@@ -13,19 +13,6 @@ import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 
-/**
- * Retrieves a user and their association with a specified group.
- *
- * This function fetches the user's details within the context of a particular group,
- * excluding records that have been marked as deleted. If no matching record is found,
- * it returns undefined.
- *
- * @param {string} userId - The unique identifier of the user.
- * @param {string} groupId - The unique identifier of the group.
- * @param tx - Optional database transaction to use for the operation.
- * @returns {Promise<GroupUser | undefined>} A promise that resolves to the user's group association details,
- * or undefined if no matching record is found.
- */
 export const getGroupUser = async (
   userId: string,
   groupId: string,
@@ -46,17 +33,6 @@ export const getGroupUser = async (
   return row;
 };
 
-/**
- * Asynchronously creates a new user in a group within the database.
- *
- * Inserts a new entry into the `groupUsers` table using the provided data.
- * If a conflict occurs (e.g., duplicate entry), the operation will do nothing.
- * Returns the inserted row if insertion is successful, otherwise `undefined`.
- *
- * @param {GroupUserInsertType} data - The data for the new group user to be inserted.
- * @param {DbTransaction} [tx] - Optional database transaction to use for the operation. If not provided, the default database connection is used.
- * @returns {Promise<GroupUser | undefined>} A promise that resolves to the inserted group user object or `undefined` if the insertion failed due to a conflict.
- */
 export const createGroupUser = async (
   data: GroupUserInsertType,
   tx?: DbTransaction
@@ -66,21 +42,6 @@ export const createGroupUser = async (
   return row;
 };
 
-/**
- * Updates the permissions of a user in a group.
- *
- * This function updates the permissions of a user in a group identified by the given ID.
- * It modifies the group's user permissions in the database and returns the updated
- * group user record if the update operation is successful. If no matching user is found,
- * it returns undefined.
- *
- * @param {string} userId - The unique identifier of the group user whose permissions are to be updated.
- * @param groupId - Identification of GroupId for user update
- * @param {GroupUserPermissions} permissions - The new permissions to be set for the group user.
- * @param tx - Optional database transaction to use for the operation.
- * @returns {Promise<GroupUser | undefined>} A promise that resolves to the updated group user object
- * if the update succeeds, or undefined if no record is found.
- */
 export const updateGroupUserPermissions = async (
   userId: string,
   groupId: string,
@@ -102,17 +63,6 @@ export const updateGroupUserPermissions = async (
   return row;
 };
 
-/**
- * Deletes a group user by marking it as deleted in the database.
- *
- * This function updates the `deletedAt` field of a group user with the specified ID
- * to the current date and time, effectively marking the user as deleted.
- * The updated row is returned or undefined if no row is affected.
- *
- * @param {string} id - The unique identifier of the group user to delete.
- * @returns {Promise<GroupUser | undefined>} A promise that resolves to the updated group user object
- * or undefined if the ID does not match any existing user.
- */
 export const deleteGroupUser = async (id: string): Promise<GroupUser | undefined> => {
   const [row] = await db
     .update(groupUsers)
@@ -125,16 +75,6 @@ export const deleteGroupUser = async (id: string): Promise<GroupUser | undefined
   return row;
 };
 
-/**
- * Retrieves all groups associated with a given user.
- *
- * This asynchronous function fetches an array of group objects containing the group IDs
- * for a specified user. It filters out groups that have been marked as deleted.
- *
- * @param {string} userId - The unique identifier of the user for whom to retrieve groups.
- * @returns {Promise<{ groupId: string }[]>} A promise that resolves to an array of objects,
- * each containing a `groupId` property representing the group ID associated with the user.
- */
 export const getAllGroupsForUser = async (userId: string): Promise<{ groupId: string }[]> => {
   return db
     .select({

@@ -52,9 +52,8 @@ export const createServer = () => {
     res.status(200).json({ ok: true, environment: config.api.env });
   });
 
-  // The Sentry error handler must be registered after all controllers and
-  // before any other error middleware. It reports 5xx errors; controlled
-  // 4xx CustomErrors are left for errorMiddleware to serialize.
+  // Must come after all routes and before errorMiddleware. Reports 5xx; 4xx
+  // CustomErrors fall through to errorMiddleware.
   Sentry.setupExpressErrorHandler(app);
 
   app.use(errorMiddleware);

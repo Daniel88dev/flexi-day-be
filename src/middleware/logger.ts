@@ -4,7 +4,6 @@ import * as Sentry from "@sentry/node";
 import path from "node:path";
 import fs from "node:fs";
 
-// Ensure the logs directory exists
 const LOG_DIR = path.resolve(process.cwd(), process.env.LOG_DIR ?? "logs");
 let fileTransports: InstanceType<typeof transports.File>[] = [];
 
@@ -33,12 +32,9 @@ try {
   );
 }
 
-// Bridge winston -> Sentry Logs. Sentry is initialized in `instrument.ts`
-// (loaded via `node --import` BEFORE the app graph), so `isEnabled()` here
-// reliably reflects the enabled path (production, or SENTRY_ENABLE=true).
-// When off (local dev/tests) this stays empty and winston behaves as before.
-// Every `logger.info/warn/error` is then forwarded to Sentry with the SDK's
-// `enableLogs: true`, carrying our `defaultMeta` (service, buildInfo) as attributes.
+// Forward winston logs to Sentry Logs when the SDK is active. instrument.ts inits
+// Sentry (via --import) before this module, so isEnabled() is reliable here; when
+// off (dev/tests) this is a no-op.
 const sentryTransports: TransportStream[] = [];
 if (Sentry.isEnabled()) {
   const SentryWinstonTransport = Sentry.createSentryWinstonTransport(TransportStream);
@@ -47,23 +43,6 @@ if (Sentry.isEnabled()) {
 
 const appVersion = process.env.APP_VERSION ?? process.env.npm_package_version ?? "unknown";
 
-/**
- * Logger instance configured for the application.
- *
- * This logger is pre-configured with the following settings:
- * - Log level: "info"
- * - Log format: Combines timestamp and JSON format
- * - Default metadata: Includes service name and build information
- * - Transports: Outputs to the console and additional file transports
- *
- * Default metadata contains:
- * - `service`: Name of the service ("Flexi Day")
- * - `buildInfo`: Object containing build information including:
- *   - `version`: Version of the software
- *   - `nodeVersion`: Node.js version
- *
- * The logger is intended for capturing and managing application logs consistently across the system.
- */
 export const logger = createLogger({
   level: "info",
   format: format.combine(format.timestamp(), format.json()),

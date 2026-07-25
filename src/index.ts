@@ -1,7 +1,5 @@
-// NOTE: Sentry is initialized via `node --import ./dist/instrument.js` (see the
-// start/dev scripts and Dockerfile CMD). ESM hoists imports, so an in-file
-// `import "./instrument.js"` runs too late to instrument express/pg/http —
-// `--import` is the only reliable way to load it before the app graph.
+// Sentry is not imported here — it loads via `node --import ./dist/instrument.js`
+// (start/dev scripts, Dockerfile CMD). An in-file import would run too late under ESM.
 import { createServer } from "./server.js";
 import { config } from "./config.js";
 import { logger } from "./middleware/logger.js";
