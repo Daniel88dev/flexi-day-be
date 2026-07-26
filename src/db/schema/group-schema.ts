@@ -9,6 +9,10 @@ export const groups = pgTable(
     groupName: text("group_name").notNull(),
     defaultVacationDays: integer("default_vacation_days").notNull().default(20),
     defaultHomeOfficeDays: integer("default_home_office_days").notNull().default(0),
+    // Weekdays counted as working days, as JS `Date.getUTCDay()` numbers
+    // (0=Sun … 6=Sat). Defaults to Mon–Fri. Vacation requests are only booked
+    // (and only counted against quotas) on these days.
+    workingDays: integer("working_days").array().notNull().default([1, 2, 3, 4, 5]),
     managerUserId: text("manager_user_id")
       .notNull()
       .references(() => user.id),

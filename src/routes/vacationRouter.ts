@@ -5,6 +5,7 @@ import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js"
 import {
   validateApproveVacation,
   validateBulkApproveVacation,
+  validateBulkCancelVacation,
   validateBulkRejectVacation,
   validateCancelVacation,
   validateCommentVacation,
@@ -19,6 +20,7 @@ import { handlePostVacationComment } from "../controllers/vacation/handlePostVac
 import { handleDeleteVacation } from "../controllers/vacation/handleDeleteVacation.js";
 import { handleBulkApproveVacation } from "../controllers/vacation/handleBulkApproveVacation.js";
 import { handleBulkRejectVacation } from "../controllers/vacation/handleBulkRejectVacation.js";
+import { handleBulkCancelVacation } from "../controllers/vacation/handleBulkCancelVacation.js";
 
 export const vacationRouter = (): Router => {
   const app = Router();
@@ -413,6 +415,50 @@ export const vacationRouter = (): Router => {
     "/reject",
     bodyValidationMiddleware(validateBulkRejectVacation),
     tryCatch(handleBulkRejectVacation)
+  );
+
+  /**
+   * @openapi
+   * /api/vacation/cancel:
+   *   post:
+   *     tags:
+   *       - Vacations
+   *     summary: Atomically cancel (soft delete) many vacation rows in one transaction
+   *     description: |
+   *       Cancels every supplied day id together — used by the detail view to
+   *       cancel a whole multi-day request at once. The caller must, for every
+   *       row, be the owner or have admin/approval rights on its group. An
+   *       optional `reason` is stored on each cancellation event.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - ids
+   *             properties:
+   *               ids:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: uuid
+   *               reason:
+   *                 type: string
+   *     responses:
+   *       '200':
+   *         description: All requested vacations cancelled
+   *       '403':
+   *         description: Not allowed to cancel one or more rows
+   *       '404':
+   *         description: One or more vacations not found
+   */
+  app.post(
+    "/cancel",
+    bodyValidationMiddleware(validateBulkCancelVacation),
+    tryCatch(handleBulkCancelVacation)
   );
 
   /**

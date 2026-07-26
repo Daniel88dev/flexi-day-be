@@ -412,3 +412,88 @@ export const notifyVacationCancelled = async (
     logger.error("notifyVacationCancelled failed", { error, vacationId: row.id });
   }
 };
+
+/**
+ * Bulk variant of {@link notifyVacationCancelled} for cancelling a whole
+ * multi-day request. Only the days that had already been approved are worth an
+ * email; rows are grouped per requester so each affected employee (or their
+ * approvers, when the employee cancels their own days) gets one mail covering
+ * their cancelled span.
+ */
+export const notifyVacationsCancelled = async (
+  rows: (VacationRow & { approvedAt: Date | null })[],
+  actor: { id: string; name: string },
+  reason: string | null
+): Promise<void> => {
+  try {
+    const approvedRows = rows.filter((r) => r.approvedAt);
+    if (approvedRows.length === 0) return;
+
+    const byUser = groupByUser(approvedRows);
+    const employees = await services.user.getUsersByIds([...byUser.keys()]);
+    const contacts = new Map(employees.map((e) => [e.id, e]));
+
+    const deliveries: Delivery[] = [];
+
+    for (const [userId, userRows] of byUser) {
+      const employee = contacts.get(userId);
+      const summary = summarize(userRows);
+      if (!employee || !summary) continue;
+
+      const group = await services.group.getApprovalUsers(userRows[0]?.groupId ?? "");
+      if (!group) continue;
+
+      const recipients: UserContact[] =
+        actor.id === userId
+          ? [
+              {
+                id: group.mainApprovalUserId,
+                name: group.mainApprovalUserName,
+                email: group.mainApprovalUserEmail,
+              },
+              {
+                id: group.tempApprovalUserId,
+                name: group.tempApprovalUserName,
+                email: group.tempApprovalUserEmail,
+              },
+            ].filter(
+              (a): a is UserContact =>
+                Boolean(a.id) && Boolean(a.name) && Boolean(a.email) && a.id !== actor.id
+            )
+          : [employee];
+
+      const unique = [...new Map(recipients.map((r) => [r.id, r])).values()];
+
+      for (const recipient of unique) {
+        deliveries.push({
+          userId: recipient.id,
+          email: {
+            to: recipient.email,
+            template: "vacation-cancelled",
+            data: {
+              recipientName: recipient.name,
+              employeeName: employee.name,
+              cancelledByName: actor.name,
+              teamName: group.groupName,
+              leaveType: summary.leaveType,
+              dateRange: summary.dateRange,
+              dayCount: summary.dayCount,
+              reason: reason?.trim() ? reason.trim() : OR_DASH,
+              requestUrl: summary.requestUrl,
+            },
+          },
+          notification: {
+            type: notificationType.ApprovalDecided,
+            title: "Approved time off cancelled",
+            body: `${employee.name} · ${summary.leaveType} · ${summary.dateRange}`,
+            href: summary.requestUrl,
+          },
+        });
+      }
+    }
+
+    await deliver(deliveries);
+  } catch (error) {
+    logger.error("notifyVacationsCancelled failed", { error, actorId: actor.id });
+  }
+};

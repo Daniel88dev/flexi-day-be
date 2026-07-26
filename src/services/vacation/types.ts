@@ -41,6 +41,11 @@ export type VacationDetail = VacationListItem & {
   groupName: string;
   approvedByUser: UserSummary | null;
   rejectedByUser: UserSummary | null;
+  /** Inclusive span of the contiguous same-type run this row belongs to. */
+  rangeStart: DateString;
+  rangeEnd: DateString;
+  /** Every day-row id in that run, ordered by day — the request's full set. */
+  vacationIds: string[];
 };
 
 /** Optional cancellation reason, accepted on DELETE /api/vacation/:id. */
@@ -111,3 +116,10 @@ export const validateBulkRejectVacation = z.object({
 });
 
 export type ValidatedBulkRejectVacationType = z.infer<typeof validateBulkRejectVacation>;
+
+export const validateBulkCancelVacation = z.object({
+  ids,
+  reason: z.string().max(1000).optional(),
+});
+
+export type ValidatedBulkCancelVacationType = z.infer<typeof validateBulkCancelVacation>;

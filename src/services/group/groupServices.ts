@@ -73,6 +73,21 @@ export const deleteGroup = async (groupId: string): Promise<GroupType | undefine
   return row;
 };
 
+export const updateGroupWorkingDays = async (
+  groupId: string,
+  newWorkingDays: number[]
+): Promise<GroupType | undefined> => {
+  const [row] = await db
+    .update(groups)
+    .set({
+      workingDays: newWorkingDays,
+    })
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
+    .returning();
+
+  return row;
+};
+
 export const updateGroupQuotas = async (
   groupId: string,
   newVacation: number,

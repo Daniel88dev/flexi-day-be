@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const {
   mockPostVacationBulk,
   mockGetGroupUser,
+  mockGetGroup,
   mockGetApprovalUsers,
   mockTransaction,
   mockCreateVacationEvents,
@@ -10,6 +11,7 @@ const {
 } = vi.hoisted(() => ({
   mockPostVacationBulk: vi.fn(),
   mockGetGroupUser: vi.fn(),
+  mockGetGroup: vi.fn(),
   mockGetApprovalUsers: vi.fn(),
   mockTransaction: vi.fn(),
   mockCreateVacationEvents: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock("../../../services/DBServices.js", () => ({
       getGroupUser: mockGetGroupUser,
     },
     group: {
+      getGroup: mockGetGroup,
       getApprovalUsers: mockGetApprovalUsers,
     },
   }),
@@ -80,6 +83,13 @@ describe("handlePostVacation", () => {
     );
 
     mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({}));
+
+    // Default to every weekday being a working day so tests that aren't about
+    // the working-day filter keep booking every day in their range.
+    mockGetGroup.mockResolvedValue({
+      id: "group_123",
+      workingDays: [0, 1, 2, 3, 4, 5, 6],
+    });
   });
 
   afterEach(() => {
@@ -233,5 +243,86 @@ describe("handlePostVacation", () => {
     mockPostVacationBulk.mockRejectedValue(new Error("Insert failed"));
 
     await expect(handlePostVacation(req, res)).rejects.toThrow("Insert failed");
+  });
+
+  it("books only the group's working days within a range", async () => {
+    // Thu 2024-03-14 .. Mon 2024-03-18 with Mon-Fri working days drops the
+    // Sat/Sun in the middle.
+    const { req, res } = makeReqRes({
+      body: baseBody({
+        from: new Date("2024-03-14T00:00:00Z"),
+        to: new Date("2024-03-18T00:00:00Z"),
+      }),
+    });
+
+    mockGetGroupUser.mockResolvedValue({
+      userId: "user_123",
+      groupId: "group_123",
+      controlledUser: true,
+    });
+    mockGetGroup.mockResolvedValue({ id: "group_123", workingDays: [1, 2, 3, 4, 5] });
+    mockPostVacationBulk.mockImplementation(async (records: unknown[]) => records);
+
+    await handlePostVacation(req, res);
+
+    const [records] = mockPostVacationBulk.mock.calls[0] as [{ requestedDay: string }[], unknown];
+    expect(records.map((r) => r.requestedDay)).toEqual(["2024-03-14", "2024-03-15", "2024-03-18"]);
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it("rejects a single non-working day with a specific message", async () => {
+    // 2024-03-16 is a Saturday.
+    const { req, res } = makeReqRes({
+      body: baseBody({
+        from: new Date("2024-03-16T00:00:00Z"),
+        to: new Date("2024-03-16T00:00:00Z"),
+      }),
+    });
+
+    mockGetGroupUser.mockResolvedValue({
+      userId: "user_123",
+      groupId: "group_123",
+      controlledUser: true,
+    });
+    mockGetGroup.mockResolvedValue({ id: "group_123", workingDays: [1, 2, 3, 4, 5] });
+
+    await expect(handlePostVacation(req, res)).rejects.toThrow("Selected day is not a working day");
+    expect(mockPostVacationBulk).not.toHaveBeenCalled();
+  });
+
+  it("rejects a range that contains no working day", async () => {
+    // Sat 2024-03-16 .. Sun 2024-03-17.
+    const { req, res } = makeReqRes({
+      body: baseBody({
+        from: new Date("2024-03-16T00:00:00Z"),
+        to: new Date("2024-03-17T00:00:00Z"),
+      }),
+    });
+
+    mockGetGroupUser.mockResolvedValue({
+      userId: "user_123",
+      groupId: "group_123",
+      controlledUser: true,
+    });
+    mockGetGroup.mockResolvedValue({ id: "group_123", workingDays: [1, 2, 3, 4, 5] });
+
+    await expect(handlePostVacation(req, res)).rejects.toThrow(
+      "Selected range contains no working days"
+    );
+    expect(mockPostVacationBulk).not.toHaveBeenCalled();
+  });
+
+  it("throws 404 when the group no longer exists", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
+
+    mockGetGroupUser.mockResolvedValue({
+      userId: "user_123",
+      groupId: "group_123",
+      controlledUser: true,
+    });
+    mockGetGroup.mockResolvedValue(undefined);
+
+    await expect(handlePostVacation(req, res)).rejects.toThrow("Group not found");
+    expect(mockPostVacationBulk).not.toHaveBeenCalled();
   });
 });

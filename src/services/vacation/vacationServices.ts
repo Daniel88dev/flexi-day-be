@@ -240,6 +240,25 @@ export const rejectVacationsBulk = async (
 };
 
 /**
+ * Bulk-cancels (soft-deletes) many vacation rows in a single statement. Used
+ * when the detail view cancels a whole multi-day request at once. Returns the
+ * rows actually updated so callers can detect any that no longer matched.
+ */
+export const cancelVacationsBulk = async (
+  vacationIds: string[],
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .update(vacation)
+    .set({
+      deletedAt: new Date(),
+    })
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .returning();
+};
+
+/**
  * Fetches vacation rows by id (active rows only). Used during bulk approve /
  * reject to authorize the caller against every distinct group in the batch.
  */
@@ -291,11 +310,47 @@ export const deleteVacation = async (
 };
 
 /**
+ * Returns the maximal run of consecutive-day rows that includes `targetDay`,
+ * ordered by day. Two days are contiguous when they differ by exactly 24h.
+ * Callers pass every sibling row (same user / group / type); this trims it to
+ * the run around the clicked day. Returns [] when `targetDay` is absent.
+ */
+export const contiguousRunContaining = <T extends { requestedDay: string }>(
+  rows: T[],
+  targetDay: string
+): T[] => {
+  const sorted = [...rows].sort((a, b) =>
+    a.requestedDay < b.requestedDay ? -1 : a.requestedDay > b.requestedDay ? 1 : 0
+  );
+  const targetIdx = sorted.findIndex((r) => r.requestedDay === targetDay);
+  if (targetIdx === -1) return [];
+
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const dayMs = (iso: string): number => new Date(`${iso}T00:00:00Z`).getTime();
+  const adjacent = (earlier: T | undefined, later: T | undefined): boolean =>
+    earlier !== undefined &&
+    later !== undefined &&
+    dayMs(later.requestedDay) - dayMs(earlier.requestedDay) === ONE_DAY_MS;
+
+  let start = targetIdx;
+  while (start > 0 && adjacent(sorted.at(start - 1), sorted.at(start))) start--;
+  let end = targetIdx;
+  while (end < sorted.length - 1 && adjacent(sorted.at(end), sorted.at(end + 1))) end++;
+
+  return sorted.slice(start, end + 1);
+};
+
+/**
  * Loads a single vacation with everything the detail view shows: the
  * requester, the group name, and the decision makers. Unlike
  * {@link getVacationById} this deliberately includes cancelled (soft-deleted)
  * rows — the whole point of the detail view is to explain what happened to a
  * request, which includes its cancellation.
+ *
+ * A multi-day request is stored as one row per day, so this also resolves the
+ * contiguous run of same-type sibling days the clicked row belongs to and
+ * returns it as `rangeStart` / `rangeEnd` / `vacationIds`. That lets the detail
+ * view show the whole span and act on every day of the request at once.
  */
 export const getVacationDetailById = async (
   vacationId: string,
@@ -323,9 +378,33 @@ export const getVacationDetailById = async (
 
   const { groupName, approvedByName, rejectedByName, ...vacationRow } = row;
 
+  // Resolve the contiguous run of same-type sibling days this row belongs to.
+  // Cancelled detail rows group with other cancelled days; active rows with
+  // other active days, so a re-booked day on the same date can't merge in.
+  const siblings = await (tx ?? db)
+    .select({ id: vacation.id, requestedDay: vacation.requestedDay })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, vacationRow.userId),
+        eq(vacation.groupId, vacationRow.groupId),
+        eq(vacation.vacationType, vacationRow.vacationType),
+        vacationRow.deletedAt ? isNotNull(vacation.deletedAt) : isNull(vacation.deletedAt)
+      )
+    );
+  const run = contiguousRunContaining(siblings, vacationRow.requestedDay);
+  const resolvedRun =
+    run.length > 0 ? run : [{ id: vacationRow.id, requestedDay: vacationRow.requestedDay }];
+  const rangeStart = resolvedRun[0]?.requestedDay ?? vacationRow.requestedDay;
+  const rangeEnd = resolvedRun[resolvedRun.length - 1]?.requestedDay ?? vacationRow.requestedDay;
+  const vacationIds = resolvedRun.map((r) => r.id);
+
   return {
     ...toListItem(vacationRow),
     groupName,
+    rangeStart,
+    rangeEnd,
+    vacationIds,
     approvedByUser:
       vacationRow.approvedBy && approvedByName
         ? buildUserSummary({ id: vacationRow.approvedBy, name: approvedByName })

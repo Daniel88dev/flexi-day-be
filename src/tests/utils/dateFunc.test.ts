@@ -4,7 +4,12 @@
  * Focus: formatDateToISOString and formatStartAndEndDate behaviors introduced/changed in PR diff.
  */
 
-import { formatDateToISOString, formatStartAndEndDate } from "../../utils/dateFunc";
+import {
+  filterWorkingDays,
+  formatDateToISOString,
+  formatStartAndEndDate,
+  isWorkingDay,
+} from "../../utils/dateFunc";
 
 describe("formatDateToISOString", () => {
   test("formats a UTC date to YYYY-MM-DD (e.g., 2024-01-01)", () => {
@@ -57,5 +62,48 @@ describe("formatStartAndEndDate", () => {
       startDate: "2024-02-01",
       endDate: "2024-03-01",
     });
+  });
+});
+
+describe("isWorkingDay", () => {
+  const monToFri = [1, 2, 3, 4, 5];
+
+  test("returns true for a weekday when Mon-Fri are working days", () => {
+    // 2024-07-24 is a Wednesday.
+    expect(isWorkingDay("2024-07-24", monToFri)).toBe(true);
+  });
+
+  test("returns false for a Saturday when Mon-Fri are working days", () => {
+    // 2024-07-27 is a Saturday.
+    expect(isWorkingDay("2024-07-27", monToFri)).toBe(false);
+  });
+
+  test("respects a custom working-day set including weekends", () => {
+    // Sunday (0) and Saturday (6) only.
+    expect(isWorkingDay("2024-07-28", [0, 6])).toBe(true); // Sunday
+    expect(isWorkingDay("2024-07-24", [0, 6])).toBe(false); // Wednesday
+  });
+
+  test("returns false for an invalid date string", () => {
+    expect(isWorkingDay("not-a-date", monToFri)).toBe(false);
+  });
+});
+
+describe("filterWorkingDays", () => {
+  const monToFri = [1, 2, 3, 4, 5];
+
+  test("keeps only working days and preserves order", () => {
+    // Fri 2024-07-26 .. Mon 2024-07-29 → drops Sat/Sun.
+    const days = ["2024-07-26", "2024-07-27", "2024-07-28", "2024-07-29"];
+    expect(filterWorkingDays(days, monToFri)).toEqual(["2024-07-26", "2024-07-29"]);
+  });
+
+  test("returns an empty array when no day is a working day", () => {
+    expect(filterWorkingDays(["2024-07-27", "2024-07-28"], monToFri)).toEqual([]);
+  });
+
+  test("returns all days when every day is a working day", () => {
+    const days = ["2024-07-24", "2024-07-25"];
+    expect(filterWorkingDays(days, monToFri)).toEqual(days);
   });
 });
