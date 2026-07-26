@@ -20,6 +20,7 @@ import { calendarSyncRouter } from "./routes/calendarSyncRouter.js";
 import { reportRouter } from "./routes/reportRouter.js";
 import { tryCatch } from "./middleware/tryCatch.js";
 import { handleGetCalendarFeed } from "./controllers/calendarSync/handleGetCalendarFeed.js";
+import { devRouter } from "./routes/devRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -33,6 +34,13 @@ export const createServer = () => {
   app.use("/api/auth", authExtRouter());
 
   app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());
+
+  // Local seeding/impersonation routes. `config.dev` is undefined unless the
+  // environment explicitly opts in on a local database, so in every deployed
+  // environment this branch never runs and the routes simply do not exist.
+  if (config.dev) {
+    app.use("/api/dev", devRouter());
+  }
 
   app.use("/api/vacation", authSession, vacationRouter());
   app.use("/api/group", authSession, groupRouter());

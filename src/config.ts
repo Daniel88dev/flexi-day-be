@@ -34,12 +34,21 @@ type QuotaRolloverConfig = {
   timezone: string;
 };
 
+type DevToolsConfig = {
+  /** Shared secret every `/api/dev/*` request must present as `x-dev-token`. */
+  token: string;
+  /** The only email domain the dev routes may create — and the only one reset may delete. */
+  seedEmailDomain: string;
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
   auth?: AuthConfig;
   email: EmailConfig;
   quotaRollover: QuotaRolloverConfig;
+  /** Local seeding/session surface. `undefined` means the routes do not exist. */
+  dev?: DevToolsConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -72,6 +81,47 @@ const parseTemplateStage = (): "dev" | "prod" => {
   return environment === "production" ? "prod" : "dev";
 };
 
+const databaseUrl = envOrThrow("DATABASE");
+
+const LOCAL_DB_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Gate for the local dev/seeding surface (`/api/dev/*`). It stays `undefined`
+ * unless explicitly switched on, and it refuses to exist anywhere it could
+ * reach real data. Throwing rather than quietly returning `undefined` is
+ * deliberate: a deploy that somehow carries the flag must fail at boot instead
+ * of silently serving seeding endpoints.
+ */
+const parseDevTools = (): DevToolsConfig | undefined => {
+  if (process.env.DEV_TOOLS_ENABLED !== "true") return undefined;
+
+  if (environment === "production") {
+    throw new Error("DEV_TOOLS_ENABLED must never be set when NODE_ENV=production");
+  }
+
+  let host: string;
+  try {
+    host = new URL(databaseUrl).hostname;
+  } catch {
+    throw new Error("DEV_TOOLS_ENABLED is set but DATABASE is not a parseable URL");
+  }
+  if (!LOCAL_DB_HOSTS.has(host)) {
+    throw new Error(
+      `DEV_TOOLS_ENABLED is set but DATABASE host "${host}" is not local — refusing to start`
+    );
+  }
+
+  const token = envOrThrow("DEV_TOOLS_TOKEN");
+  if (token.length < 16) {
+    throw new Error("DEV_TOOLS_TOKEN must be at least 16 characters");
+  }
+
+  return {
+    token,
+    seedEmailDomain: process.env.DEV_SEED_EMAIL_DOMAIN ?? "dev.local",
+  };
+};
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -83,7 +133,7 @@ export const config: Config = {
     env: environment,
   },
   db: {
-    database: envOrThrow("DATABASE"),
+    database: databaseUrl,
   },
   auth:
     environment !== "test"
@@ -116,4 +166,5 @@ export const config: Config = {
     cron: process.env.QUOTA_ROLLOVER_CRON ?? "0 2 * * *",
     timezone: process.env.QUOTA_ROLLOVER_TIMEZONE ?? "Europe/Prague",
   },
+  dev: parseDevTools(),
 };
