@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { ZodError } from "zod";
 import { CustomError } from "../utils/appError.js";
 import { logger } from "./logger.js";
 
@@ -37,6 +38,18 @@ export const errorMiddleware = (err: Error, _req: Request, res: Response, next: 
         : [{ message: err.message }];
 
     return res.status(safeStatus).json({ errors: clientErrors });
+  }
+
+  // Controllers validate path params and query strings by calling `.parse()`
+  // straight in the handler, so a malformed one arrives here as a ZodError.
+  // That is bad input, not a server fault — answer 422 like
+  // `bodyValidationMiddleware` does rather than letting it fall through to 500.
+  if (err instanceof ZodError) {
+    const clientErrors = err.issues.map((issue) => ({
+      message: `${issue.path.length ? issue.path.join(".") : "(root)"}: ${issue.message}`,
+    }));
+    logger.warn({ msg: "Request validation Error", errors: clientErrors });
+    return res.status(422).json({ errors: clientErrors });
   }
 
   logger.error({ msg: "Unhandled Error", err: err, stack: err.stack });
