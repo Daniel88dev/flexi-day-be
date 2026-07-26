@@ -22,6 +22,7 @@ export type DBServices = Readonly<{
     rejectVacation: typeof vacationServices.rejectVacation;
     approveVacationsBulk: typeof vacationServices.approveVacationsBulk;
     rejectVacationsBulk: typeof vacationServices.rejectVacationsBulk;
+    cancelVacationsBulk: typeof vacationServices.cancelVacationsBulk;
     getVacationsByIds: typeof vacationServices.getVacationsByIds;
     deleteVacation: typeof vacationServices.deleteVacation;
     getPendingApprovalsForApprover: typeof vacationServices.getPendingApprovalsForApprover;
@@ -57,6 +58,7 @@ export type DBServices = Readonly<{
     updateGroupApprovalUsers: typeof groupServices.updateGroupApprovalUsers;
     deleteGroup: typeof groupServices.deleteGroup;
     updateGroupQuotas: typeof groupServices.updateGroupQuotas;
+    updateGroupWorkingDays: typeof groupServices.updateGroupWorkingDays;
     getApprovalUsers: typeof groupServices.getApprovalUsers;
     getGroupsWhereUserCanApprove: typeof groupServices.getGroupsWhereUserCanApprove;
   };
@@ -117,6 +119,7 @@ export const createDBServices = (): DBServices => {
       rejectVacation: vacationServices.rejectVacation,
       approveVacationsBulk: vacationServices.approveVacationsBulk,
       rejectVacationsBulk: vacationServices.rejectVacationsBulk,
+      cancelVacationsBulk: vacationServices.cancelVacationsBulk,
       getVacationsByIds: vacationServices.getVacationsByIds,
       deleteVacation: vacationServices.deleteVacation,
       getPendingApprovalsForApprover: vacationServices.getPendingApprovalsForApprover,
@@ -152,6 +155,7 @@ export const createDBServices = (): DBServices => {
       updateGroupApprovalUsers: groupServices.updateGroupApprovalUsers,
       deleteGroup: groupServices.deleteGroup,
       updateGroupQuotas: groupServices.updateGroupQuotas,
+      updateGroupWorkingDays: groupServices.updateGroupWorkingDays,
       getApprovalUsers: groupServices.getApprovalUsers,
       getGroupsWhereUserCanApprove: groupServices.getGroupsWhereUserCanApprove,
     },

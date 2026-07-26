@@ -1,0 +1,1 @@
+ALTER TYPE "public"."vacation_event_type" ADD VALUE 'COMMENT';

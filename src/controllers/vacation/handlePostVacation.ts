@@ -3,7 +3,11 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPostVacationType } from "../../services/vacation/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { expandDateRangeInclusive, formatDateToISOString } from "../../utils/dateFunc.js";
+import {
+  expandDateRangeInclusive,
+  filterWorkingDays,
+  formatDateToISOString,
+} from "../../utils/dateFunc.js";
 import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
@@ -54,6 +58,17 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
+  const group = await services.group.getGroup(data.groupId);
+
+  if (!group) {
+    throw new AppError({
+      message: "Group not found",
+      logging: true,
+      code: 404,
+      context: { groupId: data.groupId },
+    });
+  }
+
   const days = expandDateRangeInclusive(fromIso, toIso);
 
   if (days.length === 0) {
@@ -65,7 +80,22 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const records = days.map((day) => ({
+  // Non-working days inside a range are dropped; an all-non-working request is rejected below.
+  const workingDays = filterWorkingDays(days, group.workingDays);
+
+  if (workingDays.length === 0) {
+    throw new AppError({
+      message:
+        days.length === 1
+          ? "Selected day is not a working day"
+          : "Selected range contains no working days",
+      logging: true,
+      code: 422,
+      context: { from: fromIso, to: toIso, groupWorkingDays: group.workingDays },
+    });
+  }
+
+  const records = workingDays.map((day) => ({
     id: generateRandomUUID(),
     userId: auth.userId,
     groupId: data.groupId,

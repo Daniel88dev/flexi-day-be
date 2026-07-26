@@ -239,6 +239,21 @@ export const rejectVacationsBulk = async (
     .returning();
 };
 
+/** Bulk-cancels (soft-deletes) many vacation rows in a single statement. See rejectVacationsBulk. */
+export const cancelVacationsBulk = async (
+  vacationIds: string[],
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .update(vacation)
+    .set({
+      deletedAt: new Date(),
+    })
+    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .returning();
+};
+
 /**
  * Fetches vacation rows by id (active rows only). Used during bulk approve /
  * reject to authorize the caller against every distinct group in the batch.
@@ -290,12 +305,39 @@ export const deleteVacation = async (
   return row;
 };
 
+// Given all sibling rows, returns the consecutive-day run containing `targetDay` ([] if absent).
+export const contiguousRunContaining = <T extends { requestedDay: string }>(
+  rows: T[],
+  targetDay: string
+): T[] => {
+  const sorted = [...rows].sort((a, b) =>
+    a.requestedDay < b.requestedDay ? -1 : a.requestedDay > b.requestedDay ? 1 : 0
+  );
+  const targetIdx = sorted.findIndex((r) => r.requestedDay === targetDay);
+  if (targetIdx === -1) return [];
+
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const dayMs = (iso: string): number => new Date(`${iso}T00:00:00Z`).getTime();
+  const adjacent = (earlier: T | undefined, later: T | undefined): boolean =>
+    earlier !== undefined &&
+    later !== undefined &&
+    dayMs(later.requestedDay) - dayMs(earlier.requestedDay) === ONE_DAY_MS;
+
+  let start = targetIdx;
+  while (start > 0 && adjacent(sorted.at(start - 1), sorted.at(start))) start--;
+  let end = targetIdx;
+  while (end < sorted.length - 1 && adjacent(sorted.at(end), sorted.at(end + 1))) end++;
+
+  return sorted.slice(start, end + 1);
+};
+
 /**
  * Loads a single vacation with everything the detail view shows: the
  * requester, the group name, and the decision makers. Unlike
  * {@link getVacationById} this deliberately includes cancelled (soft-deleted)
  * rows — the whole point of the detail view is to explain what happened to a
- * request, which includes its cancellation.
+ * request, which includes its cancellation. Also resolves the contiguous
+ * same-type run this row belongs to (`rangeStart` / `rangeEnd` / `vacationIds`).
  */
 export const getVacationDetailById = async (
   vacationId: string,
@@ -323,9 +365,31 @@ export const getVacationDetailById = async (
 
   const { groupName, approvedByName, rejectedByName, ...vacationRow } = row;
 
+  // Match the row's deletedAt state so a re-booked active day can't merge into a cancelled run.
+  const siblings = await (tx ?? db)
+    .select({ id: vacation.id, requestedDay: vacation.requestedDay })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, vacationRow.userId),
+        eq(vacation.groupId, vacationRow.groupId),
+        eq(vacation.vacationType, vacationRow.vacationType),
+        vacationRow.deletedAt ? isNotNull(vacation.deletedAt) : isNull(vacation.deletedAt)
+      )
+    );
+  const run = contiguousRunContaining(siblings, vacationRow.requestedDay);
+  const resolvedRun =
+    run.length > 0 ? run : [{ id: vacationRow.id, requestedDay: vacationRow.requestedDay }];
+  const rangeStart = resolvedRun[0]?.requestedDay ?? vacationRow.requestedDay;
+  const rangeEnd = resolvedRun[resolvedRun.length - 1]?.requestedDay ?? vacationRow.requestedDay;
+  const vacationIds = resolvedRun.map((r) => r.id);
+
   return {
     ...toListItem(vacationRow),
     groupName,
+    rangeStart,
+    rangeEnd,
+    vacationIds,
     approvedByUser:
       vacationRow.approvedBy && approvedByName
         ? buildUserSummary({ id: vacationRow.approvedBy, name: approvedByName })

@@ -5,6 +5,7 @@ export type GroupType = {
   groupName: string;
   defaultVacationDays: number;
   defaultHomeOfficeDays: number;
+  workingDays: number[];
   managerUserId: string;
   mainApprovalUser: string | null;
   tempApprovalUser: string | null;
@@ -28,3 +29,13 @@ export const validatePutGroupQuotas = z.object({
 });
 
 export type ValidatedPutGroupQuotasType = z.infer<typeof validatePutGroupQuotas>;
+
+export const validatePutGroupWorkingDays = z.object({
+  workingDays: z
+    .array(z.number().int().min(0).max(6))
+    .min(1)
+    .max(7)
+    .transform((days) => Array.from(new Set(days)).sort((a, b) => a - b)),
+});
+
+export type ValidatedPutGroupWorkingDaysType = z.infer<typeof validatePutGroupWorkingDays>;
