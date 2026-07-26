@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784869264447,
+      "tag": "0000_majestic_hemingway",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784999448047,
+      "tag": "0001_dark_sunset_bain",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784999568910,
+      "tag": "0002_tense_the_enforcers",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785056578902,
+      "tag": "0003_keen_mister_fear",
+      "breakpoints": true
+    }
+  ]
+}

@@ -74,9 +74,10 @@ web_modules/
 .cache
 .parcel-cache
 
-# Next.js build output
+# Next.js build output (anchored: this is an Express app, so a bare `out` must
+# not swallow Drizzle migrations under src/db/schema/out)
 .next
-out
+/out
 
 # Nuxt.js build / generate output
 .nuxt
