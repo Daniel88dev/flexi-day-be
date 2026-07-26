@@ -7,6 +7,7 @@ export type UserYearQuotasType = {
   relatedYear: string;
   vacationDays: number;
   homeOfficeDays: number;
+  carriedOverDays: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -33,6 +34,7 @@ export type UserYearQuotasUpsertType = {
   relatedYear: string;
   vacationDays: number;
   homeOfficeDays: number;
+  carriedOverDays: number;
 };
 
 /**
@@ -46,6 +48,7 @@ export const validatePutUserQuota = z.object({
   year: z.coerce.number().int().min(2025).max(2100),
   vacationDays: z.number().int().min(0).max(365),
   homeOfficeDays: z.number().int().min(0).max(365),
+  carriedOverDays: z.number().int().min(0).max(365).default(0),
 });
 
 export type ValidatedPutUserQuotaType = z.infer<typeof validatePutUserQuota>;

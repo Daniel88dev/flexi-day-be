@@ -17,6 +17,7 @@ import { usersRouter } from "./routes/usersRouter.js";
 import { bankHolidayRouter } from "./routes/bankHolidayRouter.js";
 import { notificationRouter } from "./routes/notificationRouter.js";
 import { calendarSyncRouter } from "./routes/calendarSyncRouter.js";
+import { reportRouter } from "./routes/reportRouter.js";
 import { tryCatch } from "./middleware/tryCatch.js";
 import { handleGetCalendarFeed } from "./controllers/calendarSync/handleGetCalendarFeed.js";
 
@@ -41,6 +42,7 @@ export const createServer = () => {
   app.use("/api/bank-holidays", authSession, bankHolidayRouter());
   app.use("/api/notifications", authSession, notificationRouter());
   app.use("/api/calendar-sync", authSession, calendarSyncRouter());
+  app.use("/api/reports", authSession, reportRouter());
 
   // Public, token-authenticated iCalendar feed. Deliberately NOT behind
   // `authSession`: calendar clients subscribe with just the secret token in

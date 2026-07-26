@@ -26,6 +26,7 @@ import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { alias } from "drizzle-orm/pg-core";
 import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
+import { sumDaysWhere } from "./dayWeight.js";
 
 type VacationRowWithUser = VacationType & {
   userName: string;
@@ -48,6 +49,7 @@ const baseVacationSelection = {
   startTime: vacation.startTime,
   endTime: vacation.endTime,
   vacationType: vacation.vacationType,
+  halfDay: vacation.halfDay,
   approvedAt: vacation.approvedAt,
   approvedBy: vacation.approvedBy,
   deletedAt: vacation.deletedAt,
@@ -532,8 +534,8 @@ export const aggregateUserUsageForYear = async (
   const rows = await db
     .select({
       type: vacation.vacationType,
-      used: sql<number>`COUNT(*) FILTER (WHERE ${vacation.approvedAt} IS NOT NULL)`,
-      pending: sql<number>`COUNT(*) FILTER (WHERE ${vacation.approvedAt} IS NULL AND ${vacation.rejectedAt} IS NULL)`,
+      used: sumDaysWhere(sql`${vacation.approvedAt} IS NOT NULL`),
+      pending: sumDaysWhere(sql`${vacation.approvedAt} IS NULL AND ${vacation.rejectedAt} IS NULL`),
     })
     .from(vacation)
     .where(

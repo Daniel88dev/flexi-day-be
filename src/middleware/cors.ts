@@ -5,7 +5,7 @@ import { config } from "../config.js";
 // better-auth uses for CSRF protection), e.g. the CloudFront frontend URLs.
 const allowedOrigins =
   config.api.env === "production"
-    ? config.auth?.trustedOrigins ?? []
+    ? (config.auth?.trustedOrigins ?? [])
     : [/^http:\/\/localhost:(\d{2,5})$/];
 
 export const serverCors = cors({
@@ -14,6 +14,9 @@ export const serverCors = cors({
   // `sentry-trace` and `baggage` let the frontend propagate its trace context
   // to the backend for distributed tracing (Sentry).
   allowedHeaders: ["Content-Type", "Authorization", "sentry-trace", "baggage"],
+  // The report export sends its filename here; without exposing it the SPA
+  // cannot read the header off the cross-origin response.
+  exposedHeaders: ["Content-Disposition"],
   credentials: true,
   optionsSuccessStatus: 204,
 });

@@ -9,6 +9,7 @@ import { notifications } from "./notification-schema.js";
 import { calendarSync, calendarSyncTeams, calendarSyncTypes } from "./calendar-sync-schema.js";
 import { vacationEvents } from "./vacation-event-schema.js";
 import { userSettings } from "./user-settings-schema.js";
+import { reportExports } from "./report-export-schema.js";
 
 export const schema = {
   account,
@@ -27,4 +28,5 @@ export const schema = {
   calendarSync,
   calendarSyncTeams,
   calendarSyncTypes,
+  reportExports,
 };

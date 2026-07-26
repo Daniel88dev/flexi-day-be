@@ -3,6 +3,7 @@
 import { createServer } from "./server.js";
 import { config } from "./config.js";
 import { logger } from "./middleware/logger.js";
+import { startQuotaRolloverJob, stopQuotaRolloverJob } from "./jobs/quotaRolloverJob.js";
 import http from "http";
 
 const app = createServer();
@@ -20,8 +21,11 @@ server.listen(config.api.port, () => {
     process.exitCode = 1;
   });
 
+  startQuotaRolloverJob();
+
   const shutdown = () => {
     logger.info("Shutting down HTTP server...");
+    stopQuotaRolloverJob();
     server.close((closeErr?: Error) => {
       if (closeErr) {
         logger.error({ msg: "Error shutting down HTTP server", err: closeErr });

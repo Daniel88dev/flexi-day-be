@@ -103,6 +103,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     startTime: data.startTime,
     endTime: data.endTime,
     vacationType: data.vacationType,
+    halfDay: data.halfDay,
     note: data.note,
   }));
 

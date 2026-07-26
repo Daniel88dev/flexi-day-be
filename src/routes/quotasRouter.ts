@@ -4,11 +4,64 @@ import { handleGetUserQuota } from "../controllers/quotas/handleGetUserQuota.js"
 import { handlePutUserQuota } from "../controllers/quotas/handlePutUserQuota.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import { validatePutUserQuota } from "../services/userYearQuotas/types.js";
+import { handleGetCarryOverSuggestion } from "../controllers/quotas/handleGetCarryOverSuggestion.js";
 
 export const quotasRouter = (): Router => {
   const app = Router();
 
   app.get("/:groupId", tryCatch(handleGetUserQuota));
+
+  /**
+   * @openapi
+   * /api/quotas/{groupId}/carryover-suggestion:
+   *   get:
+   *     tags:
+   *       - Quotas
+   *     summary: Suggested carry-over from the previous year
+   *     description: |
+   *       Returns the member's unused vacation allowance from `year - 1` so the
+   *       quota dialog can pre-fill this year's carry-over. Pending days count
+   *       as spent. Advisory only — the stored value is whatever the admin
+   *       submits to `PUT /api/quotas/{groupId}`. Requires admin access.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *       - name: userId
+   *         in: query
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - name: year
+   *         in: query
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       '200':
+   *         description: Suggestion with the figures it was derived from
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 previousYear:
+   *                   type: integer
+   *                 allocated:
+   *                   type: number
+   *                 used:
+   *                   type: number
+   *                 suggestion:
+   *                   type: integer
+   *       '403':
+   *         description: No permission for related group
+   */
+  app.get("/:groupId/carryover-suggestion", tryCatch(handleGetCarryOverSuggestion));
 
   /**
    * @openapi
@@ -51,6 +104,10 @@ export const quotasRouter = (): Router => {
    *                 type: integer
    *               homeOfficeDays:
    *                 type: integer
+   *               carriedOverDays:
+   *                 type: integer
+   *                 default: 0
+   *                 description: Unused vacation days rolled forward from the previous year.
    *     responses:
    *       '200':
    *         description: The stored quota row

@@ -9,6 +9,8 @@ import * as userServices from "./user/userServices.js";
 import * as bankHolidayServices from "./bankHoliday/bankHolidayServices.js";
 import * as notificationServices from "./notification/notificationServices.js";
 import * as calendarSyncServices from "./calendarSync/calendarSyncServices.js";
+import * as reportServices from "./report/reportServices.js";
+import * as quotaRolloverServices from "./quotaRollover/quotaRolloverServices.js";
 
 export type DBServices = Readonly<{
   vacation: {
@@ -103,6 +105,23 @@ export type DBServices = Readonly<{
     regenerateToken: typeof calendarSyncServices.regenerateToken;
     touchLastFetched: typeof calendarSyncServices.touchLastFetched;
     getFeedRecords: typeof calendarSyncServices.getFeedRecords;
+  };
+  report: {
+    getScopeEntries: typeof reportServices.getScopeEntries;
+    getReportScope: typeof reportServices.getReportScope;
+    getScopeMembers: typeof reportServices.getScopeMembers;
+    aggregateUsageByUserMonth: typeof reportServices.aggregateUsageByUserMonth;
+    aggregateUsageSplit: typeof reportServices.aggregateUsageSplit;
+    getQuotasForScope: typeof reportServices.getQuotasForScope;
+    getBookingsForScope: typeof reportServices.getBookingsForScope;
+    getMemberGroupsInScope: typeof reportServices.getMemberGroupsInScope;
+    getMemberChanges: typeof reportServices.getMemberChanges;
+    getCarryOverSuggestion: typeof reportServices.getCarryOverSuggestion;
+    recordReportExport: typeof reportServices.recordReportExport;
+  };
+  quotaRollover: {
+    findRolloverCandidates: typeof quotaRolloverServices.findRolloverCandidates;
+    rolloverQuotasForYear: typeof quotaRolloverServices.rolloverQuotasForYear;
   };
 }>;
 
@@ -200,6 +219,23 @@ export const createDBServices = (): DBServices => {
       regenerateToken: calendarSyncServices.regenerateToken,
       touchLastFetched: calendarSyncServices.touchLastFetched,
       getFeedRecords: calendarSyncServices.getFeedRecords,
+    },
+    report: {
+      getScopeEntries: reportServices.getScopeEntries,
+      getReportScope: reportServices.getReportScope,
+      getScopeMembers: reportServices.getScopeMembers,
+      aggregateUsageByUserMonth: reportServices.aggregateUsageByUserMonth,
+      aggregateUsageSplit: reportServices.aggregateUsageSplit,
+      getQuotasForScope: reportServices.getQuotasForScope,
+      getBookingsForScope: reportServices.getBookingsForScope,
+      getMemberGroupsInScope: reportServices.getMemberGroupsInScope,
+      getMemberChanges: reportServices.getMemberChanges,
+      getCarryOverSuggestion: reportServices.getCarryOverSuggestion,
+      recordReportExport: reportServices.recordReportExport,
+    },
+    quotaRollover: {
+      findRolloverCandidates: quotaRolloverServices.findRolloverCandidates,
+      rolloverQuotasForYear: quotaRolloverServices.rolloverQuotasForYear,
     },
   };
 };

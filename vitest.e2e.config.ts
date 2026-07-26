@@ -14,6 +14,9 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/*.e2e.test.ts"],
+    // Every e2e file talks to the same database and truncates shared tables on
+    // teardown, so running two files at once lets one wipe the other's rows.
+    fileParallelism: false,
     testTimeout: 30000,
     hookTimeout: 30000,
     setupFiles: ["./src/tests/e2e/setup.ts"],
