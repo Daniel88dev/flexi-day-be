@@ -22,21 +22,13 @@ export const isBusinessDay = (date: Date): boolean => {
   return day !== 0 && day !== 6;
 };
 
-/**
- * Returns true when the given ISO date falls on one of the group's configured
- * working days. `workingDays` holds `Date.getUTCDay()` numbers (0=Sun … 6=Sat).
- */
+// True when the ISO date is one of `workingDays` (JS `Date.getUTCDay()` numbers, 0=Sun … 6=Sat).
 export const isWorkingDay = (iso: DateString, workingDays: number[]): boolean => {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return false;
   return workingDays.includes(date.getUTCDay());
 };
 
-/**
- * Keeps only the ISO dates that fall on a configured working day, preserving
- * order. Used so a vacation request books — and counts against quotas — only
- * on the group's working days.
- */
 export const filterWorkingDays = (days: DateString[], workingDays: number[]): DateString[] =>
   days.filter((day) => isWorkingDay(day, workingDays));
 

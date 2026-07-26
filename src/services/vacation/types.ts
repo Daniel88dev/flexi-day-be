@@ -41,10 +41,9 @@ export type VacationDetail = VacationListItem & {
   groupName: string;
   approvedByUser: UserSummary | null;
   rejectedByUser: UserSummary | null;
-  /** Inclusive span of the contiguous same-type run this row belongs to. */
+  // The contiguous same-type run this row belongs to: inclusive span + every day-row id in it.
   rangeStart: DateString;
   rangeEnd: DateString;
-  /** Every day-row id in that run, ordered by day — the request's full set. */
   vacationIds: string[];
 };
 

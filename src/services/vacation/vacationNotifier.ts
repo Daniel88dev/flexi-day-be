@@ -413,13 +413,7 @@ export const notifyVacationCancelled = async (
   }
 };
 
-/**
- * Bulk variant of {@link notifyVacationCancelled} for cancelling a whole
- * multi-day request. Only the days that had already been approved are worth an
- * email; rows are grouped per requester so each affected employee (or their
- * approvers, when the employee cancels their own days) gets one mail covering
- * their cancelled span.
- */
+// Bulk variant of notifyVacationCancelled: one mail per requester, approved days only.
 export const notifyVacationsCancelled = async (
   rows: (VacationRow & { approvedAt: Date | null })[],
   actor: { id: string; name: string },

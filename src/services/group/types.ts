@@ -30,9 +30,6 @@ export const validatePutGroupQuotas = z.object({
 
 export type ValidatedPutGroupQuotasType = z.infer<typeof validatePutGroupQuotas>;
 
-// Working days are JS `Date.getUTCDay()` numbers (0=Sun … 6=Sat). At least one
-// day must be a working day, otherwise every vacation request would be
-// rejected. Duplicates are collapsed and the result is sorted for stability.
 export const validatePutGroupWorkingDays = z.object({
   workingDays: z
     .array(z.number().int().min(0).max(6))

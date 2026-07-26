@@ -80,10 +80,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  // Book — and count against quotas — only the group's working days. A
-  // non-working day inside a multi-day range is silently dropped; a request
-  // that lands entirely on non-working days is rejected (a single non-working
-  // day and a range with no working day both fall through to here).
+  // Non-working days inside a range are dropped; an all-non-working request is rejected below.
   const workingDays = filterWorkingDays(days, group.workingDays);
 
   if (workingDays.length === 0) {

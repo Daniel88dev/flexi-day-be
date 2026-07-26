@@ -12,11 +12,6 @@ const services = createDBServices();
 // Sun-first so the label index matches `Date.getUTCDay()`.
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
-/**
- * Updates which weekdays the group treats as working days. Vacation requests
- * are only booked (and only counted against quotas) on these days. Requires
- * admin access on the group.
- */
 export const handlePutGroupWorkingDays = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 

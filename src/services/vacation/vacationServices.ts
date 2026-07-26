@@ -239,11 +239,7 @@ export const rejectVacationsBulk = async (
     .returning();
 };
 
-/**
- * Bulk-cancels (soft-deletes) many vacation rows in a single statement. Used
- * when the detail view cancels a whole multi-day request at once. Returns the
- * rows actually updated so callers can detect any that no longer matched.
- */
+/** Bulk-cancels (soft-deletes) many vacation rows in a single statement. See rejectVacationsBulk. */
 export const cancelVacationsBulk = async (
   vacationIds: string[],
   tx?: DbTransaction
@@ -309,12 +305,7 @@ export const deleteVacation = async (
   return row;
 };
 
-/**
- * Returns the maximal run of consecutive-day rows that includes `targetDay`,
- * ordered by day. Two days are contiguous when they differ by exactly 24h.
- * Callers pass every sibling row (same user / group / type); this trims it to
- * the run around the clicked day. Returns [] when `targetDay` is absent.
- */
+// Given all sibling rows, returns the consecutive-day run containing `targetDay` ([] if absent).
 export const contiguousRunContaining = <T extends { requestedDay: string }>(
   rows: T[],
   targetDay: string
@@ -345,12 +336,8 @@ export const contiguousRunContaining = <T extends { requestedDay: string }>(
  * requester, the group name, and the decision makers. Unlike
  * {@link getVacationById} this deliberately includes cancelled (soft-deleted)
  * rows — the whole point of the detail view is to explain what happened to a
- * request, which includes its cancellation.
- *
- * A multi-day request is stored as one row per day, so this also resolves the
- * contiguous run of same-type sibling days the clicked row belongs to and
- * returns it as `rangeStart` / `rangeEnd` / `vacationIds`. That lets the detail
- * view show the whole span and act on every day of the request at once.
+ * request, which includes its cancellation. Also resolves the contiguous
+ * same-type run this row belongs to (`rangeStart` / `rangeEnd` / `vacationIds`).
  */
 export const getVacationDetailById = async (
   vacationId: string,
@@ -378,9 +365,7 @@ export const getVacationDetailById = async (
 
   const { groupName, approvedByName, rejectedByName, ...vacationRow } = row;
 
-  // Resolve the contiguous run of same-type sibling days this row belongs to.
-  // Cancelled detail rows group with other cancelled days; active rows with
-  // other active days, so a re-booked day on the same date can't merge in.
+  // Match the row's deletedAt state so a re-booked active day can't merge into a cancelled run.
   const siblings = await (tx ?? db)
     .select({ id: vacation.id, requestedDay: vacation.requestedDay })
     .from(vacation)

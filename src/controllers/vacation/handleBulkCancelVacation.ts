@@ -10,12 +10,6 @@ import { notifyVacationsCancelled } from "../../services/vacation/vacationNotifi
 
 const services = createDBServices();
 
-/**
- * Atomically cancels (soft deletes) many vacation rows. The detail view sends
- * every day id of a multi-day request so the whole range is cancelled together
- * or not at all. Unlike bulk approve/reject, an owner may cancel their own
- * days, so authorization allows owner, group admin, or approver per row.
- */
 export const handleBulkCancelVacation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
