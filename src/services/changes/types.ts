@@ -6,7 +6,8 @@ export type ChangeRecordType = {
   groupId: string;
   changeType: changesType;
   changeDetail: string;
-  changingUserId: string;
+  /** Null when the scheduled quota rollover wrote the row rather than a person. */
+  changingUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

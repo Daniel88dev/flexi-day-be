@@ -7,6 +7,7 @@ import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
+import { describeQuotaChange } from "../../services/userYearQuotas/quotaChangeDetail.js";
 
 const services = createDBServices();
 
@@ -63,6 +64,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         relatedYear,
         vacationDays: data.vacationDays,
         homeOfficeDays: data.homeOfficeDays,
+        carriedOverDays: data.carriedOverDays,
       },
       tx
     );
@@ -83,10 +85,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         groupId,
         changeType: changesType.UserYearQuotas,
         changingUserId: auth.userId,
-        changeDetail:
-          existing === undefined
-            ? `Quota for ${relatedYear} set to ${data.vacationDays.toString()} vacation / ${data.homeOfficeDays.toString()} home office days`
-            : `Quota for ${relatedYear} changed from ${existing.vacationDays.toString()}/${existing.homeOfficeDays.toString()} to ${data.vacationDays.toString()}/${data.homeOfficeDays.toString()} (vacation/home office days)`,
+        changeDetail: describeQuotaChange(relatedYear, existing, data),
       },
       tx
     );

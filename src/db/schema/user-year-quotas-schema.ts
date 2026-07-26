@@ -24,6 +24,9 @@ export const userYearQuotas = pgTable(
     relatedYear: varchar("related_year", { length: 4 }).notNull(),
     vacationDays: integer("vacation_days").notNull().default(20),
     homeOfficeDays: integer("home_office_days").notNull().default(0),
+    // Unused allowance rolled forward from the previous year. Stored rather
+    // than derived so a cap or expiry policy stays an explicit admin decision.
+    carriedOverDays: integer("carried_over_days").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

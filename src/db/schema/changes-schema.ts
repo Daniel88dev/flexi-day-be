@@ -22,9 +22,10 @@ export const changesSchema = pgTable("changes", {
     .references(() => groups.id, { onDelete: "cascade" }),
   changeType: changesEnum("change_type").notNull(),
   changeDetail: text("change_detail").notNull(),
-  changingUserId: text("changing_user_id")
-    .notNull()
-    .references(() => user.id),
+  // NULL means the scheduled quota rollover wrote this row rather than a
+  // person. The FK has no ON DELETE, so a real actor can never become NULL —
+  // readers can treat NULL as "system" without ambiguity.
+  changingUserId: text("changing_user_id").references(() => user.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
     .notNull()

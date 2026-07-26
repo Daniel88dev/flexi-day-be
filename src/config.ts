@@ -26,11 +26,20 @@ type EmailConfig = {
   appUrl: string;
 };
 
+type QuotaRolloverConfig = {
+  enabled: boolean;
+  /** Standard 5-field cron expression. */
+  cron: string;
+  /** IANA zone the expression is evaluated in. */
+  timezone: string;
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
   auth?: AuthConfig;
   email: EmailConfig;
+  quotaRollover: QuotaRolloverConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -94,5 +103,17 @@ export const config: Config = {
     appUrl:
       process.env.APP_URL ??
       (environment === "production" ? "https://www.flexi-day.com" : "http://localhost:3000"),
+  },
+  quotaRollover: {
+    // Off under test so the e2e suite drives the rollover explicitly instead
+    // of racing a timer.
+    enabled: process.env.QUOTA_ROLLOVER_ENABLED
+      ? process.env.QUOTA_ROLLOVER_ENABLED === "true"
+      : environment !== "test",
+    // Daily rather than once on 1 January: the job is a no-op when every
+    // member already has a row, and a yearly trigger would be missed outright
+    // if the service happened to be down on the day.
+    cron: process.env.QUOTA_ROLLOVER_CRON ?? "0 2 * * *",
+    timezone: process.env.QUOTA_ROLLOVER_TIMEZONE ?? "Europe/Prague",
   },
 };

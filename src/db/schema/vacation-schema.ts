@@ -7,6 +7,7 @@ import {
   uniqueIndex,
   time,
   pgEnum,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
@@ -40,6 +41,10 @@ export const vacation = pgTable(
     startTime: time("start_time"),
     endTime: time("end_time"),
     vacationType: vacationEnum("vacation_type").notNull().default(vacationType.Vacation),
+    // Authoritative for quota accounting: a half day counts 0.5 against the
+    // allowance. `startTime`/`endTime` are presentation only and must never be
+    // used to infer this — they are free-form and often set on full days too.
+    halfDay: boolean("half_day").notNull().default(false),
     approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",

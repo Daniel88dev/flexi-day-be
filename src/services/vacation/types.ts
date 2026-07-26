@@ -11,6 +11,7 @@ export type VacationType = {
   startTime: string | null;
   endTime: string | null;
   vacationType: vacationType;
+  halfDay: boolean;
   approvedAt: Date | null;
   approvedBy: string | null;
   deletedAt: Date | null;
@@ -24,7 +25,14 @@ export type VacationType = {
 
 export type VacationInsertType = Pick<
   VacationType,
-  "id" | "userId" | "groupId" | "requestedDay" | "startTime" | "endTime" | "vacationType"
+  | "id"
+  | "userId"
+  | "groupId"
+  | "requestedDay"
+  | "startTime"
+  | "endTime"
+  | "vacationType"
+  | "halfDay"
 > & {
   note?: string | null;
 };
@@ -66,6 +74,9 @@ export const validatePostVacation = z.object({
   vacationType: vacationKindEnum.default(vacationType.Vacation),
   startTime: z.iso.time().nullable().default(null),
   endTime: z.iso.time().nullable().default(null),
+  // Drives quota accounting (0.5 vs 1 day). Deliberately explicit — the
+  // optional start/end times above are free-form and cannot stand in for it.
+  halfDay: z.boolean().default(false),
   note: z.string().max(1000).nullable().default(null),
 });
 

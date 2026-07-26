@@ -97,6 +97,7 @@ export const upsertUserYearQuota = async (
       set: {
         vacationDays: data.vacationDays,
         homeOfficeDays: data.homeOfficeDays,
+        carriedOverDays: data.carriedOverDays,
       },
     })
     .returning();
