@@ -27,5 +27,5 @@ export const serverCors = cors({
   exposedHeaders: ["Content-Disposition"],
   credentials: true,
   optionsSuccessStatus: 204,
-  maxAge: 1000 * 60 * 2,
+  maxAge: 7200,
 });
