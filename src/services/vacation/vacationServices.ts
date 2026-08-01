@@ -110,9 +110,10 @@ export const getVacationsForGroup = async (
   const where = userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
 
   const rows = await db
-    .select(baseVacationSelection)
+    .select({ ...baseVacationSelection, sourceGroupName: groups.groupName })
     .from(vacation)
     .innerJoin(user, eq(vacation.userId, user.id))
+    .innerJoin(groups, eq(vacation.groupId, groups.id))
     // At most one row can match: `group_mirrors_user_source_target_uniq` makes
     // (user, source, target) unique among active mirrors, so this cannot fan out.
     .leftJoin(
@@ -127,10 +128,14 @@ export const getVacationsForGroup = async (
     .where(where)
     .orderBy(asc(vacation.requestedDay));
 
-  return rows.map((row) => ({
-    ...toListItem(row),
-    mirroredFromGroupId: row.groupId === groupId ? null : row.groupId,
-  }));
+  return rows.map(({ sourceGroupName, ...row }) => {
+    const mirrored = row.groupId !== groupId;
+    return {
+      ...toListItem(row),
+      mirroredFromGroupId: mirrored ? row.groupId : null,
+      mirroredFromGroupName: mirrored ? sourceGroupName : null,
+    };
+  });
 };
 
 /**

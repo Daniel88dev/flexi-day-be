@@ -71,7 +71,7 @@ export const usersRouter = (): Router => {
    *     summary: The caller's preferences
    *     description: |
    *       Users without a stored row are on the defaults
-   *       (`emailNotifications: true`).
+   *       (`emailNotifications: true`, `dashboardScope: MINE`).
    *     security:
    *       - bearerAuth: []
    *     responses:
@@ -80,18 +80,23 @@ export const usersRouter = (): Router => {
    *         content:
    *           application/json:
    *             schema:
-   *               type: object
-   *               properties:
-   *                 emailNotifications:
-   *                   type: boolean
+   *               $ref: '#/components/schemas/UserSettings'
    *   put:
    *     tags:
    *       - Users
    *     summary: Update the caller's preferences
    *     description: |
+   *       A partial update — the screen saves one card at a time, so any subset
+   *       of the fields may be sent and the rest keep their stored value.
+   *
    *       Turning `emailNotifications` off suppresses workflow mail (approval
    *       requests, decisions, cancellations). Account mail such as email
    *       confirmation is unaffected.
+   *
+   *       `dashboardScope: GROUP` makes the dashboard calendar show
+   *       `dashboardGroupId`'s records instead of only the caller's own. That
+   *       group must already be selected or supplied in the same request, and
+   *       the caller must have view access on it.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -99,15 +104,28 @@ export const usersRouter = (): Router => {
    *       content:
    *         application/json:
    *           schema:
-   *             type: object
-   *             required:
-   *               - emailNotifications
-   *             properties:
-   *               emailNotifications:
-   *                 type: boolean
+   *             $ref: '#/components/schemas/UserSettings'
    *     responses:
    *       '200':
    *         description: The stored preferences
+   *       '403':
+   *         description: No access to view the selected group's records
+   *       '422':
+   *         description: Group scope requested without a group
+   * components:
+   *   schemas:
+   *     UserSettings:
+   *       type: object
+   *       properties:
+   *         emailNotifications:
+   *           type: boolean
+   *         dashboardScope:
+   *           type: string
+   *           enum: [MINE, GROUP]
+   *         dashboardGroupId:
+   *           type: string
+   *           format: uuid
+   *           nullable: true
    */
   app.get("/me/settings", tryCatch(handleGetMySettings));
   app.put(

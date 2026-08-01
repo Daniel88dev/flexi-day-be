@@ -31,9 +31,15 @@ export const vacationRouter = (): Router => {
    *   get:
    *     tags:
    *       - Vacations
-   *     summary: Retrieve vacations for the authenticated user
+   *     summary: Retrieve vacations for the authenticated user or one of their groups
    *     description: |
-   *       Returns vacation records for the authenticated user for a given year and month.
+   *       Returns vacation records for a given year and month. Without `groupId`
+   *       the caller's own records are returned. With `groupId` the whole
+   *       group's records are returned instead — including records mirrored into
+   *       it from another group, which carry a non-null `mirroredFromGroupId`.
+   *
+   *       Group scope requires view access on that group (view access, admin
+   *       access, or being its manager); a plain member gets a 403.
    *       Each row includes a denormalized `user` summary used by the calendar UI.
    *     operationId: handleGetVacations
    *     security:
@@ -53,6 +59,13 @@ export const vacationRouter = (): Router => {
    *           type: integer
    *           minimum: 1
    *           maximum: 12
+   *       - name: groupId
+   *         in: query
+   *         required: false
+   *         description: Return this group's records instead of the caller's own.
+   *         schema:
+   *           type: string
+   *           format: uuid
    *     responses:
    *       '200':
    *         description: Array of vacations matching the query
@@ -64,6 +77,8 @@ export const vacationRouter = (): Router => {
    *                 $ref: '#/components/schemas/VacationListItem'
    *       '401':
    *         description: Unauthorized
+   *       '403':
+   *         description: No access to view this group's records
    *       '500':
    *         description: Internal Server Error
    * components:
@@ -87,6 +102,14 @@ export const vacationRouter = (): Router => {
    *           properties:
    *             user:
    *               $ref: '#/components/schemas/UserSummary'
+   *             mirroredFromGroupId:
+   *               type: string
+   *               format: uuid
+   *               nullable: true
+   *               description: Set when the record belongs to another group and is only projected here.
+   *             mirroredFromGroupName:
+   *               type: string
+   *               nullable: true
    */
   app.get("/", tryCatch(handleGetVacations));
 

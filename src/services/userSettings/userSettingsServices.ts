@@ -1,7 +1,7 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { userSettings } from "../../db/schema/user-settings-schema.js";
 import { eq, inArray } from "drizzle-orm";
-import type { UserSettingsRecord } from "./types.js";
+import { DEFAULT_USER_SETTINGS, type UserSettingsPatch, type UserSettingsRecord } from "./types.js";
 
 export const getUserSettings = async (
   userId: string,
@@ -18,19 +18,21 @@ export const getUserSettings = async (
 
 /**
  * Stores the user's preferences, creating the row on first change. Users
- * without a row are on the defaults, so this is always an upsert.
+ * without a row are on the defaults, so this is always an upsert. `patch` may
+ * carry any subset of the settings — the screen saves one card at a time, and
+ * unmentioned fields keep their stored value (or take the default on insert).
  */
 export const upsertUserSettings = async (
   userId: string,
-  values: { emailNotifications: boolean },
+  patch: UserSettingsPatch,
   tx?: DbTransaction
 ): Promise<UserSettingsRecord | undefined> => {
   const [row] = await (tx ?? db)
     .insert(userSettings)
-    .values({ userId, ...values })
+    .values({ ...DEFAULT_USER_SETTINGS, ...patch, userId })
     .onConflictDoUpdate({
       target: userSettings.userId,
-      set: values,
+      set: patch,
     })
     .returning();
 

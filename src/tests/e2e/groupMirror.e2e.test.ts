@@ -101,6 +101,7 @@ describe("group mirroring", () => {
       groupId: teamA.id,
       requestedDay: "2026-03-10",
       mirroredFromGroupId: teamA.id,
+      mirroredFromGroupName: "Team A",
     });
   });
 
@@ -111,6 +112,7 @@ describe("group mirroring", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.mirroredFromGroupId).toBeNull();
+    expect(rows[0]?.mirroredFromGroupName).toBeNull();
   });
 
   it("returns own and mirrored records together, without duplicating either", async () => {
