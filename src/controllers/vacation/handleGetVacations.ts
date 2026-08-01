@@ -3,6 +3,8 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
+import { canViewWholeGroup } from "../../services/report/reportScope.js";
+import AppError from "../../utils/appError.js";
 
 const services = createDBServices();
 
@@ -20,16 +22,43 @@ const validateMonth = z.coerce
   .max(12)
   .prefault(() => new Date().getMonth() + 1);
 
+const validateGroupId = z.string().min(1).optional();
+
 export const handleGetVacations = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const year = validateYear.parse(req.query.year);
   const month = validateMonth.parse(req.query.month);
+  const groupId = validateGroupId.parse(req.query.groupId);
 
   const range = formatStartAndEndDate(year, month);
 
-  const result = await services.vacation.getVacationsForUser(
-    auth.userId,
+  if (groupId === undefined) {
+    const result = await services.vacation.getVacationsForUser(
+      auth.userId,
+      range.startDate,
+      range.endDate
+    );
+    // Same shape either way, so the calendar does not branch on scope.
+    return res
+      .status(200)
+      .json(
+        result.map((row) => ({ ...row, mirroredFromGroupId: null, mirroredFromGroupName: null }))
+      );
+  }
+
+  const scope = await services.report.getScopeEntries(auth.userId);
+  if (!canViewWholeGroup(scope, groupId)) {
+    throw new AppError({
+      code: 403,
+      message: "No access to view this group's records",
+      logging: true,
+      context: { userId: auth.userId, groupId },
+    });
+  }
+
+  const result = await services.vacation.getVacationsForGroup(
+    groupId,
     range.startDate,
     range.endDate
   );

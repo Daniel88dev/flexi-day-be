@@ -13,5 +13,7 @@ export const handleGetMySettings = async (req: Request, res: Response) => {
 
   return res.status(200).json({
     emailNotifications: settings?.emailNotifications ?? DEFAULT_USER_SETTINGS.emailNotifications,
+    dashboardScope: settings?.dashboardScope ?? DEFAULT_USER_SETTINGS.dashboardScope,
+    dashboardGroupId: settings?.dashboardGroupId ?? DEFAULT_USER_SETTINGS.dashboardGroupId,
   });
 };

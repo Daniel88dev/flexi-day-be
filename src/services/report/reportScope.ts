@@ -48,6 +48,14 @@ export const buildScopePredicate = (
   return and(accessPredicate, inArray(cols.userId, filters.userIds)) as SQL;
 };
 
+/**
+ * True when the caller may see every member's records in the group, not just
+ * their own. Also gates the dashboard's group calendar, so a plain member
+ * without view access never sees who else is off.
+ */
+export const canViewWholeGroup = (scope: ReportScopeEntry[], groupId: string): boolean =>
+  scope.some((entry) => entry.groupId === groupId && entry.access === "all");
+
 /** True when the caller may edit quotas in the group — group admin or manager. */
 export const canEditQuotasIn = (scope: ReportScopeEntry[], groupId: string): boolean =>
   scope.some((entry) => entry.groupId === groupId && entry.canEditQuotas);

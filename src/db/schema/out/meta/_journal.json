@@ -57,6 +57,13 @@
       "when": 1785571165719,
       "tag": "0007_illegal_marauders",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785584203806,
+      "tag": "0008_cold_talos",
+      "breakpoints": true
     }
   ]
 }

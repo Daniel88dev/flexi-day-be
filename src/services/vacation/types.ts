@@ -49,6 +49,7 @@ export type VacationListItem = VacationType & {
  */
 export type GroupVacationListItem = VacationListItem & {
   mirroredFromGroupId: string | null;
+  mirroredFromGroupName: string | null;
 };
 
 /**

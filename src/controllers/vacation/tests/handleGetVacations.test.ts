@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Request, Response } from "express";
 
-const { mockGetVacationsForUser } = vi.hoisted(() => ({
-  mockGetVacationsForUser: vi.fn(),
-}));
+const { mockGetVacationsForUser, mockGetVacationsForGroup, mockGetScopeEntries } = vi.hoisted(
+  () => ({
+    mockGetVacationsForUser: vi.fn(),
+    mockGetVacationsForGroup: vi.fn(),
+    mockGetScopeEntries: vi.fn(),
+  })
+);
 
 vi.mock("../../../utils/dateFunc.js", () => ({
   formatStartAndEndDate: vi.fn(),
@@ -17,6 +21,10 @@ vi.mock("../../../services/DBServices.js", () => ({
   createDBServices: () => ({
     vacation: {
       getVacationsForUser: mockGetVacationsForUser,
+      getVacationsForGroup: mockGetVacationsForGroup,
+    },
+    report: {
+      getScopeEntries: mockGetScopeEntries,
     },
   }),
 }));
@@ -83,7 +91,11 @@ describe("handleGetVacations", () => {
     expect(formatStartAndEndDate).toHaveBeenCalledWith(2024, 3);
     expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31");
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(mockVacations);
+    // Own records carry the same mirror fields as group ones so the calendar
+    // never has to branch on which scope produced the row.
+    expect(res.json).toHaveBeenCalledWith(
+      mockVacations.map((v) => ({ ...v, mirroredFromGroupId: null, mirroredFromGroupName: null }))
+    );
   });
 
   it("should use default year (current year) when year query param is not provided", async () => {
@@ -206,6 +218,52 @@ describe("handleGetVacations", () => {
       "2024-01-01",
       "2024-01-31"
     );
+  });
+
+  describe("group scope", () => {
+    const scopeEntry = (access: "all" | "self") => ({
+      groupId: "group_1",
+      groupName: "Team A",
+      access,
+      canEditQuotas: false,
+    });
+
+    it("returns the group's records, mirrored ones included, when the caller may view it", async () => {
+      const { req, res } = makeReqRes({ year: "2024", month: "3", groupId: "group_1" });
+      const groupRows = [
+        { id: "v1", userId: "user_123", mirroredFromGroupId: null, mirroredFromGroupName: null },
+        {
+          id: "v2",
+          userId: "user_999",
+          mirroredFromGroupId: "group_2",
+          mirroredFromGroupName: "Team B",
+        },
+      ];
+      mockGetScopeEntries.mockResolvedValue([scopeEntry("all")]);
+      mockGetVacationsForGroup.mockResolvedValue(groupRows);
+
+      await handleGetVacations(req, res);
+
+      expect(mockGetVacationsForGroup).toHaveBeenCalledWith("group_1", "2024-01-01", "2024-01-31");
+      expect(mockGetVacationsForUser).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith(groupRows);
+    });
+
+    it("rejects a member without view access on the group", async () => {
+      const { req, res } = makeReqRes({ year: "2024", month: "3", groupId: "group_1" });
+      mockGetScopeEntries.mockResolvedValue([scopeEntry("self")]);
+
+      await expect(handleGetVacations(req, res)).rejects.toMatchObject({ code: 403 });
+      expect(mockGetVacationsForGroup).not.toHaveBeenCalled();
+    });
+
+    it("rejects a group the caller does not belong to", async () => {
+      const { req, res } = makeReqRes({ year: "2024", month: "3", groupId: "group_other" });
+      mockGetScopeEntries.mockResolvedValue([scopeEntry("all")]);
+
+      await expect(handleGetVacations(req, res)).rejects.toMatchObject({ code: 403 });
+      expect(mockGetVacationsForGroup).not.toHaveBeenCalled();
+    });
   });
 
   it("should pass correct date range from formatStartAndEndDate to service", async () => {
