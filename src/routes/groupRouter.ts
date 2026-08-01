@@ -6,6 +6,9 @@ import { handlePutGroupQuotas } from "../controllers/group/handlePutGroupQuotas.
 import { handlePutGroupWorkingDays } from "../controllers/group/handlePutGroupWorkingDays.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import { validatePutGroupQuotas, validatePutGroupWorkingDays } from "../services/group/types.js";
+import { validatePutGroupMirrors } from "../services/groupMirror/types.js";
+import { handleGetGroupMirrors } from "../controllers/group/handleGetGroupMirrors.js";
+import { handlePutGroupMirrors } from "../controllers/group/handlePutGroupMirrors.js";
 
 export const groupRouter = (): Router => {
   const app = Router();
@@ -111,6 +114,79 @@ export const groupRouter = (): Router => {
     "/:groupId/working-days",
     bodyValidationMiddleware(validatePutGroupWorkingDays),
     tryCatch(handlePutGroupWorkingDays)
+  );
+
+  /**
+   * @openapi
+   * /api/group/{groupId}/mirrors:
+   *   get:
+   *     tags:
+   *       - Groups
+   *     summary: The caller's mirroring setup for this group
+   *     description: |
+   *       Lists every other group the caller belongs to and whether their
+   *       records from it are currently shown inside this group. Mirroring is a
+   *       per-user choice, so this only ever describes the caller.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: Candidate source groups with their mirrored state
+   *       '403':
+   *         description: Caller does not belong to the group
+   *   put:
+   *     tags:
+   *       - Groups
+   *     summary: Set which groups the caller mirrors into this one
+   *     description: |
+   *       Replaces the caller's mirror sources for this group. Mirrored records
+   *       are shown here read-only: they are approved, counted against quotas
+   *       and reported in their source group alone, and never need a decision
+   *       in this one. The caller must belong to the target and to every source
+   *       group; an empty array turns mirroring off.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - sourceGroupIds
+   *             properties:
+   *               sourceGroupIds:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: uuid
+   *     responses:
+   *       '200':
+   *         description: The caller's mirrors into this group after the update
+   *       '403':
+   *         description: Caller does not belong to the target or a source group
+   *       '422':
+   *         description: A group cannot mirror itself
+   */
+  app.get("/:groupId/mirrors", tryCatch(handleGetGroupMirrors));
+  app.put(
+    "/:groupId/mirrors",
+    bodyValidationMiddleware(validatePutGroupMirrors),
+    tryCatch(handlePutGroupMirrors)
   );
 
   return app;

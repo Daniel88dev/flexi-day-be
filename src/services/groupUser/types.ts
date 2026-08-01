@@ -37,7 +37,11 @@ export type InviteLink = {
   id: string;
   groupId: string;
   code: string;
+  /** Address the invite was issued to; null only on rows predating email invites. */
+  email: string | null;
+  invitedByUserId: string | null;
   usedAt: Date | null;
+  revokedAt: Date | null;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -47,8 +51,21 @@ export type InviteLinkInsertType = {
   id: string;
   groupId: string;
   code: string;
+  email?: string | null;
+  invitedByUserId?: string | null;
   expiresAt: Date;
 };
+
+/** An invite plus who sent it, for the group's pending-invites list. */
+export type InviteLinkListItem = InviteLink & {
+  invitedByName: string | null;
+};
+
+export const validatePostGroupInvite = z.object({
+  email: z.email().transform((value) => value.toLowerCase()),
+});
+
+export type ValidatedPostGroupInviteType = z.infer<typeof validatePostGroupInvite>;
 
 export const validatePutGroupUserUpdate = z.object({
   groupId: z.uuid(),
