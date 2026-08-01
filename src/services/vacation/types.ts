@@ -42,6 +42,16 @@ export type VacationListItem = VacationType & {
 };
 
 /**
+ * A record as seen from one group's perspective. `mirroredFromGroupId` is null
+ * for the group's own records; when set, the record is only projected here from
+ * that group and is read-only — it is approved, counted and reported in its
+ * source group alone.
+ */
+export type GroupVacationListItem = VacationListItem & {
+  mirroredFromGroupId: string | null;
+};
+
+/**
  * A single request as shown on the detail view: the row, who it belongs to,
  * which group it was booked in, and who decided on it.
  */

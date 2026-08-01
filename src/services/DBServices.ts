@@ -2,6 +2,7 @@ import * as vacationServices from "./vacation/vacationServices.js";
 import * as vacationEventServices from "./vacationEvent/vacationEventServices.js";
 import * as groupUserServices from "./groupUser/groupUserServices.js";
 import * as groupServices from "./group/groupServices.js";
+import * as groupMirrorServices from "./groupMirror/groupMirrorServices.js";
 import * as userYearQuotasServices from "./userYearQuotas/userYearQuotasServices.js";
 import * as changesServices from "./changes/changesServices.js";
 import * as userSettingsServices from "./userSettings/userSettingsServices.js";
@@ -49,7 +50,11 @@ export type DBServices = Readonly<{
   inviteLinks: {
     createInviteLink: typeof groupUserServices.createInviteLink;
     getInviteLinksForGroup: typeof groupUserServices.getInviteLinksForGroup;
+    getOpenInvitesForGroup: typeof groupUserServices.getOpenInvitesForGroup;
     getInviteLinkByCode: typeof groupUserServices.getInviteLinkByCode;
+    getInviteLinkById: typeof groupUserServices.getInviteLinkById;
+    revokeOpenInviteForEmail: typeof groupUserServices.revokeOpenInviteForEmail;
+    revokeInviteLink: typeof groupUserServices.revokeInviteLink;
     useInviteLink: typeof groupUserServices.useInviteLink;
   };
   group: {
@@ -63,6 +68,11 @@ export type DBServices = Readonly<{
     updateGroupWorkingDays: typeof groupServices.updateGroupWorkingDays;
     getApprovalUsers: typeof groupServices.getApprovalUsers;
     getGroupsWhereUserCanApprove: typeof groupServices.getGroupsWhereUserCanApprove;
+  };
+  groupMirror: {
+    getMirrorsIntoGroupForUser: typeof groupMirrorServices.getMirrorsIntoGroupForUser;
+    getMirrorsForUser: typeof groupMirrorServices.getMirrorsForUser;
+    setMirrorsIntoGroupForUser: typeof groupMirrorServices.setMirrorsIntoGroupForUser;
   };
   userYearQuotas: {
     getUserYearGroupQuotas: typeof userYearQuotasServices.getUserYearGroupQuotas;
@@ -78,6 +88,7 @@ export type DBServices = Readonly<{
   };
   user: {
     getUserById: typeof userServices.getUserById;
+    getUserByEmail: typeof userServices.getUserByEmail;
     getUsersByIds: typeof userServices.getUsersByIds;
   };
   userSettings: {
@@ -163,7 +174,11 @@ export const createDBServices = (): DBServices => {
     inviteLinks: {
       createInviteLink: groupUserServices.createInviteLink,
       getInviteLinksForGroup: groupUserServices.getInviteLinksForGroup,
+      getOpenInvitesForGroup: groupUserServices.getOpenInvitesForGroup,
       getInviteLinkByCode: groupUserServices.getInviteLinkByCode,
+      getInviteLinkById: groupUserServices.getInviteLinkById,
+      revokeOpenInviteForEmail: groupUserServices.revokeOpenInviteForEmail,
+      revokeInviteLink: groupUserServices.revokeInviteLink,
       useInviteLink: groupUserServices.useInviteLink,
     },
     group: {
@@ -177,6 +192,11 @@ export const createDBServices = (): DBServices => {
       updateGroupWorkingDays: groupServices.updateGroupWorkingDays,
       getApprovalUsers: groupServices.getApprovalUsers,
       getGroupsWhereUserCanApprove: groupServices.getGroupsWhereUserCanApprove,
+    },
+    groupMirror: {
+      getMirrorsIntoGroupForUser: groupMirrorServices.getMirrorsIntoGroupForUser,
+      getMirrorsForUser: groupMirrorServices.getMirrorsForUser,
+      setMirrorsIntoGroupForUser: groupMirrorServices.setMirrorsIntoGroupForUser,
     },
     userYearQuotas: {
       getUserYearGroupQuotas: userYearQuotasServices.getUserYearGroupQuotas,
@@ -192,6 +212,7 @@ export const createDBServices = (): DBServices => {
     },
     user: {
       getUserById: userServices.getUserById,
+      getUserByEmail: userServices.getUserByEmail,
       getUsersByIds: userServices.getUsersByIds,
     },
     userSettings: {

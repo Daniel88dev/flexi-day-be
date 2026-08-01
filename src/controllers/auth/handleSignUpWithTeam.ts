@@ -16,7 +16,15 @@ export const validateSignUpWithTeam = z.object({
   name: z.string().min(1).max(120),
   email: z.email(),
   password: z.string().min(8).max(256),
-  teamName: z.string().min(1).max(120),
+  // Optional: an account may exist with no group at all. Without one the user
+  // simply cannot book time off until they create or join a group — booking is
+  // authorized per-membership in `handlePostVacation`.
+  teamName: z
+    .string()
+    .max(120)
+    .transform((value) => value.trim())
+    .optional()
+    .transform((value) => (value ? value : undefined)),
 });
 
 export type ValidatedSignUpWithTeamType = z.infer<typeof validateSignUpWithTeam>;
@@ -91,51 +99,11 @@ export const handleSignUpWithTeam = async (req: Request, res: Response) => {
     });
   }
 
-  let group;
+  const teamName = data.teamName;
+
+  let group = null;
   try {
-    group = await db.transaction(async (tx) => {
-      const newGroup = await services.group.createGroup(
-        {
-          id: generateRandomUUID(),
-          groupName: data.teamName,
-          managerUserId: userId,
-          mainApprovalUser: userId,
-        },
-        tx
-      );
-
-      if (!newGroup) {
-        throw new AppError({
-          message: "Failed to create team for new user",
-          logging: true,
-          code: 500,
-          context: { userId, teamName: data.teamName },
-        });
-      }
-
-      const membership = await services.groupUser.createGroupUser(
-        {
-          id: generateRandomUUID(),
-          userId,
-          groupId: newGroup.id,
-          viewAccess: true,
-          adminAccess: true,
-          controlledUser: true,
-        },
-        tx
-      );
-
-      if (!membership) {
-        throw new AppError({
-          message: "Failed to attach new user to their team",
-          logging: true,
-          code: 500,
-          context: { userId, groupId: newGroup.id },
-        });
-      }
-
-      return newGroup;
-    });
+    group = teamName === undefined ? null : await createTeamForUser(userId, teamName);
   } catch (err) {
     await rollbackAuthUser(userId, data.email);
     throw err;
@@ -148,9 +116,9 @@ export const handleSignUpWithTeam = async (req: Request, res: Response) => {
     res.appendHeader(key, value);
   });
 
-  logger.info("sign-up-with-team completed", {
+  logger.info("sign-up completed", {
     userId,
-    groupId: group.id,
+    groupId: group?.id ?? null,
   });
 
   return res.status(201).json({
@@ -159,3 +127,48 @@ export const handleSignUpWithTeam = async (req: Request, res: Response) => {
     group,
   });
 };
+
+const createTeamForUser = async (userId: string, teamName: string) =>
+  db.transaction(async (tx) => {
+    const newGroup = await services.group.createGroup(
+      {
+        id: generateRandomUUID(),
+        groupName: teamName,
+        managerUserId: userId,
+        mainApprovalUser: userId,
+      },
+      tx
+    );
+
+    if (!newGroup) {
+      throw new AppError({
+        message: "Failed to create team for new user",
+        logging: true,
+        code: 500,
+        context: { userId, teamName },
+      });
+    }
+
+    const membership = await services.groupUser.createGroupUser(
+      {
+        id: generateRandomUUID(),
+        userId,
+        groupId: newGroup.id,
+        viewAccess: true,
+        adminAccess: true,
+        controlledUser: true,
+      },
+      tx
+    );
+
+    if (!membership) {
+      throw new AppError({
+        message: "Failed to attach new user to their team",
+        logging: true,
+        code: 500,
+        context: { userId, groupId: newGroup.id },
+      });
+    }
+
+    return newGroup;
+  });

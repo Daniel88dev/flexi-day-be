@@ -7,6 +7,7 @@ import {
   count,
   countDistinct,
   eq,
+  exists,
   gte,
   inArray,
   isNotNull,
@@ -17,6 +18,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type {
+  GroupVacationListItem,
   VacationDetail,
   VacationInsertType,
   VacationListItem,
@@ -24,6 +26,8 @@ import type {
 } from "./types.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { groupUsers } from "../../db/schema/group-users-schema.js";
+import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { alias } from "drizzle-orm/pg-core";
 import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
 import { sumDaysWhere } from "./dayWeight.js";
@@ -65,18 +69,43 @@ const baseVacationSelection = {
 /**
  * Retrieves a list of vacations for a specific group within a given date range,
  * enriched with the requesting user's display summary. Optionally filters by user.
+ *
+ * Also returns records a member has mirrored into this group from another one
+ * they belong to (see `group_mirrors`). Those carry a non-null
+ * `mirroredFromGroupId` and stay owned by their source group: they are only
+ * projected here for visibility, are never approvable in this group — the
+ * approval queries key on `vacation.groupId` — and never count against this
+ * group's quotas or reports.
  */
 export const getVacationsForGroup = async (
   groupId: string,
   startDate: string,
   endDate: string,
   userId: string | null = null
-): Promise<VacationListItem[]> => {
+): Promise<GroupVacationListItem[]> => {
+  // A mirror only projects records of someone who still belongs to the target
+  // group; without this a member who left would keep leaking time off into it.
+  const stillAMember = exists(
+    db
+      .select({ one: sql`1` })
+      .from(groupUsers)
+      .where(
+        and(
+          eq(groupUsers.userId, vacation.userId),
+          eq(groupUsers.groupId, groupId),
+          isNull(groupUsers.deletedAt)
+        )
+      )
+  );
+
+  const inThisGroup = eq(vacation.groupId, groupId);
+  const mirroredIntoThisGroup = and(isNotNull(groupMirrors.id), stillAMember);
+
   const base = [
-    eq(vacation.groupId, groupId),
     isNull(vacation.deletedAt),
     gte(vacation.requestedDay, startDate),
     lt(vacation.requestedDay, endDate),
+    or(inThisGroup, mirroredIntoThisGroup),
   ] as const;
   const where = userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
 
@@ -84,10 +113,24 @@ export const getVacationsForGroup = async (
     .select(baseVacationSelection)
     .from(vacation)
     .innerJoin(user, eq(vacation.userId, user.id))
+    // At most one row can match: `group_mirrors_user_source_target_uniq` makes
+    // (user, source, target) unique among active mirrors, so this cannot fan out.
+    .leftJoin(
+      groupMirrors,
+      and(
+        eq(groupMirrors.userId, vacation.userId),
+        eq(groupMirrors.sourceGroupId, vacation.groupId),
+        eq(groupMirrors.targetGroupId, groupId),
+        isNull(groupMirrors.deletedAt)
+      )
+    )
     .where(where)
     .orderBy(asc(vacation.requestedDay));
 
-  return rows.map(toListItem);
+  return rows.map((row) => ({
+    ...toListItem(row),
+    mirroredFromGroupId: row.groupId === groupId ? null : row.groupId,
+  }));
 };
 
 /**

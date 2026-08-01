@@ -84,6 +84,23 @@ export interface VacationCommentData {
 }
 
 /**
+ * `group-invite`: sent to someone an admin invited to join their group. The
+ * code is deliberately in the email body only — `signUpUrl` is the plain
+ * sign-up page and carries nothing, so a leaked link grants no access.
+ */
+export interface GroupInviteData {
+  groupName: string;
+  inviterName: string;
+  inviteCode: string;
+  /** Plain sign-up page, no token in it. */
+  signUpUrl: string;
+  /** Where an existing account redeems the code. */
+  joinUrl: string;
+  invitedEmail: string;
+  expiresIn: string;
+}
+
+/**
  * A templated email to send. `template` is the logical template name; the
  * adapter maps it to the concrete, stage-suffixed SES template name. The
  * union keeps each template's variables tied to its name.
@@ -94,7 +111,8 @@ export type TemplatedEmail =
   | { to: string; template: "vacation-approved"; data: VacationApprovedData }
   | { to: string; template: "vacation-rejected"; data: VacationRejectedData }
   | { to: string; template: "vacation-cancelled"; data: VacationCancelledData }
-  | { to: string; template: "vacation-comment"; data: VacationCommentData };
+  | { to: string; template: "vacation-comment"; data: VacationCommentData }
+  | { to: string; template: "group-invite"; data: GroupInviteData };
 
 export type EmailTemplateName = TemplatedEmail["template"];
 

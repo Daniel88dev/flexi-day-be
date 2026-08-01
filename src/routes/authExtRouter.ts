@@ -20,7 +20,11 @@ export const authExtRouter = (): Router => {
    *   post:
    *     tags:
    *       - Auth
-   *     summary: Provision a user and their first group in one call
+   *     summary: Provision a user, optionally with their first group
+   *     description: |
+   *       `teamName` is optional. When omitted the account is created with no
+   *       group and `group` comes back `null`; the user can then create a group
+   *       or redeem an invite code. Booking time off requires a group.
    *     requestBody:
    *       required: true
    *       content:
@@ -31,7 +35,6 @@ export const authExtRouter = (): Router => {
    *               - name
    *               - email
    *               - password
-   *               - teamName
    *             properties:
    *               name:
    *                 type: string
@@ -41,9 +44,10 @@ export const authExtRouter = (): Router => {
    *                 type: string
    *               teamName:
    *                 type: string
+   *                 description: Creates and joins a group when present.
    *     responses:
    *       '201':
-   *         description: User + group created
+   *         description: User created; `group` is null when no teamName was sent
    */
   app.post(
     "/sign-up-with-team",
