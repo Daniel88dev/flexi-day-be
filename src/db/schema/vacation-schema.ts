@@ -46,19 +46,19 @@ export const vacation = pgTable(
     // allowance. `startTime`/`endTime` are presentation only and must never be
     // used to infer this — they are free-form and often set on full days too.
     halfDay: boolean("half_day").notNull().default(false),
-    approvedAt: timestamp("approved_at"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
     approvedBy: text("approved_by").references(() => user.id, {
       onDelete: "set null",
     }),
-    deletedAt: timestamp("deleted_at"),
-    rejectedAt: timestamp("rejected_at"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
     rejectedBy: text("rejected_by").references(() => user.id, {
       onDelete: "set null",
     }),
     rejectionReason: text("rejection_reason"),
     note: text("note"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),

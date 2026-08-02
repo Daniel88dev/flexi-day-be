@@ -10,9 +10,9 @@ import { changesType } from "../../db/schema/changes-schema.js";
 const services = createDBServices();
 
 /**
- * Updates the group-wide default allowances. These are the values new members
- * start from; existing per-year quotas are untouched (they are edited through
- * `/api/quotas/:groupId`).
+ * Updates the group-wide default allowances. A member's allowance is opened
+ * from these when they join (`openQuotaFromGroupDefaults`); existing per-year
+ * quotas are untouched (they are edited through `/api/quotas/:groupId`).
  */
 export const handlePutGroupQuotas = async (req: Request, res: Response) => {
   const auth = getAuth(req);

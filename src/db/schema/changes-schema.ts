@@ -26,8 +26,8 @@ export const changesSchema = pgTable("changes", {
   // person. The FK has no ON DELETE, so a real actor can never become NULL —
   // readers can treat NULL as "system" without ambiguity.
   changingUserId: text("changing_user_id").references(() => user.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at")
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date()),

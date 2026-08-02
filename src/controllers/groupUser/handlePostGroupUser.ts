@@ -6,6 +6,7 @@ import { db } from "../../db/db.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { normalizeInviteCode } from "../../utils/inviteCode.js";
 import AppError from "../../utils/appError.js";
+import { currentYear } from "../../utils/dateFunc.js";
 
 const services = createDBServices();
 
@@ -57,12 +58,13 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         message: "This invite was issued for a different email address",
         logging: true,
         code: 403,
+        // Kept out of `publicContext`: echoing it back would tell a stranger
+        // holding the code whose address it was issued to.
         context: {
           url: req.url,
           userId: auth.userId,
           invitedEmail: validateLink.email,
         },
-        publicContext: { invitedEmail: validateLink.email },
       });
     }
 
@@ -106,6 +108,19 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         },
       });
     }
+
+    const group = await services.group.getGroup(validateLink.groupId);
+    await services.userYearQuotas.openQuotaFromGroupDefaults(
+      {
+        id: generateRandomUUID(),
+        userId: auth.userId,
+        groupId: validateLink.groupId,
+        relatedYear: currentYear().toString(),
+        vacationDays: group?.defaultVacationDays ?? 0,
+        homeOfficeDays: group?.defaultHomeOfficeDays ?? 0,
+      },
+      tx
+    );
 
     // `usedAt IS NULL` in the update is what makes the code single-use: a
     // concurrent second redemption matches no row and rolls this back.

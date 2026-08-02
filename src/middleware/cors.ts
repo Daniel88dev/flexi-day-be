@@ -5,7 +5,7 @@ import { config } from "../config.js";
 // better-auth uses for CSRF protection), e.g. the CloudFront frontend URLs.
 const allowedOrigins =
   config.api.env === "production"
-    ? config.auth?.trustedOrigins ?? []
+    ? (config.auth?.trustedOrigins ?? [])
     : [/^http:\/\/localhost:(\d{2,5})$/];
 
 export const serverCors = cors({

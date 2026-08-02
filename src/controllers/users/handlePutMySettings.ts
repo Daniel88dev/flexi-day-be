@@ -32,7 +32,7 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
   const nextGroupId =
     patch.dashboardGroupId !== undefined
       ? patch.dashboardGroupId
-      : current?.dashboardGroupId ?? DEFAULT_USER_SETTINGS.dashboardGroupId;
+      : (current?.dashboardGroupId ?? DEFAULT_USER_SETTINGS.dashboardGroupId);
 
   if (nextScope === dashboardScope.Group && !nextGroupId) {
     throw new AppError({

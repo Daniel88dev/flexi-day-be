@@ -32,6 +32,7 @@ export type DBServices = Readonly<{
     countUsersOutOnDay: typeof vacationServices.countUsersOutOnDay;
     countApprovedVacationsInRange: typeof vacationServices.countApprovedVacationsInRange;
     aggregateUserUsageForYear: typeof vacationServices.aggregateUserUsageForYear;
+    sumCountedDaysForQuota: typeof vacationServices.sumCountedDaysForQuota;
   };
   vacationEvent: {
     createVacationEvent: typeof vacationEventServices.createVacationEvent;
@@ -80,6 +81,7 @@ export type DBServices = Readonly<{
     decreaseChangeForUserYearQuotas: typeof userYearQuotasServices.decreaseChangeForUserYearQuotas;
     updateUserYearQuotasById: typeof userYearQuotasServices.updateUserYearQuotasById;
     upsertUserYearQuota: typeof userYearQuotasServices.upsertUserYearQuota;
+    openQuotaFromGroupDefaults: typeof userYearQuotasServices.openQuotaFromGroupDefaults;
     sumUserQuotasForYear: typeof userYearQuotasServices.sumUserQuotasForYear;
   };
   changes: {
@@ -156,6 +158,7 @@ export const createDBServices = (): DBServices => {
       countUsersOutOnDay: vacationServices.countUsersOutOnDay,
       countApprovedVacationsInRange: vacationServices.countApprovedVacationsInRange,
       aggregateUserUsageForYear: vacationServices.aggregateUserUsageForYear,
+      sumCountedDaysForQuota: vacationServices.sumCountedDaysForQuota,
     },
     vacationEvent: {
       createVacationEvent: vacationEventServices.createVacationEvent,
@@ -204,6 +207,7 @@ export const createDBServices = (): DBServices => {
       decreaseChangeForUserYearQuotas: userYearQuotasServices.decreaseChangeForUserYearQuotas,
       updateUserYearQuotasById: userYearQuotasServices.updateUserYearQuotasById,
       upsertUserYearQuota: userYearQuotasServices.upsertUserYearQuota,
+      openQuotaFromGroupDefaults: userYearQuotasServices.openQuotaFromGroupDefaults,
       sumUserQuotasForYear: userYearQuotasServices.sumUserQuotasForYear,
     },
     changes: {

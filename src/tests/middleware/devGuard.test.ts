@@ -24,7 +24,7 @@ const makeReq = (peer: string | undefined, token?: string): Request =>
     socket: { remoteAddress: peer },
     path: "/status",
     get: (name: string) => (name === "x-dev-token" ? token : undefined),
-  } as unknown as Request);
+  }) as unknown as Request;
 
 const run = (req: Request) => {
   const next = vi.fn() as unknown as NextFunction & { mock: { calls: unknown[][] } };

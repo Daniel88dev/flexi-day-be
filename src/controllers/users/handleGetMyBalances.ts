@@ -46,7 +46,8 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
     return bucket;
   };
 
-  ensure(vacationType.Vacation).allocated = quotaSums.vacationDays;
+  // Carry-over belongs to the vacation allowance only.
+  ensure(vacationType.Vacation).allocated = quotaSums.vacationDays + quotaSums.carriedOverDays;
   ensure(vacationType.HomeOffice).allocated = quotaSums.homeOfficeDays;
 
   for (const row of usage) {

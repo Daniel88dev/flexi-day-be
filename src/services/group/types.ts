@@ -39,3 +39,12 @@ export const validatePutGroupWorkingDays = z.object({
 });
 
 export type ValidatedPutGroupWorkingDaysType = z.infer<typeof validatePutGroupWorkingDays>;
+
+// better-auth user ids are opaque non-UUID strings. The main approver is
+// required: a group without one can never decide on a request.
+export const validatePutGroupApprovers = z.object({
+  mainApprovalUser: z.string().min(1),
+  tempApprovalUser: z.string().min(1).nullable().default(null),
+});
+
+export type ValidatedPutGroupApproversType = z.infer<typeof validatePutGroupApprovers>;

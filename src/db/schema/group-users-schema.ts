@@ -16,9 +16,9 @@ export const groupUsers = pgTable(
     viewAccess: boolean("view_access").notNull().default(false),
     adminAccess: boolean("admin_access").notNull().default(false),
     controlledUser: boolean("controlled_user").notNull().default(false),
-    deletedAt: timestamp("deleted_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),

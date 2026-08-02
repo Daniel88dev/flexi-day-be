@@ -16,7 +16,7 @@ export const reportExports = pgTable(
     relatedYear: varchar("related_year", { length: 4 }).notNull(),
     filters: jsonb("filters").notNull(),
     rowCount: integer("row_count").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("report_exports_user_id_idx").on(table.userId),

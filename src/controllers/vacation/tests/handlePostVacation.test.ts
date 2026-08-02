@@ -8,6 +8,7 @@ const {
   mockTransaction,
   mockCreateVacationEvents,
   mockNotifyVacationRequested,
+  mockAssertRequestWithinQuota,
 } = vi.hoisted(() => ({
   mockPostVacationBulk: vi.fn(),
   mockGetGroupUser: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockTransaction: vi.fn(),
   mockCreateVacationEvents: vi.fn(),
   mockNotifyVacationRequested: vi.fn(),
+  mockAssertRequestWithinQuota: vi.fn(),
 }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
@@ -28,6 +30,10 @@ vi.mock("../../../middleware/authSession.js", () => ({
 
 vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
   notifyVacationRequested: mockNotifyVacationRequested,
+}));
+
+vi.mock("../../../services/vacation/quotaGuard.js", () => ({
+  assertRequestWithinQuota: mockAssertRequestWithinQuota,
 }));
 
 vi.mock("../../../db/db.js", () => ({
@@ -73,7 +79,13 @@ const baseBody = (overrides: Record<string, unknown> = {}) => ({
 
 describe("handlePostVacation", () => {
   beforeEach(() => {
+    // The controller bounds how far a range may sit from today, so the March
+    // 2024 fixtures below (chosen for their weekdays) need a matching "today".
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2024-03-01T09:00:00Z"));
+
     vi.clearAllMocks();
+    mockAssertRequestWithinQuota.mockResolvedValue(undefined);
 
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
 
@@ -93,6 +105,7 @@ describe("handlePostVacation", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 

@@ -7,6 +7,7 @@ import type { ValidatedBulkRejectVacationType } from "../../services/vacation/ty
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
+import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
 
 const services = createDBServices();
 
@@ -28,19 +29,8 @@ export const handleBulkRejectVacation = async (req: Request, res: Response) => {
       });
     }
 
-    const distinctGroupIds = Array.from(new Set(rows.map((r) => r.groupId)));
-    const allowedGroupIds = new Set(
-      await services.group.getGroupsWhereUserCanApprove(distinctGroupIds, auth.userId, tx)
-    );
-
-    const unauthorizedGroups = distinctGroupIds.filter((id) => !allowedGroupIds.has(id));
-    if (unauthorizedGroups.length > 0) {
-      throw new AppError({
-        code: 403,
-        message: "You are not allowed to reject one or more of these vacations",
-        context: { auth, unauthorizedGroups },
-      });
-    }
+    await assertMayDecide(auth.userId, rows, "reject", tx);
+    assertStillPending(rows);
 
     const updated = await services.vacation.rejectVacationsBulk(
       uniqueIds,
@@ -48,6 +38,16 @@ export const handleBulkRejectVacation = async (req: Request, res: Response) => {
       data.reason ?? null,
       tx
     );
+
+    // A short update means a concurrent decision took part of the batch.
+    if (updated.length !== uniqueIds.length) {
+      throw new AppError({
+        code: 409,
+        message: "One or more of these requests has already been decided",
+        logging: true,
+        context: { auth, requested: uniqueIds, updated: updated.map((row) => row.id) },
+      });
+    }
 
     await services.vacationEvent.createVacationEvents(
       updated.map((row) => ({

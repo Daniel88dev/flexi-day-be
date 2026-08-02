@@ -9,18 +9,18 @@ export const inviteLink = pgTable(
     id: text("id").primaryKey(),
     groupId: text("group_id")
       .notNull()
-      .references(() => groups.id),
+      .references(() => groups.id, { onDelete: "cascade" }),
     code: text("code").unique().notNull(),
     // Lower-cased address the invite was issued to. Redeeming is restricted to
     // an account with this email, so a forwarded code is useless to a stranger.
     // Nullable only for rows predating email invites — those stay unrestricted.
     email: text("email"),
     invitedByUserId: text("invited_by_user_id").references(() => user.id, { onDelete: "set null" }),
-    usedAt: timestamp("used_at"),
-    revokedAt: timestamp("revoked_at"),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),

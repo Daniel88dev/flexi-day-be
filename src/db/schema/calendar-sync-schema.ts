@@ -35,10 +35,10 @@ export const calendarSync = pgTable(
     // `mineColor` so they stand out from the rest of the team's.
     distinguishMine: boolean("distinguish_mine").notNull().default(false),
     token: text("token").notNull(),
-    lastFetchedAt: timestamp("last_fetched_at"),
-    deletedAt: timestamp("deleted_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
@@ -68,7 +68,7 @@ export const calendarSyncTeams = pgTable(
     groupId: text("group_id")
       .notNull()
       .references(() => groups.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("calendar_sync_teams_config_group_uniq").on(table.calendarSyncId, table.groupId),
@@ -92,7 +92,7 @@ export const calendarSyncTypes = pgTable(
     // Swatch key from the shared palette (e.g. "violet"), not a raw color.
     color: text("color").notNull(),
     mineColor: text("mine_color"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("calendar_sync_types_config_type_uniq").on(

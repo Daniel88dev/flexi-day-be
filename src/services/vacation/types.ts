@@ -76,20 +76,38 @@ export const validateCancelVacation = z
 
 export type ValidatedCancelVacationType = z.infer<typeof validateCancelVacation>;
 
-const vacationKindEnum = z.enum(Object.values(vacationType) as [vacationType, ...vacationType[]]);
+/**
+ * `BANK_HOLIDAY` is deliberately absent: it is a company-wide closure owned by
+ * the admin `bankHolidayRouter`, costs no allowance, and shows to the whole team
+ * unattributed, so nobody may grant themselves one.
+ */
+export const REQUESTABLE_VACATION_TYPES = Object.values(vacationType).filter(
+  (kind) => kind !== vacationType.BankHoliday
+) as [vacationType, ...vacationType[]];
 
-export const validatePostVacation = z.object({
-  groupId: z.uuid(),
-  from: z.coerce.date(),
-  to: z.coerce.date(),
-  vacationType: vacationKindEnum.default(vacationType.Vacation),
-  startTime: z.iso.time().nullable().default(null),
-  endTime: z.iso.time().nullable().default(null),
-  // Drives quota accounting (0.5 vs 1 day). Deliberately explicit — the
-  // optional start/end times above are free-form and cannot stand in for it.
-  halfDay: z.boolean().default(false),
-  note: z.string().max(1000).nullable().default(null),
-});
+const requestableKindEnum = z.enum(REQUESTABLE_VACATION_TYPES);
+
+export const validatePostVacation = z
+  .object({
+    groupId: z.uuid(),
+    from: z.coerce.date(),
+    to: z.coerce.date(),
+    vacationType: requestableKindEnum.default(vacationType.Vacation),
+    startTime: z.iso.time().nullable().default(null),
+    endTime: z.iso.time().nullable().default(null),
+    // Drives quota accounting (0.5 vs 1 day). Deliberately explicit — the
+    // optional start/end times above are free-form and cannot stand in for it.
+    halfDay: z.boolean().default(false),
+    note: z.string().max(1000).nullable().default(null),
+  })
+  .refine((data) => !(data.startTime && data.endTime) || data.endTime > data.startTime, {
+    message: "`endTime` must be later than `startTime`",
+    path: ["endTime"],
+  })
+  .refine((data) => !data.halfDay || data.from.getTime() === data.to.getTime(), {
+    message: "`halfDay` is only valid for a single-day request",
+    path: ["halfDay"],
+  });
 
 export type ValidatedPostVacationType = z.infer<typeof validatePostVacation>;
 

@@ -16,9 +16,9 @@ export const groups = pgTable(
       .references(() => user.id),
     mainApprovalUser: text("main_approval_user").references(() => user.id),
     tempApprovalUser: text("temp_approval_user").references(() => user.id),
-    deletedAt: timestamp("deleted_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),

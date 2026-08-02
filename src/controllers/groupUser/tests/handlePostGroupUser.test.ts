@@ -1,12 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockGetInviteLinkByCode, mockUseInviteLink, mockCreateGroupUser, mockGetGroupUser } =
-  vi.hoisted(() => ({
-    mockGetInviteLinkByCode: vi.fn(),
-    mockUseInviteLink: vi.fn(),
-    mockCreateGroupUser: vi.fn(),
-    mockGetGroupUser: vi.fn(),
-  }));
+const {
+  mockGetInviteLinkByCode,
+  mockUseInviteLink,
+  mockCreateGroupUser,
+  mockGetGroupUser,
+  mockGetGroup,
+  mockOpenQuotaFromGroupDefaults,
+} = vi.hoisted(() => ({
+  mockGetInviteLinkByCode: vi.fn(),
+  mockUseInviteLink: vi.fn(),
+  mockCreateGroupUser: vi.fn(),
+  mockGetGroupUser: vi.fn(),
+  mockGetGroup: vi.fn(),
+  mockOpenQuotaFromGroupDefaults: vi.fn(),
+}));
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
 
@@ -21,6 +29,8 @@ vi.mock("../../../services/DBServices.js", () => ({
       getInviteLinkByCode: mockGetInviteLinkByCode,
       useInviteLink: mockUseInviteLink,
     },
+    group: { getGroup: mockGetGroup },
+    userYearQuotas: { openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults },
   }),
 }));
 
@@ -53,6 +63,12 @@ describe("handlePostGroupUser", () => {
     mockGetGroupUser.mockResolvedValue(undefined);
     mockCreateGroupUser.mockResolvedValue({ id: "membership-1", groupId: GROUP_ID });
     mockUseInviteLink.mockResolvedValue(openInvite({ usedAt: new Date() }));
+    mockGetGroup.mockResolvedValue({
+      id: GROUP_ID,
+      defaultVacationDays: 20,
+      defaultHomeOfficeDays: 5,
+    });
+    mockOpenQuotaFromGroupDefaults.mockResolvedValue({ id: "quota-1" });
   });
 
   const redeem = (code = CODE) => makeReqRes({ params: { validationCode: code } });

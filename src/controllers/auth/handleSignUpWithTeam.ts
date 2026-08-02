@@ -9,6 +9,7 @@ import { user, verification } from "../../db/schema/auth-schema.js";
 import { createDBServices } from "../../services/DBServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { logger } from "../../middleware/logger.js";
+import { currentYear } from "../../utils/dateFunc.js";
 
 const services = createDBServices();
 
@@ -169,6 +170,18 @@ const createTeamForUser = async (userId: string, teamName: string) =>
         context: { userId, groupId: newGroup.id },
       });
     }
+
+    await services.userYearQuotas.openQuotaFromGroupDefaults(
+      {
+        id: generateRandomUUID(),
+        userId,
+        groupId: newGroup.id,
+        relatedYear: currentYear().toString(),
+        vacationDays: newGroup.defaultVacationDays,
+        homeOfficeDays: newGroup.defaultHomeOfficeDays,
+      },
+      tx
+    );
 
     return newGroup;
   });

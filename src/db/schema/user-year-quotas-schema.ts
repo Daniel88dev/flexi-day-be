@@ -27,8 +27,8 @@ export const userYearQuotas = pgTable(
     // Unused allowance rolled forward from the previous year. Stored rather
     // than derived so a cap or expiry policy stays an explicit admin decision.
     carriedOverDays: integer("carried_over_days").notNull().default(0),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),

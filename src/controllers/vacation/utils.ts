@@ -20,7 +20,7 @@ export type VacationPermissions = {
  */
 export const resolveVacationPermissions = async (
   userId: string,
-  vacationRow: Pick<VacationType, "userId" | "groupId" | "deletedAt">,
+  vacationRow: Pick<VacationType, "userId" | "groupId" | "deletedAt" | "approvedAt" | "rejectedAt">,
   tx?: DbTransaction
 ): Promise<VacationPermissions> => {
   const isOwner = vacationRow.userId === userId;
@@ -34,13 +34,13 @@ export const resolveVacationPermissions = async (
   const isApprover = approvableGroups.includes(vacationRow.groupId);
   const isAdmin = membership?.adminAccess ?? false;
   const isCancelled = vacationRow.deletedAt !== null;
-  // Rejected requests can still be approved — approveVacation clears the
-  // rejection — so only a cancellation closes the decision for good.
-  const isDecidable = !isCancelled;
+  // A decision is final; re-deciding would overturn it and wipe its stamps.
+  const isDecidable =
+    !isCancelled && vacationRow.approvedAt === null && vacationRow.rejectedAt === null;
 
   return {
     canView: isOwner || isApprover || (membership?.viewAccess ?? false),
-    canApprove: isApprover && isDecidable,
+    canApprove: isApprover && !isOwner && isDecidable,
     canCancel: !isCancelled && (isOwner || isAdmin || isApprover),
   };
 };

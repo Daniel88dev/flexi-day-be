@@ -5,8 +5,11 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { user } from "../../db/schema/auth-schema.js";
 import { alias } from "drizzle-orm/pg-core";
 
-export const getGroup = async (groupId: string): Promise<GroupType | undefined> => {
-  const [row] = await db
+export const getGroup = async (
+  groupId: string,
+  tx?: DbTransaction
+): Promise<GroupType | undefined> => {
+  const [row] = await (tx ?? db)
     .select()
     .from(groups)
     .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)));
@@ -47,9 +50,10 @@ export const updateGroupManager = async (
 export const updateGroupApprovalUsers = async (
   groupId: string,
   newMainApprovalUser: string | null,
-  newTempApprovalUser: string | null
+  newTempApprovalUser: string | null,
+  tx?: DbTransaction
 ): Promise<GroupType | undefined> => {
-  const [row] = await db
+  const [row] = await (tx ?? db)
     .update(groups)
     .set({
       mainApprovalUser: newMainApprovalUser,

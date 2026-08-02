@@ -5,20 +5,32 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
+import { currentYear } from "../../utils/dateFunc.js";
 
 const services = createDBServices();
 
 const validatePostGroup = z.object({
-  groupName: z.string().min(1),
-  defaultVacation: z.number().min(0).max(99).optional(),
-  defaultHomeOffice: z.number().min(0).max(99).optional(),
-  mainApprovalUser: z.uuid().optional(),
+  groupName: z.string().trim().min(1).max(120),
+  defaultVacation: z.number().int().min(0).max(99).optional(),
+  defaultHomeOffice: z.number().int().min(0).max(99).optional(),
+  // better-auth user ids are opaque non-UUID strings.
+  mainApprovalUser: z.string().min(1).optional(),
 });
 
 export const handlePostGroup = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const data = validatePostGroup.parse(req.body);
+
+  // The creator is the only member yet, so nobody else can be a valid approver.
+  if (data.mainApprovalUser !== undefined && data.mainApprovalUser !== auth.userId) {
+    throw new AppError({
+      message: "An approver must be a member of the group",
+      logging: true,
+      code: 422,
+      context: { userId: auth.userId, mainApprovalUser: data.mainApprovalUser },
+    });
+  }
 
   const result = await db.transaction(async (tx) => {
     const record = await services.group.createGroup(
@@ -28,7 +40,7 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         managerUserId: auth.userId,
         defaultVacationDays: data.defaultVacation,
         defaultHomeOfficeDays: data.defaultHomeOffice,
-        mainApprovalUser: data.mainApprovalUser,
+        mainApprovalUser: data.mainApprovalUser ?? auth.userId,
       },
       tx
     );
@@ -54,6 +66,7 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         groupId: record.id,
         viewAccess: true,
         adminAccess: true,
+        controlledUser: true,
       },
       tx
     );
@@ -70,6 +83,18 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         },
       });
     }
+
+    await services.userYearQuotas.openQuotaFromGroupDefaults(
+      {
+        id: generateRandomUUID(),
+        userId: auth.userId,
+        groupId: record.id,
+        relatedYear: currentYear().toString(),
+        vacationDays: record.defaultVacationDays,
+        homeOfficeDays: record.defaultHomeOfficeDays,
+      },
+      tx
+    );
 
     return record;
   });

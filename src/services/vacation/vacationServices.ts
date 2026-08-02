@@ -14,6 +14,8 @@ import {
   isNull,
   lt,
   lte,
+  ne,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -236,11 +238,16 @@ export const postVacationBulk = async (
 };
 
 /**
- * Approving un-rejects the row, which puts it back under the partial unique
- * index — and the day may have been re-requested since the rejection. Postgres
- * is the only place that can see that race, so translate its violation into the
- * conflict the approver should be shown instead of a 500.
+ * The workflow's state machine. Cancellation deliberately does NOT use it:
+ * plans change, and an approved request must stay cancellable.
  */
+const stillPending = [
+  isNull(vacation.deletedAt),
+  isNull(vacation.approvedAt),
+  isNull(vacation.rejectedAt),
+] as const;
+
+/** Unreachable while decisions are pending-only; kept so widening the predicate 409s, not 500s. */
 const rethrowIfDayRetaken = (error: unknown, vacationIds: string[]): never => {
   // Drizzle rethrows a "Failed query" Error and hangs the pg error, which is
   // where `code`/`constraint` live, off `cause`.
@@ -277,11 +284,8 @@ export const approveVacation = async (
     .set({
       approvedBy: approvingPerson,
       approvedAt: new Date(),
-      rejectedBy: null,
-      rejectedAt: null,
-      rejectionReason: null,
     })
-    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
+    .where(and(eq(vacation.id, vacationId), ...stillPending))
     .returning()
     .catch((error: unknown) => rethrowIfDayRetaken(error, [vacationId]));
 
@@ -289,9 +293,9 @@ export const approveVacation = async (
 };
 
 /**
- * Bulk-approves many vacation rows in a single statement. Returns the rows
- * that were actually updated — callers can compare against the input ids to
- * detect any that no longer matched (already approved/rejected/deleted).
+ * Bulk-approves in one statement. Returns only the rows actually updated;
+ * callers compare against the input ids and reject the whole batch on a short
+ * result.
  */
 export const approveVacationsBulk = async (
   vacationIds: string[],
@@ -304,11 +308,8 @@ export const approveVacationsBulk = async (
     .set({
       approvedBy: approvingPerson,
       approvedAt: new Date(),
-      rejectedBy: null,
-      rejectedAt: null,
-      rejectionReason: null,
     })
-    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .where(and(inArray(vacation.id, vacationIds), ...stillPending))
     .returning()
     .catch((error: unknown) => rethrowIfDayRetaken(error, vacationIds));
 };
@@ -329,10 +330,8 @@ export const rejectVacationsBulk = async (
       rejectedAt: new Date(),
       rejectedBy: rejectingPerson,
       rejectionReason: reason,
-      approvedAt: null,
-      approvedBy: null,
     })
-    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .where(and(inArray(vacation.id, vacationIds), ...stillPending))
     .returning();
 };
 
@@ -378,10 +377,8 @@ export const rejectVacation = async (
       rejectedAt: new Date(),
       rejectedBy: rejectingPerson,
       rejectionReason: reason,
-      approvedAt: null,
-      approvedBy: null,
     })
-    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
+    .where(and(eq(vacation.id, vacationId), ...stillPending))
     .returning();
 
   return row;
@@ -529,7 +526,8 @@ export type PendingApprovalRow = {
  * Returns pending (not yet approved, not rejected, not deleted) vacation rows
  * for groups where the caller is a manager / main approver / temp approver.
  * Rows are ordered by user/group/day so the caller can collapse contiguous
- * ranges into single approval entries.
+ * ranges into single approval entries. The approver's own requests are
+ * excluded — the decision endpoints refuse them.
  */
 export const getPendingApprovalsForApprover = async (
   approverUserId: string
@@ -555,6 +553,7 @@ export const getPendingApprovalsForApprover = async (
         isNull(vacation.approvedAt),
         isNull(vacation.rejectedAt),
         isNull(groups.deletedAt),
+        ne(vacation.userId, approverUserId),
         or(
           eq(groups.managerUserId, approverUserId),
           eq(groups.mainApprovalUser, approverUserId),
@@ -568,6 +567,45 @@ export const getPendingApprovalsForApprover = async (
       asc(vacation.vacationType),
       asc(vacation.requestedDay)
     );
+};
+
+/**
+ * Weighted day totals for one allowance. Scoped to a single group, unlike
+ * {@link aggregateUserUsageForYear}, because an allowance is granted per
+ * (user, group, year). `excludeVacationIds` leaves out rows the caller is about
+ * to decide on and will add back at their post-decision weight.
+ */
+export const sumCountedDaysForQuota = async (
+  userId: string,
+  groupId: string,
+  year: number,
+  leaveType: vacationType,
+  excludeVacationIds: string[] = [],
+  tx?: DbTransaction
+): Promise<{ approved: number; pending: number }> => {
+  const yearStart = `${year.toString().padStart(4, "0")}-01-01`;
+  const yearEnd = `${(year + 1).toString().padStart(4, "0")}-01-01`;
+
+  const [row] = await (tx ?? db)
+    .select({
+      approved: sumDaysWhere(sql`${vacation.approvedAt} IS NOT NULL`),
+      pending: sumDaysWhere(sql`${vacation.approvedAt} IS NULL`),
+    })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, userId),
+        eq(vacation.groupId, groupId),
+        eq(vacation.vacationType, leaveType),
+        isNull(vacation.deletedAt),
+        isNull(vacation.rejectedAt),
+        gte(vacation.requestedDay, yearStart),
+        lt(vacation.requestedDay, yearEnd),
+        excludeVacationIds.length > 0 ? notInArray(vacation.id, excludeVacationIds) : undefined
+      )
+    );
+
+  return { approved: Number(row?.approved ?? 0), pending: Number(row?.pending ?? 0) };
 };
 
 /**

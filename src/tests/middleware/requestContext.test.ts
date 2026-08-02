@@ -274,9 +274,8 @@ describe("requestContext request logging", () => {
   it("skips paths listed in REQUEST_LOG_IGNORE_PATHS", async () => {
     vi.resetModules();
     process.env.REQUEST_LOG_IGNORE_PATHS = "/health";
-    const { requestContext: freshMiddleware } = await import(
-      "../../middleware/requestContext.js?ignore-paths"
-    );
+    const { requestContext: freshMiddleware } =
+      await import("../../middleware/requestContext.js?ignore-paths");
     const { logger: freshLogger } = await import("../../middleware/logger.js?ignore-paths");
     const infoSpy = vi.spyOn(freshLogger, "info").mockImplementation(() => freshLogger);
 

@@ -20,6 +20,32 @@ export const getUserYearGroupQuotas = async (
   return (tx ?? db).select().from(userYearQuotas).where(where);
 };
 
+/**
+ * Opens a member's allowance for the current year from the group's defaults;
+ * called wherever a membership is created. On a re-join an existing allowance
+ * for that year wins.
+ */
+export const openQuotaFromGroupDefaults = async (
+  record: {
+    id: string;
+    userId: string;
+    groupId: string;
+    relatedYear: string;
+    vacationDays: number;
+    homeOfficeDays: number;
+  },
+  tx?: DbTransaction
+): Promise<UserYearQuotasType | undefined> => {
+  const [row] = await (tx ?? db)
+    .insert(userYearQuotas)
+    .values(record)
+    .onConflictDoNothing({
+      target: [userYearQuotas.userId, userYearQuotas.groupId, userYearQuotas.relatedYear],
+    })
+    .returning();
+  return row;
+};
+
 export const insertUserYearQuotas = async (
   records: UserYearQuotasInsertType[]
 ): Promise<UserYearQuotasType[]> => {
@@ -55,14 +81,15 @@ export const sumUserQuotasForYear = async (
   userId: string,
   groupIds: string[],
   relatedYear: string
-): Promise<{ vacationDays: number; homeOfficeDays: number }> => {
+): Promise<{ vacationDays: number; homeOfficeDays: number; carriedOverDays: number }> => {
   if (groupIds.length === 0) {
-    return { vacationDays: 0, homeOfficeDays: 0 };
+    return { vacationDays: 0, homeOfficeDays: 0, carriedOverDays: 0 };
   }
   const [row] = await db
     .select({
       vacationDays: sql<number>`COALESCE(SUM(${userYearQuotas.vacationDays}), 0)`,
       homeOfficeDays: sql<number>`COALESCE(SUM(${userYearQuotas.homeOfficeDays}), 0)`,
+      carriedOverDays: sql<number>`COALESCE(SUM(${userYearQuotas.carriedOverDays}), 0)`,
     })
     .from(userYearQuotas)
     .where(
@@ -75,6 +102,7 @@ export const sumUserQuotasForYear = async (
   return {
     vacationDays: Number(row?.vacationDays ?? 0),
     homeOfficeDays: Number(row?.homeOfficeDays ?? 0),
+    carriedOverDays: Number(row?.carriedOverDays ?? 0),
   };
 };
 
