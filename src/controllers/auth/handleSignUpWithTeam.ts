@@ -9,6 +9,7 @@ import { user, verification } from "../../db/schema/auth-schema.js";
 import { createDBServices } from "../../services/DBServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { logger } from "../../middleware/logger.js";
+import { currentYear } from "../../utils/dateFunc.js";
 
 const services = createDBServices();
 
@@ -175,7 +176,7 @@ const createTeamForUser = async (userId: string, teamName: string) =>
         id: generateRandomUUID(),
         userId,
         groupId: newGroup.id,
-        relatedYear: new Date().getFullYear().toString(),
+        relatedYear: currentYear().toString(),
         vacationDays: newGroup.defaultVacationDays,
         homeOfficeDays: newGroup.defaultHomeOfficeDays,
       },

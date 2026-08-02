@@ -77,11 +77,9 @@ export const validateCancelVacation = z
 export type ValidatedCancelVacationType = z.infer<typeof validateCancelVacation>;
 
 /**
- * Leave kinds a person may request for themselves. `BANK_HOLIDAY` is
- * deliberately absent: it describes a company-wide closure, is owned by the
- * admin-only `bankHolidayRouter`, draws down no allowance, and renders to the
- * whole team as an unattributed holiday — so a member must not be able to
- * grant themselves one.
+ * `BANK_HOLIDAY` is deliberately absent: it is a company-wide closure owned by
+ * the admin `bankHolidayRouter`, costs no allowance, and shows to the whole team
+ * unattributed, so nobody may grant themselves one.
  */
 export const REQUESTABLE_VACATION_TYPES = Object.values(vacationType).filter(
   (kind) => kind !== vacationType.BankHoliday
@@ -106,8 +104,6 @@ export const validatePostVacation = z
     message: "`endTime` must be later than `startTime`",
     path: ["endTime"],
   })
-  // A half day is a property of one day. Stamping it across a range silently
-  // halved every day of it, which is never what the requester meant.
   .refine((data) => !data.halfDay || data.from.getTime() === data.to.getTime(), {
     message: "`halfDay` is only valid for a single-day request",
     path: ["halfDay"],

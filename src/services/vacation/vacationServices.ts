@@ -238,14 +238,8 @@ export const postVacationBulk = async (
 };
 
 /**
- * A decision is only valid on a request that is still open. Making this the
- * update predicate — rather than just `id = ?` — is what gives the workflow a
- * state machine: a decided row matches nothing, the update returns no rows, and
- * the controller turns that into a 409 instead of silently overturning an
- * earlier decision and wiping its stamps.
- *
- * Cancellation deliberately does NOT use this: plans change, and an approved
- * request must stay cancellable.
+ * The workflow's state machine. Cancellation deliberately does NOT use it:
+ * plans change, and an approved request must stay cancellable.
  */
 const stillPending = [
   isNull(vacation.deletedAt),
@@ -253,11 +247,7 @@ const stillPending = [
   isNull(vacation.rejectedAt),
 ] as const;
 
-/**
- * Defensive: a pending row already sits in the partial unique index, so a
- * decision cannot collide with a re-booking of the same day. Kept so that any
- * future widening of the predicate surfaces as a 409 rather than a 500.
- */
+/** Unreachable while decisions are pending-only; kept so widening the predicate 409s, not 500s. */
 const rethrowIfDayRetaken = (error: unknown, vacationIds: string[]): never => {
   // Drizzle rethrows a "Failed query" Error and hangs the pg error, which is
   // where `code`/`constraint` live, off `cause`.
@@ -303,10 +293,9 @@ export const approveVacation = async (
 };
 
 /**
- * Bulk-approves many vacation rows in a single statement. Returns the rows
- * that were actually updated — callers compare against the input ids to detect
- * any that were already approved, rejected or cancelled and reject the whole
- * batch.
+ * Bulk-approves in one statement. Returns only the rows actually updated;
+ * callers compare against the input ids and reject the whole batch on a short
+ * result.
  */
 export const approveVacationsBulk = async (
   vacationIds: string[],
@@ -537,11 +526,8 @@ export type PendingApprovalRow = {
  * Returns pending (not yet approved, not rejected, not deleted) vacation rows
  * for groups where the caller is a manager / main approver / temp approver.
  * Rows are ordered by user/group/day so the caller can collapse contiguous
- * ranges into single approval entries.
- *
- * The approver's own requests are excluded: they are for the group's other
- * approver to decide, and the decision endpoints refuse them, so showing them
- * here would only offer a button that 403s.
+ * ranges into single approval entries. The approver's own requests are
+ * excluded — the decision endpoints refuse them.
  */
 export const getPendingApprovalsForApprover = async (
   approverUserId: string
@@ -584,14 +570,10 @@ export const getPendingApprovalsForApprover = async (
 };
 
 /**
- * Weighted day totals for one member's allowance in a single group and year,
- * split by leave type. Unlike {@link aggregateUserUsageForYear} this is scoped
- * to one group because an allowance is granted per (user, group, year) — the
- * quota guard has to compare like with like.
- *
- * `excludeVacationIds` lets the caller leave the rows it is about to decide on
- * out of the totals, so they can be added back at their post-decision weight
- * instead of being double-counted.
+ * Weighted day totals for one allowance. Scoped to a single group, unlike
+ * {@link aggregateUserUsageForYear}, because an allowance is granted per
+ * (user, group, year). `excludeVacationIds` leaves out rows the caller is about
+ * to decide on and will add back at their post-decision weight.
  */
 export const sumCountedDaysForQuota = async (
   userId: string,

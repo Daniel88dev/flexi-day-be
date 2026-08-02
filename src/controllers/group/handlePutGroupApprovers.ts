@@ -6,17 +6,10 @@ import type { ValidatedPutGroupApproversType } from "../../services/group/types.
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
+import { db } from "../../db/db.js";
 
 const services = createDBServices();
 
-/**
- * Sets who may decide on the group's leave requests. Without this a group whose
- * approver was never set had no way to ever approve anything — the columns were
- * only ever written at creation time.
- *
- * Both approvers must be members of the group: naming an outsider would produce
- * a group whose queue nobody with access can see.
- */
 export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
@@ -51,30 +44,38 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
     }
   }
 
-  const updated = await services.group.updateGroupApprovalUsers(
-    groupId,
-    data.mainApprovalUser,
-    data.tempApprovalUser
-  );
+  const updated = await db.transaction(async (tx) => {
+    const row = await services.group.updateGroupApprovalUsers(
+      groupId,
+      data.mainApprovalUser,
+      data.tempApprovalUser,
+      tx
+    );
 
-  if (!updated) {
-    throw new AppError({
-      message: "Group not found",
-      logging: true,
-      code: 404,
-      context: { url: req.url, user: auth.userId, groupId },
-    });
-  }
+    if (!row) {
+      throw new AppError({
+        message: "Group not found",
+        logging: true,
+        code: 404,
+        context: { url: req.url, user: auth.userId, groupId },
+      });
+    }
 
-  await services.changes.postChanges({
-    id: generateRandomUUID(),
-    userId: auth.userId,
-    groupId,
-    changeType: changesType.Group,
-    changingUserId: auth.userId,
-    changeDetail: `Approvers updated (main: ${data.mainApprovalUser}, temp: ${
-      data.tempApprovalUser ?? "none"
-    })`,
+    await services.changes.postChanges(
+      {
+        id: generateRandomUUID(),
+        userId: auth.userId,
+        groupId,
+        changeType: changesType.Group,
+        changingUserId: auth.userId,
+        changeDetail: `Approvers updated (main: ${data.mainApprovalUser}, temp: ${
+          data.tempApprovalUser ?? "none"
+        })`,
+      },
+      tx
+    );
+
+    return row;
   });
 
   return res.status(200).json(updated);

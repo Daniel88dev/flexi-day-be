@@ -39,6 +39,16 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
 
     const row = await services.vacation.approveVacation(vacationId, auth.userId, tx);
 
+    // Lost race: decided between the read above and this update.
+    if (!row) {
+      throw new AppError({
+        code: 409,
+        message: "This request has already been decided",
+        logging: true,
+        context: { auth, vacationId },
+      });
+    }
+
     await services.vacationEvent.createVacationEvent(
       {
         id: generateRandomUUID(),

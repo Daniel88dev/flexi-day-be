@@ -21,16 +21,9 @@ export const getUserYearGroupQuotas = async (
 };
 
 /**
- * Opens a member's allowance for the current year from the group's defaults.
- *
- * Called whenever a membership is created — this is what the group's "default
- * vacation / home office days" actually mean, and what the Quotas tab promises
- * ("applies to members who have no allowance set for a year"). Without it a new
- * member's allowance is zero until an admin sets one by hand, so every number
- * the product shows them is wrong from the moment they join.
- *
- * `onConflictDoNothing` keeps it safe on a re-join: an existing allowance for
- * that year, however it was set, wins.
+ * Opens a member's allowance for the current year from the group's defaults;
+ * called wherever a membership is created. On a re-join an existing allowance
+ * for that year wins.
  */
 export const openQuotaFromGroupDefaults = async (
   record: {

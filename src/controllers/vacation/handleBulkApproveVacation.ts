@@ -42,6 +42,16 @@ export const handleBulkApproveVacation = async (req: Request, res: Response) => 
 
     const updated = await services.vacation.approveVacationsBulk(uniqueIds, auth.userId, tx);
 
+    // A short update means a concurrent decision took part of the batch.
+    if (updated.length !== uniqueIds.length) {
+      throw new AppError({
+        code: 409,
+        message: "One or more of these requests has already been decided",
+        logging: true,
+        context: { auth, requested: uniqueIds, updated: updated.map((row) => row.id) },
+      });
+    }
+
     await services.vacationEvent.createVacationEvents(
       updated.map((row) => ({
         id: generateRandomUUID(),

@@ -16,6 +16,10 @@ export const formatDateToISOString = (date: Date): DateString => {
   return `${year}-${month}-${day}`;
 };
 
+// UTC everywhere, so opening a quota and validating a booking against it
+// cannot disagree about the year on a server that is not on UTC.
+export const currentYear = (): number => new Date().getUTCFullYear();
+
 // Returns true when the supplied UTC date is a working day (Mon-Fri).
 export const isBusinessDay = (date: Date): boolean => {
   const day = date.getUTCDay();

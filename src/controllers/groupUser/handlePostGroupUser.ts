@@ -6,6 +6,7 @@ import { db } from "../../db/db.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { normalizeInviteCode } from "../../utils/inviteCode.js";
 import AppError from "../../utils/appError.js";
+import { currentYear } from "../../utils/dateFunc.js";
 
 const services = createDBServices();
 
@@ -57,9 +58,8 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         message: "This invite was issued for a different email address",
         logging: true,
         code: 403,
-        // The invited address stays in `context` (logs only). Echoing it back
-        // would let anyone holding a forwarded or guessed code learn whose
-        // address it was issued to.
+        // Kept out of `publicContext`: echoing it back would tell a stranger
+        // holding the code whose address it was issued to.
         context: {
           url: req.url,
           userId: auth.userId,
@@ -109,16 +109,13 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
-    // The group's default allowance is what a new member starts from; without
-    // a row here their allowance is zero and every figure shown to them is
-    // wrong from the moment they join.
     const group = await services.group.getGroup(validateLink.groupId);
     await services.userYearQuotas.openQuotaFromGroupDefaults(
       {
         id: generateRandomUUID(),
         userId: auth.userId,
         groupId: validateLink.groupId,
-        relatedYear: new Date().getFullYear().toString(),
+        relatedYear: currentYear().toString(),
         vacationDays: group?.defaultVacationDays ?? 0,
         homeOfficeDays: group?.defaultHomeOfficeDays ?? 0,
       },

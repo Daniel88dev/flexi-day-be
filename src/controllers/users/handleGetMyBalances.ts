@@ -46,9 +46,7 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
     return bucket;
   };
 
-  // Carry-over belongs to the vacation allowance only, and it is part of what
-  // the member may actually take — the report already counts it, so leaving it
-  // out here told people they had fewer days than HR says they do.
+  // Carry-over belongs to the vacation allowance only.
   ensure(vacationType.Vacation).allocated = quotaSums.vacationDays + quotaSums.carriedOverDays;
   ensure(vacationType.HomeOffice).allocated = quotaSums.homeOfficeDays;
 

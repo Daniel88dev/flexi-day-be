@@ -34,14 +34,12 @@ export const resolveVacationPermissions = async (
   const isApprover = approvableGroups.includes(vacationRow.groupId);
   const isAdmin = membership?.adminAccess ?? false;
   const isCancelled = vacationRow.deletedAt !== null;
-  // A decision is final: re-deciding would overturn the first one and wipe its
-  // stamps, so only a request nobody has ruled on yet is decidable.
+  // A decision is final; re-deciding would overturn it and wipe its stamps.
   const isDecidable =
     !isCancelled && vacationRow.approvedAt === null && vacationRow.rejectedAt === null;
 
   return {
     canView: isOwner || isApprover || (membership?.viewAccess ?? false),
-    // Separation of duties: an approver's own request goes to the other approver.
     canApprove: isApprover && !isOwner && isDecidable,
     canCancel: !isCancelled && (isOwner || isAdmin || isApprover),
   };

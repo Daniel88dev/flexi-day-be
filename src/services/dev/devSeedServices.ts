@@ -261,8 +261,7 @@ export type ResetSummary = { users: number; groups: number };
  * Deletes only seeded data. Groups go first because `groups.manager_user_id`
  * and the approval columns reference `user` without a cascade, as do
  * `changes.changing_user_id`; everything else hangs off one of those two
- * deletes via ON DELETE CASCADE — which now includes `invite_link.group_id`,
- * added without one and so blocking the group delete outright.
+ * deletes via ON DELETE CASCADE.
  */
 export const resetDevData = async (): Promise<ResetSummary> => {
   const domain = devDomain();

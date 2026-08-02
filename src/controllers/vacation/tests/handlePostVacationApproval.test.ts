@@ -81,7 +81,7 @@ describe("handlePostVacationApproval", () => {
     const { req, res } = makeReqRes({ params: { id: VACATION_ID } });
 
     mockGetVacationById.mockResolvedValue(pendingVacation());
-    mockApproveVacation.mockResolvedValue(undefined);
+    mockApproveVacation.mockResolvedValue(pendingVacation({ approvedAt: new Date() }));
 
     await handlePostVacationApproval(req, res);
 
@@ -100,7 +100,7 @@ describe("handlePostVacationApproval", () => {
     });
 
     mockGetVacationById.mockResolvedValue(pendingVacation());
-    mockApproveVacation.mockResolvedValue(undefined);
+    mockApproveVacation.mockResolvedValue(pendingVacation({ approvedAt: new Date() }));
 
     await handlePostVacationApproval(req, res);
 
@@ -186,6 +186,19 @@ describe("handlePostVacationApproval", () => {
     expect(mockApproveVacation).not.toHaveBeenCalled();
   });
 
+  it("409s when the request was decided between the read and the update", async () => {
+    const { req, res } = makeReqRes({ params: { id: VACATION_ID } });
+
+    mockGetVacationById.mockResolvedValue(pendingVacation());
+    // The guards saw a pending row; the update predicate did not.
+    mockApproveVacation.mockResolvedValue(undefined);
+
+    await expect(handlePostVacationApproval(req, res)).rejects.toThrow(
+      "This request has already been decided"
+    );
+    expect(mockCreateVacationEvent).not.toHaveBeenCalled();
+  });
+
   it("should handle database service errors from getVacationById", async () => {
     const { req, res } = makeReqRes({ params: { id: VACATION_ID } });
 
@@ -211,7 +224,7 @@ describe("handlePostVacationApproval", () => {
 
     mockGetVacationById.mockResolvedValue(pendingVacation({ groupId: "specific_group_789" }));
     mockGetGroupsWhereUserCanApprove.mockResolvedValue(["specific_group_789"]);
-    mockApproveVacation.mockResolvedValue(undefined);
+    mockApproveVacation.mockResolvedValue(pendingVacation({ approvedAt: new Date() }));
 
     await handlePostVacationApproval(req, res);
 

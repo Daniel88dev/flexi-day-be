@@ -8,16 +8,9 @@ const services = createDBServices();
 type Decision = "approve" | "reject";
 
 /**
- * The single predicate for "may this person decide on these requests".
- *
- * Both the per-record and the bulk endpoints route through here so the same
- * user acting on the same request cannot be refused by one button and obeyed by
- * another — previously the bulk path accepted the group manager while the
- * single path accepted only the named approvers, and sending a one-element
- * array bypassed the stricter of the two.
- *
- * Separation of duties is part of the predicate: an approver's own request is
- * for the group's other approver to decide, never for themselves.
+ * The single predicate for "may this person decide on these requests", shared by
+ * the per-record and bulk endpoints so they cannot drift apart. Separation of
+ * duties is part of it: an approver's own request is for the other approver.
  */
 export const assertMayDecide = async (
   actorUserId: string,
@@ -50,12 +43,7 @@ export const assertMayDecide = async (
   }
 };
 
-/**
- * A decision is only meaningful on an open request. Checked here so the caller
- * gets a 409 explaining what happened rather than the update silently matching
- * no rows — or, before the update predicate was tightened, silently overturning
- * the earlier decision.
- */
+/** Fails fast with an explanation; the update predicate is the real guarantee. */
 export const assertStillPending = (
   rows: Pick<VacationType, "id" | "approvedAt" | "rejectedAt" | "deletedAt">[]
 ): void => {

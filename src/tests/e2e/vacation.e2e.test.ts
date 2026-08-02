@@ -14,9 +14,8 @@ import { session } from "../../db/schema/auth-schema.js";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 
-// Booking is bounded to the current year through the end of the next, so these
-// anchor to a real Monday in the current year. Fixed calendar dates would book
-// fine today and fall out of the accepted window a year from now.
+// Booking is bounded to this year through the end of the next, so fixed dates
+// would fall out of range as time passes.
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
 const shift = (base: Date, days: number) => {
   const next = new Date(base);
@@ -361,8 +360,8 @@ describe("Vacation API E2E Tests", () => {
         .expect(200);
       await bookDay(cookie).expect(201);
 
-      // Stale approver queue. A decided row is no longer re-decidable at all,
-      // so this is refused before it can reach the day the live request holds.
+      // A decided row is not re-decidable, so this never reaches the day the
+      // live request now holds.
       await request(context.app)
         .post(`/api/vacation/approve/${rejectedId}`)
         .set("Cookie", approverCookie)

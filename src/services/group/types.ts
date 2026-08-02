@@ -40,12 +40,8 @@ export const validatePutGroupWorkingDays = z.object({
 
 export type ValidatedPutGroupWorkingDaysType = z.infer<typeof validatePutGroupWorkingDays>;
 
-/**
- * Body of "set who decides on this group's requests". better-auth user ids are
- * opaque non-UUID strings, so they validate as non-empty strings. `null` clears
- * the slot; the main approver may not be cleared, because a group without one
- * has no way to ever decide on a request.
- */
+// better-auth user ids are opaque non-UUID strings. The main approver is
+// required: a group without one can never decide on a request.
 export const validatePutGroupApprovers = z.object({
   mainApprovalUser: z.string().min(1),
   tempApprovalUser: z.string().min(1).nullable().default(null),
