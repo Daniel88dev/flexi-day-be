@@ -9,6 +9,7 @@ import {
   pgEnum,
   boolean,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
@@ -64,6 +65,12 @@ export const vacation = pgTable(
   },
   (table) => [
     index("requested_day_idx").on(table.requestedDay),
-    uniqueIndex("uniq_vacation_user_day").on(table.userId, table.requestedDay),
+    // Partial on purpose: only a live row reserves the day. Cancelled
+    // (`deletedAt`) and rejected rows stay for history and must not stop the
+    // user from booking that day again. Every ON CONFLICT against this index
+    // has to repeat the predicate or Postgres cannot infer it.
+    uniqueIndex("uniq_vacation_user_day")
+      .on(table.userId, table.requestedDay)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.rejectedAt} IS NULL`),
   ]
 );

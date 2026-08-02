@@ -316,7 +316,11 @@ export const getBookingsForScope = async (
       asc(vacation.userId),
       asc(vacation.groupId),
       asc(vacation.vacationType),
-      asc(vacation.requestedDay)
+      asc(vacation.requestedDay),
+      // A rejected day and the live re-request of it both show up here, so the
+      // day alone is no longer a unique sort key. Live row first, so `limit`
+      // and the export can't return the two in a different order each run.
+      sql`${vacation.rejectedAt} IS NOT NULL`
     );
 
   const rows: BookingRow[] = await (limit === undefined ? query : query.limit(limit));

@@ -165,6 +165,16 @@ export const getVacationsForUser = async (
 };
 
 /**
+ * Predicate of the partial `uniq_vacation_user_day` index. Only live rows
+ * reserve a day, so a cancelled or rejected one can be booked again — but
+ * Postgres can only infer a partial index when ON CONFLICT repeats its
+ * predicate, hence this fragment on every insert against it. Drizzle emits it
+ * from `onConflictDoNothing`'s `where`, which lands in the index-predicate
+ * position, not as an action filter.
+ */
+const liveRowConflictTarget = sql`${vacation.deletedAt} IS NULL AND ${vacation.rejectedAt} IS NULL`;
+
+/**
  * Inserts a single vacation row. Returns undefined on unique-constraint
  * collisions so callers can decide how to handle them.
  */
@@ -177,6 +187,7 @@ export const postVacation = async (
     .values(record)
     .onConflictDoNothing({
       target: [vacation.userId, vacation.requestedDay],
+      where: liveRowConflictTarget,
     })
     .returning();
   return row;
@@ -184,11 +195,12 @@ export const postVacation = async (
 
 /**
  * Inserts many per-day vacation rows in a single statement. All-or-nothing:
- * if any (userId, requestedDay) already exists, throws — and because the
- * caller wraps this in `db.transaction`, the partial inserts are rolled back.
- * That avoids the silent partial-commit case where a multi-day request that
- * overlaps one existing day would otherwise persist the remaining days and
- * still look like a success.
+ * if any (userId, requestedDay) is already held by a live row, throws — and
+ * because the caller wraps this in `db.transaction`, the partial inserts are
+ * rolled back. That avoids the silent partial-commit case where a multi-day
+ * request that overlaps one existing day would otherwise persist the remaining
+ * days and still look like a success. Days whose only rows are cancelled or
+ * rejected are free (see {@link liveRowConflictTarget}).
  */
 export const postVacationBulk = async (
   records: VacationInsertType[],
@@ -200,6 +212,7 @@ export const postVacationBulk = async (
     .values(records)
     .onConflictDoNothing({
       target: [vacation.userId, vacation.requestedDay],
+      where: liveRowConflictTarget,
     })
     .returning();
 
@@ -222,6 +235,38 @@ export const postVacationBulk = async (
   return inserted;
 };
 
+/**
+ * Approving un-rejects the row, which puts it back under the partial unique
+ * index — and the day may have been re-requested since the rejection. Postgres
+ * is the only place that can see that race, so translate its violation into the
+ * conflict the approver should be shown instead of a 500.
+ */
+const rethrowIfDayRetaken = (error: unknown, vacationIds: string[]): never => {
+  // Drizzle rethrows a "Failed query" Error and hangs the pg error, which is
+  // where `code`/`constraint` live, off `cause`.
+  let cursor: unknown = error;
+  let violated = false;
+  for (let depth = 0; cursor && depth < 5; depth++) {
+    const candidate = cursor as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (candidate.code === "23505" && candidate.constraint === "uniq_vacation_user_day") {
+      violated = true;
+      break;
+    }
+    cursor = candidate.cause;
+  }
+
+  if (violated) {
+    throw new AppError({
+      code: 409,
+      message:
+        "That day was requested again after the rejection — refresh and decide on the new request",
+      logging: true,
+      context: { vacationIds },
+    });
+  }
+  throw error;
+};
+
 export const approveVacation = async (
   vacationId: string,
   approvingPerson: string,
@@ -237,7 +282,8 @@ export const approveVacation = async (
       rejectionReason: null,
     })
     .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
-    .returning();
+    .returning()
+    .catch((error: unknown) => rethrowIfDayRetaken(error, [vacationId]));
 
   return row;
 };
@@ -263,7 +309,8 @@ export const approveVacationsBulk = async (
       rejectionReason: null,
     })
     .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
-    .returning();
+    .returning()
+    .catch((error: unknown) => rethrowIfDayRetaken(error, vacationIds));
 };
 
 /**
@@ -415,7 +462,9 @@ export const getVacationDetailById = async (
 
   const { groupName, approvedByName, rejectedByName, ...vacationRow } = row;
 
-  // Match the row's deletedAt state so a re-booked active day can't merge into a cancelled run.
+  // Match the row's deletedAt/rejectedAt state so a re-booked day can't merge
+  // into the cancelled or rejected run it replaced — both can sit on the same
+  // day as the live row now that uniqueness only covers live rows.
   const siblings = await (tx ?? db)
     .select({ id: vacation.id, requestedDay: vacation.requestedDay })
     .from(vacation)
@@ -424,7 +473,8 @@ export const getVacationDetailById = async (
         eq(vacation.userId, vacationRow.userId),
         eq(vacation.groupId, vacationRow.groupId),
         eq(vacation.vacationType, vacationRow.vacationType),
-        vacationRow.deletedAt ? isNotNull(vacation.deletedAt) : isNull(vacation.deletedAt)
+        vacationRow.deletedAt ? isNotNull(vacation.deletedAt) : isNull(vacation.deletedAt),
+        vacationRow.rejectedAt ? isNotNull(vacation.rejectedAt) : isNull(vacation.rejectedAt)
       )
     );
   const run = contiguousRunContaining(siblings, vacationRow.requestedDay);
