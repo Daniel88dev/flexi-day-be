@@ -2,26 +2,38 @@ import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { CustomError } from "../utils/appError.js";
 import { logger } from "./logger.js";
+import { routeOf } from "../utils/routeTemplate.js";
+import { redactObject } from "../utils/redact.js";
 
-export const errorMiddleware = (err: Error, _req: Request, res: Response, next: NextFunction) => {
+export const errorMiddleware = (err: Error, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {
     return next(err);
   }
+
+  // Everything else already rides along from the request context format.
+  const requestMeta = { "http.route": routeOf(req) ?? req.path };
+
   if (err instanceof CustomError) {
     const { statusCode, errors, logging } = err;
     const safeStatus =
       Number.isInteger(statusCode) && statusCode >= 400 && statusCode <= 599 ? statusCode : 500;
     if (logging) {
+      // Message first, meta second — never one merged object: the Sentry winston
+      // transport takes `message` as the log body, so an object renders as
+      // "[object Object]" with nothing searchable.
       const meta = {
-        msg: "Controlled Error",
         code: statusCode,
-        errors: errors,
+        // `context` is internal but reaches Sentry from here, and the sign-up
+        // and invite paths put the user's email in it — which would undo this
+        // service's id-only rule for Sentry.
+        errors: redactObject(errors),
         stack: err.stack,
+        ...requestMeta,
       };
       if (safeStatus >= 500) {
-        logger.error(meta);
+        logger.error("Controlled Error", meta);
       } else {
-        logger.warn(meta);
+        logger.warn("Controlled Error", meta);
       }
     }
 
@@ -48,10 +60,10 @@ export const errorMiddleware = (err: Error, _req: Request, res: Response, next: 
     const clientErrors = err.issues.map((issue) => ({
       message: `${issue.path.length ? issue.path.join(".") : "(root)"}: ${issue.message}`,
     }));
-    logger.warn({ msg: "Request validation Error", errors: clientErrors });
+    logger.warn("Request validation Error", { errors: clientErrors, ...requestMeta });
     return res.status(422).json({ errors: clientErrors });
   }
 
-  logger.error({ msg: "Unhandled Error", err: err, stack: err.stack });
+  logger.error("Unhandled Error", { err, ...requestMeta });
   return res.status(500).json({ errors: [{ message: "Internal Server Error" }] });
 };

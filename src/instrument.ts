@@ -31,5 +31,17 @@ if (enabled) {
     profileLifecycle: "trace",
     debug: process.env.SENTRY_DEBUG === "true",
   });
+
+  // Global scope attributes are merged into every log and error the process
+  // emits, which is what makes them dependable columns in the Sentry Logs table.
+  // Repeated as winston `defaultMeta` in middleware/logger.ts; identical keys
+  // collapse into one attribute.
+  Sentry.getGlobalScope().setAttributes({
+    "service.name": process.env.SERVICE_NAME ?? "flexi-day-be",
+    "service.version": process.env.APP_VERSION ?? "unknown",
+    "service.type": "backend",
+    "server.runtime": `node ${process.version}`,
+  });
+
   console.log(`[sentry] initialized (environment=${process.env.NODE_ENV})`);
 }

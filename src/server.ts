@@ -21,10 +21,12 @@ import { reportRouter } from "./routes/reportRouter.js";
 import { tryCatch } from "./middleware/tryCatch.js";
 import { handleGetCalendarFeed } from "./controllers/calendarSync/handleGetCalendarFeed.js";
 import { devRouter } from "./routes/devRouter.js";
+import { requestContext } from "./middleware/requestContext.js";
 
 export const createServer = () => {
   const app = express();
-  app.set("trust proxy", 1).use(serverCors).use(helmetHeaders).use(limiter);
+  // `requestContext` sits ahead of every route, including better-auth's catch-all.
+  app.set("trust proxy", 1).use(serverCors).use(requestContext).use(helmetHeaders).use(limiter);
 
   // Project-specific auth orchestration endpoints. These must be registered
   // BEFORE better-auth's catch-all `.all()` so the catch-all does not swallow
