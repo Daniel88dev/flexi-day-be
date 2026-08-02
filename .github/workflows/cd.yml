@@ -10,6 +10,8 @@ on:
 permissions:
   id-token: write
   contents: read
+  # Lets the build publish a signed provenance attestation for the pushed image.
+  attestations: write
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
@@ -26,17 +28,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
 
       - name: Set image metadata
         id: meta
@@ -60,6 +62,7 @@ jobs:
           fi
 
       - name: Build, tag, and push image
+        id: build
         env:
           ECR_REGISTRY: ${{ steps.meta.outputs.ECR_REGISTRY }}
           IMAGE_TAG_SHA: ${{ steps.meta.outputs.IMAGE_TAG_SHA }}
@@ -72,12 +75,20 @@ jobs:
 
           docker buildx create --use --name builder || docker buildx use builder
 
+          # --provenance=false stays: buildx provenance would turn the push into a
+          # multi-manifest image index, which App Runner cannot pull. Provenance is
+          # attested out-of-band instead (see the attestation step below), which
+          # records the same build facts without changing the image manifest.
           docker buildx build --platform linux/amd64 \
              -t "${SHA_IMAGE_FULL_URI}" \
              --build-arg APP_VERSION="${IMAGE_TAG_SHA}" \
              --secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
              --provenance=false \
+             --metadata-file /tmp/build-metadata.json \
              --push .
+
+          echo "IMAGE_NAME=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' /tmp/build-metadata.json)" >> $GITHUB_OUTPUT
 
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             MOVING_TAG="latest"
@@ -91,3 +102,14 @@ jobs:
           docker buildx imagetools create \
              --tag "${MOVING_IMAGE_FULL_URI}" \
              "${SHA_IMAGE_FULL_URI}"
+
+      # Records which commit, workflow and runner produced this exact image digest,
+      # signed and stored in GitHub's attestation store. `push-to-registry` is left
+      # off on purpose: publishing the attestation as an ECR artifact would add a
+      # manifest App Runner has to skip past. Verify a deployed image with:
+      #   gh attestation verify oci://<registry>/<repo>@<digest> --repo <owner>/<repo>
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ steps.build.outputs.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.IMAGE_DIGEST }}
