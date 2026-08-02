@@ -14,6 +14,28 @@ import { session } from "../../db/schema/auth-schema.js";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 
+// Booking is bounded to the current year through the end of the next, so these
+// anchor to a real Monday in the current year. Fixed calendar dates would book
+// fine today and fall out of the accepted window a year from now.
+const isoDay = (date: Date) => date.toISOString().slice(0, 10);
+const shift = (base: Date, days: number) => {
+  const next = new Date(base);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+};
+const firstMondayOfDecember = () => {
+  const day = new Date(Date.UTC(new Date().getUTCFullYear(), 11, 1));
+  while (day.getUTCDay() !== 1) day.setUTCDate(day.getUTCDate() + 1);
+  return day;
+};
+const MONDAY_OF_WEEK = firstMondayOfDecember();
+const MON = isoDay(MONDAY_OF_WEEK);
+const WED = isoDay(shift(MONDAY_OF_WEEK, 2));
+const FRI = isoDay(shift(MONDAY_OF_WEEK, 4));
+const SAT = isoDay(shift(MONDAY_OF_WEEK, 5));
+const SUN = isoDay(shift(MONDAY_OF_WEEK, 6));
+const NEXT_MON = isoDay(shift(MONDAY_OF_WEEK, 7));
+
 describe("Vacation API E2E Tests", () => {
   let context: TestContext;
 
@@ -126,7 +148,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 401 when not authenticated", async () => {
       const response = await request(context.app)
         .post("/api/vacation/create-vacation")
-        .send({ groupId: context.group.id, from: "2025-12-24", to: "2025-12-24" })
+        .send({ groupId: context.group.id, from: WED, to: WED })
         .expect(401);
 
       expect(response.body).toBeDefined();
@@ -146,18 +168,18 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      // 2025-12-24 is a Wednesday, inside the group's default Mon–Fri.
+      // A Wednesday, inside the group's default Mon–Fri working days.
       const response = await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: context.group.id, from: "2025-12-24", to: "2025-12-24" })
+        .send({ groupId: context.group.id, from: WED, to: WED })
         .expect(201);
 
       expect(response.body).toHaveLength(1);
 
       const rows = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ requestedDay: "2025-12-24", halfDay: false });
+      expect(rows[0]).toMatchObject({ requestedDay: WED, halfDay: false });
     });
 
     it("should persist halfDay when the request asks for one", async () => {
@@ -167,7 +189,7 @@ describe("Vacation API E2E Tests", () => {
       await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: context.group.id, from: "2025-12-24", to: "2025-12-24", halfDay: true })
+        .send({ groupId: context.group.id, from: WED, to: WED, halfDay: true })
         .expect(201);
 
       const rows = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
@@ -182,7 +204,7 @@ describe("Vacation API E2E Tests", () => {
       await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: context.group.id, from: "2025-12-24", to: "2025-12-24" })
+        .send({ groupId: context.group.id, from: WED, to: WED })
         .expect(201);
 
       const rows = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
@@ -193,11 +215,11 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      // Mon 2025-12-22 → Fri 2025-12-26 spans five weekdays.
+      // Mon → Fri spans five weekdays.
       const response = await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: context.group.id, from: "2025-12-22", to: "2025-12-26" })
+        .send({ groupId: context.group.id, from: MON, to: FRI })
         .expect(201);
 
       expect(response.body).toHaveLength(5);
@@ -207,30 +229,30 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      // Fri 2025-12-26 → Mon 2025-12-29 covers a weekend; only the two
+      // Fri → the following Mon covers a weekend; only the two
       // weekdays should be booked.
       const response = await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: context.group.id, from: "2025-12-26", to: "2025-12-29" })
+        .send({ groupId: context.group.id, from: FRI, to: NEXT_MON })
         .expect(201);
 
       expect(response.body).toHaveLength(2);
       const days = (response.body as { requestedDay: string }[])
         .map((row) => row.requestedDay)
         .sort();
-      expect(days).toEqual(["2025-12-26", "2025-12-29"]);
+      expect(days).toEqual([FRI, NEXT_MON]);
     });
 
     it("should return 422 when the range contains no working day", async () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      // Sat 2025-12-27 → Sun 2025-12-28.
+      // A full weekend.
       await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: context.group.id, from: "2025-12-27", to: "2025-12-28" })
+        .send({ groupId: context.group.id, from: SAT, to: SUN })
         .expect(422);
     });
 
@@ -240,7 +262,7 @@ describe("Vacation API E2E Tests", () => {
       await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: context.group.id, from: "2025-12-24", to: "2025-12-24" })
+        .send({ groupId: context.group.id, from: WED, to: WED })
         .expect(403);
     });
 
@@ -252,7 +274,7 @@ describe("Vacation API E2E Tests", () => {
       await request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
-        .send({ groupId: uuidv4(), from: "2025-12-24", to: "2025-12-24" })
+        .send({ groupId: uuidv4(), from: WED, to: WED })
         .expect(403);
     });
   });
@@ -261,7 +283,7 @@ describe("Vacation API E2E Tests", () => {
   // cancelled is free again. Before that was a partial index, the leftover row
   // kept the day booked forever.
   describe("POST /api/vacation/create-vacation — re-requesting a day", () => {
-    const bookDay = (cookie: string, day = "2025-12-24") =>
+    const bookDay = (cookie: string, day = WED) =>
       request(context.app)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
@@ -275,7 +297,7 @@ describe("Vacation API E2E Tests", () => {
       const response = await bookDay(cookie).expect(409);
 
       expect(response.body).toMatchObject({
-        errors: [{ context: { conflictingDays: ["2025-12-24"] } }],
+        errors: [{ context: { conflictingDays: [WED] } }],
       });
     });
 
@@ -339,8 +361,8 @@ describe("Vacation API E2E Tests", () => {
         .expect(200);
       await bookDay(cookie).expect(201);
 
-      // Stale approver queue: approving would un-reject the old row onto a day
-      // the live request now holds.
+      // Stale approver queue. A decided row is no longer re-decidable at all,
+      // so this is refused before it can reach the day the live request holds.
       await request(context.app)
         .post(`/api/vacation/approve/${rejectedId}`)
         .set("Cookie", approverCookie)
