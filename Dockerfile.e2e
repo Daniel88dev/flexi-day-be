@@ -1,5 +1,5 @@
 # E2E Testing Dockerfile
-FROM node:22-alpine
+FROM node:24-alpine
 LABEL authors="danielhrynusiw"
 WORKDIR /app
 
