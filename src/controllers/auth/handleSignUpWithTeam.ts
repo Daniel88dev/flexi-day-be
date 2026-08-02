@@ -101,7 +101,7 @@ export const handleSignUpWithTeam = async (req: Request, res: Response) => {
 
   const teamName = data.teamName;
 
-  let group = null;
+  let group: Awaited<ReturnType<typeof createTeamForUser>> | null;
   try {
     group = teamName === undefined ? null : await createTeamForUser(userId, teamName);
   } catch (err) {
