@@ -32,9 +32,16 @@ const makeReqResNext = (
     baseUrl: "/api/vacation",
     query: overrides.query ?? {},
   } as unknown as Request;
-  const res = { setHeader: vi.fn() } as unknown as Response;
+  const listeners: Record<string, () => void> = {};
+  const res = {
+    setHeader: vi.fn(),
+    statusCode: 200,
+    on: vi.fn((event: string, cb: () => void) => {
+      listeners[event] = cb;
+    }),
+  } as unknown as Response;
   const next = vi.fn() as unknown as NextFunction;
-  return { req, res, next };
+  return { req, res, next, finish: () => listeners.finish?.() };
 };
 
 describe("requestContext middleware", () => {
@@ -187,6 +194,52 @@ describe("requestContext request logging", () => {
     });
   });
 
+  it("logs a second line with status and duration when the response finishes", () => {
+    const { req, res, next, finish } = makeReqResNext();
+
+    requestContext(req, res, next);
+    finish();
+
+    expect(logger.info).toHaveBeenCalledTimes(2);
+    const [message, meta] = vi.mocked(logger.info).mock.calls[1];
+    expect(message).toBe("POST /api/vacation/123 200");
+    expect(meta).toMatchObject({
+      "http.event": "response",
+      "http.response.status_code": 200,
+      "http.route": "/api/vacation/123",
+    });
+    expect(meta).toHaveProperty("duration_ms");
+    expect((meta as { duration_ms: number }).duration_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("uses the matched route template on the response line", () => {
+    const { req, res, next, finish } = makeReqResNext();
+    (req as unknown as { route: { path: string } }).route = { path: "/:id" };
+
+    requestContext(req, res, next);
+    finish();
+
+    const [, meta] = vi.mocked(logger.info).mock.calls[1];
+    expect(meta).toMatchObject({ "http.route": "/api/vacation/:id" });
+  });
+
+  it("keeps the request context available on the response line", () => {
+    const { req, res, next, finish } = makeReqResNext({ "x-client-session-id": UUID_A });
+    (next as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      updateRequestContext({ userId: "user_1" });
+    });
+
+    requestContext(req, res, next);
+    let seen: ReturnType<typeof getRequestContext>;
+    vi.mocked(logger.info).mockImplementation(() => {
+      seen = getRequestContext();
+      return logger;
+    });
+    finish();
+
+    expect(seen).toMatchObject({ userId: "user_1", clientSessionId: UUID_A });
+  });
+
   it("puts the query string on the context and the Sentry attributes", () => {
     const { req, res, next } = makeReqResNext({}, { query: { year: "2026", month: "8" } });
     let ctx: ReturnType<typeof getRequestContext>;
@@ -227,9 +280,11 @@ describe("requestContext request logging", () => {
     const { logger: freshLogger } = await import("../../middleware/logger.js?ignore-paths");
     const infoSpy = vi.spyOn(freshLogger, "info").mockImplementation(() => freshLogger);
 
-    const { req, res, next } = makeReqResNext({}, { path: "/health" });
+    const { req, res, next, finish } = makeReqResNext({}, { path: "/health" });
     freshMiddleware(req, res, next);
+    finish();
 
+    // Neither the request nor the response line.
     expect(infoSpy).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
     delete process.env.REQUEST_LOG_IGNORE_PATHS;

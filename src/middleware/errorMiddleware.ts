@@ -2,13 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { CustomError } from "../utils/appError.js";
 import { logger } from "./logger.js";
-
-// The route template (`/api/vacation/:id`), so failures group by endpoint
-// instead of fanning out per id.
-const routeOf = (req: Request): string | undefined => {
-  const route = (req as { route?: { path?: unknown } }).route?.path;
-  return typeof route === "string" ? `${req.baseUrl}${route}` : undefined;
-};
+import { routeOf } from "../utils/routeTemplate.js";
 
 export const errorMiddleware = (err: Error, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {

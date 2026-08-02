@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import * as Sentry from "@sentry/node";
 import { generateRandomUUID } from "../utils/generateUUID.js";
-import { runWithRequestContext } from "../utils/requestStore.js";
+import { runWithRequestContext, type RequestContext } from "../utils/requestStore.js";
 import { redactPath, redactQuery } from "../utils/redactUrl.js";
+import { routeOf } from "../utils/routeTemplate.js";
 import { logger } from "./logger.js";
 
 const IGNORED_PATHS = new Set(
@@ -37,37 +38,52 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
   // Both carry secrets on some routes — see redactUrl.ts.
   const path = redactPath(req.path);
   const query = redactQuery(req.query);
+  const startedAt = process.hrtime.bigint();
 
-  runWithRequestContext(
-    {
-      requestId,
-      clientSessionId,
-      clientDeviceId,
-      method: req.method,
-      path,
-      query,
-      userAgent: header(req, "user-agent"),
-    },
-    () => {
-      // `@sentry/node` forks an isolation scope per request, so these stay
-      // request-scoped and ride along on every log captured inside it.
-      Sentry.setAttributes({
-        "request.id": requestId,
-        "http.request.method": req.method,
-        "url.path": path,
-        ...(query ? { "url.query": query } : {}),
-        ...(clientSessionId ? { "client.session_id": clientSessionId } : {}),
-        ...(clientDeviceId ? { "client.device_id": clientDeviceId } : {}),
+  const context: RequestContext = {
+    requestId,
+    clientSessionId,
+    clientDeviceId,
+    method: req.method,
+    path,
+    query,
+    userAgent: header(req, "user-agent"),
+  };
+
+  runWithRequestContext(context, () => {
+    // `@sentry/node` forks an isolation scope per request, so these stay
+    // request-scoped and ride along on every log captured inside it.
+    Sentry.setAttributes({
+      "request.id": requestId,
+      "http.request.method": req.method,
+      "url.path": path,
+      ...(query ? { "url.query": query } : {}),
+      ...(clientSessionId ? { "client.session_id": clientSessionId } : {}),
+      ...(clientDeviceId ? { "client.device_id": clientDeviceId } : {}),
+    });
+    // Attributes cover logs; tags are what makes error events searchable.
+    Sentry.setTag("request_id", requestId);
+    if (clientSessionId) Sentry.setTag("client_session_id", clientSessionId);
+
+    if (!IGNORED_PATHS.has(req.path)) {
+      logger.info(`${req.method} ${path}`, { "http.event": "request" });
+
+      // `finish` does not fire for a client that disconnects mid-request, which
+      // is why the line above is emitted up front rather than only here.
+      // Re-entered explicitly: an event listener does not inherit the async
+      // context it was registered in.
+      res.on("finish", () => {
+        runWithRequestContext(context, () => {
+          logger.info(`${req.method} ${path} ${res.statusCode}`, {
+            "http.event": "response",
+            "http.response.status_code": res.statusCode,
+            "http.route": routeOf(req) ?? path,
+            duration_ms: Number(process.hrtime.bigint() - startedAt) / 1e6,
+          });
+        });
       });
-      // Attributes cover logs; tags are what makes error events searchable.
-      Sentry.setTag("request_id", requestId);
-      if (clientSessionId) Sentry.setTag("client_session_id", clientSessionId);
-
-      if (!IGNORED_PATHS.has(req.path)) {
-        logger.info(`${req.method} ${path}`, { "http.event": "request" });
-      }
-
-      next();
     }
-  );
+
+    next();
+  });
 };
