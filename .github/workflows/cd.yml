@@ -29,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
@@ -88,7 +90,31 @@ jobs:
              --push .
 
           echo "IMAGE_NAME=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          echo "SHA_IMAGE_URI=${SHA_IMAGE_FULL_URI}" >> $GITHUB_OUTPUT
           echo "IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' /tmp/build-metadata.json)" >> $GITHUB_OUTPUT
+
+      # Deliberately BEFORE the moving tag is promoted. `main`/`latest` is what
+      # App Runner auto-deploys, so promoting first would let a failed attestation
+      # report red only after the new image was already rolling out.
+      #
+      # Records which commit, workflow and runner produced this exact digest,
+      # signed into GitHub's attestation store. `push-to-registry: false` is
+      # explicit rather than defaulted: publishing the attestation as an ECR
+      # artifact would add a manifest App Runner has to skip past. Verify with:
+      #   gh attestation verify oci://<registry>/<repo>@<digest> --repo <owner>/<repo>
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ steps.build.outputs.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.IMAGE_DIGEST }}
+          push-to-registry: false
+
+      - name: Promote moving tag
+        env:
+          IMAGE_URI: ${{ steps.build.outputs.IMAGE_NAME }}
+          SHA_IMAGE_FULL_URI: ${{ steps.build.outputs.SHA_IMAGE_URI }}
+        run: |
+          set -euo pipefail
 
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             MOVING_TAG="latest"
@@ -102,14 +128,3 @@ jobs:
           docker buildx imagetools create \
              --tag "${MOVING_IMAGE_FULL_URI}" \
              "${SHA_IMAGE_FULL_URI}"
-
-      # Records which commit, workflow and runner produced this exact image digest,
-      # signed and stored in GitHub's attestation store. `push-to-registry` is left
-      # off on purpose: publishing the attestation as an ECR artifact would add a
-      # manifest App Runner has to skip past. Verify a deployed image with:
-      #   gh attestation verify oci://<registry>/<repo>@<digest> --repo <owner>/<repo>
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
-        with:
-          subject-name: ${{ steps.build.outputs.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.IMAGE_DIGEST }}

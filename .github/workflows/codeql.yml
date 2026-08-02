@@ -21,14 +21,16 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@a2983b8bed1923f44751c5c43237f479442827b3 # v3
+        uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
         with:
           languages: javascript-typescript
           queries: security-and-quality
 
-      # No build step: javascript-typescript is analysed from source, so the
-      # scan does not need the project's toolchain or a database.
+      # No build step: javascript-typescript is analysed from source, so CodeQL
+      # builds its database without invoking the project's own toolchain.
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@a2983b8bed1923f44751c5c43237f479442827b3 # v3
+        uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4
