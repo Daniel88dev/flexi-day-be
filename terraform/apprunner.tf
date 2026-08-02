@@ -46,6 +46,11 @@ resource "aws_apprunner_service" "main" {
             FEED_BASE_URL   = "https://${var.api_domain_name}"
             TRUSTED_ORIGINS = join(",", var.trusted_origins)
 
+            # Liveness probes only. App Runner hits /health every 10s (see
+            # health_check_configuration below), which would otherwise be the
+            # overwhelming majority of request logs reaching Sentry.
+            REQUEST_LOG_IGNORE_PATHS = "/health,/ping"
+
             # Transactional email (SESv2). Templates are stage-suffixed and
             # region-scoped; the instance role grants ses:SendEmail (see iam.tf).
             AWS_REGION            = var.aws_region
