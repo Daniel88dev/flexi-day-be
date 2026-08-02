@@ -13,11 +13,7 @@ server.listen(config.api.port, () => {
   logger.info(`Server listening on port ${config.api.port}`);
 
   server.on("error", (err: unknown) => {
-    if (err instanceof Error) {
-      logger.error({ msg: "HTTP server error", err });
-    } else {
-      logger.error({ msg: "HTTP server error", err: String(err) });
-    }
+    logger.error("HTTP server error", { err: err instanceof Error ? err : String(err) });
     process.exitCode = 1;
   });
 
@@ -28,7 +24,7 @@ server.listen(config.api.port, () => {
     stopQuotaRolloverJob();
     server.close((closeErr?: Error) => {
       if (closeErr) {
-        logger.error({ msg: "Error shutting down HTTP server", err: closeErr });
+        logger.error("Error shutting down HTTP server", { err: closeErr });
         process.exitCode = 1;
       }
       process.exit(0);
