@@ -45,8 +45,14 @@ const sanitizeValue = (value: string): string =>
 // query redaction alone would not cover it.
 const CALENDAR_FEED = /^\/calendars\/[^/]+\.ics$/;
 
+// Control characters are stripped because both values are interpolated into log
+// messages, where a surviving CR/LF would let a caller forge a whole log line.
 export const redactPath = (path: string): string =>
-  CALENDAR_FEED.test(path) ? "/calendars/:token.ics" : path;
+  CALENDAR_FEED.test(path) ? "/calendars/:token.ics" : path.replace(CONTROL_CHARS, "");
+
+// Node's parser already rejects a method outside the HTTP token grammar, so this
+// only matters if that ever stops being true.
+export const redactMethod = (method: string): string => method.replace(CONTROL_CHARS, "");
 
 export const redactQuery = (query: Request["query"]): string | undefined => {
   const entries = Object.entries(query ?? {});

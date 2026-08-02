@@ -3,7 +3,7 @@
  * Test library/framework: Vitest
  */
 import { describe, it, expect } from "vitest";
-import { redactPath, redactQuery, redactObject } from "../../utils/redact.js";
+import { redactMethod, redactPath, redactQuery, redactObject } from "../../utils/redact.js";
 
 describe("redactPath", () => {
   it("strips the calendar feed token, which authenticates the whole feed", () => {
@@ -20,6 +20,21 @@ describe("redactPath", () => {
   it("does not match a path that merely starts with /calendars", () => {
     expect(redactPath("/calendars")).toBe("/calendars");
     expect(redactPath("/calendars/a/b.ics")).toBe("/calendars/a/b.ics");
+  });
+
+  it("strips control characters, so a path cannot forge a log line", () => {
+    expect(redactPath("/api/x\r\ninfo: forged")).toBe("/api/xinfo: forged");
+    expect(redactPath("/api/\u0000\u001f\u007fx")).toBe("/api/x");
+  });
+});
+
+describe("redactMethod", () => {
+  it("leaves a real method untouched", () => {
+    expect(redactMethod("GET")).toBe("GET");
+  });
+
+  it("strips control characters", () => {
+    expect(redactMethod("GET\r\ninfo: forged")).toBe("GETinfo: forged");
   });
 });
 

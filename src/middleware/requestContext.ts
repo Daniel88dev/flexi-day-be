@@ -2,16 +2,20 @@ import type { NextFunction, Request, Response } from "express";
 import * as Sentry from "@sentry/node";
 import { generateRandomUUID } from "../utils/generateUUID.js";
 import { runWithRequestContext, type RequestContext } from "../utils/requestStore.js";
-import { redactPath, redactQuery } from "../utils/redact.js";
+import { redactMethod, redactPath, redactQuery } from "../utils/redact.js";
 import { routeOf } from "../utils/routeTemplate.js";
 import { logger } from "./logger.js";
 
-const IGNORED_PATHS = new Set(
-  (process.env.REQUEST_LOG_IGNORE_PATHS ?? "")
+// `/health` is the platform liveness probe (App Runner hits it every 10s), so it
+// is silenced by default rather than via deploy-time config — it is this repo's
+// own route, and relying on an env var to mute it has proven unreliable.
+const IGNORED_PATHS = new Set([
+  "/health",
+  ...(process.env.REQUEST_LOG_IGNORE_PATHS ?? "")
     .split(",")
     .map((p) => p.trim())
-    .filter(Boolean)
-);
+    .filter(Boolean),
+]);
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Looser than UUID: upstream proxies mint their own ids. Still bounded.
@@ -38,13 +42,14 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
   // Both carry secrets on some routes — see redactUrl.ts.
   const path = redactPath(req.path);
   const query = redactQuery(req.query);
+  const method = redactMethod(req.method);
   const startedAt = process.hrtime.bigint();
 
   const context: RequestContext = {
     requestId,
     clientSessionId,
     clientDeviceId,
-    method: req.method,
+    method,
     path,
     query,
     userAgent: header(req, "user-agent"),
@@ -55,7 +60,7 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
     // request-scoped and ride along on every log captured inside it.
     Sentry.setAttributes({
       "request.id": requestId,
-      "http.request.method": req.method,
+      "http.request.method": method,
       "url.path": path,
       ...(query ? { "url.query": query } : {}),
       ...(clientSessionId ? { "client.session_id": clientSessionId } : {}),
@@ -67,24 +72,30 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
 
     // The redacted path, so a templated route like `/calendars/:token.ics` can
     // be silenced — its raw path differs on every request.
-    if (!IGNORED_PATHS.has(path)) {
-      logger.info(`${req.method} ${path}`, { "http.event": "request" });
+    const ignored = IGNORED_PATHS.has(path);
 
-      // `finish` does not fire for a client that disconnects mid-request, which
-      // is why the line above is emitted up front rather than only here.
-      // Re-entered explicitly: an event listener does not inherit the async
-      // context it was registered in.
-      res.on("finish", () => {
-        runWithRequestContext(context, () => {
-          logger.info(`${req.method} ${path} ${res.statusCode}`, {
-            "http.event": "response",
-            "http.response.status_code": res.statusCode,
-            "http.route": routeOf(req) ?? path,
-            duration_ms: Number(process.hrtime.bigint() - startedAt) / 1e6,
-          });
+    if (!ignored) {
+      logger.info(`${method} ${path}`, { "http.event": "request" });
+    }
+
+    // `finish` does not fire for a client that disconnects mid-request, which
+    // is why the line above is emitted up front rather than only here.
+    // Re-entered explicitly: an event listener does not inherit the async
+    // context it was registered in.
+    res.on("finish", () => {
+      // Silencing a path drops its successful traffic, which is the noise, but
+      // never a failure — an unhealthy probe is the one time it matters.
+      if (ignored && res.statusCode < 400) return;
+
+      runWithRequestContext(context, () => {
+        logger.info(`${method} ${path} ${res.statusCode}`, {
+          "http.event": "response",
+          "http.response.status_code": res.statusCode,
+          "http.route": routeOf(req) ?? path,
+          duration_ms: Number(process.hrtime.bigint() - startedAt) / 1e6,
         });
       });
-    }
+    });
 
     next();
   });
