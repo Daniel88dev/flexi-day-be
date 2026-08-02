@@ -170,5 +170,17 @@ const createTeamForUser = async (userId: string, teamName: string) =>
       });
     }
 
+    await services.userYearQuotas.openQuotaFromGroupDefaults(
+      {
+        id: generateRandomUUID(),
+        userId,
+        groupId: newGroup.id,
+        relatedYear: new Date().getFullYear().toString(),
+        vacationDays: newGroup.defaultVacationDays,
+        homeOfficeDays: newGroup.defaultHomeOfficeDays,
+      },
+      tx
+    );
+
     return newGroup;
   });

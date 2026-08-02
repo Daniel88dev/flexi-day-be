@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockSignUpEmail, mockCreateGroup, mockCreateGroupUser, mockDelete } = vi.hoisted(() => ({
+const {
+  mockSignUpEmail,
+  mockCreateGroup,
+  mockCreateGroupUser,
+  mockDelete,
+  mockOpenQuotaFromGroupDefaults,
+} = vi.hoisted(() => ({
   mockSignUpEmail: vi.fn(),
   mockCreateGroup: vi.fn(),
   mockCreateGroupUser: vi.fn(),
   mockDelete: vi.fn(),
+  mockOpenQuotaFromGroupDefaults: vi.fn(),
 }));
 
 vi.mock("../../../utils/auth.js", () => ({
@@ -24,6 +31,7 @@ vi.mock("../../../services/DBServices.js", () => ({
   createDBServices: () => ({
     group: { createGroup: mockCreateGroup },
     groupUser: { createGroupUser: mockCreateGroupUser },
+    userYearQuotas: { openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults },
   }),
 }));
 

@@ -5,6 +5,7 @@ import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedRejectVacationType } from "../../services/vacation/types.js";
+import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
@@ -31,26 +32,8 @@ export const handlePostVacationReject = async (req: Request, res: Response) => {
       });
     }
 
-    const approvers = await services.group.getApprovalUsers(vacationData.groupId, tx);
-
-    if (!approvers) {
-      throw new AppError({
-        code: 404,
-        message: "Not able to verify approvers",
-        context: { auth, vacationId },
-      });
-    }
-
-    if (
-      auth.userId !== approvers.mainApprovalUserId &&
-      auth.userId !== approvers.tempApprovalUserId
-    ) {
-      throw new AppError({
-        code: 403,
-        message: "You are not allowed to reject this vacation",
-        context: { auth, vacationId },
-      });
-    }
+    await assertMayDecide(auth.userId, [vacationData], "reject", tx);
+    assertStillPending([vacationData]);
 
     const row = await services.vacation.rejectVacation(
       vacationId,

@@ -14,6 +14,8 @@ import {
   isNull,
   lt,
   lte,
+  ne,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -236,10 +238,25 @@ export const postVacationBulk = async (
 };
 
 /**
- * Approving un-rejects the row, which puts it back under the partial unique
- * index — and the day may have been re-requested since the rejection. Postgres
- * is the only place that can see that race, so translate its violation into the
- * conflict the approver should be shown instead of a 500.
+ * A decision is only valid on a request that is still open. Making this the
+ * update predicate — rather than just `id = ?` — is what gives the workflow a
+ * state machine: a decided row matches nothing, the update returns no rows, and
+ * the controller turns that into a 409 instead of silently overturning an
+ * earlier decision and wiping its stamps.
+ *
+ * Cancellation deliberately does NOT use this: plans change, and an approved
+ * request must stay cancellable.
+ */
+const stillPending = [
+  isNull(vacation.deletedAt),
+  isNull(vacation.approvedAt),
+  isNull(vacation.rejectedAt),
+] as const;
+
+/**
+ * Defensive: a pending row already sits in the partial unique index, so a
+ * decision cannot collide with a re-booking of the same day. Kept so that any
+ * future widening of the predicate surfaces as a 409 rather than a 500.
  */
 const rethrowIfDayRetaken = (error: unknown, vacationIds: string[]): never => {
   // Drizzle rethrows a "Failed query" Error and hangs the pg error, which is
@@ -277,11 +294,8 @@ export const approveVacation = async (
     .set({
       approvedBy: approvingPerson,
       approvedAt: new Date(),
-      rejectedBy: null,
-      rejectedAt: null,
-      rejectionReason: null,
     })
-    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
+    .where(and(eq(vacation.id, vacationId), ...stillPending))
     .returning()
     .catch((error: unknown) => rethrowIfDayRetaken(error, [vacationId]));
 
@@ -290,8 +304,9 @@ export const approveVacation = async (
 
 /**
  * Bulk-approves many vacation rows in a single statement. Returns the rows
- * that were actually updated — callers can compare against the input ids to
- * detect any that no longer matched (already approved/rejected/deleted).
+ * that were actually updated — callers compare against the input ids to detect
+ * any that were already approved, rejected or cancelled and reject the whole
+ * batch.
  */
 export const approveVacationsBulk = async (
   vacationIds: string[],
@@ -304,11 +319,8 @@ export const approveVacationsBulk = async (
     .set({
       approvedBy: approvingPerson,
       approvedAt: new Date(),
-      rejectedBy: null,
-      rejectedAt: null,
-      rejectionReason: null,
     })
-    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .where(and(inArray(vacation.id, vacationIds), ...stillPending))
     .returning()
     .catch((error: unknown) => rethrowIfDayRetaken(error, vacationIds));
 };
@@ -329,10 +341,8 @@ export const rejectVacationsBulk = async (
       rejectedAt: new Date(),
       rejectedBy: rejectingPerson,
       rejectionReason: reason,
-      approvedAt: null,
-      approvedBy: null,
     })
-    .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
+    .where(and(inArray(vacation.id, vacationIds), ...stillPending))
     .returning();
 };
 
@@ -378,10 +388,8 @@ export const rejectVacation = async (
       rejectedAt: new Date(),
       rejectedBy: rejectingPerson,
       rejectionReason: reason,
-      approvedAt: null,
-      approvedBy: null,
     })
-    .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
+    .where(and(eq(vacation.id, vacationId), ...stillPending))
     .returning();
 
   return row;
@@ -530,6 +538,10 @@ export type PendingApprovalRow = {
  * for groups where the caller is a manager / main approver / temp approver.
  * Rows are ordered by user/group/day so the caller can collapse contiguous
  * ranges into single approval entries.
+ *
+ * The approver's own requests are excluded: they are for the group's other
+ * approver to decide, and the decision endpoints refuse them, so showing them
+ * here would only offer a button that 403s.
  */
 export const getPendingApprovalsForApprover = async (
   approverUserId: string
@@ -555,6 +567,7 @@ export const getPendingApprovalsForApprover = async (
         isNull(vacation.approvedAt),
         isNull(vacation.rejectedAt),
         isNull(groups.deletedAt),
+        ne(vacation.userId, approverUserId),
         or(
           eq(groups.managerUserId, approverUserId),
           eq(groups.mainApprovalUser, approverUserId),
@@ -568,6 +581,49 @@ export const getPendingApprovalsForApprover = async (
       asc(vacation.vacationType),
       asc(vacation.requestedDay)
     );
+};
+
+/**
+ * Weighted day totals for one member's allowance in a single group and year,
+ * split by leave type. Unlike {@link aggregateUserUsageForYear} this is scoped
+ * to one group because an allowance is granted per (user, group, year) — the
+ * quota guard has to compare like with like.
+ *
+ * `excludeVacationIds` lets the caller leave the rows it is about to decide on
+ * out of the totals, so they can be added back at their post-decision weight
+ * instead of being double-counted.
+ */
+export const sumCountedDaysForQuota = async (
+  userId: string,
+  groupId: string,
+  year: number,
+  leaveType: vacationType,
+  excludeVacationIds: string[] = [],
+  tx?: DbTransaction
+): Promise<{ approved: number; pending: number }> => {
+  const yearStart = `${year.toString().padStart(4, "0")}-01-01`;
+  const yearEnd = `${(year + 1).toString().padStart(4, "0")}-01-01`;
+
+  const [row] = await (tx ?? db)
+    .select({
+      approved: sumDaysWhere(sql`${vacation.approvedAt} IS NOT NULL`),
+      pending: sumDaysWhere(sql`${vacation.approvedAt} IS NULL`),
+    })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, userId),
+        eq(vacation.groupId, groupId),
+        eq(vacation.vacationType, leaveType),
+        isNull(vacation.deletedAt),
+        isNull(vacation.rejectedAt),
+        gte(vacation.requestedDay, yearStart),
+        lt(vacation.requestedDay, yearEnd),
+        excludeVacationIds.length > 0 ? notInArray(vacation.id, excludeVacationIds) : undefined
+      )
+    );
+
+  return { approved: Number(row?.approved ?? 0), pending: Number(row?.pending ?? 0) };
 };
 
 /**

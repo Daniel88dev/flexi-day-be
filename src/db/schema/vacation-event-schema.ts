@@ -30,7 +30,7 @@ export const vacationEvents = pgTable(
     // Null when the actor's account is later removed; the event itself stays.
     actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "set null" }),
     reason: text("reason"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("vacation_events_vacation_id_idx").on(table.vacationId, table.createdAt)]
 );

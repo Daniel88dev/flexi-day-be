@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
-import type { ValidatedPutGroupQuotasType } from "../../services/group/types.js";
+import type { ValidatedPutGroupApproversType } from "../../services/group/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
@@ -10,18 +10,20 @@ import { changesType } from "../../db/schema/changes-schema.js";
 const services = createDBServices();
 
 /**
- * Updates the group-wide default allowances. These are the values a member's
- * allowance is opened from when they join (see `openQuotaFromGroupDefaults`)
- * and what the year rollover falls back to; existing per-year quotas are
- * untouched (they are edited through `/api/quotas/:groupId`).
+ * Sets who may decide on the group's leave requests. Without this a group whose
+ * approver was never set had no way to ever approve anything — the columns were
+ * only ever written at creation time.
+ *
+ * Both approvers must be members of the group: naming an outsider would produce
+ * a group whose queue nobody with access can see.
  */
-export const handlePutGroupQuotas = async (req: Request, res: Response) => {
+export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const groupId = z.uuid().parse(req.params.groupId);
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const data: ValidatedPutGroupQuotasType = req.body;
+  const data: ValidatedPutGroupApproversType = req.body;
 
   const access = await services.groupUser.getGroupUser(auth.userId, groupId);
 
@@ -34,10 +36,25 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
     });
   }
 
-  const updated = await services.group.updateGroupQuotas(
+  const candidates = [data.mainApprovalUser, data.tempApprovalUser].filter(
+    (id): id is string => id !== null
+  );
+  for (const candidate of candidates) {
+    const membership = await services.groupUser.getGroupUser(candidate, groupId);
+    if (!membership) {
+      throw new AppError({
+        message: "An approver must be a member of the group",
+        logging: true,
+        code: 422,
+        context: { url: req.url, user: auth.userId, groupId, candidate },
+      });
+    }
+  }
+
+  const updated = await services.group.updateGroupApprovalUsers(
     groupId,
-    data.defaultVacationDays,
-    data.defaultHomeOfficeDays
+    data.mainApprovalUser,
+    data.tempApprovalUser
   );
 
   if (!updated) {
@@ -55,7 +72,9 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
     groupId,
     changeType: changesType.Group,
     changingUserId: auth.userId,
-    changeDetail: `Group defaults set to ${data.defaultVacationDays.toString()} vacation / ${data.defaultHomeOfficeDays.toString()} home office days`,
+    changeDetail: `Approvers updated (main: ${data.mainApprovalUser}, temp: ${
+      data.tempApprovalUser ?? "none"
+    })`,
   });
 
   return res.status(200).json(updated);

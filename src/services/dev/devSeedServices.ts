@@ -197,9 +197,9 @@ export const addVacation = async (input: {
       vacationType: input.type ?? vacationType.Vacation,
       note: input.note,
       approvedAt: input.state === "approved" ? now : null,
-      approvedBy: input.state === "approved" ? input.actorUserId ?? null : null,
+      approvedBy: input.state === "approved" ? (input.actorUserId ?? null) : null,
       rejectedAt: input.state === "rejected" ? now : null,
-      rejectedBy: input.state === "rejected" ? input.actorUserId ?? null : null,
+      rejectedBy: input.state === "rejected" ? (input.actorUserId ?? null) : null,
       rejectionReason: input.state === "rejected" ? "Team coverage on that day" : null,
       createdAt: now,
       updatedAt: now,
@@ -261,7 +261,8 @@ export type ResetSummary = { users: number; groups: number };
  * Deletes only seeded data. Groups go first because `groups.manager_user_id`
  * and the approval columns reference `user` without a cascade, as do
  * `changes.changing_user_id`; everything else hangs off one of those two
- * deletes via ON DELETE CASCADE.
+ * deletes via ON DELETE CASCADE — which now includes `invite_link.group_id`,
+ * added without one and so blocking the group delete outright.
  */
 export const resetDevData = async (): Promise<ResetSummary> => {
   const domain = devDomain();

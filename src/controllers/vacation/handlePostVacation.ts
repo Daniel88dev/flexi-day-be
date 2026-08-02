@@ -12,12 +12,21 @@ import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationRequested } from "../../services/vacation/vacationNotifier.js";
+import { assertRequestWithinQuota } from "../../services/vacation/quotaGuard.js";
 
 const services = createDBServices();
 
 // One full year. Caps the per-day fan-out so a pathological `from`/`to` pair
 // can't allocate tens of thousands of rows or stall a bulk insert.
 const MAX_VACATION_RANGE_DAYS = 366;
+
+// Where the range may sit on the calendar. Retroactive entries are legitimate
+// (sick leave is usually reported after the fact) but only within the current
+// year, and nothing may be booked past next year — a typo'd year would
+// otherwise draw down an allowance nobody will ever review.
+const earliestBookableDay = (today: Date): string => `${today.getUTCFullYear().toString()}-01-01`;
+const latestBookableDay = (today: Date): string =>
+  `${(today.getUTCFullYear() + 1).toString()}-12-31`;
 
 export const handlePostVacation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -45,6 +54,19 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       logging: true,
       code: 422,
       context: { from: fromIso, to: toIso, rangeDays },
+    });
+  }
+
+  const today = new Date();
+  const earliest = earliestBookableDay(today);
+  const latest = latestBookableDay(today);
+  if (fromIso < earliest || toIso > latest) {
+    throw new AppError({
+      message: `Leave can only be booked between ${earliest} and ${latest}`,
+      logging: true,
+      code: 422,
+      context: { from: fromIso, to: toIso, earliest, latest },
+      publicContext: { earliest, latest },
     });
   }
 
@@ -108,6 +130,10 @@ export const handlePostVacation = async (req: Request, res: Response) => {
   }));
 
   const created = await db.transaction(async (tx) => {
+    // Inside the transaction so two concurrent requests cannot both read a
+    // balance that only one of them fits into.
+    await assertRequestWithinQuota(records, tx);
+
     const rows = await services.vacation.postVacationBulk(records, tx);
     await services.vacationEvent.createVacationEvents(
       rows.map((row) => ({

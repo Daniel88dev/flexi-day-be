@@ -8,6 +8,8 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
 import type { ValidatedApproveVacationType } from "../../services/vacation/types.js";
+import { assertApprovalWithinQuota } from "../../services/vacation/quotaGuard.js";
+import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
 
 const services = createDBServices();
 
@@ -31,26 +33,9 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
       });
     }
 
-    const getApprovers = await services.group.getApprovalUsers(vacationData.groupId, tx);
-
-    if (!getApprovers) {
-      throw new AppError({
-        code: 404,
-        message: "Not able to verify approvers",
-        context: { auth, vacationId },
-      });
-    }
-
-    if (
-      auth.userId !== getApprovers.mainApprovalUserId &&
-      auth.userId !== getApprovers.tempApprovalUserId
-    ) {
-      throw new AppError({
-        code: 403,
-        message: "You are not allowed to approve this vacation",
-        context: { auth, vacationId },
-      });
-    }
+    await assertMayDecide(auth.userId, [vacationData], "approve", tx);
+    assertStillPending([vacationData]);
+    await assertApprovalWithinQuota([vacationData], tx);
 
     const row = await services.vacation.approveVacation(vacationId, auth.userId, tx);
 

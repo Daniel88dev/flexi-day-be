@@ -7,6 +7,8 @@ import type { ValidatedBulkApproveVacationType } from "../../services/vacation/t
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
+import { assertApprovalWithinQuota } from "../../services/vacation/quotaGuard.js";
+import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
 
 const services = createDBServices();
 
@@ -34,19 +36,9 @@ export const handleBulkApproveVacation = async (req: Request, res: Response) => 
       });
     }
 
-    const distinctGroupIds = Array.from(new Set(rows.map((r) => r.groupId)));
-    const allowedGroupIds = new Set(
-      await services.group.getGroupsWhereUserCanApprove(distinctGroupIds, auth.userId, tx)
-    );
-
-    const unauthorizedGroups = distinctGroupIds.filter((id) => !allowedGroupIds.has(id));
-    if (unauthorizedGroups.length > 0) {
-      throw new AppError({
-        code: 403,
-        message: "You are not allowed to approve one or more of these vacations",
-        context: { auth, unauthorizedGroups },
-      });
-    }
+    await assertMayDecide(auth.userId, rows, "approve", tx);
+    assertStillPending(rows);
+    await assertApprovalWithinQuota(rows, tx);
 
     const updated = await services.vacation.approveVacationsBulk(uniqueIds, auth.userId, tx);
 

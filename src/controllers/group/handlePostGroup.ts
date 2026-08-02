@@ -9,10 +9,13 @@ import { db } from "../../db/db.js";
 const services = createDBServices();
 
 const validatePostGroup = z.object({
-  groupName: z.string().min(1),
-  defaultVacation: z.number().min(0).max(99).optional(),
-  defaultHomeOffice: z.number().min(0).max(99).optional(),
-  mainApprovalUser: z.uuid().optional(),
+  groupName: z.string().trim().min(1).max(120),
+  // `.int()` matters: the columns are `integer`, so a fractional value used to
+  // pass validation and then fail in the driver as a 500.
+  defaultVacation: z.number().int().min(0).max(99).optional(),
+  defaultHomeOffice: z.number().int().min(0).max(99).optional(),
+  // better-auth user ids are opaque non-UUID strings.
+  mainApprovalUser: z.string().min(1).optional(),
 });
 
 export const handlePostGroup = async (req: Request, res: Response) => {
@@ -28,7 +31,10 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         managerUserId: auth.userId,
         defaultVacationDays: data.defaultVacation,
         defaultHomeOfficeDays: data.defaultHomeOffice,
-        mainApprovalUser: data.mainApprovalUser,
+        // Without an approver nobody can ever decide on this group's requests
+        // and there is no route to set one later, so the creator takes the role
+        // by default — the same thing sign-up-with-team does.
+        mainApprovalUser: data.mainApprovalUser ?? auth.userId,
       },
       tx
     );
@@ -54,6 +60,9 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         groupId: record.id,
         viewAccess: true,
         adminAccess: true,
+        // Booking is gated on `controlledUser`, so without this the creator
+        // could not take leave in the group they just made.
+        controlledUser: true,
       },
       tx
     );
@@ -70,6 +79,18 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         },
       });
     }
+
+    await services.userYearQuotas.openQuotaFromGroupDefaults(
+      {
+        id: generateRandomUUID(),
+        userId: auth.userId,
+        groupId: record.id,
+        relatedYear: new Date().getFullYear().toString(),
+        vacationDays: record.defaultVacationDays,
+        homeOfficeDays: record.defaultHomeOfficeDays,
+      },
+      tx
+    );
 
     return record;
   });

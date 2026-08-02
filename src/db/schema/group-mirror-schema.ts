@@ -23,9 +23,9 @@ export const groupMirrors = pgTable(
     targetGroupId: text("target_group_id")
       .notNull()
       .references(() => groups.id, { onDelete: "cascade" }),
-    deletedAt: timestamp("deleted_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),

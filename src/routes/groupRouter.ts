@@ -5,7 +5,12 @@ import { handleGetGroups } from "../controllers/group/handleGetGroups.js";
 import { handlePutGroupQuotas } from "../controllers/group/handlePutGroupQuotas.js";
 import { handlePutGroupWorkingDays } from "../controllers/group/handlePutGroupWorkingDays.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
-import { validatePutGroupQuotas, validatePutGroupWorkingDays } from "../services/group/types.js";
+import {
+  validatePutGroupApprovers,
+  validatePutGroupQuotas,
+  validatePutGroupWorkingDays,
+} from "../services/group/types.js";
+import { handlePutGroupApprovers } from "../controllers/group/handlePutGroupApprovers.js";
 import { validatePutGroupMirrors } from "../services/groupMirror/types.js";
 import { handleGetGroupMirrors } from "../controllers/group/handleGetGroupMirrors.js";
 import { handlePutGroupMirrors } from "../controllers/group/handlePutGroupMirrors.js";
@@ -182,6 +187,56 @@ export const groupRouter = (): Router => {
    *       '422':
    *         description: A group cannot mirror itself
    */
+  /**
+   * @openapi
+   * /api/group/{groupId}/approvers:
+   *   put:
+   *     tags:
+   *       - Groups
+   *     summary: Set who decides on the group's leave requests
+   *     description: |
+   *       Names the main and optional stand-in approver. Both must already be
+   *       members of the group. A group always has a main approver — clearing it
+   *       would leave its requests undecidable. Requires admin access on the group.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - mainApprovalUser
+   *             properties:
+   *               mainApprovalUser:
+   *                 type: string
+   *               tempApprovalUser:
+   *                 type: string
+   *                 nullable: true
+   *     responses:
+   *       '200':
+   *         description: The updated group
+   *       '403':
+   *         description: No permission for related group
+   *       '404':
+   *         description: Group not found
+   *       '422':
+   *         description: A named approver does not belong to the group
+   */
+  app.put(
+    "/:groupId/approvers",
+    bodyValidationMiddleware(validatePutGroupApprovers),
+    tryCatch(handlePutGroupApprovers)
+  );
+
   app.get("/:groupId/mirrors", tryCatch(handleGetGroupMirrors));
   app.put(
     "/:groupId/mirrors",

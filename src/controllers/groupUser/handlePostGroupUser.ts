@@ -57,12 +57,14 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         message: "This invite was issued for a different email address",
         logging: true,
         code: 403,
+        // The invited address stays in `context` (logs only). Echoing it back
+        // would let anyone holding a forwarded or guessed code learn whose
+        // address it was issued to.
         context: {
           url: req.url,
           userId: auth.userId,
           invitedEmail: validateLink.email,
         },
-        publicContext: { invitedEmail: validateLink.email },
       });
     }
 
@@ -106,6 +108,22 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         },
       });
     }
+
+    // The group's default allowance is what a new member starts from; without
+    // a row here their allowance is zero and every figure shown to them is
+    // wrong from the moment they join.
+    const group = await services.group.getGroup(validateLink.groupId);
+    await services.userYearQuotas.openQuotaFromGroupDefaults(
+      {
+        id: generateRandomUUID(),
+        userId: auth.userId,
+        groupId: validateLink.groupId,
+        relatedYear: new Date().getFullYear().toString(),
+        vacationDays: group?.defaultVacationDays ?? 0,
+        homeOfficeDays: group?.defaultHomeOfficeDays ?? 0,
+      },
+      tx
+    );
 
     // `usedAt IS NULL` in the update is what makes the code single-use: a
     // concurrent second redemption matches no row and rolls this back.
