@@ -257,6 +257,101 @@ describe("Vacation API E2E Tests", () => {
     });
   });
 
+  // Uniqueness only covers live rows, so a day whose only rows are rejected or
+  // cancelled is free again. Before that was a partial index, the leftover row
+  // kept the day booked forever.
+  describe("POST /api/vacation/create-vacation — re-requesting a day", () => {
+    const bookDay = (cookie: string, day = "2025-12-24") =>
+      request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: day, to: day });
+
+    it("should return 409 while the day is still held by a live row", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      await bookDay(cookie).expect(201);
+      const response = await bookDay(cookie).expect(409);
+
+      expect(response.body).toMatchObject({
+        errors: [{ context: { conflictingDays: ["2025-12-24"] } }],
+      });
+    });
+
+    it("should let the user book a day again after the request was rejected", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+      const approverCookie = await authCookieFor(context.approverUser.id);
+
+      const created = await bookDay(cookie).expect(201);
+      const rejectedId = (created.body as { id: string }[])[0]?.id;
+
+      await request(context.app)
+        .post(`/api/vacation/reject/${rejectedId ?? ""}`)
+        .set("Cookie", approverCookie)
+        .send({ reason: "not this week" })
+        .expect(200);
+
+      await bookDay(cookie).expect(201);
+
+      // The rejected row is kept for history alongside the new pending one.
+      const rows = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
+      expect(rows).toHaveLength(2);
+      expect(rows.filter((row) => row.rejectedAt !== null)).toHaveLength(1);
+      expect(rows.filter((row) => row.rejectedAt === null && row.deletedAt === null)).toHaveLength(
+        1
+      );
+    });
+
+    it("should let the user book a day again after cancelling it", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      const created = await bookDay(cookie).expect(201);
+      const cancelledId = (created.body as { id: string }[])[0]?.id;
+
+      await request(context.app)
+        .delete(`/api/vacation/${cancelledId ?? ""}`)
+        .set("Cookie", cookie)
+        .send({})
+        .expect(200);
+
+      await bookDay(cookie).expect(201);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
+      expect(rows).toHaveLength(2);
+      expect(rows.filter((row) => row.deletedAt !== null)).toHaveLength(1);
+    });
+
+    it("should return 409 when approving a rejected row whose day was booked again", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+      const approverCookie = await authCookieFor(context.approverUser.id);
+
+      const created = await bookDay(cookie).expect(201);
+      const rejectedId = (created.body as { id: string }[])[0]?.id ?? "";
+
+      await request(context.app)
+        .post(`/api/vacation/reject/${rejectedId}`)
+        .set("Cookie", approverCookie)
+        .send({ reason: "not this week" })
+        .expect(200);
+      await bookDay(cookie).expect(201);
+
+      // Stale approver queue: approving would un-reject the old row onto a day
+      // the live request now holds.
+      await request(context.app)
+        .post(`/api/vacation/approve/${rejectedId}`)
+        .set("Cookie", approverCookie)
+        .expect(409);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.id, rejectedId));
+      expect(rows[0]?.rejectedAt).not.toBeNull();
+      expect(rows[0]?.approvedAt).toBeNull();
+    });
+  });
+
   describe("POST /api/vacation/approve/:id", () => {
     let vacationId: string;
 
