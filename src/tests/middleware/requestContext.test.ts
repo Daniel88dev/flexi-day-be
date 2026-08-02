@@ -289,4 +289,25 @@ describe("requestContext request logging", () => {
     expect(next).toHaveBeenCalled();
     delete process.env.REQUEST_LOG_IGNORE_PATHS;
   });
+
+  it("skips /health without any configuration", () => {
+    const { req, res, next, finish } = makeReqResNext({}, { path: "/health" });
+
+    requestContext(req, res, next);
+    finish();
+
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it("still logs a silenced path when it fails", () => {
+    const { req, res, next, finish } = makeReqResNext({}, { path: "/health" });
+    res.statusCode = 503;
+
+    requestContext(req, res, next);
+    finish();
+
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.info).mock.calls[0][0]).toContain("/health 503");
+  });
 });
