@@ -16,6 +16,7 @@ export default [
       "drizzle.config.ts",
       "eslint.config.js",
       "vitest.config.ts",
+      "vitest.e2e.config.ts",
       "**/tests/**",
       "**/*.test.ts",
       "**/*.spec.ts",
