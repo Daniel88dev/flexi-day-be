@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  # npm. Minor and patch land as one grouped PR per week so routine bumps do not
+  # become a dozen separate reviews; majors stay individual because they need one.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Actions are pinned to commit SHAs, which pins the supply chain but also means
+  # nothing updates them by hand. This is what keeps those pins current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

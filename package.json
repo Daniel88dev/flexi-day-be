@@ -80,5 +80,12 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.45.0",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^14.0.0"
+    },
+    "esbuild": "^0.25.4",
+    "brace-expansion": "^2.0.2"
   }
 }
