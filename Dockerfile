@@ -1,5 +1,5 @@
 # build stage
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 LABEL authors="danielhrynusiw"
 WORKDIR /app
 
@@ -30,7 +30,7 @@ RUN --mount=type=secret,id=sentry_auth_token \
   fi
 
 # runtime stage
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 # safe defaults

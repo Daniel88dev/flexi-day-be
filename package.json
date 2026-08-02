@@ -4,6 +4,9 @@
   "description": "",
   "main": "dist/index.js",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "node node_modules/@typescript/native/bin/tsc",
     "start": "node --import ./dist/instrument.js dist/index.js",
