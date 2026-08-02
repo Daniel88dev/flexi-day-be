@@ -102,6 +102,45 @@ describe("logger error serializer format", () => {
     expect(lastEntry()["error.cause"]).toBe("SES throttled");
   });
 
+  it("keeps the fields that identify a system error", () => {
+    const refused = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
+      code: "ECONNREFUSED",
+      errno: -61,
+      syscall: "connect",
+      port: 5432,
+    });
+
+    logger.error("db unreachable", { err: refused });
+
+    expect(lastEntry()).toMatchObject({
+      "err.code": "ECONNREFUSED",
+      "err.errno": -61,
+      "err.syscall": "connect",
+      "err.port": 5432,
+      "err.message": "connect ECONNREFUSED 127.0.0.1:5432",
+    });
+  });
+
+  it("skips non-scalar own properties rather than nesting a blob", () => {
+    const withMeta = Object.assign(new Error("send failed"), {
+      $metadata: { httpStatusCode: 400, attempts: 1 },
+      code: "Throttling",
+    });
+
+    logger.error("ses failed", { err: withMeta });
+
+    expect(lastEntry()["err.code"]).toBe("Throttling");
+    expect(lastEntry()).not.toHaveProperty("err.$metadata");
+  });
+
+  it("redacts a sensitive own property", () => {
+    const authFailure = Object.assign(new Error("bad credentials"), { token: "s3cret" });
+
+    logger.error("auth failed", { err: authFailure });
+
+    expect(lastEntry()["err.token"]).toBe("[redacted]");
+  });
+
   it("leaves non-Error meta alone", () => {
     logger.warn("devGuard rejected non-loopback request", { peer: "10.0.0.1", path: "/api/dev" });
 

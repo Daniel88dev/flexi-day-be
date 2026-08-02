@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import * as Sentry from "@sentry/node";
 import { generateRandomUUID } from "../utils/generateUUID.js";
 import { runWithRequestContext, type RequestContext } from "../utils/requestStore.js";
-import { redactPath, redactQuery } from "../utils/redactUrl.js";
+import { redactPath, redactQuery } from "../utils/redact.js";
 import { routeOf } from "../utils/routeTemplate.js";
 import { logger } from "./logger.js";
 
@@ -65,7 +65,9 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
     Sentry.setTag("request_id", requestId);
     if (clientSessionId) Sentry.setTag("client_session_id", clientSessionId);
 
-    if (!IGNORED_PATHS.has(req.path)) {
+    // The redacted path, so a templated route like `/calendars/:token.ics` can
+    // be silenced — its raw path differs on every request.
+    if (!IGNORED_PATHS.has(path)) {
       logger.info(`${req.method} ${path}`, { "http.event": "request" });
 
       // `finish` does not fire for a client that disconnects mid-request, which

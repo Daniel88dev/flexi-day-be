@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/node";
 import path from "node:path";
 import fs from "node:fs";
 import { getRequestContext } from "../utils/requestStore.js";
+import { isSensitiveErrorProperty } from "../utils/redact.js";
 
 const LOG_DIR = path.resolve(process.cwd(), process.env.LOG_DIR ?? "logs");
 let fileTransports: InstanceType<typeof transports.File>[] = [];
@@ -71,6 +72,16 @@ const errorSerializerFormat = format((info) => {
   for (const [key, value] of Object.entries(out)) {
     if (!(value instanceof Error)) continue;
     Reflect.deleteProperty(out, key);
+
+    // Own enumerable scalars first, so the standard fields below win on a clash.
+    // This is where Node's `code`/`errno`/`syscall` and pg's `detail`/
+    // `constraint` live — the fields that actually identify a failure.
+    for (const [prop, propValue] of Object.entries(value)) {
+      if (["string", "number", "boolean"].includes(typeof propValue)) {
+        out[`${key}.${prop}`] = isSensitiveErrorProperty(prop) ? "[redacted]" : propValue;
+      }
+    }
+
     out[`${key}.name`] = value.name;
     out[`${key}.message`] = value.message;
     out[`${key}.stack`] = value.stack;

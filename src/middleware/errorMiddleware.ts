@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { CustomError } from "../utils/appError.js";
 import { logger } from "./logger.js";
 import { routeOf } from "../utils/routeTemplate.js";
+import { redactObject } from "../utils/redact.js";
 
 export const errorMiddleware = (err: Error, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {
@@ -22,7 +23,10 @@ export const errorMiddleware = (err: Error, req: Request, res: Response, next: N
       // "[object Object]" with nothing searchable.
       const meta = {
         code: statusCode,
-        errors: errors,
+        // `context` is internal but reaches Sentry from here, and the sign-up
+        // and invite paths put the user's email in it — which would undo this
+        // service's id-only rule for Sentry.
+        errors: redactObject(errors),
         stack: err.stack,
         ...requestMeta,
       };

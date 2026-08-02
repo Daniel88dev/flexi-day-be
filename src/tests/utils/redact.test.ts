@@ -1,0 +1,118 @@
+/**
+ * Unit tests for redaction of logged URLs and error context.
+ * Test library/framework: Vitest
+ */
+import { describe, it, expect } from "vitest";
+import { redactPath, redactQuery, redactObject } from "../../utils/redact.js";
+
+describe("redactPath", () => {
+  it("strips the calendar feed token, which authenticates the whole feed", () => {
+    expect(redactPath("/calendars/9f3a1c7e5b2d4a8f6c0e1b3d5a7f9c2e.ics")).toBe(
+      "/calendars/:token.ics"
+    );
+  });
+
+  it("leaves ordinary paths untouched", () => {
+    expect(redactPath("/api/vacation/123")).toBe("/api/vacation/123");
+    expect(redactPath("/health")).toBe("/health");
+  });
+
+  it("does not match a path that merely starts with /calendars", () => {
+    expect(redactPath("/calendars")).toBe("/calendars");
+    expect(redactPath("/calendars/a/b.ics")).toBe("/calendars/a/b.ics");
+  });
+});
+
+describe("redactQuery", () => {
+  it("returns undefined when there is no query string", () => {
+    expect(redactQuery({})).toBeUndefined();
+    expect(redactQuery(undefined as never)).toBeUndefined();
+  });
+
+  it("keeps ordinary parameters — they are the point of logging the query", () => {
+    expect(redactQuery({ year: "2026", month: "8" })).toBe("year=2026&month=8");
+  });
+
+  it.each(["token", "code", "secret", "password", "key", "email"])(
+    "redacts the value of %s",
+    (param) => {
+      const result = redactQuery({ [param]: "s3cret-value" });
+      expect(result).toBe(`${param}=[redacted]`);
+      expect(result).not.toContain("s3cret");
+    }
+  );
+
+  it("redacts regardless of casing", () => {
+    expect(redactQuery({ Token: "abc" })).toBe("Token=[redacted]");
+  });
+
+  it("joins repeated parameters into one scalar", () => {
+    expect(redactQuery({ id: ["a", "b"] })).toBe("id=a,b");
+  });
+
+  it("records the shape of nested object syntax rather than its contents", () => {
+    expect(redactQuery({ filter: { name: "x" } as never })).toBe("filter=[object]");
+  });
+
+  it("redacts one parameter without dropping its neighbours", () => {
+    expect(redactQuery({ year: "2026", token: "abc" })).toBe("year=2026&token=[redacted]");
+  });
+});
+
+describe("redactQuery value sanitisation", () => {
+  it("escapes delimiters so a value cannot read as extra parameters", () => {
+    expect(redactQuery({ name: "a&admin=true" })).toBe("name=a%26admin%3Dtrue");
+  });
+
+  it("strips control characters that could forge a second log line", () => {
+    expect(redactQuery({ name: "one\ntwo\r" })).toBe("name=onetwo");
+  });
+
+  it("sanitises inside repeated parameters too", () => {
+    expect(redactQuery({ id: ["a&b", "c"] })).toBe("id=a%26b,c");
+  });
+
+  it("caps an oversized query so one request cannot flood the logs", () => {
+    const result = redactQuery({ q: "x".repeat(5000) });
+    expect(result?.length).toBeLessThanOrEqual(513);
+    expect(result?.endsWith("…")).toBe(true);
+  });
+});
+
+describe("redactObject", () => {
+  it("redacts a token left in AppError context", () => {
+    expect(redactObject({ token: "super-secret-feed-token" })).toEqual({ token: "[redacted]" });
+  });
+
+  it("redacts the emails the sign-up and invite paths put in AppError context", () => {
+    expect(redactObject({ invitedEmail: "a@b.com", email: "c@d.com" })).toEqual({
+      invitedEmail: "[redacted]",
+      email: "[redacted]",
+    });
+  });
+
+  it("keeps the context that makes an error investigable", () => {
+    expect(redactObject({ userId: "u1", groupId: "g1", url: "/api/group" })).toEqual({
+      userId: "u1",
+      groupId: "g1",
+      url: "/api/group",
+    });
+  });
+
+  it("reaches nested objects and arrays", () => {
+    expect(redactObject({ errors: [{ context: { email: "a@b.com", userId: "u1" } }] })).toEqual({
+      errors: [{ context: { email: "[redacted]", userId: "u1" } }],
+    });
+  });
+
+  it("stops at a depth limit rather than walking forever", () => {
+    const deep = { a: { b: { c: { d: { e: { f: "too far" } } } } } };
+    expect(JSON.stringify(redactObject(deep))).toContain("[depth]");
+  });
+
+  it("passes scalars through untouched", () => {
+    expect(redactObject("plain")).toBe("plain");
+    expect(redactObject(42)).toBe(42);
+    expect(redactObject(null)).toBe(null);
+  });
+});
