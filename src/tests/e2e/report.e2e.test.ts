@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
+import ExcelJS from "exceljs";
 import type { Express } from "express";
 import { createServer } from "../../server.js";
 import { db } from "../../db/db.js";
@@ -17,6 +18,7 @@ import {
   dayIn,
   makeGroup,
   makeUser,
+  removeMember,
   resetReportData,
 } from "./helpers/reportFixtures.js";
 import { and, eq } from "drizzle-orm";
@@ -535,6 +537,42 @@ describe("Report API E2E", () => {
       );
       // Every xlsx is a zip archive, so the body must start with the PK magic.
       expect((res.body as Buffer).subarray(0, 2).toString()).toBe("PK");
+    });
+
+    it("names a member who has since left the group on the summary sheet", async () => {
+      const manager = await makeUser("Manager");
+      const leaver = await makeUser("Priya Leaver");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, manager.id, { viewAccess: true });
+      await addMember(groupId, leaver.id);
+      await addQuota(groupId, leaver.id, FUTURE_YEAR, { vacationDays: 20 });
+      await addLeave(groupId, leaver.id, dayIn(FUTURE_YEAR, 3, 10));
+
+      // Their quota and bookings outlive the membership, so they still earn a
+      // summary line — one that used to print the raw user id.
+      await removeMember(groupId, leaver.id);
+
+      const res = await request(app)
+        .post("/api/reports/export")
+        .set("Cookie", await authCookieFor(manager.id))
+        .send({ year: FUTURE_YEAR })
+        .buffer(true)
+        .parse((response, callback) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(res.body as ArrayBuffer);
+      const names = new Set<string>();
+      workbook.getWorksheet(`Summary ${FUTURE_YEAR.toString()}`)?.eachRow((row, index) => {
+        if (index > 1) names.add(String(row.getCell(1).value));
+      });
+
+      expect(names).toContain("Priya Leaver");
+      expect(names).not.toContain(leaver.id);
     });
 
     it("records who generated the export, for which year and with which filters", async () => {

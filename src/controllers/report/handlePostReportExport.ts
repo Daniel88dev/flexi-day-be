@@ -61,12 +61,22 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   const nameByUserId = new Map(members.map((member) => [member.id, member.name]));
   const groupNameById = new Map(scope.map((entry) => [entry.groupId, entry.groupName]));
 
-  const summary: SummaryRow[] = buildSummaryEntries(
+  const entries = buildSummaryEntries(
     quotas,
     usage,
     members.map((member) => ({ userId: member.id, groupId: member.groupId })),
     data.types
-  )
+  );
+
+  // Quota and usage rows outlive a membership, so someone who has left the
+  // group still earns a summary line — and is not in `members`. Resolve those
+  // names directly rather than printing a raw id in the Name column.
+  const unnamed = [...new Set(entries.map((e) => e.userId))].filter((id) => !nameByUserId.has(id));
+  for (const row of await services.user.getUsersByIds(unnamed)) {
+    nameByUserId.set(row.id, row.name);
+  }
+
+  const summary: SummaryRow[] = entries
     .map((entry) => ({
       userName: nameByUserId.get(entry.userId) ?? entry.userId,
       groupName: groupNameById.get(entry.groupId) ?? entry.groupId,

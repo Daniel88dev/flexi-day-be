@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../../db/db.js";
 import { user } from "../../../db/schema/auth-schema.js";
 import { groups } from "../../../db/schema/group-schema.js";
@@ -57,6 +58,14 @@ export async function addMember(
     createdAt: new Date(),
     updatedAt: new Date(),
   });
+}
+
+/** Soft-deletes a membership, as leaving a group does. */
+export async function removeMember(groupId: string, userId: string): Promise<void> {
+  await db
+    .update(groupUsers)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(groupUsers.groupId, groupId), eq(groupUsers.userId, userId)));
 }
 
 export async function addQuota(
