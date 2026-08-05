@@ -39,7 +39,7 @@
   },
   "homepage": "https://github.com/Daniel88dev/flexi-day-be#readme",
   "dependencies": {
-    "@aws-sdk/client-sesv2": "^3.1098.0",
+    "@aws-sdk/client-sesv2": "^3.1101.0",
     "@sentry/node": "^10.69.0",
     "@sentry/profiling-node": "^10.69.0",
     "better-auth": "^1.6.25",
@@ -63,7 +63,7 @@
     "@types/eslint-plugin-security": "^3.0.0",
     "@types/express": "^5.0.3",
     "@types/node": "^26.1.2",
-    "@types/pg": "^8.15.5",
+    "@types/pg": "^8.20.3",
     "@types/supertest": "^7.2.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitest/coverage-istanbul": "^3.2.4",
