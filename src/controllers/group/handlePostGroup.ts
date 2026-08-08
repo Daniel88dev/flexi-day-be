@@ -66,6 +66,7 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         groupId: record.id,
         viewAccess: true,
         adminAccess: true,
+        approverAccess: true,
         controlledUser: true,
       },
       tx

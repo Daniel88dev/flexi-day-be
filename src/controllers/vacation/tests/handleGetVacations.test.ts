@@ -1,13 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Request, Response } from "express";
 
-const { mockGetVacationsForUser, mockGetVacationsForGroup, mockGetScopeEntries } = vi.hoisted(
-  () => ({
-    mockGetVacationsForUser: vi.fn(),
-    mockGetVacationsForGroup: vi.fn(),
-    mockGetScopeEntries: vi.fn(),
-  })
-);
+const {
+  mockGetVacationsForUser,
+  mockGetVacationsForGroup,
+  mockGetScopeEntries,
+  mockGetGroupsWhereUserCanApprove,
+  mockGetGroupUser,
+  mockHasMirrorIntoGroup,
+} = vi.hoisted(() => ({
+  mockGetVacationsForUser: vi.fn(),
+  mockGetVacationsForGroup: vi.fn(),
+  mockGetScopeEntries: vi.fn(),
+  mockGetGroupsWhereUserCanApprove: vi.fn(),
+  mockGetGroupUser: vi.fn(),
+  mockHasMirrorIntoGroup: vi.fn(),
+}));
 
 vi.mock("../../../utils/dateFunc.js", () => ({
   formatStartAndEndDate: vi.fn(),
@@ -25,6 +33,15 @@ vi.mock("../../../services/DBServices.js", () => ({
     },
     report: {
       getScopeEntries: mockGetScopeEntries,
+    },
+    group: {
+      getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
+    },
+    groupUser: {
+      getGroupUser: mockGetGroupUser,
+    },
+    groupMirror: {
+      hasMirrorIntoGroup: mockHasMirrorIntoGroup,
     },
   }),
 }));
@@ -61,6 +78,10 @@ describe("handleGetVacations", () => {
       startDate: "2024-01-01",
       endDate: "2024-01-31",
     });
+
+    mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+    mockGetGroupUser.mockResolvedValue(undefined);
+    mockHasMirrorIntoGroup.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -94,7 +115,12 @@ describe("handleGetVacations", () => {
     // Own records carry the same mirror fields as group ones so the calendar
     // never has to branch on which scope produced the row.
     expect(res.json).toHaveBeenCalledWith(
-      mockVacations.map((v) => ({ ...v, mirroredFromGroupId: null, mirroredFromGroupName: null }))
+      mockVacations.map((v) => ({
+        ...v,
+        mirroredFromGroupId: null,
+        mirroredFromGroupName: null,
+        canApprove: false,
+      }))
     );
   });
 
@@ -228,13 +254,23 @@ describe("handleGetVacations", () => {
       canEditQuotas: false,
     });
 
+    const pendingRow = (id: string, userId: string, groupId = "group_1") => ({
+      id,
+      userId,
+      groupId,
+      deletedAt: null,
+      approvedAt: null,
+      rejectedAt: null,
+      mirroredFromGroupId: null,
+      mirroredFromGroupName: null,
+    });
+
     it("returns the group's records, mirrored ones included, when the caller may view it", async () => {
       const { req, res } = makeReqRes({ year: "2024", month: "3", groupId: "group_1" });
       const groupRows = [
-        { id: "v1", userId: "user_123", mirroredFromGroupId: null, mirroredFromGroupName: null },
+        pendingRow("v1", "user_123"),
         {
-          id: "v2",
-          userId: "user_999",
+          ...pendingRow("v2", "user_999"),
           mirroredFromGroupId: "group_2",
           mirroredFromGroupName: "Team B",
         },
@@ -246,7 +282,52 @@ describe("handleGetVacations", () => {
 
       expect(mockGetVacationsForGroup).toHaveBeenCalledWith("group_1", "2024-01-01", "2024-01-31");
       expect(mockGetVacationsForUser).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith(groupRows);
+      expect(res.json).toHaveBeenCalledWith(
+        groupRows.map((row) => ({ ...row, canApprove: false }))
+      );
+    });
+
+    it("marks someone else's pending request approvable for an approver", async () => {
+      const { req, res } = makeReqRes({ year: "2024", month: "3", groupId: "group_1" });
+      mockGetScopeEntries.mockResolvedValue([scopeEntry("all")]);
+      mockGetVacationsForGroup.mockResolvedValue([pendingRow("v1", "user_999")]);
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue(["group_1"]);
+
+      await handleGetVacations(req, res);
+
+      expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ canApprove: true })]);
+    });
+
+    it("marks an approver's own request approvable only when nothing mirrors into the group", async () => {
+      const { req, res } = makeReqRes({ year: "2024", month: "3", groupId: "group_1" });
+      mockGetScopeEntries.mockResolvedValue([scopeEntry("all")]);
+      mockGetVacationsForGroup.mockResolvedValue([pendingRow("v1", "user_123")]);
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue(["group_1"]);
+      mockGetGroupUser.mockResolvedValue({ approverAccess: true });
+      mockHasMirrorIntoGroup.mockResolvedValue(true);
+
+      await handleGetVacations(req, res);
+
+      expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ canApprove: false })]);
+
+      mockHasMirrorIntoGroup.mockResolvedValue(false);
+      const second = makeReqRes({ year: "2024", month: "3", groupId: "group_1" });
+      await handleGetVacations(second.req, second.res);
+
+      expect(second.res.json).toHaveBeenCalledWith([expect.objectContaining({ canApprove: true })]);
+    });
+
+    it("never marks a decided request approvable", async () => {
+      const { req, res } = makeReqRes({ year: "2024", month: "3", groupId: "group_1" });
+      mockGetScopeEntries.mockResolvedValue([scopeEntry("all")]);
+      mockGetVacationsForGroup.mockResolvedValue([
+        { ...pendingRow("v1", "user_999"), approvedAt: new Date() },
+      ]);
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue(["group_1"]);
+
+      await handleGetVacations(req, res);
+
+      expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ canApprove: false })]);
     });
 
     it("rejects a member without view access on the group", async () => {

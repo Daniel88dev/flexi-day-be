@@ -90,6 +90,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         groupId: validateLink.groupId,
         viewAccess: true,
         adminAccess: false,
+        approverAccess: false,
         controlledUser: true,
       },
       tx

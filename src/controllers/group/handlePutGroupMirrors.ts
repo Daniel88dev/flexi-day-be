@@ -9,10 +9,9 @@ import type { ValidatedPutGroupMirrorsType } from "../../services/groupMirror/ty
 const services = createDBServices();
 
 /**
- * Replaces the caller's mirror sources for one group. Mirroring only ever
- * projects the caller's own records, so membership of the target and of every
- * source group is the whole authorization story — no admin rights are needed
- * and none are enough on someone else's behalf.
+ * Replaces one member's mirror sources for a group. Not self-service: the
+ * caller must administer the target group *and* every source group they touch,
+ * or projecting a group's records would need rights on the receiving side only.
  */
 export const handlePutGroupMirrors = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -31,24 +30,53 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
     });
   }
 
-  const memberships = await services.groupUser.getAllGroupsForUser(auth.userId);
-  const memberOf = new Set(memberships.map((row) => row.groupId));
-
-  if (!memberOf.has(targetGroupId)) {
+  const access = await services.groupUser.getGroupUser(auth.userId, targetGroupId);
+  if (!access?.adminAccess) {
     throw new AppError({
-      message: "No access for related group",
+      message: "No permission for related group",
       logging: true,
       code: 403,
       context: { url: req.url, userId: auth.userId, targetGroupId },
     });
   }
 
-  const notAMember = data.sourceGroupIds.filter((id) => !memberOf.has(id));
-  if (notAMember.length > 0) {
+  const targetMembership = await services.groupUser.getGroupUser(data.userId, targetGroupId);
+  if (!targetMembership) {
     throw new AppError({
-      message: "You can only mirror groups you belong to",
+      message: "Mirroring can only be set up for a member of this group",
+      logging: true,
+      code: 422,
+      context: { url: req.url, userId: auth.userId, targetGroupId, memberId: data.userId },
+    });
+  }
+
+  const adminGroupIds = (await services.groupUser.getAdminGroupIdsForUser(auth.userId)).filter(
+    (id) => id !== targetGroupId
+  );
+  const adminOf = new Set(adminGroupIds);
+
+  const notAdminOf = data.sourceGroupIds.filter((id) => !adminOf.has(id));
+  if (notAdminOf.length > 0) {
+    throw new AppError({
+      message: "You can only mirror from groups you administer",
       logging: true,
       code: 403,
+      context: { url: req.url, userId: auth.userId, targetGroupId, notAdminOf },
+      publicContext: { groupIds: notAdminOf },
+    });
+  }
+
+  const memberOfSources = new Set(
+    (await services.groupUser.getMembershipPairs([data.userId], data.sourceGroupIds)).map(
+      (pair) => pair.groupId
+    )
+  );
+  const notAMember = data.sourceGroupIds.filter((id) => !memberOfSources.has(id));
+  if (notAMember.length > 0) {
+    throw new AppError({
+      message: "A member can only be mirrored from groups they belong to",
+      logging: true,
+      code: 422,
       context: { url: req.url, userId: auth.userId, targetGroupId, notAMember },
       publicContext: { groupIds: notAMember },
     });
@@ -56,9 +84,10 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
 
   const mirrors = await db.transaction((tx) =>
     services.groupMirror.setMirrorsIntoGroupForUser(
-      auth.userId,
+      data.userId,
       targetGroupId,
       data.sourceGroupIds,
+      adminGroupIds,
       tx
     )
   );

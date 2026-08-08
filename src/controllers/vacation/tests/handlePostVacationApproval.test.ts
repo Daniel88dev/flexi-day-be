@@ -6,12 +6,16 @@ const {
   mockApproveVacation,
   mockCreateVacationEvent,
   mockAssertApprovalWithinQuota,
+  mockGetGroupUser,
+  mockHasMirrorIntoGroup,
 } = vi.hoisted(() => ({
   mockGetVacationById: vi.fn(),
   mockGetGroupsWhereUserCanApprove: vi.fn(),
   mockApproveVacation: vi.fn(),
   mockCreateVacationEvent: vi.fn(),
   mockAssertApprovalWithinQuota: vi.fn(),
+  mockGetGroupUser: vi.fn(),
+  mockHasMirrorIntoGroup: vi.fn(),
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({
@@ -35,6 +39,12 @@ vi.mock("../../../services/DBServices.js", () => ({
     },
     vacationEvent: {
       createVacationEvent: mockCreateVacationEvent,
+    },
+    groupUser: {
+      getGroupUser: mockGetGroupUser,
+    },
+    groupMirror: {
+      hasMirrorIntoGroup: mockHasMirrorIntoGroup,
     },
   }),
 }));
@@ -71,6 +81,8 @@ describe("handlePostVacationApproval", () => {
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
     mockGetGroupsWhereUserCanApprove.mockResolvedValue(["group_123"]);
     mockAssertApprovalWithinQuota.mockResolvedValue(undefined);
+    mockGetGroupUser.mockResolvedValue({ approverAccess: false });
+    mockHasMirrorIntoGroup.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -139,10 +151,38 @@ describe("handlePostVacationApproval", () => {
     expect(mockApproveVacation).not.toHaveBeenCalled();
   });
 
-  it("refuses an approver deciding on their own request", async () => {
+  it("refuses a role-based approver deciding on their own request", async () => {
     const { req, res } = makeReqRes({ params: { id: VACATION_ID } });
 
     mockGetVacationById.mockResolvedValue(pendingVacation({ userId: "user_123" }));
+
+    await expect(handlePostVacationApproval(req, res)).rejects.toThrow(
+      "You cannot decide on your own leave request"
+    );
+    expect(mockApproveVacation).not.toHaveBeenCalled();
+  });
+
+  it("lets a member with approverAccess decide on their own request", async () => {
+    const { req, res } = makeReqRes({ params: { id: VACATION_ID } });
+
+    mockGetVacationById.mockResolvedValue(pendingVacation({ userId: "user_123" }));
+    mockApproveVacation.mockResolvedValue(
+      pendingVacation({ userId: "user_123", approvedAt: new Date() })
+    );
+    mockGetGroupUser.mockResolvedValue({ approverAccess: true });
+
+    await handlePostVacationApproval(req, res);
+
+    expect(mockApproveVacation).toHaveBeenCalledWith(VACATION_ID, "user_123", {});
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("still refuses their own request when their records are mirrored into the group", async () => {
+    const { req, res } = makeReqRes({ params: { id: VACATION_ID } });
+
+    mockGetVacationById.mockResolvedValue(pendingVacation({ userId: "user_123" }));
+    mockGetGroupUser.mockResolvedValue({ approverAccess: true });
+    mockHasMirrorIntoGroup.mockResolvedValue(true);
 
     await expect(handlePostVacationApproval(req, res)).rejects.toThrow(
       "You cannot decide on your own leave request"

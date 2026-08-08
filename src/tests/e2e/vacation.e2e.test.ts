@@ -3,9 +3,12 @@ import request from "supertest";
 import {
   setupTestEnvironment,
   cleanupTestData,
+  createTestGroup,
   createTestVacation,
   type TestContext,
 } from "./helpers/testSetup.js";
+import { setMirrorsIntoGroupForUser } from "../../services/groupMirror/groupMirrorServices.js";
+import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { db } from "../../db/db.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
@@ -38,12 +41,18 @@ const NEXT_MON = isoDay(shift(MONDAY_OF_WEEK, 7));
 describe("Vacation API E2E Tests", () => {
   let context: TestContext;
 
-  const addToGroup = async (userId: string, groupId: string) => {
+  const addToGroup = async (
+    userId: string,
+    groupId: string,
+    permissions: { adminAccess?: boolean; approverAccess?: boolean } = {}
+  ) => {
     await db.insert(groupUsers).values({
       id: uuidv4(),
       groupId,
       userId,
       controlledUser: true,
+      adminAccess: permissions.adminAccess ?? false,
+      approverAccess: permissions.approverAccess ?? false,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -59,6 +68,7 @@ describe("Vacation API E2E Tests", () => {
 
   beforeEach(async () => {
     await db.delete(vacation);
+    await db.delete(groupMirrors);
     await db.delete(groupUsers);
     await db.delete(session);
   });
@@ -429,6 +439,66 @@ describe("Vacation API E2E Tests", () => {
 
       const rows = await db.select().from(vacation).where(eq(vacation.id, vacationId));
       expect(rows[0]?.approvedAt).toBeNull();
+    });
+
+    it("lets a member holding approverAccess decide, without any group role", async () => {
+      await addToGroup(context.user2.id, context.group.id, { approverAccess: true });
+      const cookie = await authCookieFor(context.user2.id);
+
+      await request(context.app)
+        .post(`/api/vacation/approve/${vacationId}`)
+        .set("Cookie", cookie)
+        .expect(200);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.id, vacationId));
+      expect(rows[0]?.approvedBy).toBe(context.user2.id);
+    });
+
+    it("lets an approverAccess member approve their own request", async () => {
+      await addToGroup(context.user2.id, context.group.id, { approverAccess: true });
+      const own = await createTestVacation(context.user2.id, context.group.id, "2025-12-23");
+      const cookie = await authCookieFor(context.user2.id);
+
+      await request(context.app)
+        .post(`/api/vacation/approve/${own}`)
+        .set("Cookie", cookie)
+        .expect(200);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.id, own));
+      expect(rows[0]?.approvedBy).toBe(context.user2.id);
+    });
+
+    it("refuses their own request while their records are mirrored into the group", async () => {
+      await addToGroup(context.user2.id, context.group.id, { approverAccess: true });
+      const otherGroup = await createTestGroup("Other Team", context.user1.id, context.user1.id);
+      await addToGroup(context.user2.id, otherGroup.id);
+      await setMirrorsIntoGroupForUser(
+        context.user2.id,
+        context.group.id,
+        [otherGroup.id],
+        [otherGroup.id]
+      );
+
+      const own = await createTestVacation(context.user2.id, context.group.id, "2025-12-23");
+      const cookie = await authCookieFor(context.user2.id);
+
+      await request(context.app)
+        .post(`/api/vacation/approve/${own}`)
+        .set("Cookie", cookie)
+        .expect(403);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.id, own));
+      expect(rows[0]?.approvedAt).toBeNull();
+    });
+
+    it("still refuses a role-based approver deciding on their own request", async () => {
+      const own = await createTestVacation(context.approverUser.id, context.group.id, "2025-12-23");
+      const cookie = await authCookieFor(context.approverUser.id);
+
+      await request(context.app)
+        .post(`/api/vacation/approve/${own}`)
+        .set("Cookie", cookie)
+        .expect(403);
     });
   });
 });

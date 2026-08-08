@@ -157,6 +157,7 @@ const createTeamForUser = async (userId: string, teamName: string) =>
         groupId: newGroup.id,
         viewAccess: true,
         adminAccess: true,
+        approverAccess: true,
         controlledUser: true,
       },
       tx

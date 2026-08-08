@@ -15,6 +15,7 @@ import {
   lt,
   lte,
   ne,
+  not,
   notInArray,
   or,
   sql,
@@ -524,14 +525,30 @@ export type PendingApprovalRow = {
 
 /**
  * Returns pending (not yet approved, not rejected, not deleted) vacation rows
- * for groups where the caller is a manager / main approver / temp approver.
- * Rows are ordered by user/group/day so the caller can collapse contiguous
- * ranges into single approval entries. The approver's own requests are
- * excluded — the decision endpoints refuse them.
+ * for groups where the caller may approve — as manager / main approver / temp
+ * approver, or through the `approverAccess` membership flag. Rows are ordered
+ * by user/group/day so the caller can collapse contiguous ranges into single
+ * approval entries. The caller's own requests appear only where the decision
+ * endpoints would accept them (see `mayDecideOwn`).
  */
 export const getPendingApprovalsForApprover = async (
   approverUserId: string
 ): Promise<PendingApprovalRow[]> => {
+  const approverMembership = alias(groupUsers, "approverMembership");
+
+  const mirroredIntoGroup = exists(
+    db
+      .select({ one: sql`1` })
+      .from(groupMirrors)
+      .where(
+        and(
+          eq(groupMirrors.userId, approverUserId),
+          eq(groupMirrors.targetGroupId, vacation.groupId),
+          isNull(groupMirrors.deletedAt)
+        )
+      )
+  );
+
   return db
     .select({
       vacationId: vacation.id,
@@ -547,17 +564,29 @@ export const getPendingApprovalsForApprover = async (
     .from(vacation)
     .innerJoin(groups, eq(vacation.groupId, groups.id))
     .innerJoin(user, eq(vacation.userId, user.id))
+    .leftJoin(
+      approverMembership,
+      and(
+        eq(approverMembership.groupId, groups.id),
+        eq(approverMembership.userId, approverUserId),
+        isNull(approverMembership.deletedAt)
+      )
+    )
     .where(
       and(
         isNull(vacation.deletedAt),
         isNull(vacation.approvedAt),
         isNull(vacation.rejectedAt),
         isNull(groups.deletedAt),
-        ne(vacation.userId, approverUserId),
+        or(
+          ne(vacation.userId, approverUserId),
+          and(eq(approverMembership.approverAccess, true), not(mirroredIntoGroup))
+        ),
         or(
           eq(groups.managerUserId, approverUserId),
           eq(groups.mainApprovalUser, approverUserId),
-          eq(groups.tempApprovalUser, approverUserId)
+          eq(groups.tempApprovalUser, approverUserId),
+          eq(approverMembership.approverAccess, true)
         )
       )
     )

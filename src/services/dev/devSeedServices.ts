@@ -143,6 +143,7 @@ export const addMember = async (input: {
   userId: string;
   groupId: string;
   adminAccess?: boolean;
+  approverAccess?: boolean;
 }): Promise<void> => {
   await services.groupUser.createGroupUser({
     id: generateRandomUUID(),
@@ -150,6 +151,7 @@ export const addMember = async (input: {
     groupId: input.groupId,
     viewAccess: true,
     adminAccess: input.adminAccess ?? false,
+    approverAccess: input.approverAccess ?? false,
     controlledUser: true,
   });
 };
@@ -197,9 +199,9 @@ export const addVacation = async (input: {
       vacationType: input.type ?? vacationType.Vacation,
       note: input.note,
       approvedAt: input.state === "approved" ? now : null,
-      approvedBy: input.state === "approved" ? (input.actorUserId ?? null) : null,
+      approvedBy: input.state === "approved" ? input.actorUserId ?? null : null,
       rejectedAt: input.state === "rejected" ? now : null,
-      rejectedBy: input.state === "rejected" ? (input.actorUserId ?? null) : null,
+      rejectedBy: input.state === "rejected" ? input.actorUserId ?? null : null,
       rejectionReason: input.state === "rejected" ? "Team coverage on that day" : null,
       createdAt: now,
       updatedAt: now,

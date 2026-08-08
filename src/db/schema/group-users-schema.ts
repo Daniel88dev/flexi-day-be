@@ -15,6 +15,7 @@ export const groupUsers = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     viewAccess: boolean("view_access").notNull().default(false),
     adminAccess: boolean("admin_access").notNull().default(false),
+    approverAccess: boolean("approver_access").notNull().default(false),
     controlledUser: boolean("controlled_user").notNull().default(false),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

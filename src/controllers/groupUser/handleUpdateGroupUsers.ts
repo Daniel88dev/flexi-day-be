@@ -33,6 +33,7 @@ export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
         {
           viewAccess: userRecord.viewAccess,
           adminAccess: userRecord.adminAccess,
+          approverAccess: userRecord.approverAccess,
           controlledUser: userRecord.controlledUser,
         },
         tx
