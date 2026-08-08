@@ -79,7 +79,7 @@
     "tsx": "^4.20.6",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.45.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "exceljs": {
