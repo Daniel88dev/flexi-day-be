@@ -108,8 +108,11 @@ export type DBServices = Readonly<{
   notification: {
     listNotificationsForUser: typeof notificationServices.listNotificationsForUser;
     markNotificationRead: typeof notificationServices.markNotificationRead;
+    markAllNotificationsRead: typeof notificationServices.markAllNotificationsRead;
     getNotificationForUser: typeof notificationServices.getNotificationForUser;
     createNotification: typeof notificationServices.createNotification;
+    deleteNotificationForUser: typeof notificationServices.deleteNotificationForUser;
+    deleteAllNotificationsForUser: typeof notificationServices.deleteAllNotificationsForUser;
   };
   calendarSync: {
     generateFeedToken: typeof calendarSyncServices.generateFeedToken;
@@ -238,8 +241,11 @@ export const createDBServices = (): DBServices => {
     notification: {
       listNotificationsForUser: notificationServices.listNotificationsForUser,
       markNotificationRead: notificationServices.markNotificationRead,
+      markAllNotificationsRead: notificationServices.markAllNotificationsRead,
       getNotificationForUser: notificationServices.getNotificationForUser,
       createNotification: notificationServices.createNotification,
+      deleteNotificationForUser: notificationServices.deleteNotificationForUser,
+      deleteAllNotificationsForUser: notificationServices.deleteAllNotificationsForUser,
     },
     calendarSync: {
       generateFeedToken: calendarSyncServices.generateFeedToken,

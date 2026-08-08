@@ -63,6 +63,57 @@ export const getNotificationForUser = async (
 };
 
 /**
+ * Marks every unread notification of a user as read. Scoped to `readAt IS
+ * NULL` so notifications read earlier keep their original timestamp. Returns
+ * how many rows were flipped.
+ */
+export const markAllNotificationsRead = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<number> => {
+  const rows = await (tx ?? db)
+    .update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
+    .returning({ id: notifications.id });
+
+  return rows.length;
+};
+
+/**
+ * Deletes a single notification. The owner predicate is part of the WHERE
+ * clause, so a foreign id simply matches nothing. Returns undefined when
+ * nothing was deleted, which the controller reports as 404.
+ */
+export const deleteNotificationForUser = async (
+  notificationId: string,
+  userId: string,
+  tx?: DbTransaction
+): Promise<NotificationRecord | undefined> => {
+  const [row] = await (tx ?? db)
+    .delete(notifications)
+    .where(and(eq(notifications.id, notificationId), eq(notifications.userId, userId)))
+    .returning();
+
+  return row;
+};
+
+/**
+ * Deletes every notification of a user. Returns how many rows went.
+ */
+export const deleteAllNotificationsForUser = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<number> => {
+  const rows = await (tx ?? db)
+    .delete(notifications)
+    .where(eq(notifications.userId, userId))
+    .returning({ id: notifications.id });
+
+  return rows.length;
+};
+
+/**
  * Inserts a notification row. Used by future workflow code; kept in the same
  * service module so all notification persistence lives in one place.
  */
