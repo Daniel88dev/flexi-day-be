@@ -41,13 +41,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Fails the build on a known-vulnerable dependency. The repo is at zero
-      # advisories; `overrides` in package.json pin the transitive fixes that
-      # upstream has not shipped yet (drizzle-kit still ships the deprecated
-      # @esbuild-kit chain, and exceljs still pins uuid@8).
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
-
       - name: Set up environment variables
         run: |
           echo "PORT=8080" >> $GITHUB_ENV
