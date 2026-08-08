@@ -34,7 +34,12 @@ export const handlePostDevUser = async (req: Request, res: Response) => {
         teamName: data.teamName,
         managerUserId: seeded.id,
       }));
-    await addMember({ userId: seeded.id, groupId: team.id, adminAccess: true });
+    await addMember({
+      userId: seeded.id,
+      groupId: team.id,
+      adminAccess: true,
+      approverAccess: true,
+    });
     await setQuota({ userId: seeded.id, groupId: team.id });
   }
 

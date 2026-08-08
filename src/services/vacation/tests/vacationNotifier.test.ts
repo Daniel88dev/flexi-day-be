@@ -7,6 +7,7 @@ const {
   mockGetApprovalUsers,
   mockGetUsersByIds,
   mockGetUserById,
+  mockGetGroupUsers,
 } = vi.hoisted(() => ({
   mockSendTemplated: vi.fn(),
   mockFilterUsersAcceptingEmail: vi.fn(),
@@ -14,6 +15,7 @@ const {
   mockGetApprovalUsers: vi.fn(),
   mockGetUsersByIds: vi.fn(),
   mockGetUserById: vi.fn(),
+  mockGetGroupUsers: vi.fn(),
 }));
 
 vi.mock("../../email/index.js", () => ({
@@ -25,6 +27,7 @@ vi.mock("../../DBServices.js", () => ({
     userSettings: { filterUsersAcceptingEmail: mockFilterUsersAcceptingEmail },
     notification: { createNotification: mockCreateNotification },
     group: { getApprovalUsers: mockGetApprovalUsers },
+    groupUser: { getGroupUsers: mockGetGroupUsers },
     user: { getUsersByIds: mockGetUsersByIds, getUserById: mockGetUserById },
   }),
 }));
@@ -83,6 +86,7 @@ describe("vacation notifier", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetApprovalUsers.mockResolvedValue(group);
+    mockGetGroupUsers.mockResolvedValue([]);
     mockFilterUsersAcceptingEmail.mockImplementation((ids: string[]) => new Set(ids));
   });
 
@@ -106,6 +110,41 @@ describe("vacation notifier", () => {
       }),
     });
     expect(mockCreateNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("also reaches members holding approverAccess, and only once each", async () => {
+    mockGetGroupUsers.mockResolvedValue([
+      // Already the main approver: must not be mailed twice.
+      {
+        userId: "approver-1",
+        approverAccess: true,
+        email: "ada@example.com",
+        user: { name: "Ada Lovelace" },
+      },
+      {
+        userId: "approver-2",
+        approverAccess: true,
+        email: "grace@example.com",
+        user: { name: "Grace Hopper" },
+      },
+      {
+        userId: "member-3",
+        approverAccess: false,
+        email: "bob@example.com",
+        user: { name: "Bob Dvorak" },
+      },
+      {
+        userId: "employee-1",
+        approverAccess: true,
+        email: "dana@example.com",
+        user: { name: "Dana Holt" },
+      },
+    ]);
+
+    await notifyVacationRequested([row()], { id: "employee-1", name: "Dana Holt" }, null);
+
+    const recipients = mockSendTemplated.mock.calls.map(([email]) => (email as { to: string }).to);
+    expect(recipients.sort()).toEqual(["ada@example.com", "grace@example.com"]);
   });
 
   it("substitutes a dash for an empty note so SES never renders a blank", async () => {

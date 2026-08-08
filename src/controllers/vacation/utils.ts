@@ -1,6 +1,7 @@
 import { createDBServices } from "../../services/DBServices.js";
 import type { DbTransaction } from "../../db/db.js";
 import type { VacationType } from "../../services/vacation/types.js";
+import { mayDecideOwn } from "./decisionGuards.js";
 
 const services = createDBServices();
 
@@ -37,10 +38,44 @@ export const resolveVacationPermissions = async (
   // A decision is final; re-deciding would overturn it and wipe its stamps.
   const isDecidable =
     !isCancelled && vacationRow.approvedAt === null && vacationRow.rejectedAt === null;
+  const ownAllowed =
+    isOwner && isApprover ? await mayDecideOwn(userId, vacationRow.groupId, tx) : false;
 
   return {
     canView: isOwner || isApprover || (membership?.viewAccess ?? false),
-    canApprove: isApprover && !isOwner && isDecidable,
+    canApprove: isApprover && isDecidable && (!isOwner || ownAllowed),
     canCancel: !isCancelled && (isOwner || isAdmin || isApprover),
+  };
+};
+
+type DecidableRow = Pick<
+  VacationType,
+  "userId" | "groupId" | "deletedAt" | "approvedAt" | "rejectedAt"
+>;
+
+/**
+ * The same `canApprove` verdict as {@link resolveVacationPermissions}, for a
+ * whole list in a fixed number of queries.
+ */
+export const resolveCanApproveForList = async <T extends DecidableRow>(
+  userId: string,
+  rows: T[]
+): Promise<(row: T) => boolean> => {
+  const groupIds = Array.from(new Set(rows.map((row) => row.groupId)));
+  const approvable = new Set(await services.group.getGroupsWhereUserCanApprove(groupIds, userId));
+
+  const ownGroupIds = Array.from(
+    new Set(rows.filter((row) => row.userId === userId).map((row) => row.groupId))
+  ).filter((groupId) => approvable.has(groupId));
+
+  const selfDecidable = new Set<string>();
+  for (const groupId of ownGroupIds) {
+    if (await mayDecideOwn(userId, groupId)) selfDecidable.add(groupId);
+  }
+
+  return (row) => {
+    if (!approvable.has(row.groupId)) return false;
+    if (row.deletedAt !== null || row.approvedAt !== null || row.rejectedAt !== null) return false;
+    return row.userId !== userId || selfDecidable.has(row.groupId);
   };
 };

@@ -40,7 +40,9 @@ export const vacationRouter = (): Router => {
    *
    *       Group scope requires view access on that group (view access, admin
    *       access, or being its manager); a plain member gets a 403.
-   *       Each row includes a denormalized `user` summary used by the calendar UI.
+   *       Each row includes a denormalized `user` summary used by the calendar UI,
+   *       and `canApprove` — the same verdict the decision endpoints enforce, so
+   *       a client can render the action without re-deriving the rule.
    *     operationId: handleGetVacations
    *     security:
    *       - bearerAuth: []
@@ -110,6 +112,9 @@ export const vacationRouter = (): Router => {
    *             mirroredFromGroupName:
    *               type: string
    *               nullable: true
+   *             canApprove:
+   *               type: boolean
+   *               description: Whether the caller may decide on this request right now.
    */
   app.get("/", tryCatch(handleGetVacations));
 

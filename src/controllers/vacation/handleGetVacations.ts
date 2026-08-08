@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
 import AppError from "../../utils/appError.js";
+import { resolveCanApproveForList } from "./utils.js";
 
 const services = createDBServices();
 
@@ -39,12 +40,16 @@ export const handleGetVacations = async (req: Request, res: Response) => {
       range.startDate,
       range.endDate
     );
+    const canApprove = await resolveCanApproveForList(auth.userId, result);
     // Same shape either way, so the calendar does not branch on scope.
-    return res
-      .status(200)
-      .json(
-        result.map((row) => ({ ...row, mirroredFromGroupId: null, mirroredFromGroupName: null }))
-      );
+    return res.status(200).json(
+      result.map((row) => ({
+        ...row,
+        mirroredFromGroupId: null,
+        mirroredFromGroupName: null,
+        canApprove: canApprove(row),
+      }))
+    );
   }
 
   const scope = await services.report.getScopeEntries(auth.userId);
@@ -62,6 +67,7 @@ export const handleGetVacations = async (req: Request, res: Response) => {
     range.startDate,
     range.endDate
   );
+  const canApprove = await resolveCanApproveForList(auth.userId, result);
 
-  return res.status(200).json(result);
+  return res.status(200).json(result.map((row) => ({ ...row, canApprove: canApprove(row) })));
 };

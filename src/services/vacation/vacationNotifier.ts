@@ -135,6 +135,39 @@ const deliver = async (deliveries: Delivery[]): Promise<void> => {
 };
 
 /**
+ * Everyone who can decide for a group: the named main and temp approver plus
+ * every member holding `approverAccess`, de-duplicated and with
+ * `excludeUserId` dropped.
+ */
+const approverContacts = async (
+  group: NonNullable<Awaited<ReturnType<typeof services.group.getApprovalUsers>>>,
+  excludeUserId: string
+): Promise<UserContact[]> => {
+  const members = await services.groupUser.getGroupUsers(group.groupId);
+
+  const candidates = [
+    {
+      id: group.mainApprovalUserId,
+      name: group.mainApprovalUserName,
+      email: group.mainApprovalUserEmail,
+    },
+    {
+      id: group.tempApprovalUserId,
+      name: group.tempApprovalUserName,
+      email: group.tempApprovalUserEmail,
+    },
+    ...members
+      .filter((member) => member.approverAccess)
+      .map((member) => ({ id: member.userId, name: member.user.name, email: member.email })),
+  ].filter(
+    (a): a is UserContact =>
+      Boolean(a.id) && Boolean(a.name) && Boolean(a.email) && a.id !== excludeUserId
+  );
+
+  return [...new Map(candidates.map((a) => [a.id, a])).values()];
+};
+
+/**
  * Notifies the group's approvers that a new request needs a decision.
  * Called after the rows are committed.
  */
@@ -147,31 +180,15 @@ export const notifyVacationRequested = async (
     const summary = summarize(rows);
     if (!summary) return;
 
-    const group = await services.group.getApprovalUsers(rows[0]?.groupId ?? "");
+    const groupId = rows[0]?.groupId ?? "";
+    const group = await services.group.getApprovalUsers(groupId);
     if (!group) return;
 
-    const approvers = [
-      {
-        id: group.mainApprovalUserId,
-        name: group.mainApprovalUserName,
-        email: group.mainApprovalUserEmail,
-      },
-      {
-        id: group.tempApprovalUserId,
-        name: group.tempApprovalUserName,
-        email: group.tempApprovalUserEmail,
-      },
-    ].filter(
-      (a): a is { id: string; name: string; email: string } =>
-        Boolean(a.id) && Boolean(a.name) && Boolean(a.email) && a.id !== requester.id
-    );
-
-    // De-duplicate: main and temp approver are often the same person.
-    const unique = new Map(approvers.map((a) => [a.id, a]));
-    if (unique.size === 0) return;
+    const unique = await approverContacts(group, requester.id);
+    if (unique.length === 0) return;
 
     await deliver(
-      [...unique.values()].map((approver) => ({
+      unique.map((approver) => ({
         userId: approver.id,
         email: {
           to: approver.email,
@@ -287,21 +304,7 @@ export const notifyVacationComment = async (
 
     const recipients: UserContact[] =
       actor.id === row.userId
-        ? [
-            {
-              id: group.mainApprovalUserId,
-              name: group.mainApprovalUserName,
-              email: group.mainApprovalUserEmail,
-            },
-            {
-              id: group.tempApprovalUserId,
-              name: group.tempApprovalUserName,
-              email: group.tempApprovalUserEmail,
-            },
-          ].filter(
-            (a): a is UserContact =>
-              Boolean(a.id) && Boolean(a.name) && Boolean(a.email) && a.id !== actor.id
-          )
+        ? await approverContacts(group, actor.id)
         : [employee].filter((e) => e.id !== actor.id);
 
     const unique = [...new Map(recipients.map((r) => [r.id, r])).values()];
@@ -362,23 +365,7 @@ export const notifyVacationCancelled = async (
     if (!employee) return;
 
     const recipients: UserContact[] =
-      actor.id === row.userId
-        ? [
-            {
-              id: group.mainApprovalUserId,
-              name: group.mainApprovalUserName,
-              email: group.mainApprovalUserEmail,
-            },
-            {
-              id: group.tempApprovalUserId,
-              name: group.tempApprovalUserName,
-              email: group.tempApprovalUserEmail,
-            },
-          ].filter(
-            (a): a is UserContact =>
-              Boolean(a.id) && Boolean(a.name) && Boolean(a.email) && a.id !== actor.id
-          )
-        : [employee];
+      actor.id === row.userId ? await approverContacts(group, actor.id) : [employee];
 
     const unique = [...new Map(recipients.map((r) => [r.id, r])).values()];
 

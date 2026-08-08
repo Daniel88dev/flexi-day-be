@@ -127,11 +127,15 @@ export const groupRouter = (): Router => {
    *   get:
    *     tags:
    *       - Groups
-   *     summary: The caller's mirroring setup for this group
+   *     summary: The mirroring setup for this group
    *     description: |
-   *       Lists every other group the caller belongs to and whether their
-   *       records from it are currently shown inside this group. Mirroring is a
-   *       per-user choice, so this only ever describes the caller.
+   *       For a group admin, every member together with the source groups their
+   *       records may be projected from — the groups the acting admin also
+   *       administers and the member belongs to — and whether each is currently
+   *       mirrored. A candidate with `manageable: false` is an active mirror
+   *       from a group the caller does not administer: shown for completeness,
+   *       not theirs to change. For anyone else, `canManage` is false and the
+   *       response carries only their own mirrors, read-only.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -143,19 +147,22 @@ export const groupRouter = (): Router => {
    *           format: uuid
    *     responses:
    *       '200':
-   *         description: Candidate source groups with their mirrored state
+   *         description: Members with their candidate source groups
    *       '403':
    *         description: Caller does not belong to the group
    *   put:
    *     tags:
    *       - Groups
-   *     summary: Set which groups the caller mirrors into this one
+   *     summary: Set which groups a member is mirrored from into this one
    *     description: |
-   *       Replaces the caller's mirror sources for this group. Mirrored records
-   *       are shown here read-only: they are approved, counted against quotas
-   *       and reported in their source group alone, and never need a decision
-   *       in this one. The caller must belong to the target and to every source
-   *       group; an empty array turns mirroring off.
+   *       Replaces one member's mirror sources for this group, within the
+   *       sources the caller administers — mirrors from other groups are left
+   *       untouched. Mirrored records are shown here read-only: they are
+   *       approved, counted against quotas and reported in their source group
+   *       alone, and never need a decision in this one. Requires admin access on
+   *       the target group and on every source group named, and the member must
+   *       belong to all of them. An empty array turns the caller's manageable
+   *       mirrors off.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -172,8 +179,11 @@ export const groupRouter = (): Router => {
    *           schema:
    *             type: object
    *             required:
+   *               - userId
    *               - sourceGroupIds
    *             properties:
+   *               userId:
+   *                 type: string
    *               sourceGroupIds:
    *                 type: array
    *                 items:
@@ -181,11 +191,11 @@ export const groupRouter = (): Router => {
    *                   format: uuid
    *     responses:
    *       '200':
-   *         description: The caller's mirrors into this group after the update
+   *         description: The member's mirrors into this group after the update
    *       '403':
-   *         description: Caller does not belong to the target or a source group
+   *         description: Caller is not an admin of the target or of a source group
    *       '422':
-   *         description: A group cannot mirror itself
+   *         description: A group cannot mirror itself, or the member does not belong to a named group
    */
   /**
    * @openapi

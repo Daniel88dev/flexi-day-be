@@ -7,6 +7,7 @@ export type GroupUser = {
   userId: string;
   viewAccess: boolean;
   adminAccess: boolean;
+  approverAccess: boolean;
   controlledUser: boolean;
   deletedAt: Date | null;
   createdAt: Date;
@@ -19,10 +20,14 @@ export type GroupUserInsertType = {
   userId: string;
   viewAccess?: boolean;
   adminAccess?: boolean;
+  approverAccess?: boolean;
   controlledUser?: boolean;
 };
 
-export type GroupUserPermissions = Pick<GroupUser, "viewAccess" | "adminAccess" | "controlledUser">;
+export type GroupUserPermissions = Pick<
+  GroupUser,
+  "viewAccess" | "adminAccess" | "approverAccess" | "controlledUser"
+>;
 
 /**
  * A membership row enriched with the member's identity. The members list is
@@ -76,6 +81,7 @@ export const validatePutGroupUserUpdate = z.object({
       userId: z.string().min(1),
       viewAccess: z.boolean(),
       adminAccess: z.boolean(),
+      approverAccess: z.boolean(),
       controlledUser: z.boolean(),
     })
   ),

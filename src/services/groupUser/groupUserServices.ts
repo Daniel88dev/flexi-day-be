@@ -86,6 +86,44 @@ export const getAllGroupsForUser = async (userId: string): Promise<{ groupId: st
     .where(and(eq(groupUsers.userId, userId), isNull(groupUsers.deletedAt)));
 };
 
+/** The groups the user administers — the reach of any admin-only action. */
+export const getAdminGroupIdsForUser = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<string[]> => {
+  const rows = await (tx ?? db)
+    .select({ groupId: groupUsers.groupId })
+    .from(groupUsers)
+    .where(
+      and(
+        eq(groupUsers.userId, userId),
+        eq(groupUsers.adminAccess, true),
+        isNull(groupUsers.deletedAt)
+      )
+    );
+
+  return rows.map((row) => row.groupId);
+};
+
+/** Active (user, group) membership pairs, for cross-referencing many at once. */
+export const getMembershipPairs = async (
+  userIds: string[],
+  groupIds: string[],
+  tx?: DbTransaction
+): Promise<{ userId: string; groupId: string }[]> => {
+  if (userIds.length === 0 || groupIds.length === 0) return [];
+  return (tx ?? db)
+    .select({ userId: groupUsers.userId, groupId: groupUsers.groupId })
+    .from(groupUsers)
+    .where(
+      and(
+        inArray(groupUsers.userId, userIds),
+        inArray(groupUsers.groupId, groupIds),
+        isNull(groupUsers.deletedAt)
+      )
+    );
+};
+
 /**
  * Lists the active members of a group together with their identity, so the
  * members screen can show names instead of raw user ids.
@@ -98,6 +136,7 @@ export const getGroupUsers = async (groupId: string): Promise<GroupUserListItem[
       userId: groupUsers.userId,
       viewAccess: groupUsers.viewAccess,
       adminAccess: groupUsers.adminAccess,
+      approverAccess: groupUsers.approverAccess,
       controlledUser: groupUsers.controlledUser,
       deletedAt: groupUsers.deletedAt,
       createdAt: groupUsers.createdAt,

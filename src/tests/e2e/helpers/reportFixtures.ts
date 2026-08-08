@@ -46,7 +46,12 @@ export async function makeGroup(groupName: string, managerUserId: string): Promi
 export async function addMember(
   groupId: string,
   userId: string,
-  permissions: { viewAccess?: boolean; adminAccess?: boolean; controlledUser?: boolean } = {}
+  permissions: {
+    viewAccess?: boolean;
+    adminAccess?: boolean;
+    approverAccess?: boolean;
+    controlledUser?: boolean;
+  } = {}
 ): Promise<void> {
   await db.insert(groupUsers).values({
     id: uuidv4(),
@@ -54,6 +59,7 @@ export async function addMember(
     userId,
     viewAccess: permissions.viewAccess ?? false,
     adminAccess: permissions.adminAccess ?? false,
+    approverAccess: permissions.approverAccess ?? false,
     controlledUser: permissions.controlledUser ?? true,
     createdAt: new Date(),
     updatedAt: new Date(),

@@ -8,9 +8,24 @@ const services = createDBServices();
 type Decision = "approve" | "reject";
 
 /**
+ * Whether the actor may decide on their *own* request in this group. Only the
+ * `approverAccess` flag lifts separation of duties, and not while the actor's
+ * records are mirrored in from another group — that leave is governed there.
+ */
+export const mayDecideOwn = async (
+  actorUserId: string,
+  groupId: string,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const membership = await services.groupUser.getGroupUser(actorUserId, groupId, tx);
+  if (!membership?.approverAccess) return false;
+
+  return !(await services.groupMirror.hasMirrorIntoGroup(actorUserId, groupId, tx));
+};
+
+/**
  * The single predicate for "may this person decide on these requests", shared by
- * the per-record and bulk endpoints so they cannot drift apart. Separation of
- * duties is part of it: an approver's own request is for the other approver.
+ * the per-record and bulk endpoints so they cannot drift apart.
  */
 export const assertMayDecide = async (
   actorUserId: string,
@@ -33,12 +48,22 @@ export const assertMayDecide = async (
     });
   }
 
-  if (rows.some((row) => row.userId === actorUserId)) {
+  const ownRows = rows.filter((row) => row.userId === actorUserId);
+  if (ownRows.length === 0) return;
+
+  const ownGroupIds = Array.from(new Set(ownRows.map((row) => row.groupId)));
+  const selfDecidable = new Set<string>();
+  for (const groupId of ownGroupIds) {
+    if (await mayDecideOwn(actorUserId, groupId, tx)) selfDecidable.add(groupId);
+  }
+
+  const blocked = ownRows.filter((row) => !selfDecidable.has(row.groupId));
+  if (blocked.length > 0) {
     throw new AppError({
       code: 403,
       message: "You cannot decide on your own leave request",
       logging: true,
-      context: { actorUserId, vacationIds: rows.map((row) => row.id) },
+      context: { actorUserId, vacationIds: blocked.map((row) => row.id) },
     });
   }
 };

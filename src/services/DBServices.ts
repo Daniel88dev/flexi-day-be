@@ -46,6 +46,8 @@ export type DBServices = Readonly<{
     updateGroupUserPermissions: typeof groupUserServices.updateGroupUserPermissions;
     deleteGroupUser: typeof groupUserServices.deleteGroupUser;
     getAllGroupsForUser: typeof groupUserServices.getAllGroupsForUser;
+    getAdminGroupIdsForUser: typeof groupUserServices.getAdminGroupIdsForUser;
+    getMembershipPairs: typeof groupUserServices.getMembershipPairs;
     countDistinctUsersInGroups: typeof groupUserServices.countDistinctUsersInGroups;
   };
   inviteLinks: {
@@ -72,7 +74,9 @@ export type DBServices = Readonly<{
   };
   groupMirror: {
     getMirrorsIntoGroupForUser: typeof groupMirrorServices.getMirrorsIntoGroupForUser;
+    getMirrorsIntoGroupForUsers: typeof groupMirrorServices.getMirrorsIntoGroupForUsers;
     getMirrorsForUser: typeof groupMirrorServices.getMirrorsForUser;
+    hasMirrorIntoGroup: typeof groupMirrorServices.hasMirrorIntoGroup;
     setMirrorsIntoGroupForUser: typeof groupMirrorServices.setMirrorsIntoGroupForUser;
   };
   userYearQuotas: {
@@ -172,6 +176,8 @@ export const createDBServices = (): DBServices => {
       updateGroupUserPermissions: groupUserServices.updateGroupUserPermissions,
       deleteGroupUser: groupUserServices.deleteGroupUser,
       getAllGroupsForUser: groupUserServices.getAllGroupsForUser,
+      getAdminGroupIdsForUser: groupUserServices.getAdminGroupIdsForUser,
+      getMembershipPairs: groupUserServices.getMembershipPairs,
       countDistinctUsersInGroups: groupUserServices.countDistinctUsersInGroups,
     },
     inviteLinks: {
@@ -198,7 +204,9 @@ export const createDBServices = (): DBServices => {
     },
     groupMirror: {
       getMirrorsIntoGroupForUser: groupMirrorServices.getMirrorsIntoGroupForUser,
+      getMirrorsIntoGroupForUsers: groupMirrorServices.getMirrorsIntoGroupForUsers,
       getMirrorsForUser: groupMirrorServices.getMirrorsForUser,
+      hasMirrorIntoGroup: groupMirrorServices.hasMirrorIntoGroup,
       setMirrorsIntoGroupForUser: groupMirrorServices.setMirrorsIntoGroupForUser,
     },
     userYearQuotas: {

@@ -1,4 +1,4 @@
-import { and, eq, isNull, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
@@ -44,16 +44,64 @@ export const getMirrorsForUser = async (userId: string): Promise<GroupMirror[]> 
     .where(and(eq(groupMirrors.userId, userId), isNull(groupMirrors.deletedAt)));
 };
 
+/** Whether the user's records are projected into this group from elsewhere. */
+export const hasMirrorIntoGroup = async (
+  userId: string,
+  targetGroupId: string,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const [row] = await (tx ?? db)
+    .select({ id: groupMirrors.id })
+    .from(groupMirrors)
+    .where(
+      and(
+        eq(groupMirrors.userId, userId),
+        eq(groupMirrors.targetGroupId, targetGroupId),
+        isNull(groupMirrors.deletedAt)
+      )
+    )
+    .limit(1);
+
+  return row !== undefined;
+};
+
+/** The active mirror sources for several members of one group, at once. */
+export const getMirrorsIntoGroupForUsers = async (
+  userIds: string[],
+  targetGroupId: string,
+  tx?: DbTransaction
+): Promise<{ userId: string; sourceGroupId: string; sourceGroupName: string }[]> => {
+  if (userIds.length === 0) return [];
+  return (tx ?? db)
+    .select({
+      userId: groupMirrors.userId,
+      sourceGroupId: groupMirrors.sourceGroupId,
+      sourceGroupName: groups.groupName,
+    })
+    .from(groupMirrors)
+    .innerJoin(groups, eq(groupMirrors.sourceGroupId, groups.id))
+    .where(
+      and(
+        inArray(groupMirrors.userId, userIds),
+        eq(groupMirrors.targetGroupId, targetGroupId),
+        isNull(groupMirrors.deletedAt),
+        isNull(groups.deletedAt)
+      )
+    );
+};
+
 /**
- * Makes the user's mirrors into `targetGroupId` exactly `sourceGroupIds`.
- * Diffed rather than wiped and re-inserted so an untouched mirror keeps its
- * original `createdAt`. Callers must have already verified the user is an
- * active member of the target and of every source group.
+ * Makes the user's mirrors into `targetGroupId` exactly `sourceGroupIds`,
+ * *within* `manageableSourceGroupIds` — an admin sees only some of a member's
+ * groups, and the rest must survive a save rather than read as a removal.
+ * Diffed rather than wiped so an untouched mirror keeps its `createdAt`.
+ * Callers must have already verified membership of the target and every source.
  */
 export const setMirrorsIntoGroupForUser = async (
   userId: string,
   targetGroupId: string,
   sourceGroupIds: string[],
+  manageableSourceGroupIds: string[],
   tx?: DbTransaction
 ): Promise<GroupMirrorListItem[]> => {
   const runner = tx ?? db;
@@ -71,20 +119,23 @@ export const setMirrorsIntoGroupForUser = async (
 
   const existingIds = new Set(existing.map((row) => row.sourceGroupId));
 
-  const removedBase = and(
-    eq(groupMirrors.userId, userId),
-    eq(groupMirrors.targetGroupId, targetGroupId),
-    isNull(groupMirrors.deletedAt)
+  const removed = manageableSourceGroupIds.filter(
+    (id) => existingIds.has(id) && !sourceGroupIds.includes(id)
   );
 
-  await runner
-    .update(groupMirrors)
-    .set({ deletedAt: new Date() })
-    .where(
-      sourceGroupIds.length === 0
-        ? removedBase
-        : and(removedBase, notInArray(groupMirrors.sourceGroupId, sourceGroupIds))
-    );
+  if (removed.length > 0) {
+    await runner
+      .update(groupMirrors)
+      .set({ deletedAt: new Date() })
+      .where(
+        and(
+          eq(groupMirrors.userId, userId),
+          eq(groupMirrors.targetGroupId, targetGroupId),
+          isNull(groupMirrors.deletedAt),
+          inArray(groupMirrors.sourceGroupId, removed)
+        )
+      );
+  }
 
   const added = sourceGroupIds.filter((id) => !existingIds.has(id));
 

@@ -154,6 +154,65 @@ export const groupUsersRouter = (): Router => {
     tryCatch(handlePostGroupInvite)
   );
 
+  /**
+   * @openapi
+   * /api/group-user:
+   *   put:
+   *     tags:
+   *       - Group members
+   *     summary: Update members' permissions in a group
+   *     description: |
+   *       Sets the four membership flags for one or more members at once.
+   *       Requires admin access on the group. The flags are independent:
+   *       `adminAccess` manages the group (members, quotas, invites, working
+   *       days, mirroring) but does not decide on leave, and `approverAccess`
+   *       decides on leave but manages nothing. `controlledUser` marks a member
+   *       whose time off is tracked; `viewAccess` lets them see the group's
+   *       records.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - groupId
+   *               - data
+   *             properties:
+   *               groupId:
+   *                 type: string
+   *                 format: uuid
+   *               data:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   required:
+   *                     - userId
+   *                     - viewAccess
+   *                     - adminAccess
+   *                     - approverAccess
+   *                     - controlledUser
+   *                   properties:
+   *                     userId:
+   *                       type: string
+   *                     viewAccess:
+   *                       type: boolean
+   *                     adminAccess:
+   *                       type: boolean
+   *                     approverAccess:
+   *                       type: boolean
+   *                     controlledUser:
+   *                       type: boolean
+   *     responses:
+   *       '200':
+   *         description: Permissions updated
+   *       '400':
+   *         description: A named member does not belong to the group
+   *       '403':
+   *         description: No permission for related group
+   */
   app.put(
     "/",
     bodyValidationMiddleware(validatePutGroupUserUpdate),

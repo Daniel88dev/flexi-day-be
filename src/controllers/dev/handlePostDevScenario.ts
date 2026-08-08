@@ -23,16 +23,17 @@ export const validatePostDevScenario = z.object({
 export type ValidatedPostDevScenarioType = z.infer<typeof validatePostDevScenario>;
 
 const MEMBERS = [
-  { local: "alice", name: "Alice Novak" },
+  { local: "alice", name: "Alice Novak", approverAccess: true },
   { local: "bob", name: "Bob Dvorak" },
   { local: "carol", name: "Carol Svoboda" },
 ];
 
 /**
  * Seeds a whole team the UI can actually be exercised against: an owner who is
- * also the approver, three members, current-year quotas, and vacations spread
- * across pending / approved / rejected so every dashboard widget and the
- * approvals queue have content. Re-running it is a no-op rather than an error.
+ * also an admin and approver, three members (Alice approves but administers
+ * nothing), current-year quotas, and vacations spread across pending /
+ * approved / rejected so every dashboard widget and the approvals queue have
+ * content. Re-running it is a no-op rather than an error.
  */
 export const handlePostDevScenario = async (req: Request, res: Response) => {
   const data = req.body as ValidatedPostDevScenarioType;
@@ -52,7 +53,7 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
   const team =
     (await findTeam(owner.id, teamName)) ?? (await seedTeam({ teamName, managerUserId: owner.id }));
 
-  await addMember({ userId: owner.id, groupId: team.id, adminAccess: true });
+  await addMember({ userId: owner.id, groupId: team.id, adminAccess: true, approverAccess: true });
   await setQuota({ userId: owner.id, groupId: team.id });
 
   const members: SeededUser[] = [];
@@ -62,7 +63,11 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
       name: member.name,
       password,
     });
-    await addMember({ userId: seeded.id, groupId: team.id });
+    await addMember({
+      userId: seeded.id,
+      groupId: team.id,
+      approverAccess: member.approverAccess ?? false,
+    });
     await setQuota({ userId: seeded.id, groupId: team.id });
     members.push(seeded);
   }

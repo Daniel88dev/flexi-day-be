@@ -46,6 +46,9 @@ describe("group mirroring", () => {
       .delete(groupUsers)
       .where(and(eq(groupUsers.userId, userId), eq(groupUsers.groupId, groupId)));
 
+  const setMirrors = (sourceGroupIds: string[], manageable: string[] = [teamA.id]) =>
+    setMirrorsIntoGroupForUser(dana.id, allEng.id, sourceGroupIds, manageable);
+
   const book = (userId: string, groupId: string, day: string, approved = true) =>
     db.insert(vacation).values({
       id: uuidv4(),
@@ -91,7 +94,7 @@ describe("group mirroring", () => {
 
   it("shows a mirrored record in the target group, flagged with its source", async () => {
     await book(dana.id, teamA.id, "2026-03-10");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const rows = await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END);
 
@@ -119,7 +122,7 @@ describe("group mirroring", () => {
     await addMember(outsider.id, allEng.id);
     await book(dana.id, teamA.id, "2026-03-10");
     await book(outsider.id, allEng.id, "2026-03-12");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const rows = await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END);
 
@@ -131,7 +134,7 @@ describe("group mirroring", () => {
 
   it("stops projecting a member's records once they leave the target group", async () => {
     await book(dana.id, teamA.id, "2026-03-10");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
     expect(await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END)).toHaveLength(1);
 
     // The mirror row survives, but someone who left must not keep leaking time
@@ -145,7 +148,7 @@ describe("group mirroring", () => {
 
   it("does not mirror in the opposite direction", async () => {
     await book(dana.id, allEng.id, "2026-03-13");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const rows = await getVacationsForGroup(teamA.id, MONTH_START, MONTH_END);
 
@@ -154,7 +157,7 @@ describe("group mirroring", () => {
 
   it("never makes a mirrored record approvable in the target group", async () => {
     await book(dana.id, teamA.id, "2026-03-14", false);
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const pending = await getPendingApprovalsForApprover(manager.id);
 
@@ -165,7 +168,7 @@ describe("group mirroring", () => {
 
   it("mirrors pending records too, so the team sees planned absence", async () => {
     await book(dana.id, teamA.id, "2026-03-15", false);
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const rows = await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END);
 
@@ -175,8 +178,8 @@ describe("group mirroring", () => {
 
   it("stops mirroring when the source is removed", async () => {
     await book(dana.id, teamA.id, "2026-03-10");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, []);
+    await setMirrors([teamA.id]);
+    await setMirrors([]);
 
     const rows = await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END);
 
@@ -187,7 +190,7 @@ describe("group mirroring", () => {
   it("only mirrors the user who opted in, not everyone in the source group", async () => {
     await book(dana.id, teamA.id, "2026-03-10");
     await book(outsider.id, teamA.id, "2026-03-16");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const rows = await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END);
 
@@ -198,7 +201,7 @@ describe("group mirroring", () => {
   it("keeps the date-range filter", async () => {
     await book(dana.id, teamA.id, "2026-02-20");
     await book(dana.id, teamA.id, "2026-03-10");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const rows = await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END);
 
@@ -208,7 +211,7 @@ describe("group mirroring", () => {
 
   it("honours the per-user filter", async () => {
     await book(dana.id, teamA.id, "2026-03-10");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     expect(await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END, dana.id)).toHaveLength(1);
     expect(await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END, outsider.id)).toHaveLength(
@@ -218,18 +221,27 @@ describe("group mirroring", () => {
 
   it("is idempotent and does not duplicate rows when set twice", async () => {
     await book(dana.id, teamA.id, "2026-03-10");
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
+    await setMirrors([teamA.id]);
 
     expect(await getMirrorsIntoGroupForUser(dana.id, allEng.id)).toHaveLength(1);
     expect(await getVacationsForGroup(allEng.id, MONTH_START, MONTH_END)).toHaveLength(1);
   });
 
   it("names the source group for the settings screen", async () => {
-    await setMirrorsIntoGroupForUser(dana.id, allEng.id, [teamA.id]);
+    await setMirrors([teamA.id]);
 
     const mirrors = await getMirrorsIntoGroupForUser(dana.id, allEng.id);
 
     expect(mirrors[0]).toMatchObject({ sourceGroupId: teamA.id, sourceGroupName: "Team A" });
+  });
+
+  it("leaves a mirror outside the caller's reach alone when saving", async () => {
+    await setMirrors([teamA.id]);
+
+    // Team A is not this admin's to remove, so it must survive the save.
+    await setMirrors([], []);
+
+    expect(await getMirrorsIntoGroupForUser(dana.id, allEng.id)).toHaveLength(1);
   });
 });
