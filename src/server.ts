@@ -2,7 +2,12 @@ import express from "express";
 import * as Sentry from "@sentry/node";
 import { serverCors } from "./middleware/cors.js";
 import { helmetHeaders } from "./middleware/headers.js";
-import { limiter } from "./middleware/limiter.js";
+import {
+  apiLimiter,
+  calendarFeedLimiter,
+  credentialsLimiter,
+  floodLimiter,
+} from "./middleware/limiter.js";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./utils/auth.js";
 import { config } from "./config.js";
@@ -26,7 +31,26 @@ import { requestContext } from "./middleware/requestContext.js";
 export const createServer = () => {
   const app = express();
   // `requestContext` sits ahead of every route, including better-auth's catch-all.
-  app.set("trust proxy", 1).use(serverCors).use(requestContext).use(helmetHeaders).use(limiter);
+  app
+    .set("trust proxy", 1)
+    .use(serverCors)
+    .use(requestContext)
+    .use(helmetHeaders)
+    .use(floodLimiter);
+
+  // Only the endpoints where a wrong guess is the point. Registered before
+  // better-auth's catch-all so it cannot swallow them, and before any body
+  // parser so better-auth still receives its raw body.
+  app.use(
+    [
+      "/api/auth/sign-in",
+      "/api/auth/sign-up",
+      "/api/auth/sign-up-with-team",
+      "/api/auth/forget-password",
+      "/api/auth/reset-password",
+    ],
+    credentialsLimiter
+  );
 
   // Project-specific auth orchestration endpoints. These must be registered
   // BEFORE better-auth's catch-all `.all()` so the catch-all does not swallow
@@ -44,6 +68,10 @@ export const createServer = () => {
     app.use("/api/dev", devRouter());
   }
 
+  // Everything below is the authenticated API. `/api/auth` and `/api/dev` are
+  // already handled above, so this never double-counts them.
+  app.use("/api", apiLimiter);
+
   app.use("/api/vacation", authSession, vacationRouter());
   app.use("/api/group", authSession, groupRouter());
   app.use("/api/group-user", authSession, groupUsersRouter());
@@ -57,7 +85,7 @@ export const createServer = () => {
   // Public, token-authenticated iCalendar feed. Deliberately NOT behind
   // `authSession`: calendar clients subscribe with just the secret token in
   // the URL and cannot send session cookies.
-  app.get("/calendars/:token.ics", tryCatch(handleGetCalendarFeed));
+  app.get("/calendars/:token.ics", calendarFeedLimiter, tryCatch(handleGetCalendarFeed));
 
   app.get("/health", (_, res) => {
     res.setHeader("Cache-Control", "no-store");
