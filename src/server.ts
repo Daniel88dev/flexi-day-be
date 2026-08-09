@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/node";
 import { serverCors } from "./middleware/cors.js";
 import { helmetHeaders } from "./middleware/headers.js";
 import {
+  apiFailureLimiter,
   apiLimiter,
   calendarFeedLimiter,
   credentialsLimiter,
@@ -68,19 +69,22 @@ export const createServer = () => {
     app.use("/api/dev", devRouter());
   }
 
-  // Everything below is the authenticated API. `/api/auth` and `/api/dev` are
-  // already handled above, so this never double-counts them.
-  app.use("/api", apiLimiter);
+  // Everything below is the authenticated API; `/api/auth` and `/api/dev` are
+  // already handled above, so this never double-counts them. The order is the
+  // point: a cheap per-IP bound on rejected requests, then session validation,
+  // then the per-user budget — which must key on a validated user id, because a
+  // caller can invent a session cookie to hand itself an unused bucket.
+  app.use("/api", apiFailureLimiter, authSession, apiLimiter);
 
-  app.use("/api/vacation", authSession, vacationRouter());
-  app.use("/api/group", authSession, groupRouter());
-  app.use("/api/group-user", authSession, groupUsersRouter());
-  app.use("/api/quotas", authSession, quotasRouter());
-  app.use("/api/users", authSession, usersRouter());
-  app.use("/api/bank-holidays", authSession, bankHolidayRouter());
-  app.use("/api/notifications", authSession, notificationRouter());
-  app.use("/api/calendar-sync", authSession, calendarSyncRouter());
-  app.use("/api/reports", authSession, reportRouter());
+  app.use("/api/vacation", vacationRouter());
+  app.use("/api/group", groupRouter());
+  app.use("/api/group-user", groupUsersRouter());
+  app.use("/api/quotas", quotasRouter());
+  app.use("/api/users", usersRouter());
+  app.use("/api/bank-holidays", bankHolidayRouter());
+  app.use("/api/notifications", notificationRouter());
+  app.use("/api/calendar-sync", calendarSyncRouter());
+  app.use("/api/reports", reportRouter());
 
   // Public, token-authenticated iCalendar feed. Deliberately NOT behind
   // `authSession`: calendar clients subscribe with just the secret token in
