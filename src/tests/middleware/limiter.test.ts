@@ -5,15 +5,14 @@
 import { describe, it, expect } from "vitest";
 import express, { type Express } from "express";
 import request from "supertest";
+import type { NextFunction, Request, Response } from "express";
 import {
+  apiFailureLimiter,
   apiLimiter,
   calendarFeedLimiter,
   credentialsLimiter,
   floodLimiter,
 } from "../../middleware/limiter.js";
-
-const SESSION = "better-auth.session_token=abc.def";
-const OTHER_SESSION = "better-auth.session_token=zzz.yyy";
 
 function appWith(mount: (app: Express) => void): Express {
   const app = express();
@@ -21,6 +20,26 @@ function appWith(mount: (app: Express) => void): Express {
   mount(app);
   return app;
 }
+
+/**
+ * Stands in for `authSession`: only a request carrying the magic cookie counts
+ * as validated, so a forged one reaches the limiter with no `req.auth` — the
+ * case that must not mint its own bucket.
+ */
+const fakeAuthSession =
+  (validCookie: string, userId: string) => (req: Request, res: Response, next: NextFunction) => {
+    if (req.headers.cookie === validCookie) {
+      req.auth = {
+        sessionId: "sess-1",
+        userId,
+        userName: "Test",
+        userEmail: "test@dev.local",
+        emailVerified: true,
+      };
+      return next();
+    }
+    res.status(401).json({ error: "Unauthorized" });
+  };
 
 /** Drive one key up to (and past) its allowance without waiting for the window. */
 async function hammer(app: Express, path: string, times: number, headers: Record<string, string>) {
@@ -62,62 +81,76 @@ describe("floodLimiter", () => {
 });
 
 describe("apiLimiter", () => {
-  it("gives two sessions from the same IP separate budgets", async () => {
-    const app = appWith((a) => {
-      a.use(apiLimiter);
+  /** Mirrors the real mount order: failure bound, session validation, per-user budget. */
+  const apiApp = (userId: string, validCookie = "session=real") =>
+    appWith((a) => {
+      a.use("/api", fakeAuthSession(validCookie, userId), apiLimiter);
       a.get("/api/thing", (_, res) => res.status(200).json({ ok: true }));
     });
 
-    const first = await request(app).get("/api/thing").set("Cookie", SESSION);
-    const second = await request(app).get("/api/thing").set("Cookie", OTHER_SESSION);
+  it("gives two users on the same IP separate budgets", async () => {
+    const alice = apiApp("user-alice");
+    const bob = apiApp("user-bob");
+
+    const first = await request(alice).get("/api/thing").set("Cookie", "session=real");
+    const second = await request(bob).get("/api/thing").set("Cookie", "session=real");
 
     // Both are the first request against their own key.
     expect(first.headers["ratelimit-remaining"]).toBe(second.headers["ratelimit-remaining"]);
   });
 
-  it("shares a budget across requests carrying the same session", async () => {
-    const app = appWith((a) => {
-      a.use(apiLimiter);
-      a.get("/api/thing", (_, res) => res.status(200).json({ ok: true }));
-    });
+  it("shares one budget across a user's requests", async () => {
+    const app = apiApp("user-carol");
 
-    const first = await request(app).get("/api/thing").set("Cookie", SESSION);
-    const second = await request(app).get("/api/thing").set("Cookie", SESSION);
+    const first = await request(app).get("/api/thing").set("Cookie", "session=real");
+    const second = await request(app).get("/api/thing").set("Cookie", "session=real");
 
     expect(Number(second.headers["ratelimit-remaining"])).toBe(
       Number(first.headers["ratelimit-remaining"]) - 1
     );
   });
 
-  it("also matches the __Secure- prefixed cookie used over https", async () => {
+  it("never reaches the per-user budget for a forged session cookie", async () => {
+    const app = apiApp("user-dave");
+
+    const forged = await request(app).get("/api/thing").set("Cookie", "session=forged");
+
+    // Rejected at validation, so it cannot mint itself a fresh bucket.
+    expect(forged.status).toBe(401);
+    expect(forged.headers["ratelimit-remaining"]).toBeUndefined();
+  });
+});
+
+describe("apiFailureLimiter", () => {
+  it("does not spend the budget on requests that succeed", async () => {
     const app = appWith((a) => {
-      a.use(apiLimiter);
+      a.use(apiFailureLimiter);
       a.get("/api/thing", (_, res) => res.status(200).json({ ok: true }));
     });
 
-    const plain = await request(app).get("/api/thing").set("Cookie", SESSION);
-    const secure = await request(app)
-      .get("/api/thing")
-      .set("Cookie", "__Secure-better-auth.session_token=abc.def");
+    const statuses = await hammer(app, "/api/thing", 120, { "X-Forwarded-For": "203.0.113.20" });
 
-    // Same token value, so the secure variant lands in the same bucket.
-    expect(Number(secure.headers["ratelimit-remaining"])).toBe(
-      Number(plain.headers["ratelimit-remaining"]) - 1
-    );
+    expect(statuses.every((s) => s === 200)).toBe(true);
   });
 
-  it("falls back to the IP when there is no session cookie", async () => {
+  it("cuts off cookie rotation well before the flood ceiling", async () => {
     const app = appWith((a) => {
-      a.use(apiLimiter);
+      a.use("/api", apiFailureLimiter, fakeAuthSession("session=real", "user-eve"));
       a.get("/api/thing", (_, res) => res.status(200).json({ ok: true }));
     });
 
-    const first = await request(app).get("/api/thing").set("X-Forwarded-For", "203.0.113.7");
-    const second = await request(app).get("/api/thing").set("X-Forwarded-For", "203.0.113.7");
+    const statuses: number[] = [];
+    for (let i = 0; i < 102; i++) {
+      // A different invented cookie every time — the bypass this bound closes.
+      const res = await request(app)
+        .get("/api/thing")
+        .set("X-Forwarded-For", "203.0.113.21")
+        .set("Cookie", `session=forged-${i}`);
+      statuses.push(res.status);
+    }
 
-    expect(Number(second.headers["ratelimit-remaining"])).toBe(
-      Number(first.headers["ratelimit-remaining"]) - 1
-    );
+    expect(statuses.slice(0, 100).every((s) => s === 401)).toBe(true);
+    expect(statuses.at(-1)).toBe(429);
   });
 });
 

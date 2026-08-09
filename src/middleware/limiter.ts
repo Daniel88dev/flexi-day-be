@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Request, Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 
@@ -21,19 +20,6 @@ const shared = {
 const ipKey = (req: Request) => ipKeyGenerator(req.ip ?? "");
 
 /**
- * Bucket authenticated traffic per session rather than per IP. Keying on the
- * IP pools every user behind one office NAT, VPN or mobile CGNAT into a single
- * allowance, which is what makes a shared limit feel arbitrarily strict.
- */
-function sessionKey(req: Request): string | null {
-  const cookies = req.headers.cookie;
-  if (!cookies) return null;
-  const match = /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=([^;]*)/.exec(cookies);
-  if (!match?.[1]) return null;
-  return `s:${createHash("sha256").update(match[1]).digest("hex").slice(0, 32)}`;
-}
-
-/**
  * Outermost backstop against floods. Deliberately far above anything a real
  * client produces — the per-session and per-credential limits below are what
  * actually shape traffic.
@@ -48,12 +34,35 @@ export const floodLimiter = rateLimit({
   skip: (req) => req.method === "OPTIONS" || req.path === "/health",
 });
 
-/** Authenticated API traffic. ~10 requests per page load, so this is ~100 loads. */
+/**
+ * Rejected `/api` traffic, counted per IP ahead of session validation. Only
+ * failures count, so a whole office's real requests never touch it — but
+ * unauthenticated probing, and anyone rotating forged session cookies to mint
+ * fresh `apiLimiter` buckets, is cut off long before the flood ceiling.
+ */
+export const apiFailureLimiter = rateLimit({
+  ...shared,
+  windowMs: FIVE_MINUTES,
+  limit: 100,
+  skipSuccessfulRequests: true,
+  keyGenerator: ipKey,
+  skip: (req) => req.method === "OPTIONS",
+});
+
+/**
+ * Authenticated API traffic, ~10 requests per page load, so this is ~100 loads.
+ *
+ * Keyed on the user id that `authSession` has already validated — never on the
+ * raw cookie, which a caller can invent to hand itself an unused bucket. Keying
+ * on the IP instead would pool every user behind one office NAT, VPN or mobile
+ * CGNAT into a single allowance, which is what makes a shared limit feel
+ * arbitrarily strict.
+ */
 export const apiLimiter = rateLimit({
   ...shared,
   windowMs: FIVE_MINUTES,
   limit: 1000,
-  keyGenerator: (req) => sessionKey(req) ?? ipKey(req),
+  keyGenerator: (req) => (req.auth?.userId ? `u:${req.auth.userId}` : ipKey(req)),
   skip: (req) => req.method === "OPTIONS",
 });
 
