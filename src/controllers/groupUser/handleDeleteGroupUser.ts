@@ -52,6 +52,19 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
   }
 
   const removed = await db.transaction(async (tx) => {
+    // Re-read the group under a row lock: the approver columns below are
+    // rewritten from the values read here, and the copy fetched before the
+    // transaction can already be stale if another admin reassigned approvers.
+    const locked = await services.group.lockGroup(groupId, tx);
+    if (!locked) {
+      throw new AppError({
+        message: "Group not found",
+        logging: true,
+        code: 404,
+        context: { url: req.url, userId: auth.userId, groupId },
+      });
+    }
+
     const row = await services.groupUser.deleteGroupUser(membership.id, tx);
     if (!row) {
       throw new AppError({
@@ -64,11 +77,11 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
 
     // A former member must not keep approval rights through the group's
     // approver columns: main falls back to the manager, temp is cleared.
-    if (group.mainApprovalUser === userId || group.tempApprovalUser === userId) {
+    if (locked.mainApprovalUser === userId || locked.tempApprovalUser === userId) {
       await services.group.updateGroupApprovalUsers(
         groupId,
-        group.mainApprovalUser === userId ? group.managerUserId : group.mainApprovalUser,
-        group.tempApprovalUser === userId ? null : group.tempApprovalUser,
+        locked.mainApprovalUser === userId ? locked.managerUserId : locked.mainApprovalUser,
+        locked.tempApprovalUser === userId ? null : locked.tempApprovalUser,
         tx
       );
     }

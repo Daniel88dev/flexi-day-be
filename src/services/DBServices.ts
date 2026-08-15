@@ -64,6 +64,7 @@ export type DBServices = Readonly<{
   };
   group: {
     getGroup: typeof groupServices.getGroup;
+    lockGroup: typeof groupServices.lockGroup;
     getAllGroups: typeof groupServices.getAllGroups;
     createGroup: typeof groupServices.createGroup;
     updateGroupManager: typeof groupServices.updateGroupManager;
@@ -212,6 +213,7 @@ export const createDBServices = (): DBServices => {
     },
     group: {
       getGroup: groupServices.getGroup,
+      lockGroup: groupServices.lockGroup,
       getAllGroups: groupServices.getAllGroups,
       createGroup: groupServices.createGroup,
       updateGroupManager: groupServices.updateGroupManager,

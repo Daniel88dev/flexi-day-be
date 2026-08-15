@@ -229,7 +229,6 @@ describe("handlePaddleWebhook", () => {
   });
 
   it("falls back to the stored row when custom data names no organization", async () => {
-    mockGetOrgById.mockResolvedValueOnce(undefined);
     mockGetSubByPaddleId.mockResolvedValue({ organizationId: "org-1", graceEndsAt: null });
     mockGetOrgById.mockResolvedValue(ORG);
     mockUnmarshal.mockResolvedValue({
@@ -299,8 +298,41 @@ describe("handlePaddleWebhook", () => {
       plan: "PRO",
       graceEndsAt: new Date(),
     });
+    // The guard reads the row again under the org lock, so this is the stub
+    // that actually decides the branch.
+    mockGetSubForOrg.mockResolvedValue({
+      organizationId: "org-1",
+      plan: "PRO",
+      graceEndsAt: new Date(),
+    });
     mockUnmarshal.mockResolvedValue({
       eventId: "evt-9",
+      occurredAt: OCCURRED_AT,
+      eventType: "transaction.payment_failed",
+      data: { subscriptionId: "psub-1" },
+    });
+
+    const { req, res } = makeWebhookReq();
+    await handlePaddleWebhook(req, res);
+
+    expect(mockUpsertSubscription).not.toHaveBeenCalled();
+    expect(mockNotifyGrace).not.toHaveBeenCalled();
+  });
+
+  it("ignores a retried payment_failed once the subscription is active again", async () => {
+    mockGetSubByPaddleId.mockResolvedValue({
+      organizationId: "org-1",
+      plan: "PRO",
+      graceEndsAt: null,
+    });
+    mockGetSubForOrg.mockResolvedValue({
+      organizationId: "org-1",
+      plan: "PRO",
+      status: "active",
+      graceEndsAt: null,
+    });
+    mockUnmarshal.mockResolvedValue({
+      eventId: "evt-9b",
       occurredAt: OCCURRED_AT,
       eventType: "transaction.payment_failed",
       data: { subscriptionId: "psub-1" },

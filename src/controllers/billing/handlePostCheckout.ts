@@ -5,12 +5,27 @@ import { requirePaddle } from "../../utils/paddle.js";
 import AppError from "../../utils/appError.js";
 import { PLAN_LIMITS } from "../../services/billing/entitlements.js";
 import { planPriceId, slotPriceId } from "../../services/billing/paddleCatalog.js";
-import { billingCycle, subscriptionPlan } from "../../db/schema/subscription-schema.js";
+import {
+  billingCycle,
+  subscriptionPlan,
+  subscriptionStatus,
+} from "../../db/schema/subscription-schema.js";
 import type { ValidatedPostCheckoutType } from "../../services/billing/types.js";
 
 const services = createDBServices();
 
-const ACTIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
+/**
+ * Statuses that still represent a subscription Paddle can bill or resume.
+ * `paused` counts: buying a second one would leave the org owning two Paddle
+ * subscriptions against a single local row, and a later `subscription.resumed`
+ * for the old one would clobber the new.
+ */
+const ACTIVE_STATUSES = new Set<string>([
+  subscriptionStatus.Active,
+  subscriptionStatus.Trialing,
+  subscriptionStatus.PastDue,
+  subscriptionStatus.Paused,
+]);
 
 /**
  * Creates a Paddle transaction for the Paddle.js overlay to open. No price or

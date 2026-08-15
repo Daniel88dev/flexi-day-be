@@ -90,8 +90,6 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  await assertGroupWritable(data.groupId);
-
   const days = expandDateRangeInclusive(fromIso, toIso);
 
   if (days.length === 0) {
@@ -131,6 +129,11 @@ export const handlePostVacation = async (req: Request, res: Response) => {
   }));
 
   const created = await db.transaction(async (tx) => {
+    // Inside the write transaction, not before it: a downgrade committing
+    // between the check and the insert would otherwise let this request write
+    // into a group that has just become read-only.
+    await assertGroupWritable(data.groupId, tx);
+
     await assertRequestWithinQuota(records, tx);
 
     const rows = await services.vacation.postVacationBulk(records, tx);

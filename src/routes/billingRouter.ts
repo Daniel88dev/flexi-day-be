@@ -117,9 +117,10 @@ export const billingRouter = (): Router => {
    *       - Billing
    *     summary: Change the extra group slot quantity
    *     description: |
-   *       Updates the extra-group-slot line on the existing subscription.
-   *       Increases are prorated immediately; decreases take effect at the
-   *       next billing period. Capped by the plan's `maxExtraSlots`.
+   *       Updates the extra-group-slot line on the existing subscription. The
+   *       new quantity applies immediately in both directions; an increase is
+   *       charged straight away, a decrease is credited pro rata at the next
+   *       billing period. Capped by the plan's `maxExtraSlots`.
    *     security:
    *       - bearerAuth: []
    *     requestBody:

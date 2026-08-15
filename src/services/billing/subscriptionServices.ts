@@ -40,6 +40,18 @@ export const upsertSubscription = async (
   patch: SubscriptionPatch,
   tx?: DbTransaction
 ): Promise<Subscription | undefined> => {
+  // Drizzle rejects an empty `set`, and an empty patch has nothing to write
+  // anyway — but the row must still exist afterwards, so fall back to a plain
+  // insert that no-ops on conflict.
+  if (Object.keys(patch).length === 0) {
+    await (tx ?? db)
+      .insert(subscriptions)
+      .values({ id: generateRandomUUID(), organizationId })
+      .onConflictDoNothing({ target: subscriptions.organizationId });
+
+    return getSubscriptionForOrganization(organizationId, tx);
+  }
+
   const [row] = await (tx ?? db)
     .insert(subscriptions)
     .values({ id: generateRandomUUID(), organizationId, ...patch })

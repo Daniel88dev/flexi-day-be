@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { v4 as uuidv4 } from "uuid";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -143,8 +144,11 @@ describe("billing limits", () => {
       graceEndsAt: new Date(Date.now() - 60 * 60 * 1000),
     });
 
-    const groupIds = await db.select({ id: groups.id, createdAt: groups.createdAt }).from(groups);
-    const sorted = groupIds.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const sorted = await db
+      .select({ id: groups.id, createdAt: groups.createdAt })
+      .from(groups)
+      .where(eq(groups.organizationId, organization.id))
+      .orderBy(asc(groups.createdAt));
 
     // Free allows 3 groups: the three oldest stay writable, the rest lock.
     await expect(assertGroupWritable(sorted[0]!.id)).resolves.toBeUndefined();
@@ -165,7 +169,12 @@ describe("billing limits", () => {
       graceEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
 
-    const [anyGroup] = await db.select({ id: groups.id }).from(groups).limit(1);
+    const [anyGroup] = await db
+      .select({ id: groups.id })
+      .from(groups)
+      .where(eq(groups.organizationId, organization.id))
+      .orderBy(asc(groups.createdAt))
+      .limit(1);
     await expect(assertGroupWritable(anyGroup!.id)).resolves.toBeUndefined();
   });
 
@@ -176,8 +185,9 @@ describe("billing limits", () => {
   });
 
   it("grants a member no organization until they create a group", async () => {
-    const { getOrganizationForOwner } =
-      await import("../../services/organization/organizationServices.js");
+    const { getOrganizationForOwner } = await import(
+      "../../services/organization/organizationServices.js"
+    );
     expect(await getOrganizationForOwner(member.id)).toBeUndefined();
   });
 });

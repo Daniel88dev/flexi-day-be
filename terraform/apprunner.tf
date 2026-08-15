@@ -122,6 +122,8 @@ resource "aws_apprunner_service" "main" {
     aws_secretsmanager_secret_version.database_url,
     aws_secretsmanager_secret_version.better_auth_secret,
     aws_secretsmanager_secret_version.google_client_secret,
+    aws_secretsmanager_secret_version.paddle_api_key,
+    aws_secretsmanager_secret_version.paddle_webhook_secret,
     aws_iam_role_policy.apprunner_secrets,
     aws_db_instance.main
   ]

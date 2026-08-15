@@ -11,6 +11,7 @@ import {
 import { billingCycle, subscriptionPlan } from "../../db/schema/subscription-schema.js";
 import type { ValidatedChangePlanType } from "../../services/billing/types.js";
 import { requireOwnedActiveSubscription } from "./handlePatchSlots.js";
+import { logger } from "../../middleware/logger.js";
 
 const services = createDBServices();
 
@@ -55,6 +56,20 @@ export const handlePostChangePlan = async (req: Request, res: Response) => {
   );
   if (derived) {
     await services.billing.upsertSubscription(organizationId, derived);
+  } else {
+    // Paddle accepted the change but returned prices outside our catalog.
+    // Persisting the intended state is better than leaving the row on the old
+    // plan indefinitely — the next subscription.updated webhook still wins.
+    logger.error("change-plan: Paddle returned items outside the price catalog", {
+      organizationId,
+      paddleSubscriptionId: subscription.paddleSubscriptionId,
+      priceIds: updated.items.map((item) => item.price?.id),
+    });
+    await services.billing.upsertSubscription(organizationId, {
+      plan: newPlan,
+      billingCycle: newCycle,
+      extraGroupSlots: keptSlots,
+    });
   }
 
   return res.status(200).json({

@@ -18,6 +18,24 @@ export const getGroup = async (
   return row;
 };
 
+/**
+ * `getGroup` under a row lock, for callers that recompute a column from the
+ * value they just read — a plain read under READ COMMITTED lets a concurrent
+ * writer commit in between and lose its change.
+ */
+export const lockGroup = async (
+  groupId: string,
+  tx: DbTransaction
+): Promise<GroupType | undefined> => {
+  const [row] = await tx
+    .select()
+    .from(groups)
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
+    .for("update");
+
+  return row;
+};
+
 export const getAllGroups = async (
   groupIds: string[],
   tx?: DbTransaction

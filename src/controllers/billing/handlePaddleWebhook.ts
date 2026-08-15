@@ -182,6 +182,21 @@ const handlePaymentFailed = async (
   const existing = await services.billing.getSubscriptionForOrganization(found.organizationId, tx);
   if (!existing || existing.graceEndsAt) return null;
 
+  // Paddle retries a failed delivery, and the payment can succeed before the
+  // retry lands. Arming grace off a stale `payment_failed` would email a
+  // customer who has already paid — unlike syncSubscriptionFromEvent, this
+  // event carries no subscription status of its own to order against.
+  if (
+    existing.status === subscriptionStatus.Active ||
+    existing.status === subscriptionStatus.Trialing
+  ) {
+    logger.info("paddle webhook: ignoring payment_failed for an active subscription", {
+      organizationId: existing.organizationId,
+      paddleSubscriptionId,
+    });
+    return null;
+  }
+
   const endsAt = graceEnd(new Date());
   await services.billing.upsertSubscription(existing.organizationId, { graceEndsAt: endsAt }, tx);
 

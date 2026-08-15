@@ -120,18 +120,26 @@ const parsePaddle = (): PaddleConfig | undefined => {
     throw new Error("PADDLE_ENV=sandbox must never be set when NODE_ENV=production");
   }
 
+  const prices = {
+    proMonthly: envOrThrow("PADDLE_PRICE_PRO_MONTHLY"),
+    proYearly: envOrThrow("PADDLE_PRICE_PRO_YEARLY"),
+    enterpriseMonthly: envOrThrow("PADDLE_PRICE_ENTERPRISE_MONTHLY"),
+    enterpriseYearly: envOrThrow("PADDLE_PRICE_ENTERPRISE_YEARLY"),
+    extraGroupMonthly: envOrThrow("PADDLE_PRICE_EXTRA_GROUP_MONTHLY"),
+    extraGroupYearly: envOrThrow("PADDLE_PRICE_EXTRA_GROUP_YEARLY"),
+  };
+
+  // A price id pasted into two slots would make `derivePlanFromItems` resolve
+  // the wrong plan from a webhook — cheap to catch at boot, invisible later.
+  if (new Set(Object.values(prices)).size !== Object.keys(prices).length) {
+    throw new Error("Paddle price ids must all be distinct");
+  }
+
   return {
     apiKey: envOrThrow("PADDLE_API_KEY"),
     webhookSecret: envOrThrow("PADDLE_WEBHOOK_SECRET"),
     environment: rawEnv,
-    prices: {
-      proMonthly: envOrThrow("PADDLE_PRICE_PRO_MONTHLY"),
-      proYearly: envOrThrow("PADDLE_PRICE_PRO_YEARLY"),
-      enterpriseMonthly: envOrThrow("PADDLE_PRICE_ENTERPRISE_MONTHLY"),
-      enterpriseYearly: envOrThrow("PADDLE_PRICE_ENTERPRISE_YEARLY"),
-      extraGroupMonthly: envOrThrow("PADDLE_PRICE_EXTRA_GROUP_MONTHLY"),
-      extraGroupYearly: envOrThrow("PADDLE_PRICE_EXTRA_GROUP_YEARLY"),
-    },
+    prices,
   };
 };
 
