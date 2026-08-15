@@ -7,6 +7,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { normalizeInviteCode } from "../../utils/inviteCode.js";
 import AppError from "../../utils/appError.js";
 import { currentYear } from "../../utils/dateFunc.js";
+import { assertCanAddMember } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -83,6 +84,10 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
+    // The authoritative member-cap gate: runs inside the single-use redemption
+    // transaction, where the invite being redeemed still counts as open.
+    await assertCanAddMember(validateLink.groupId, tx, { redeemingOpenInvite: true });
+
     const createGroupUser = await services.groupUser.createGroupUser(
       {
         id: generateRandomUUID(),
@@ -110,7 +115,9 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
-    const group = await services.group.getGroup(validateLink.groupId);
+    // MUST take `tx`: checking out a second pool connection while this
+    // transaction holds one deadlocks the pool at concurrency >= pool size.
+    const group = await services.group.getGroup(validateLink.groupId, tx);
     await services.userYearQuotas.openQuotaFromGroupDefaults(
       {
         id: generateRandomUUID(),

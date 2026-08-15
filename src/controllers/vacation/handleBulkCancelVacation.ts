@@ -7,6 +7,7 @@ import type { ValidatedBulkCancelVacationType } from "../../services/vacation/ty
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationsCancelled } from "../../services/vacation/vacationNotifier.js";
+import { assertGroupsWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -50,6 +51,8 @@ export const handleBulkCancelVacation = async (req: Request, res: Response) => {
         context: { auth, unauthorized: unauthorized.map((r) => r.id) },
       });
     }
+
+    await assertGroupsWritable(distinctGroupIds, tx);
 
     const updated = await services.vacation.cancelVacationsBulk(uniqueIds, tx);
 

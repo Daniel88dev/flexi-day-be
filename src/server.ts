@@ -8,6 +8,7 @@ import {
   calendarFeedLimiter,
   credentialsLimiter,
   floodLimiter,
+  paddleWebhookLimiter,
 } from "./middleware/limiter.js";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./utils/auth.js";
@@ -28,6 +29,8 @@ import { tryCatch } from "./middleware/tryCatch.js";
 import { handleGetCalendarFeed } from "./controllers/calendarSync/handleGetCalendarFeed.js";
 import { devRouter } from "./routes/devRouter.js";
 import { requestContext } from "./middleware/requestContext.js";
+import { billingRouter } from "./routes/billingRouter.js";
+import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
 
 export const createServer = () => {
   const app = express();
@@ -60,6 +63,17 @@ export const createServer = () => {
   app.use("/api/auth/sign-up-with-team", express.json());
   app.use("/api/auth", authExtRouter());
 
+  // Paddle webhook. Registered BEFORE the global `express.json()` so it gets
+  // the raw body (HMAC verification needs the exact bytes), and before the
+  // `/api` session block so Paddle's cookie-less calls are not 401'd. It
+  // authenticates by `Paddle-Signature` alone.
+  app.post(
+    "/api/webhooks/paddle",
+    express.raw({ type: "application/json" }),
+    paddleWebhookLimiter,
+    tryCatch(handlePaddleWebhook)
+  );
+
   app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());
 
   // Local seeding/impersonation routes. `config.dev` is undefined unless the
@@ -85,6 +99,7 @@ export const createServer = () => {
   app.use("/api/notifications", notificationRouter());
   app.use("/api/calendar-sync", calendarSyncRouter());
   app.use("/api/reports", reportRouter());
+  app.use("/api/billing", billingRouter());
 
   // Public, token-authenticated iCalendar feed. Deliberately NOT behind
   // `authSession`: calendar clients subscribe with just the secret token in

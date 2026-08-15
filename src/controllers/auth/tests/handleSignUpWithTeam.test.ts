@@ -6,12 +6,14 @@ const {
   mockCreateGroupUser,
   mockDelete,
   mockOpenQuotaFromGroupDefaults,
+  mockEnsureOrganizationForUser,
 } = vi.hoisted(() => ({
   mockSignUpEmail: vi.fn(),
   mockCreateGroup: vi.fn(),
   mockCreateGroupUser: vi.fn(),
   mockDelete: vi.fn(),
   mockOpenQuotaFromGroupDefaults: vi.fn(),
+  mockEnsureOrganizationForUser: vi.fn(),
 }));
 
 vi.mock("../../../utils/auth.js", () => ({
@@ -32,7 +34,16 @@ vi.mock("../../../services/DBServices.js", () => ({
     group: { createGroup: mockCreateGroup },
     groupUser: { createGroupUser: mockCreateGroupUser },
     userYearQuotas: { openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults },
+    organization: { ensureOrganizationForUser: mockEnsureOrganizationForUser },
   }),
+}));
+
+// Billing plan-limit guards are no-ops here; their behavior has its own suite.
+vi.mock("../../../services/billing/guards.js", () => ({
+  assertCanCreateGroup: vi.fn(),
+  assertCanAddMember: vi.fn(),
+  assertGroupWritable: vi.fn(),
+  assertGroupsWritable: vi.fn(),
 }));
 
 import { handleSignUpWithTeam, validateSignUpWithTeam } from "../handleSignUpWithTeam.js";
@@ -81,6 +92,7 @@ describe("handleSignUpWithTeam", () => {
     mockSignUpEmail.mockResolvedValue(okSignUp());
     mockCreateGroup.mockResolvedValue({ id: "group-1", groupName: "Platform" });
     mockCreateGroupUser.mockResolvedValue({ id: "membership-1" });
+    mockEnsureOrganizationForUser.mockResolvedValue({ id: "org-1" });
     mockDelete.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   });
 

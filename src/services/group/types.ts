@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export type GroupType = {
   id: string;
+  organizationId: string;
   groupName: string;
   defaultVacationDays: number;
   defaultHomeOfficeDays: number;
@@ -16,6 +17,7 @@ export type GroupType = {
 
 export type GroupInsertType = {
   id: string;
+  organizationId: string;
   groupName: string;
   managerUserId: string;
   defaultVacationDays?: number;

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPutGroupQuotasType } from "../../services/group/types.js";
 import AppError from "../../utils/appError.js";
@@ -32,6 +33,8 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
       context: { url: req.url, user: auth.userId, groupId },
     });
   }
+
+  await assertGroupWritable(groupId);
 
   const updated = await services.group.updateGroupQuotas(
     groupId,

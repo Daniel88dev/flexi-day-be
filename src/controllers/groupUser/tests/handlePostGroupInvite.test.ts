@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Billing plan-limit guards are no-ops here; their behavior has its own suite.
+vi.mock("../../../services/organization/organizationServices.js", () => ({
+  lockOrganization: vi.fn(),
+}));
+
+vi.mock("../../../services/billing/guards.js", () => ({
+  assertCanCreateGroup: vi.fn(),
+  assertCanAddMember: vi.fn(),
+  assertGroupWritable: vi.fn(),
+  assertGroupsWritable: vi.fn(),
+}));
+
 const {
   mockGetGroupUser,
   mockGetGroup,

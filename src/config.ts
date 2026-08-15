@@ -34,6 +34,21 @@ type QuotaRolloverConfig = {
   timezone: string;
 };
 
+type PaddleConfig = {
+  apiKey: string;
+  webhookSecret: string;
+  environment: "sandbox" | "production";
+  /** Paddle price ids for the six catalog prices (EUR, tax-exclusive). */
+  prices: {
+    proMonthly: string;
+    proYearly: string;
+    enterpriseMonthly: string;
+    enterpriseYearly: string;
+    extraGroupMonthly: string;
+    extraGroupYearly: string;
+  };
+};
+
 type DevToolsConfig = {
   /** Shared secret every `/api/dev/*` request must present as `x-dev-token`. */
   token: string;
@@ -47,6 +62,8 @@ type Config = {
   auth?: AuthConfig;
   email: EmailConfig;
   quotaRollover: QuotaRolloverConfig;
+  /** Billing via Paddle. `undefined` until the keys are provisioned — billing routes then 503. */
+  paddle?: PaddleConfig;
   /** Local seeding/session surface. `undefined` means the routes do not exist. */
   dev?: DevToolsConfig;
 };
@@ -84,6 +101,39 @@ const parseTemplateStage = (): "dev" | "prod" => {
 const databaseUrl = envOrThrow("DATABASE");
 
 const LOCAL_DB_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Paddle stays optional so every environment without keys (tests, fresh local
+ * setups) boots normally — but once PADDLE_API_KEY is present, every other
+ * variable must be too, so a half-configured deploy fails at boot instead of
+ * at the first checkout.
+ */
+const parsePaddle = (): PaddleConfig | undefined => {
+  if (!process.env.PADDLE_API_KEY) return undefined;
+
+  const rawEnv =
+    process.env.PADDLE_ENV ?? (environment === "production" ? "production" : "sandbox");
+  if (rawEnv !== "sandbox" && rawEnv !== "production") {
+    throw new Error(`Invalid PADDLE_ENV: "${rawEnv}". Expected "sandbox" or "production"`);
+  }
+  if (environment === "production" && rawEnv === "sandbox") {
+    throw new Error("PADDLE_ENV=sandbox must never be set when NODE_ENV=production");
+  }
+
+  return {
+    apiKey: envOrThrow("PADDLE_API_KEY"),
+    webhookSecret: envOrThrow("PADDLE_WEBHOOK_SECRET"),
+    environment: rawEnv,
+    prices: {
+      proMonthly: envOrThrow("PADDLE_PRICE_PRO_MONTHLY"),
+      proYearly: envOrThrow("PADDLE_PRICE_PRO_YEARLY"),
+      enterpriseMonthly: envOrThrow("PADDLE_PRICE_ENTERPRISE_MONTHLY"),
+      enterpriseYearly: envOrThrow("PADDLE_PRICE_ENTERPRISE_YEARLY"),
+      extraGroupMonthly: envOrThrow("PADDLE_PRICE_EXTRA_GROUP_MONTHLY"),
+      extraGroupYearly: envOrThrow("PADDLE_PRICE_EXTRA_GROUP_YEARLY"),
+    },
+  };
+};
 
 /**
  * Gate for the local dev/seeding surface (`/api/dev/*`). It stays `undefined`
@@ -166,5 +216,8 @@ export const config: Config = {
     cron: process.env.QUOTA_ROLLOVER_CRON ?? "0 2 * * *",
     timezone: process.env.QUOTA_ROLLOVER_TIMEZONE ?? "Europe/Prague",
   },
+  paddle: parsePaddle(),
   dev: parseDevTools(),
 };
+
+export type { PaddleConfig };

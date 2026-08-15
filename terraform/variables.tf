@@ -169,6 +169,59 @@ variable "better_auth_rotation_days" {
   default     = 90
 }
 
+# Paddle Billing Configuration
+#
+# Billing is opt-in: leave paddle_api_key empty and no Paddle resources are
+# created, no Paddle env vars are injected, and the backend's /api/billing/*
+# routes return 503. Set it and the remaining Paddle variables become required
+# — the backend refuses to boot with a half-configured Paddle block.
+variable "paddle_api_key" {
+  description = "Paddle API key (stored in Secrets Manager). Empty disables billing entirely."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_webhook_secret" {
+  description = "Paddle webhook signing secret (stored in Secrets Manager). Required if paddle_api_key is set."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "paddle_environment" {
+  description = "Paddle environment: 'sandbox' or 'production'. The backend refuses to boot on 'sandbox' when NODE_ENV=production."
+  type        = string
+  default     = "production"
+
+  validation {
+    condition     = contains(["sandbox", "production"], var.paddle_environment)
+    error_message = "paddle_environment must be either \"sandbox\" or \"production\"."
+  }
+}
+
+# Price IDs are NOT secrets — they identify catalog prices and are visible in
+# any checkout — so they ride as plain env vars rather than Secrets Manager.
+variable "paddle_prices" {
+  description = "Paddle price IDs for the six EUR catalog prices. All required if paddle_api_key is set."
+  type = object({
+    pro_monthly         = string
+    pro_yearly          = string
+    enterprise_monthly  = string
+    enterprise_yearly   = string
+    extra_group_monthly = string
+    extra_group_yearly  = string
+  })
+  default = {
+    pro_monthly         = ""
+    pro_yearly          = ""
+    enterprise_monthly  = ""
+    enterprise_yearly   = ""
+    extra_group_monthly = ""
+    extra_group_yearly  = ""
+  }
+}
+
 # Google OAuth Configuration
 variable "google_client_id" {
   description = "Google OAuth client ID (public; injected as a plain env var). Leave empty to disable Google sign-in."

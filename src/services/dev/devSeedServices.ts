@@ -4,6 +4,8 @@ import { hashPassword } from "better-auth/crypto";
 import { db } from "../../db/db.js";
 import { account, user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { organizations } from "../../db/schema/organization-schema.js";
+import { subscriptions } from "../../db/schema/subscription-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
@@ -112,8 +114,11 @@ export const seedTeam = async (input: {
   teamName: string;
   managerUserId: string;
 }): Promise<{ id: string; groupName: string }> => {
+  const organization = await services.organization.ensureOrganizationForUser(input.managerUserId);
+
   const group = await services.group.createGroup({
     id: generateRandomUUID(),
+    organizationId: organization.id,
     groupName: input.teamName,
     managerUserId: input.managerUserId,
     mainApprovalUser: input.managerUserId,
@@ -199,9 +204,9 @@ export const addVacation = async (input: {
       vacationType: input.type ?? vacationType.Vacation,
       note: input.note,
       approvedAt: input.state === "approved" ? now : null,
-      approvedBy: input.state === "approved" ? input.actorUserId ?? null : null,
+      approvedBy: input.state === "approved" ? (input.actorUserId ?? null) : null,
       rejectedAt: input.state === "rejected" ? now : null,
-      rejectedBy: input.state === "rejected" ? input.actorUserId ?? null : null,
+      rejectedBy: input.state === "rejected" ? (input.actorUserId ?? null) : null,
       rejectionReason: input.state === "rejected" ? "Team coverage on that day" : null,
       createdAt: now,
       updatedAt: now,
@@ -289,6 +294,18 @@ export const resetDevData = async (): Promise<ResetSummary> => {
         )
       )
       .returning({ id: groups.id });
+
+    // Organizations reference dev users without a cascade, and subscriptions
+    // reference organizations — both must go before the user rows.
+    const devOrgs = await tx
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(inArray(organizations.ownerUserId, ids));
+    const orgIds = devOrgs.map((row) => row.id);
+    if (orgIds.length > 0) {
+      await tx.delete(subscriptions).where(inArray(subscriptions.organizationId, orgIds));
+      await tx.delete(organizations).where(inArray(organizations.id, orgIds));
+    }
 
     const deletedUsers = await tx
       .delete(user)

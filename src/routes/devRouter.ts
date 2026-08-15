@@ -13,6 +13,10 @@ import {
   validatePostDevScenario,
 } from "../controllers/dev/handlePostDevScenario.js";
 import { handlePostDevReset } from "../controllers/dev/handlePostDevReset.js";
+import {
+  handlePostDevSetPlan,
+  validatePostDevSetPlan,
+} from "../controllers/dev/handlePostDevSetPlan.js";
 
 /**
  * Local-only seeding and impersonation surface, mounted by `server.ts` only
@@ -42,6 +46,12 @@ export const devRouter = (): Router => {
   );
 
   app.post("/reset", tryCatch(handlePostDevReset));
+
+  app.post(
+    "/billing/set-plan",
+    bodyValidationMiddleware(validatePostDevSetPlan),
+    tryCatch(handlePostDevSetPlan)
+  );
 
   return app;
 };

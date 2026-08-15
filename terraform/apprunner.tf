@@ -62,7 +62,22 @@ resource "aws_apprunner_service" "main" {
           # enabled. The matching client secret is injected below via Secrets
           # Manager. better-auth builds the callback as
           # {BETTER_AUTH_URL}/api/auth/callback/google.
-          var.google_client_id != "" ? { GOOGLE_CLIENT_ID = var.google_client_id } : {}
+          var.google_client_id != "" ? { GOOGLE_CLIENT_ID = var.google_client_id } : {},
+
+          # Paddle price IDs are public catalog identifiers, not secrets, so
+          # they ride as plain env vars. The API key and webhook secret go
+          # through Secrets Manager below. Omitted entirely when billing is
+          # disabled, which leaves config.paddle undefined and /api/billing/*
+          # returning 503.
+          var.paddle_api_key != "" ? {
+            PADDLE_ENV                       = var.paddle_environment
+            PADDLE_PRICE_PRO_MONTHLY         = var.paddle_prices.pro_monthly
+            PADDLE_PRICE_PRO_YEARLY          = var.paddle_prices.pro_yearly
+            PADDLE_PRICE_ENTERPRISE_MONTHLY  = var.paddle_prices.enterprise_monthly
+            PADDLE_PRICE_ENTERPRISE_YEARLY   = var.paddle_prices.enterprise_yearly
+            PADDLE_PRICE_EXTRA_GROUP_MONTHLY = var.paddle_prices.extra_group_monthly
+            PADDLE_PRICE_EXTRA_GROUP_YEARLY  = var.paddle_prices.extra_group_yearly
+          } : {}
         )
 
         # Resolved at instance start via the instance role; each env var
@@ -74,6 +89,10 @@ resource "aws_apprunner_service" "main" {
           },
           var.google_client_id != "" ? {
             GOOGLE_CLIENT_SECRET = aws_secretsmanager_secret.google_client_secret[0].arn
+          } : {},
+          var.paddle_api_key != "" ? {
+            PADDLE_API_KEY        = aws_secretsmanager_secret.paddle_api_key[0].arn
+            PADDLE_WEBHOOK_SECRET = aws_secretsmanager_secret.paddle_webhook_secret[0].arn
           } : {}
         )
       }

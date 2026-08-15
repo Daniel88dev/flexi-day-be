@@ -131,9 +131,12 @@ export const handleSignUpWithTeam = async (req: Request, res: Response) => {
 
 const createTeamForUser = async (userId: string, teamName: string) =>
   db.transaction(async (tx) => {
+    const organization = await services.organization.ensureOrganizationForUser(userId, tx);
+
     const newGroup = await services.group.createGroup(
       {
         id: generateRandomUUID(),
+        organizationId: organization.id,
         groupName: teamName,
         managerUserId: userId,
         mainApprovalUser: userId,

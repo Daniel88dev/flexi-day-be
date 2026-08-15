@@ -8,6 +8,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationComment } from "../../services/vacation/vacationNotifier.js";
 import { resolveVacationPermissions } from "./utils.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 import type { ValidatedCommentVacationType } from "../../services/vacation/types.js";
 
 const services = createDBServices();
@@ -44,6 +45,8 @@ export const handlePostVacationComment = async (req: Request, res: Response) => 
         context: { userId: auth.userId, vacationId },
       });
     }
+
+    await assertGroupWritable(vacationData.groupId, tx);
 
     await services.vacationEvent.createVacationEvent(
       {

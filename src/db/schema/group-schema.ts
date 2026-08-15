@@ -1,11 +1,15 @@
 import { index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
+import { organizations } from "./organization-schema.js";
 import { isNull } from "drizzle-orm";
 
 export const groups = pgTable(
   "groups",
   {
     id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id),
     groupName: text("group_name").notNull(),
     defaultVacationDays: integer("default_vacation_days").notNull().default(20),
     defaultHomeOfficeDays: integer("default_home_office_days").notNull().default(0),
@@ -25,5 +29,8 @@ export const groups = pgTable(
   },
   (table) => [
     index("idx_groups_deleted_at_active").on(table.deletedAt).where(isNull(table.deletedAt)),
+    // Postgres does not index FK columns automatically, and every billing
+    // guard filters groups by organization.
+    index("idx_groups_organization_id").on(table.organizationId),
   ]
 );

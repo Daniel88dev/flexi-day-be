@@ -13,6 +13,7 @@ import { db } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationRequested } from "../../services/vacation/vacationNotifier.js";
 import { assertRequestWithinQuota } from "../../services/vacation/quotaGuard.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -88,6 +89,8 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       context: { groupId: data.groupId },
     });
   }
+
+  await assertGroupWritable(data.groupId);
 
   const days = expandDateRangeInclusive(fromIso, toIso);
 

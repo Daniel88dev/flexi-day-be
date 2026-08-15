@@ -181,6 +181,11 @@ export const vacationRouter = (): Router => {
    *                 $ref: '#/components/schemas/Vacation'
    *       '401':
    *         description: Unauthorized
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No access for related group
    *       '422':
@@ -275,6 +280,11 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Vacation approved
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    */
   app.post(
     "/approve/:id",
@@ -314,6 +324,11 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: All requested vacations approved
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: Not allowed to approve one or more rows
    *       '404':
@@ -353,6 +368,11 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Vacation rejected
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    */
   app.post(
     "/reject/:id",
@@ -395,6 +415,11 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Comment added
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: Not allowed to view this vacation
    *       '404':
@@ -434,6 +459,11 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: All requested vacations rejected
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: Not allowed to reject one or more rows
    *       '404':
@@ -478,6 +508,11 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: All requested vacations cancelled
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: Not allowed to cancel one or more rows
    *       '404':
@@ -522,6 +557,11 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Vacation cancelled
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: Not allowed
    *       '404':

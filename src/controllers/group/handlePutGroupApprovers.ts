@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPutGroupApproversType } from "../../services/group/types.js";
 import AppError from "../../utils/appError.js";
@@ -28,6 +29,8 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
       context: { url: req.url, user: auth.userId, groupId },
     });
   }
+
+  await assertGroupWritable(groupId);
 
   const candidates = [data.mainApprovalUser, data.tempApprovalUser].filter(
     (id): id is string => id !== null

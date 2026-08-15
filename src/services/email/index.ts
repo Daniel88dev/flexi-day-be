@@ -15,6 +15,7 @@ export type {
   VacationRejectedData,
   VacationCommentData,
   GroupInviteData,
+  SubscriptionGraceData,
 } from "./emailSender.js";
 
 /**

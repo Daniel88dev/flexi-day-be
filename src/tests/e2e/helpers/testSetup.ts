@@ -8,6 +8,10 @@ import { groupUsers } from "../../../db/schema/group-users-schema.js";
 import { session } from "../../../db/schema/auth-schema.js";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
+import { organizations } from "../../../db/schema/organization-schema.js";
+import { subscriptions } from "../../../db/schema/subscription-schema.js";
+import { paddleEvents } from "../../../db/schema/paddle-event-schema.js";
+import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 export interface TestUser {
   id: string;
@@ -79,8 +83,11 @@ export async function createTestGroup(
 ): Promise<TestGroup> {
   const groupId = uuidv4();
 
+  const organization = await ensureOrganizationForUser(managerUserId);
+
   await db.insert(groups).values({
     id: groupId,
+    organizationId: organization.id,
     groupName,
     managerUserId,
     mainApprovalUser: mainApprovalUser || null,
@@ -124,6 +131,9 @@ export async function cleanupTestData() {
     await db.delete(groupUsers);
     await db.delete(session);
     await db.delete(groups);
+    await db.delete(subscriptions);
+    await db.delete(organizations);
+    await db.delete(paddleEvents);
     await db.delete(user);
 
     // Clear cache

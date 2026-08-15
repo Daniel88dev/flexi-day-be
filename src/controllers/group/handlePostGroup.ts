@@ -6,6 +6,7 @@ import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import { currentYear } from "../../utils/dateFunc.js";
+import { assertCanCreateGroup } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -33,9 +34,14 @@ export const handlePostGroup = async (req: Request, res: Response) => {
   }
 
   const result = await db.transaction(async (tx) => {
+    const organization = await services.organization.ensureOrganizationForUser(auth.userId, tx);
+
+    await assertCanCreateGroup(organization.id, tx);
+
     const record = await services.group.createGroup(
       {
         id: generateRandomUUID(),
+        organizationId: organization.id,
         groupName: data.groupName,
         managerUserId: auth.userId,
         defaultVacationDays: data.defaultVacation,

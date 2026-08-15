@@ -11,6 +11,9 @@ import { calendarSync, calendarSyncTeams, calendarSyncTypes } from "./calendar-s
 import { vacationEvents } from "./vacation-event-schema.js";
 import { userSettings } from "./user-settings-schema.js";
 import { reportExports } from "./report-export-schema.js";
+import { organizations } from "./organization-schema.js";
+import { subscriptions } from "./subscription-schema.js";
+import { paddleEvents } from "./paddle-event-schema.js";
 
 export const schema = {
   account,
@@ -31,4 +34,7 @@ export const schema = {
   calendarSyncTeams,
   calendarSyncTypes,
   reportExports,
+  organizations,
+  subscriptions,
+  paddleEvents,
 };

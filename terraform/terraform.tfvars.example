@@ -49,3 +49,32 @@ better_auth_secret = ""
 # committing them here.
 google_client_id     = ""
 google_client_secret = ""
+
+# Paddle billing. Leave paddle_api_key empty to disable billing entirely: no
+# Paddle secrets are created, no Paddle env vars are injected, and the
+# backend's /api/billing/* routes return 503.
+#
+# Once paddle_api_key is set, ALL of the following are required — terraform
+# fails at plan time otherwise (see the preconditions in secrets.tf), rather
+# than letting App Runner boot-loop on a config error.
+#
+# Sandbox and production are separate Paddle accounts with separate catalogs,
+# so production price IDs are NOT the same as your sandbox ones.
+paddle_api_key        = ""
+paddle_webhook_secret = ""
+
+# "sandbox" or "production". Terraform refuses to combine "sandbox" with
+# environment = "production", and the backend enforces the same rule at boot.
+paddle_environment = "production"
+
+# All six keys must be present when billing is enabled — this is a typed
+# object, so a partial map is a plan error. Price IDs are public identifiers,
+# not secrets, and are injected as plain env vars.
+paddle_prices = {
+  pro_monthly         = ""
+  pro_yearly          = ""
+  enterprise_monthly  = ""
+  enterprise_yearly   = ""
+  extra_group_monthly = ""
+  extra_group_yearly  = ""
+}

@@ -101,6 +101,20 @@ export interface GroupInviteData {
 }
 
 /**
+ * `subscription-grace`: sent to the organization's billing email when a
+ * payment fails or a subscription is canceled — full limits continue for the
+ * grace window, then over-limit groups go read-only. Account/billing mail, so
+ * it ignores `user_settings.emailNotifications`.
+ */
+export interface SubscriptionGraceData {
+  recipientName: string;
+  planName: string;
+  /** Human-readable date the grace window ends, e.g. "25 August 2026". */
+  graceEndsDate: string;
+  billingUrl: string;
+}
+
+/**
  * A templated email to send. `template` is the logical template name; the
  * adapter maps it to the concrete, stage-suffixed SES template name. The
  * union keeps each template's variables tied to its name.
@@ -112,7 +126,8 @@ export type TemplatedEmail =
   | { to: string; template: "vacation-rejected"; data: VacationRejectedData }
   | { to: string; template: "vacation-cancelled"; data: VacationCancelledData }
   | { to: string; template: "vacation-comment"; data: VacationCommentData }
-  | { to: string; template: "group-invite"; data: GroupInviteData };
+  | { to: string; template: "group-invite"; data: GroupInviteData }
+  | { to: string; template: "subscription-grace"; data: SubscriptionGraceData };
 
 export type EmailTemplateName = TemplatedEmail["template"];
 

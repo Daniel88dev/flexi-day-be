@@ -11,6 +11,7 @@ import {
 import { handlePostGroupInvite } from "../controllers/groupUser/handlePostGroupInvite.js";
 import { handleGetGroupInvites } from "../controllers/groupUser/handleGetGroupInvites.js";
 import { handleDeleteGroupInvite } from "../controllers/groupUser/handleDeleteGroupInvite.js";
+import { handleDeleteGroupUser } from "../controllers/groupUser/handleDeleteGroupUser.js";
 
 export const groupUsersRouter = (): Router => {
   const app = Router();
@@ -72,6 +73,11 @@ export const groupUsersRouter = (): Router => {
    *         description: The created membership
    *       '400':
    *         description: Malformed code
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: Invite was issued for a different email address
    *       '404':
@@ -140,6 +146,11 @@ export const groupUsersRouter = (): Router => {
    *     responses:
    *       '201':
    *         description: The created invite plus whether the email went out
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No permission for related group
    *       '404':
@@ -147,6 +158,47 @@ export const groupUsersRouter = (): Router => {
    *       '409':
    *         description: That person already belongs to the group
    */
+  /**
+   * @openapi
+   * /api/group-user/{groupId}/{userId}:
+   *   delete:
+   *     tags:
+   *       - Group members
+   *     summary: Remove a member from a group
+   *     description: |
+   *       Soft-deletes the membership. Requires admin access on the group. The
+   *       group's manager cannot be removed; there is no manager-transfer route
+   *       yet, so a manager can only leave by deleting the group. If the
+   *       removed member was the main approver, approvals fall back to the
+   *       manager; a temp approver slot is cleared. Deliberately available on
+   *       read-only (over plan limit) groups, since removing members is how an
+   *       owner gets back under their plan's limits.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *       - name: userId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The removed membership
+   *       '403':
+   *         description: No permission for related group
+   *       '404':
+   *         description: Group not found, or user is not a member
+   *       '409':
+   *         description: Target is the group manager, or already removed
+   */
+  app.delete("/:groupId/:userId", tryCatch(handleDeleteGroupUser));
+
   app.get("/:groupId/invites", tryCatch(handleGetGroupInvites));
   app.post(
     "/:groupId/invites",
