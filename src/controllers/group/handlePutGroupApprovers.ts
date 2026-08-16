@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
+import { resolveGroupAdmin } from "../groupUser/utils.js";
 import type { ValidatedPutGroupApproversType } from "../../services/group/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -19,9 +20,8 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPutGroupApproversType = req.body;
 
-  const access = await services.groupUser.getGroupUser(auth.userId, groupId);
-
-  if (!access || !access.adminAccess) {
+  const { canAdmin, viaOrgAdmin } = await resolveGroupAdmin(auth.userId, groupId);
+  if (!canAdmin) {
     throw new AppError({
       message: "No permission for related group",
       logging: true,
@@ -35,6 +35,19 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   const candidates = [data.mainApprovalUser, data.tempApprovalUser].filter(
     (id): id is string => id !== null
   );
+
+  // These columns *are* approval authority, so naming yourself here is the
+  // same escalation `handleUpdateGroupUsers` blocks on `approverAccess`. A
+  // group's own admin may still do it — a manager approving their team is the
+  // normal case — but authority borrowed from the organization may not.
+  if (viaOrgAdmin && candidates.includes(auth.userId)) {
+    throw new AppError({
+      message: "An organization admin cannot make themselves an approver of this group",
+      logging: true,
+      code: 403,
+      context: { url: req.url, user: auth.userId, groupId },
+    });
+  }
   for (const candidate of candidates) {
     const membership = await services.groupUser.getGroupUser(candidate, groupId);
     if (!membership) {

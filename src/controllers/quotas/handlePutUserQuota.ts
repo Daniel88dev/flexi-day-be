@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
+import { assertGroupAdmin } from "../groupUser/utils.js";
 import type { ValidatedPutUserQuotaType } from "../../services/userYearQuotas/types.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
@@ -26,16 +27,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
   const data: ValidatedPutUserQuotaType = req.body;
 
   const result = await db.transaction(async (tx) => {
-    const access = await services.groupUser.getGroupUser(auth.userId, groupId, tx);
-
-    if (!access || !access.adminAccess) {
-      throw new AppError({
-        message: "No permission for related group",
-        logging: true,
-        code: 403,
-        context: { url: req.url, user: auth.userId, groupId },
-      });
-    }
+    await assertGroupAdmin(auth.userId, groupId, tx);
 
     const member = await services.groupUser.getGroupUser(data.userId, groupId, tx);
 

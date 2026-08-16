@@ -30,6 +30,7 @@ import { handleGetCalendarFeed } from "./controllers/calendarSync/handleGetCalen
 import { devRouter } from "./routes/devRouter.js";
 import { requestContext } from "./middleware/requestContext.js";
 import { billingRouter } from "./routes/billingRouter.js";
+import { organizationRouter } from "./routes/organizationRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
 
 export const createServer = () => {
@@ -100,6 +101,7 @@ export const createServer = () => {
   app.use("/api/calendar-sync", calendarSyncRouter());
   app.use("/api/reports", reportRouter());
   app.use("/api/billing", billingRouter());
+  app.use("/api/organization", organizationRouter());
 
   // Public, token-authenticated iCalendar feed. Deliberately NOT behind
   // `authSession`: calendar clients subscribe with just the secret token in

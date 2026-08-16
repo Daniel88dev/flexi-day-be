@@ -72,7 +72,7 @@ export const quotasRouter = (): Router => {
    *     summary: Set a member's allowance for a year
    *     description: |
    *       Creates or replaces the member's `user_year_quotas` row for the given
-   *       year. Requires admin access on the group; the change is recorded in
+   *       year. Requires group admin access, or admin of the group's organization; the change is recorded in
    *       the `changes` audit log.
    *     security:
    *       - bearerAuth: []

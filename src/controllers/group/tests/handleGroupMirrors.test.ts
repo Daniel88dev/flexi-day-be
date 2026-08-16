@@ -9,6 +9,7 @@ vi.mock("../../../services/billing/guards.js", () => ({
 }));
 
 const {
+  mockGetGroup,
   mockGetGroupUser,
   mockGetGroupUsers,
   mockGetAdminGroupIdsForUser,
@@ -18,6 +19,7 @@ const {
   mockGetMirrorsIntoGroupForUsers,
   mockSetMirrorsIntoGroupForUser,
 } = vi.hoisted(() => ({
+  mockGetGroup: vi.fn(),
   mockGetGroupUser: vi.fn(),
   mockGetGroupUsers: vi.fn(),
   mockGetAdminGroupIdsForUser: vi.fn(),
@@ -34,6 +36,27 @@ vi.mock("../../../db/db.js", () => ({
   db: { transaction: vi.fn((callback) => callback({})) },
 }));
 
+// The group-access helpers reach for the service modules directly rather than
+// through createDBServices, so both routes must resolve to the same mocks.
+// Org-admin access is off here; it has its own suite.
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
+  getAdminGroupIdsForUser: mockGetAdminGroupIdsForUser,
+}));
+
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroup: mockGetGroup,
+  getLiveGroupIdsForOrganizations: vi.fn().mockResolvedValue([]),
+  // With no org-admin groups in play, the organization scope is a pass-through
+  // over the caller's membership-derived admin groups.
+  filterGroupIdsByOrganization: vi.fn((groupIds: string[]) => Promise.resolve(groupIds)),
+}));
+
+vi.mock("../../../services/organization/organizationServices.js", () => ({
+  isOrganizationAdmin: vi.fn().mockResolvedValue(false),
+  getAdminOrganizationsForUser: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("../../../services/DBServices.js", () => ({
   createDBServices: () => ({
     groupUser: {
@@ -42,7 +65,7 @@ vi.mock("../../../services/DBServices.js", () => ({
       getAdminGroupIdsForUser: mockGetAdminGroupIdsForUser,
       getMembershipPairs: mockGetMembershipPairs,
     },
-    group: { getAllGroups: mockGetAllGroups },
+    group: { getAllGroups: mockGetAllGroups, getGroup: mockGetGroup },
     groupMirror: {
       getMirrorsIntoGroupForUser: mockGetMirrorsIntoGroupForUser,
       getMirrorsIntoGroupForUsers: mockGetMirrorsIntoGroupForUsers,
@@ -74,6 +97,7 @@ describe("handleGetGroupMirrors", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
+    mockGetGroup.mockResolvedValue({ id: TARGET, organizationId: "org-1" });
     mockGetGroupUser.mockResolvedValue({ viewAccess: true, adminAccess: true });
     mockGetGroupUsers.mockResolvedValue([memberRow(MEMBER, "Ada Byron")]);
     mockGetAdminGroupIdsForUser.mockResolvedValue([TARGET, SOURCE_A, SOURCE_B]);

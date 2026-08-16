@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { createDBServices } from "../../services/DBServices.js";
-import AppError from "../../utils/appError.js";
+import { assertGroupAdmin } from "../groupUser/utils.js";
 
 const services = createDBServices();
 
@@ -22,16 +22,7 @@ export const handleGetCarryOverSuggestion = async (req: Request, res: Response) 
   const groupId = z.uuid().parse(req.params.groupId);
   const { userId, year } = queryParams.parse(req.query);
 
-  const access = await services.groupUser.getGroupUser(auth.userId, groupId);
-
-  if (!access || !access.adminAccess) {
-    throw new AppError({
-      message: "No permission for related group",
-      logging: true,
-      code: 403,
-      context: { url: req.url, user: auth.userId, groupId },
-    });
-  }
+  await assertGroupAdmin(auth.userId, groupId);
 
   const suggestion = await services.report.getCarryOverSuggestion(userId, groupId, year);
 

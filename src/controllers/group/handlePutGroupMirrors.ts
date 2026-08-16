@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
+import { assertGroupAdmin, getAdministrableGroupIds } from "../groupUser/utils.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedPutGroupMirrorsType } from "../../services/groupMirror/types.js";
@@ -31,17 +32,19 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
     });
   }
 
-  const access = await services.groupUser.getGroupUser(auth.userId, targetGroupId);
-  if (!access?.adminAccess) {
+  await assertGroupAdmin(auth.userId, targetGroupId);
+
+  await assertGroupWritable(targetGroupId);
+
+  const targetGroup = await services.group.getGroup(targetGroupId);
+  if (!targetGroup) {
     throw new AppError({
-      message: "No permission for related group",
+      message: "Group not found",
       logging: true,
-      code: 403,
+      code: 404,
       context: { url: req.url, userId: auth.userId, targetGroupId },
     });
   }
-
-  await assertGroupWritable(targetGroupId);
 
   const targetMembership = await services.groupUser.getGroupUser(data.userId, targetGroupId);
   if (!targetMembership) {
@@ -53,9 +56,11 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
     });
   }
 
-  const adminGroupIds = (await services.groupUser.getAdminGroupIdsForUser(auth.userId)).filter(
-    (id) => id !== targetGroupId
-  );
+  // Scoped to the target's organization: mirroring must never carry one
+  // organization's leave into another's group.
+  const adminGroupIds = (
+    await getAdministrableGroupIds(auth.userId, { organizationId: targetGroup.organizationId })
+  ).filter((id) => id !== targetGroupId);
   const adminOf = new Set(adminGroupIds);
 
   const notAdminOf = data.sourceGroupIds.filter((id) => !adminOf.has(id));

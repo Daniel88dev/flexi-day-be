@@ -12,6 +12,7 @@ import { vacationEvents } from "./vacation-event-schema.js";
 import { userSettings } from "./user-settings-schema.js";
 import { reportExports } from "./report-export-schema.js";
 import { organizations } from "./organization-schema.js";
+import { organizationUsers } from "./organization-users-schema.js";
 import { subscriptions } from "./subscription-schema.js";
 import { paddleEvents } from "./paddle-event-schema.js";
 
@@ -35,6 +36,7 @@ export const schema = {
   calendarSyncTypes,
   reportExports,
   organizations,
+  organizationUsers,
   subscriptions,
   paddleEvents,
 };

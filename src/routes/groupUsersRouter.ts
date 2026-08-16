@@ -166,7 +166,7 @@ export const groupUsersRouter = (): Router => {
    *       - Group members
    *     summary: Remove a member from a group
    *     description: |
-   *       Soft-deletes the membership. Requires admin access on the group. The
+   *       Soft-deletes the membership. Requires group admin access, or admin of the group's organization. The
    *       group's manager cannot be removed; there is no manager-transfer route
    *       yet, so a manager can only leave by deleting the group. If the
    *       removed member was the main approver, approvals fall back to the
@@ -215,7 +215,7 @@ export const groupUsersRouter = (): Router => {
    *     summary: Update members' permissions in a group
    *     description: |
    *       Sets the four membership flags for one or more members at once.
-   *       Requires admin access on the group. The flags are independent:
+   *       Requires group admin access, or admin of the group's organization. The flags are independent:
    *       `adminAccess` manages the group (members, quotas, invites, working
    *       days, mirroring) but does not decide on leave, and `approverAccess`
    *       decides on leave but manages nothing. `controlledUser` marks a member
@@ -263,7 +263,11 @@ export const groupUsersRouter = (): Router => {
    *       '400':
    *         description: A named member does not belong to the group
    *       '403':
-   *         description: No permission for related group
+   *         description: |
+   *           No permission for related group; or the caller tried to raise
+   *           their own permissions; or a caller acting on organization
+   *           authority tried to grant `approverAccess` — that role is only
+   *           ever granted from inside the group.
    */
   app.put(
     "/",
