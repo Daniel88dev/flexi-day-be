@@ -1,7 +1,7 @@
 import type { GroupInsertType, GroupType } from "./types.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, or } from "drizzle-orm";
 import { user } from "../../db/schema/auth-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { alias } from "drizzle-orm/pg-core";
@@ -18,8 +18,30 @@ export const getGroup = async (
   return row;
 };
 
-export const getAllGroups = async (groupIds: string[]): Promise<GroupType[]> => {
-  return db
+/**
+ * `getGroup` under a row lock, for callers that recompute a column from the
+ * value they just read — a plain read under READ COMMITTED lets a concurrent
+ * writer commit in between and lose its change.
+ */
+export const lockGroup = async (
+  groupId: string,
+  tx: DbTransaction
+): Promise<GroupType | undefined> => {
+  const [row] = await tx
+    .select()
+    .from(groups)
+    .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
+    .for("update");
+
+  return row;
+};
+
+export const getAllGroups = async (
+  groupIds: string[],
+  tx?: DbTransaction
+): Promise<GroupType[]> => {
+  if (groupIds.length === 0) return [];
+  return (tx ?? db)
     .select()
     .from(groups)
     .where(and(inArray(groups.id, groupIds), isNull(groups.deletedAt)));
@@ -184,4 +206,56 @@ export const getApprovalUsers = async (
     .leftJoin(tempApprovalUser, eq(groups.tempApprovalUser, tempApprovalUser.id));
 
   return row ?? undefined;
+};
+
+export const countLiveGroupsForOrganization = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<number> => {
+  const [row] = await (tx ?? db)
+    .select({ value: count() })
+    .from(groups)
+    .where(and(eq(groups.organizationId, organizationId), isNull(groups.deletedAt)));
+  return Number(row?.value ?? 0);
+};
+
+/**
+ * Live group ids of an organization, oldest first — the deterministic order
+ * the billing guards use to decide which groups stay writable once a lapsed
+ * plan's grace has expired: the oldest N keep working, the rest go read-only.
+ */
+export const getLiveGroupIdsForOrganizationOrdered = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<string[]> => {
+  const rows = await (tx ?? db)
+    .select({ id: groups.id })
+    .from(groups)
+    .where(and(eq(groups.organizationId, organizationId), isNull(groups.deletedAt)))
+    .orderBy(asc(groups.createdAt), asc(groups.id));
+  return rows.map((row) => row.id);
+};
+
+/**
+ * Live groups of an organization with their active member counts, oldest
+ * first — the billing screen's usage meters.
+ */
+export const getGroupUsageForOrganization = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<{ id: string; groupName: string; members: number; createdAt: Date }[]> => {
+  const rows = await (tx ?? db)
+    .select({
+      id: groups.id,
+      groupName: groups.groupName,
+      members: count(groupUsers.id),
+      createdAt: groups.createdAt,
+    })
+    .from(groups)
+    .leftJoin(groupUsers, and(eq(groupUsers.groupId, groups.id), isNull(groupUsers.deletedAt)))
+    .where(and(eq(groups.organizationId, organizationId), isNull(groups.deletedAt)))
+    .groupBy(groups.id)
+    .orderBy(asc(groups.createdAt), asc(groups.id));
+
+  return rows.map((row) => ({ ...row, members: Number(row.members) }));
 };

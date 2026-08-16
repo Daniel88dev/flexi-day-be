@@ -11,6 +11,9 @@ import { reportExports } from "../../../db/schema/report-export-schema.js";
 import { vacationEvents } from "../../../db/schema/vacation-event-schema.js";
 import { notifications } from "../../../db/schema/notification-schema.js";
 import { session } from "../../../db/schema/auth-schema.js";
+import { organizations } from "../../../db/schema/organization-schema.js";
+import { subscriptions } from "../../../db/schema/subscription-schema.js";
+import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 /**
  * Fixtures for the report e2e suite. Deliberately independent of
@@ -33,8 +36,10 @@ export async function makeUser(name: string): Promise<{ id: string; name: string
 
 export async function makeGroup(groupName: string, managerUserId: string): Promise<string> {
   const id = uuidv4();
+  const organization = await ensureOrganizationForUser(managerUserId);
   await db.insert(groups).values({
     id,
+    organizationId: organization.id,
     groupName,
     managerUserId,
     createdAt: new Date(),
@@ -171,6 +176,8 @@ export async function resetReportData(): Promise<void> {
   await db.delete(notifications);
   await db.delete(session);
   await db.delete(groups);
+  await db.delete(subscriptions);
+  await db.delete(organizations);
   await db.delete(user);
 }
 

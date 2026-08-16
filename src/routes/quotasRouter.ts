@@ -111,6 +111,11 @@ export const quotasRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: The stored quota row
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No permission for related group
    *       '404':

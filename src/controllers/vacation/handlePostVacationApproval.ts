@@ -10,6 +10,7 @@ import { notifyVacationDecision } from "../../services/vacation/vacationNotifier
 import type { ValidatedApproveVacationType } from "../../services/vacation/types.js";
 import { assertApprovalWithinQuota } from "../../services/vacation/quotaGuard.js";
 import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -35,6 +36,7 @@ export const handlePostVacationApproval = async (req: Request, res: Response) =>
 
     await assertMayDecide(auth.userId, [vacationData], "approve", tx);
     assertStillPending([vacationData]);
+    await assertGroupWritable(vacationData.groupId, tx);
     await assertApprovalWithinQuota([vacationData], tx);
 
     const row = await services.vacation.approveVacation(vacationId, auth.userId, tx);

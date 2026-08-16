@@ -18,6 +18,55 @@ import { handlePutGroupMirrors } from "../controllers/group/handlePutGroupMirror
 export const groupRouter = (): Router => {
   const app = Router();
 
+  /**
+   * @openapi
+   * /api/group:
+   *   post:
+   *     tags:
+   *       - Groups
+   *     summary: Create a group
+   *     description: |
+   *       Creates a group owned by the caller's organization, adds the caller
+   *       as its first member (admin + approver) and opens their current-year
+   *       quota from the group defaults. The organization is created lazily on
+   *       the caller's first group. An approver may only be named if it is the
+   *       caller, since nobody else is a member yet.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - groupName
+   *             properties:
+   *               groupName:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 120
+   *               defaultVacation:
+   *                 type: integer
+   *                 minimum: 0
+   *                 maximum: 99
+   *               defaultHomeOffice:
+   *                 type: integer
+   *                 minimum: 0
+   *                 maximum: 99
+   *               mainApprovalUser:
+   *                 type: string
+   *     responses:
+   *       '201':
+   *         description: The created group
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
+   *       '422':
+   *         description: A named approver is not the caller
+   */
   app.post("/", tryCatch(handlePostGroup));
 
   app.get("/", tryCatch(handleGetGroups));
@@ -58,6 +107,11 @@ export const groupRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: The updated group
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No permission for related group
    *       '404':
@@ -110,6 +164,11 @@ export const groupRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: The updated group
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No permission for related group
    *       '404':
@@ -192,6 +251,11 @@ export const groupRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: The member's mirrors into this group after the update
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: Caller is not an admin of the target or of a source group
    *       '422':
@@ -234,6 +298,11 @@ export const groupRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: The updated group
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No permission for related group
    *       '404':

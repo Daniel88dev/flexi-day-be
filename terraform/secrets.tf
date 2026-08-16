@@ -90,3 +90,64 @@ resource "aws_secretsmanager_secret_version" "google_client_secret" {
   secret_id     = aws_secretsmanager_secret.google_client_secret[0].id
   secret_string = var.google_client_secret
 }
+
+# Paddle API key and webhook signing secret. Only provisioned when billing is
+# enabled (paddle_api_key set), matching the google_client_secret pattern
+# above, so an empty secret_string never reaches Secrets Manager. The six
+# price IDs are not secrets and are injected as plain env vars in apprunner.tf.
+resource "aws_secretsmanager_secret" "paddle_api_key" {
+  count                   = var.paddle_api_key != "" ? 1 : 0
+  name                    = "${var.project_name}-${var.environment}-paddle-api-key"
+  description             = "Paddle API key for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-paddle-api-key"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "paddle_api_key" {
+  count         = var.paddle_api_key != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.paddle_api_key[0].id
+  secret_string = var.paddle_api_key
+
+  # Fail at plan/apply rather than letting App Runner start a container that
+  # throws in config.ts — a boot loop is far harder to diagnose than this.
+  lifecycle {
+    precondition {
+      condition     = var.paddle_webhook_secret != ""
+      error_message = "paddle_webhook_secret is required when paddle_api_key is set."
+    }
+
+    precondition {
+      condition = alltrue([
+        for id in values(var.paddle_prices) : id != ""
+      ])
+      error_message = "All six paddle_prices IDs are required when paddle_api_key is set."
+    }
+
+    # Sandbox credentials must never reach the production environment; the
+    # backend enforces the same rule at boot.
+    precondition {
+      condition     = !(var.environment == "production" && var.paddle_environment == "sandbox")
+      error_message = "paddle_environment must be \"production\" when environment is \"production\"."
+    }
+  }
+}
+
+resource "aws_secretsmanager_secret" "paddle_webhook_secret" {
+  count                   = var.paddle_api_key != "" ? 1 : 0
+  name                    = "${var.project_name}-${var.environment}-paddle-webhook-secret"
+  description             = "Paddle webhook signing secret for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-paddle-webhook-secret"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "paddle_webhook_secret" {
+  count         = var.paddle_api_key != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.paddle_webhook_secret[0].id
+  secret_string = var.paddle_webhook_secret
+}

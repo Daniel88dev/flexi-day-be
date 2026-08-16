@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Billing plan-limit guards are no-ops here; their behavior has its own suite.
+vi.mock("../../../services/billing/guards.js", () => ({
+  assertCanCreateGroup: vi.fn(),
+  assertCanAddMember: vi.fn(),
+  assertGroupWritable: vi.fn(),
+  assertGroupsWritable: vi.fn(),
+}));
+
 const { mockGetVacationById, mockCreateVacationEvent, mockResolvePermissions, mockNotifyComment } =
   vi.hoisted(() => ({
     mockGetVacationById: vi.fn(),

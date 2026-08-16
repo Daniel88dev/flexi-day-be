@@ -1,6 +1,6 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { and, asc, countDistinct, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, countDistinct, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type {
   GroupUser,
@@ -65,8 +65,11 @@ export const updateGroupUserPermissions = async (
   return row;
 };
 
-export const deleteGroupUser = async (id: string): Promise<GroupUser | undefined> => {
-  const [row] = await db
+export const deleteGroupUser = async (
+  id: string,
+  tx?: DbTransaction
+): Promise<GroupUser | undefined> => {
+  const [row] = await (tx ?? db)
     .update(groupUsers)
     .set({
       deletedAt: new Date(),
@@ -288,4 +291,38 @@ export const useInviteLink = async (
     .returning();
 
   return row;
+};
+
+export const countActiveMembersInGroup = async (
+  groupId: string,
+  tx?: DbTransaction
+): Promise<number> => {
+  const [row] = await (tx ?? db)
+    .select({ value: count() })
+    .from(groupUsers)
+    .where(and(eq(groupUsers.groupId, groupId), isNull(groupUsers.deletedAt)));
+  return Number(row?.value ?? 0);
+};
+
+/**
+ * Open (redeemable) invites for a group. The billing member-cap guard counts
+ * these alongside live members, otherwise parallel redemptions overfill a
+ * group past its plan limit.
+ */
+export const countOpenInvitesForGroup = async (
+  groupId: string,
+  tx?: DbTransaction
+): Promise<number> => {
+  const [row] = await (tx ?? db)
+    .select({ value: count() })
+    .from(inviteLink)
+    .where(
+      and(
+        eq(inviteLink.groupId, groupId),
+        isNull(inviteLink.usedAt),
+        isNull(inviteLink.revokedAt),
+        gt(inviteLink.expiresAt, new Date())
+      )
+    );
+  return Number(row?.value ?? 0);
 };

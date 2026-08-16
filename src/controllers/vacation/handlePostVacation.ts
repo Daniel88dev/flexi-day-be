@@ -13,6 +13,7 @@ import { db } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationRequested } from "../../services/vacation/vacationNotifier.js";
 import { assertRequestWithinQuota } from "../../services/vacation/quotaGuard.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -128,6 +129,11 @@ export const handlePostVacation = async (req: Request, res: Response) => {
   }));
 
   const created = await db.transaction(async (tx) => {
+    // Inside the write transaction, not before it: a downgrade committing
+    // between the check and the insert would otherwise let this request write
+    // into a group that has just become read-only.
+    await assertGroupWritable(data.groupId, tx);
+
     await assertRequestWithinQuota(records, tx);
 
     const rows = await services.vacation.postVacationBulk(records, tx);

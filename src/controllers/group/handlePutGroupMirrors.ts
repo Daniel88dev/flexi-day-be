@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { createDBServices } from "../../services/DBServices.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedPutGroupMirrorsType } from "../../services/groupMirror/types.js";
@@ -39,6 +40,8 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
       context: { url: req.url, userId: auth.userId, targetGroupId },
     });
   }
+
+  await assertGroupWritable(targetGroupId);
 
   const targetMembership = await services.groupUser.getGroupUser(data.userId, targetGroupId);
   if (!targetMembership) {

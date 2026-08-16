@@ -90,3 +90,21 @@ export const calendarFeedLimiter = rateLimit({
   limit: 120,
   keyGenerator: (req) => (req.params.token ? `t:${req.params.token}` : ipKey(req)),
 });
+
+/**
+ * The Paddle webhook is unauthenticated by design — the HMAC signature is the
+ * real gate — so this is only a backstop against a garbage-blast doing
+ * signature work at flood volume.
+ *
+ * Deliberately far above any plausible legitimate burst: Paddle delivers from
+ * a small fixed IP range, so every customer's events share one bucket. A
+ * dunning run or a backlog replay must not hit it, because a 429 is a non-2xx
+ * — Paddle retries, and sustained failures pause the notification destination
+ * entirely, which would silently stop all subscription syncing.
+ */
+export const paddleWebhookLimiter = rateLimit({
+  ...shared,
+  windowMs: FIVE_MINUTES,
+  limit: 5000,
+  keyGenerator: ipKey,
+});

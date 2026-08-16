@@ -9,6 +9,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { resolveVacationPermissions } from "./utils.js";
 import { notifyVacationCancelled } from "../../services/vacation/vacationNotifier.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -49,6 +50,8 @@ export const handleDeleteVacation = async (req: Request, res: Response) => {
         context: { auth, vacationId },
       });
     }
+
+    await assertGroupWritable(vacationData.groupId, tx);
 
     const deleted = await services.vacation.deleteVacation(vacationId, tx);
     if (!deleted) {

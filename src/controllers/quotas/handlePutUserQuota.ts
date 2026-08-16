@@ -8,6 +8,7 @@ import { db } from "../../db/db.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
 import { describeQuotaChange } from "../../services/userYearQuotas/quotaChangeDetail.js";
+import { assertGroupWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -46,6 +47,8 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         context: { url: req.url, user: auth.userId, groupId, targetUser: data.userId },
       });
     }
+
+    await assertGroupWritable(groupId, tx);
 
     const relatedYear = data.year.toString();
 

@@ -12,6 +12,8 @@ import * as notificationServices from "./notification/notificationServices.js";
 import * as calendarSyncServices from "./calendarSync/calendarSyncServices.js";
 import * as reportServices from "./report/reportServices.js";
 import * as quotaRolloverServices from "./quotaRollover/quotaRolloverServices.js";
+import * as organizationServices from "./organization/organizationServices.js";
+import * as subscriptionServices from "./billing/subscriptionServices.js";
 
 export type DBServices = Readonly<{
   vacation: {
@@ -62,6 +64,7 @@ export type DBServices = Readonly<{
   };
   group: {
     getGroup: typeof groupServices.getGroup;
+    lockGroup: typeof groupServices.lockGroup;
     getAllGroups: typeof groupServices.getAllGroups;
     createGroup: typeof groupServices.createGroup;
     updateGroupManager: typeof groupServices.updateGroupManager;
@@ -71,6 +74,9 @@ export type DBServices = Readonly<{
     updateGroupWorkingDays: typeof groupServices.updateGroupWorkingDays;
     getApprovalUsers: typeof groupServices.getApprovalUsers;
     getGroupsWhereUserCanApprove: typeof groupServices.getGroupsWhereUserCanApprove;
+    countLiveGroupsForOrganization: typeof groupServices.countLiveGroupsForOrganization;
+    getLiveGroupIdsForOrganizationOrdered: typeof groupServices.getLiveGroupIdsForOrganizationOrdered;
+    getGroupUsageForOrganization: typeof groupServices.getGroupUsageForOrganization;
   };
   groupMirror: {
     getMirrorsIntoGroupForUser: typeof groupMirrorServices.getMirrorsIntoGroupForUser;
@@ -143,6 +149,18 @@ export type DBServices = Readonly<{
     findRolloverCandidates: typeof quotaRolloverServices.findRolloverCandidates;
     rolloverQuotasForYear: typeof quotaRolloverServices.rolloverQuotasForYear;
   };
+  organization: {
+    getOrganizationById: typeof organizationServices.getOrganizationById;
+    getOrganizationForOwner: typeof organizationServices.getOrganizationForOwner;
+    ensureOrganizationForUser: typeof organizationServices.ensureOrganizationForUser;
+    setOrganizationPaddleCustomerId: typeof organizationServices.setOrganizationPaddleCustomerId;
+  };
+  billing: {
+    getSubscriptionForOrganization: typeof subscriptionServices.getSubscriptionForOrganization;
+    getSubscriptionByPaddleId: typeof subscriptionServices.getSubscriptionByPaddleId;
+    upsertSubscription: typeof subscriptionServices.upsertSubscription;
+    recordPaddleEvent: typeof subscriptionServices.recordPaddleEvent;
+  };
 }>;
 
 export const createDBServices = (): DBServices => {
@@ -195,6 +213,7 @@ export const createDBServices = (): DBServices => {
     },
     group: {
       getGroup: groupServices.getGroup,
+      lockGroup: groupServices.lockGroup,
       getAllGroups: groupServices.getAllGroups,
       createGroup: groupServices.createGroup,
       updateGroupManager: groupServices.updateGroupManager,
@@ -204,6 +223,9 @@ export const createDBServices = (): DBServices => {
       updateGroupWorkingDays: groupServices.updateGroupWorkingDays,
       getApprovalUsers: groupServices.getApprovalUsers,
       getGroupsWhereUserCanApprove: groupServices.getGroupsWhereUserCanApprove,
+      countLiveGroupsForOrganization: groupServices.countLiveGroupsForOrganization,
+      getLiveGroupIdsForOrganizationOrdered: groupServices.getLiveGroupIdsForOrganizationOrdered,
+      getGroupUsageForOrganization: groupServices.getGroupUsageForOrganization,
     },
     groupMirror: {
       getMirrorsIntoGroupForUser: groupMirrorServices.getMirrorsIntoGroupForUser,
@@ -275,6 +297,18 @@ export const createDBServices = (): DBServices => {
     quotaRollover: {
       findRolloverCandidates: quotaRolloverServices.findRolloverCandidates,
       rolloverQuotasForYear: quotaRolloverServices.rolloverQuotasForYear,
+    },
+    organization: {
+      getOrganizationById: organizationServices.getOrganizationById,
+      getOrganizationForOwner: organizationServices.getOrganizationForOwner,
+      ensureOrganizationForUser: organizationServices.ensureOrganizationForUser,
+      setOrganizationPaddleCustomerId: organizationServices.setOrganizationPaddleCustomerId,
+    },
+    billing: {
+      getSubscriptionForOrganization: subscriptionServices.getSubscriptionForOrganization,
+      getSubscriptionByPaddleId: subscriptionServices.getSubscriptionByPaddleId,
+      upsertSubscription: subscriptionServices.upsertSubscription,
+      recordPaddleEvent: subscriptionServices.recordPaddleEvent,
     },
   };
 };

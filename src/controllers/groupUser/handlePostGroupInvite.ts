@@ -9,6 +9,8 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { generateInviteCode } from "../../utils/inviteCode.js";
 import { db } from "../../db/db.js";
 import { inviteExpiryFrom, notifyGroupInvited } from "../../services/groupUser/inviteNotifier.js";
+import { assertCanAddMember, assertGroupWritable } from "../../services/billing/guards.js";
+import { lockOrganization } from "../../services/organization/organizationServices.js";
 
 const services = createDBServices();
 
@@ -26,6 +28,10 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
   const data: ValidatedPostGroupInviteType = req.body;
 
   await assertGroupAdmin(auth.userId, groupId);
+
+  // A read-only group must not grow; removing members is the way back under
+  // the limit, not adding more.
+  await assertGroupWritable(groupId);
 
   const group = await services.group.getGroup(groupId);
   if (!group) {
@@ -52,9 +58,22 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
   }
 
   const invite = await db.transaction(async (tx) => {
+    // Lock the organization FIRST, before touching invite_link. The redemption
+    // path (handlePostGroupUser) locks organization → invite_link; taking them
+    // in the opposite order here would deadlock a resend against a concurrent
+    // redemption of the code being replaced.
+    await lockOrganization(group.organizationId, tx);
+
     // Supersede any open invite for this address so only the newest code works
-    // — and so the partial unique index does not reject the insert.
+    // — and so the partial unique index does not reject the insert. This runs
+    // BEFORE the seat check: a re-invite reuses the seat its own outstanding
+    // invite already reserves, and counting both would 402 a no-op change.
     await services.inviteLinks.revokeOpenInviteForEmail(groupId, data.email, tx);
+
+    // Inside the transaction, which row-locks the organization, so two admins
+    // inviting at once cannot both pass a check made against the same
+    // pre-insert seat count.
+    await assertCanAddMember(groupId, tx);
 
     const created = await services.inviteLinks.createInviteLink(
       {

@@ -9,6 +9,7 @@ import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
 import { assertApprovalWithinQuota } from "../../services/vacation/quotaGuard.js";
 import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
+import { assertGroupsWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();
 
@@ -38,6 +39,10 @@ export const handleBulkApproveVacation = async (req: Request, res: Response) => 
 
     await assertMayDecide(auth.userId, rows, "approve", tx);
     assertStillPending(rows);
+    await assertGroupsWritable(
+      rows.map((row) => row.groupId),
+      tx
+    );
     await assertApprovalWithinQuota(rows, tx);
 
     const updated = await services.vacation.approveVacationsBulk(uniqueIds, auth.userId, tx);
