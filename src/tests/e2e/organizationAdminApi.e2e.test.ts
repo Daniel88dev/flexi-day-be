@@ -315,11 +315,23 @@ describe("organization admin over the API", () => {
         .expect(403);
     });
 
-    it("still lets an org admin name someone else the approver", async () => {
+    it("will not let an org admin add anyone else as approver either", async () => {
+      // Blocking only self leaves the proxy: name a second account you control
+      // as `mainApprovalUser` instead.
       await request(app)
         .put(`/api/group/${groupId}/approvers`)
         .set("Cookie", delegateCookie)
         .send({ mainApprovalUser: member.id, tempApprovalUser: null })
+        .expect(403);
+    });
+
+    it("lets an org admin re-submit the approvers a group already has", async () => {
+      // Keeping the current assignment is not an escalation, and the settings
+      // form submits the whole object.
+      await request(app)
+        .put(`/api/group/${groupId}/approvers`)
+        .set("Cookie", delegateCookie)
+        .send({ mainApprovalUser: owner.id, tempApprovalUser: null })
         .expect(200);
     });
 
@@ -378,6 +390,37 @@ describe("organization admin over the API", () => {
         .set("Cookie", ownerCookie)
         .send({ userId: outsider.id })
         .expect(422);
+    });
+
+    it("reports an existing administrator as a conflict, not as a non-member", async () => {
+      // They are excluded from the candidate list for being an admin already,
+      // so "not a member of any group" would be a flatly wrong answer.
+      await request(app)
+        .post("/api/organization/admins")
+        .set("Cookie", ownerCookie)
+        .send({ userId: delegate.id })
+        .expect(409);
+    });
+
+    it("trims and lower-cases a billing address rather than rejecting it", async () => {
+      const res = await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ billingEmail: "  Billing@Acme.TEST  " })
+        .expect(200);
+
+      expect(res.body.billingEmail).toBe("billing@acme.test");
+
+      // Restore, so this case does not decide what the later reads observe.
+      await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ billingEmail: "api-owner@test.com" })
+        .expect(200);
+    });
+
+    it("rejects a patch that names no field", async () => {
+      await request(app).patch("/api/organization").set("Cookie", ownerCookie).send({}).expect(422);
     });
 
     it("hides the billing address from a delegated admin's own read", async () => {

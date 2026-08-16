@@ -36,18 +36,30 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
     (id): id is string => id !== null
   );
 
-  // These columns *are* approval authority, so naming yourself here is the
-  // same escalation `handleUpdateGroupUsers` blocks on `approverAccess`. A
-  // group's own admin may still do it — a manager approving their team is the
-  // normal case — but authority borrowed from the organization may not.
-  if (viaOrgAdmin && candidates.includes(auth.userId)) {
-    throw new AppError({
-      message: "An organization admin cannot make themselves an approver of this group",
-      logging: true,
-      code: 403,
-      context: { url: req.url, user: auth.userId, groupId },
-    });
+  // These columns *are* approval authority, so writing them is the same
+  // escalation `handleUpdateGroupUsers` blocks on `approverAccess`. A group's
+  // own admin may still do it — a manager naming their team's approver is the
+  // normal case — but authority borrowed from the organization may not add an
+  // approver at all: blocking only `auth.userId` would leave a delegate free
+  // to name a second account of their own instead. Keeping the existing
+  // approvers, or removing one, stays allowed.
+  if (viaOrgAdmin) {
+    const group = await services.group.getGroup(groupId);
+    const existing = new Set(
+      [group?.mainApprovalUser, group?.tempApprovalUser].filter((id): id is string => id != null)
+    );
+    const added = candidates.filter((candidate) => !existing.has(candidate));
+
+    if (added.length > 0) {
+      throw new AppError({
+        message: "An organization admin cannot add an approver to this group",
+        logging: true,
+        code: 403,
+        context: { url: req.url, user: auth.userId, groupId, added },
+      });
+    }
   }
+
   for (const candidate of candidates) {
     const membership = await services.groupUser.getGroupUser(candidate, groupId);
     if (!membership) {

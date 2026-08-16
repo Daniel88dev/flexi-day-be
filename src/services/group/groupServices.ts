@@ -236,7 +236,12 @@ export const getLiveGroupIdsForOrganizationOrdered = async (
   return rows.map((row) => row.id);
 };
 
-/** Narrows a set of group ids to those belonging to one organization. */
+/**
+ * Narrows a set of group ids to the **live** groups of one organization.
+ * Membership rows outlive a soft-deleted group, so without the `deletedAt`
+ * filter a deleted group would still reach the administrable-group list that
+ * mirroring uses as its source allowlist.
+ */
 export const filterGroupIdsByOrganization = async (
   groupIds: string[],
   organizationId: string,
@@ -246,7 +251,13 @@ export const filterGroupIdsByOrganization = async (
   const rows = await (tx ?? db)
     .select({ id: groups.id })
     .from(groups)
-    .where(and(inArray(groups.id, groupIds), eq(groups.organizationId, organizationId)));
+    .where(
+      and(
+        inArray(groups.id, groupIds),
+        eq(groups.organizationId, organizationId),
+        isNull(groups.deletedAt)
+      )
+    );
   return rows.map((row) => row.id);
 };
 

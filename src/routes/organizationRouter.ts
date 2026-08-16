@@ -104,12 +104,14 @@ export const organizationRouter = (): Router => {
    *         description: The updated organization
    *       '400':
    *         description: |
-   *           No field to update, or `organizationId` omitted by a delegated
-   *           admin who administers several organizations.
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
    *       '403':
    *         description: Not an admin, or not the owner for `billingEmail`
    *       '404':
    *         description: Organization not found
+   *       '422':
+   *         description: Body carried neither `name` nor `billingEmail`
    */
   app.patch(
     "/",

@@ -30,7 +30,9 @@ export type OrganizationCandidate = {
 export const validatePatchOrganization = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
-    billingEmail: z.email().trim().toLowerCase().max(320).optional(),
+    // Normalise before validating: `z.email()` runs first in a chain, so a
+    // trailing space would be rejected rather than trimmed away.
+    billingEmail: z.string().trim().toLowerCase().pipe(z.email().max(320)).optional(),
   })
   .refine((body) => body.name !== undefined || body.billingEmail !== undefined, {
     message: "At least one field must be provided",

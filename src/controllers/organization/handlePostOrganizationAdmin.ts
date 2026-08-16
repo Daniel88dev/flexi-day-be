@@ -25,6 +25,19 @@ export const handlePostOrganizationAdmin = async (req: Request, res: Response) =
   // it is what confines a grant to people already inside the organization.
   const candidates = await services.organization.listOrganizationAdminCandidates(organization.id);
   if (!candidates.some((candidate) => candidate.userId === data.userId)) {
+    // The candidate list also excludes people who already administer the org,
+    // so "not a member" would be a flatly wrong answer for them — which a
+    // client hits whenever its list is stale after a concurrent grant.
+    const admins = await services.organization.listOrganizationAdmins(organization.id);
+    if (admins.some((admin) => admin.userId === data.userId)) {
+      throw new AppError({
+        message: "This user already administers this organization",
+        logging: true,
+        code: 409,
+        context: { userId: auth.userId, organizationId: organization.id, target: data.userId },
+      });
+    }
+
     throw new AppError({
       message: "This user is not a member of any group in this organization",
       logging: true,
