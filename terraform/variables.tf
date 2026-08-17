@@ -235,3 +235,23 @@ variable "google_client_secret" {
   sensitive   = true
   default     = ""
 }
+
+# Microsoft Entra ID OAuth Configuration
+variable "microsoft_client_id" {
+  description = "Microsoft Entra ID application (client) ID (public; injected as a plain env var). Leave empty to disable Microsoft sign-in."
+  type        = string
+  default     = ""
+}
+
+variable "microsoft_client_secret" {
+  description = "Microsoft Entra ID client secret VALUE (stored in Secrets Manager). Required if microsoft_client_id is set."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "microsoft_tenant_id" {
+  description = "Directory to authenticate against: \"common\" (any work/school + personal account), \"organizations\", or a tenant GUID to allow a single directory."
+  type        = string
+  default     = "common"
+}

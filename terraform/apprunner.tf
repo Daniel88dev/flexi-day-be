@@ -64,6 +64,14 @@ resource "aws_apprunner_service" "main" {
           # {BETTER_AUTH_URL}/api/auth/callback/google.
           var.google_client_id != "" ? { GOOGLE_CLIENT_ID = var.google_client_id } : {},
 
+          # Microsoft Entra ID. Client id and tenant id are public; the secret
+          # is injected below. Callback:
+          # {BETTER_AUTH_URL}/api/auth/callback/microsoft.
+          var.microsoft_client_id != "" ? {
+            MICROSOFT_CLIENT_ID = var.microsoft_client_id
+            MICROSOFT_TENANT_ID = var.microsoft_tenant_id
+          } : {},
+
           # Paddle price IDs are public catalog identifiers, not secrets, so
           # they ride as plain env vars. The API key and webhook secret go
           # through Secrets Manager below. Omitted entirely when billing is
@@ -89,6 +97,9 @@ resource "aws_apprunner_service" "main" {
           },
           var.google_client_id != "" ? {
             GOOGLE_CLIENT_SECRET = aws_secretsmanager_secret.google_client_secret[0].arn
+          } : {},
+          var.microsoft_client_id != "" ? {
+            MICROSOFT_CLIENT_SECRET = aws_secretsmanager_secret.microsoft_client_secret[0].arn
           } : {},
           var.paddle_api_key != "" ? {
             PADDLE_API_KEY        = aws_secretsmanager_secret.paddle_api_key[0].arn
@@ -122,6 +133,7 @@ resource "aws_apprunner_service" "main" {
     aws_secretsmanager_secret_version.database_url,
     aws_secretsmanager_secret_version.better_auth_secret,
     aws_secretsmanager_secret_version.google_client_secret,
+    aws_secretsmanager_secret_version.microsoft_client_secret,
     aws_secretsmanager_secret_version.paddle_api_key,
     aws_secretsmanager_secret_version.paddle_webhook_secret,
     aws_iam_role_policy.apprunner_secrets,
