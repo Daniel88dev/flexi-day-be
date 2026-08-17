@@ -7,25 +7,26 @@ type SocialCredentials = {
 };
 
 /**
- * Entra's `email` claim is directory data a tenant admin can set to an address
- * they do not own, so it must never by itself mark an account verified — a
- * verified address is what binds a team invite to its recipient. `xms_edov` is
- * Microsoft's own "this domain is verified" signal, and it is an *optional*
- * claim: unless the app registration requests it, this returns false and
- * better-auth leaves the account unverified, which is the safe direction.
+ * A provider's word is not an email challenge.
  *
- * Entra sends it as the STRING "1", not a boolean, despite better-auth's
- * MicrosoftEntraIDProfile typing it `boolean` — observed in a real ID token on
- * 2026-08-17. Accept both, and only an affirmative value: absent, "0" and
- * false must all stay unverified.
+ * Both Google and Microsoft report an address as "verified" once the *domain*
+ * side checks out, which is not the same as proving the person signing in
+ * controls that mailbox. A Workspace or Entra administrator can set a user's
+ * mail attribute to any address in a domain they administer and the claim
+ * still comes back verified — Microsoft says outright that email claims must
+ * not drive access decisions. Flexi Day does drive one: `handlePostGroupUser`
+ * lets a verified address redeem a team invite bound to it.
+ *
+ * So social sign-in never confers a verified address. The account is created
+ * unverified and better-auth sends our own confirmation email, exactly as an
+ * email/password sign-up would; only clicking that link marks the address
+ * verified. Consequence worth knowing: because better-auth gates implicit
+ * account linking on this same flag, a social sign-in cannot attach itself to
+ * a pre-existing account with the same address — it reports
+ * `account_not_linked`, which the frontend renders as "use the method you
+ * signed up with".
  */
-export const entraEmailIsVerified = (profile: { xms_edov?: unknown }): boolean => {
-  const claim = profile.xms_edov;
-  if (typeof claim === "boolean") return claim;
-  if (typeof claim === "number") return claim === 1;
-  if (typeof claim === "string") return claim === "1" || claim.toLowerCase() === "true";
-  return false;
-};
+const NEVER_TRUST_PROVIDER_EMAIL = () => ({ emailVerified: false });
 
 /**
  * Register each provider only when both of its credentials are present, so
@@ -41,6 +42,7 @@ export function buildSocialProviders(auth?: SocialCredentials) {
           google: {
             clientId: auth.googleClientId,
             clientSecret: auth.googleClientSecret,
+            mapProfileToUser: NEVER_TRUST_PROVIDER_EMAIL,
           },
         }
       : {}),
@@ -52,16 +54,11 @@ export function buildSocialProviders(auth?: SocialCredentials) {
             // "common" also admits personal Microsoft accounts; set
             // MICROSOFT_TENANT_ID to a directory GUID to pin sign-in to one org.
             tenantId: auth.microsoftTenantId || "common",
-            // Always states emailVerified rather than returning {} for the
-            // unverified case. better-auth spreads this over its OWN computed
-            // value, which trusts `email_verified` / `verified_primary_email`
-            // — Entra optional claims sourced from directory attributes a
-            // tenant admin controls. Returning {} would leave that fallback in
-            // charge, so adding one claim in the portal could silently mark a
-            // hostile address verified and let it link onto a real account.
-            mapProfileToUser: (profile: { xms_edov?: unknown }) => ({
-              emailVerified: entraEmailIsVerified(profile),
-            }),
+            // Stated explicitly rather than left to better-auth, which would
+            // otherwise derive it from `email_verified` / `xms_edov` /
+            // `verified_primary_email` — all claims a directory administrator
+            // controls.
+            mapProfileToUser: NEVER_TRUST_PROVIDER_EMAIL,
           },
         }
       : {}),

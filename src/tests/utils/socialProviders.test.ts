@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSocialProviders, entraEmailIsVerified } from "../../utils/socialProviders.js";
+import { buildSocialProviders } from "../../utils/socialProviders.js";
 
 const microsoft = { microsoftClientId: "id", microsoftClientSecret: "secret" };
 const google = { googleClientId: "id", googleClientSecret: "secret" };
@@ -37,37 +37,48 @@ describe("buildSocialProviders", () => {
       buildSocialProviders({ ...microsoft, microsoftTenantId: "a-guid" })?.microsoft?.tenantId
     ).toBe("a-guid");
   });
-
-  it("only marks the Microsoft email verified when Entra vouches for the domain", () => {
-    const map = buildSocialProviders(microsoft)?.microsoft?.mapProfileToUser;
-    // Asserts the resulting emailVerified, not merely the shape: better-auth
-    // spreads this over its own claim-derived value, so an absent key would
-    // hand the decision back to claims a tenant admin controls.
-    expect(map?.({ xms_edov: "1" })).toEqual({ emailVerified: true });
-    expect(map?.({ xms_edov: "0" })).toEqual({ emailVerified: false });
-    expect(map?.({})).toEqual({ emailVerified: false });
-  });
 });
 
-describe("entraEmailIsVerified", () => {
-  // Entra sends this as the string "1", not the boolean better-auth's
-  // MicrosoftEntraIDProfile declares — confirmed against a real ID token, where
-  // reading it as a boolean silently left a vouched-for address unverified.
-  // Both forms must work, and only an affirmative value may pass.
-  it.each([
-    [{ xms_edov: "1" }, true],
-    [{ xms_edov: true }, true],
-    [{ xms_edov: 1 }, true],
-    [{ xms_edov: "true" }, true],
-    [{ xms_edov: "0" }, false],
-    [{ xms_edov: false }, false],
-    [{ xms_edov: 0 }, false],
-    [{ xms_edov: "" }, false],
-    [{ xms_edov: "yes" }, false],
-    [{}, false],
-    [{ xms_edov: undefined }, false],
-    [{ xms_edov: null }, false],
-  ])("%o -> %s", (profile, expected) => {
-    expect(entraEmailIsVerified(profile)).toBe(expected);
+/**
+ * The address on a session is what lets someone redeem a team invite bound to
+ * it (`handlePostGroupUser`), so no provider claim may stand in for Flexi Day's
+ * own email challenge. A directory administrator can set a user's mail
+ * attribute to any address in a domain they administer, and every claim below
+ * still comes back looking verified.
+ */
+describe("provider-supplied email is never trusted", () => {
+  const claims = [
+    ["Entra domain-owner flag, boolean", { xms_edov: true }],
+    ["Entra domain-owner flag, string form Entra actually sends", { xms_edov: "1" }],
+    ["OIDC email_verified", { email_verified: true }],
+    ["OIDC email_verified, string form", { email_verified: "true" }],
+    ["Entra verified primary email", { verified_primary_email: ["someone@example.com"] }],
+    [
+      "every affirmative claim at once",
+      {
+        xms_edov: "1",
+        email_verified: true,
+        verified_primary_email: ["someone@example.com"],
+      },
+    ],
+    ["no claims at all", {}],
+  ] as const;
+
+  it.each(claims)("microsoft: %s -> unverified", (_label, profile) => {
+    const map = buildSocialProviders(microsoft)?.microsoft?.mapProfileToUser;
+    expect(map?.(profile)).toEqual({ emailVerified: false });
+  });
+
+  it.each(claims)("google: %s -> unverified", (_label, profile) => {
+    const map = buildSocialProviders(google)?.google?.mapProfileToUser;
+    expect(map?.(profile)).toEqual({ emailVerified: false });
+  });
+
+  it("states emailVerified rather than omitting it", () => {
+    // better-auth spreads mapProfileToUser's result OVER its own claim-derived
+    // value, so returning {} would hand the decision straight back to the
+    // provider claims this whole rule exists to distrust.
+    const result = buildSocialProviders(microsoft)?.microsoft?.mapProfileToUser?.({});
+    expect(result).toHaveProperty("emailVerified");
   });
 });

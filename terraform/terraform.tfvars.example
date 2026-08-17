@@ -53,9 +53,8 @@ google_client_secret = ""
 # Microsoft Entra ID OAuth: leave both empty to disable Microsoft sign-in.
 # Register this redirect URI on the app registration (Web platform):
 #   https://api.flexi-day.com/api/auth/callback/microsoft
-# The registration also needs the `email` and `xms_edov` optional ID-token
-# claims (Entra -> Token configuration); see flexi-day-be/.env.example for what
-# breaks without each of them.
+# The registration also needs the `email` optional ID-token claim (Entra ->
+# Token configuration); without it sign-in fails with error=email_not_found.
 # microsoft_client_secret is the secret VALUE, not the Secret ID shown next to
 # it in the portal. terraform.tfvars is gitignored, so the value can live there;
 # TF_VAR_microsoft_client_secret works too, but note it changes nothing about
