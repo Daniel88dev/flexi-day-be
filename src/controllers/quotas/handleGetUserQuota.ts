@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
+import { validateUserGroupAccess } from "../groupUser/utils.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
@@ -28,9 +29,9 @@ export const handleGetUserQuota = async (req: Request, res: Response) => {
   }
 
   const result = await db.transaction(async (tx) => {
-    const access = await services.groupUser.getGroupUser(auth.userId, groupId, tx);
+    const canView = await validateUserGroupAccess(auth.userId, groupId, tx);
 
-    if (!access || !access.viewAccess) {
+    if (!canView) {
       throw new AppError({
         message: "No permission for related group",
         logging: true,

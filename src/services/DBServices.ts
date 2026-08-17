@@ -49,6 +49,7 @@ export type DBServices = Readonly<{
     deleteGroupUser: typeof groupUserServices.deleteGroupUser;
     getAllGroupsForUser: typeof groupUserServices.getAllGroupsForUser;
     getAdminGroupIdsForUser: typeof groupUserServices.getAdminGroupIdsForUser;
+    countActiveMembershipsInOrganization: typeof groupUserServices.countActiveMembershipsInOrganization;
     getMembershipPairs: typeof groupUserServices.getMembershipPairs;
     countDistinctUsersInGroups: typeof groupUserServices.countDistinctUsersInGroups;
   };
@@ -76,6 +77,7 @@ export type DBServices = Readonly<{
     getGroupsWhereUserCanApprove: typeof groupServices.getGroupsWhereUserCanApprove;
     countLiveGroupsForOrganization: typeof groupServices.countLiveGroupsForOrganization;
     getLiveGroupIdsForOrganizationOrdered: typeof groupServices.getLiveGroupIdsForOrganizationOrdered;
+    getLiveGroupIdsForOrganizations: typeof groupServices.getLiveGroupIdsForOrganizations;
     getGroupUsageForOrganization: typeof groupServices.getGroupUsageForOrganization;
   };
   groupMirror: {
@@ -152,8 +154,17 @@ export type DBServices = Readonly<{
   organization: {
     getOrganizationById: typeof organizationServices.getOrganizationById;
     getOrganizationForOwner: typeof organizationServices.getOrganizationForOwner;
+    getOrganizationsByIds: typeof organizationServices.getOrganizationsByIds;
+    getAdminOrganizationsForUser: typeof organizationServices.getAdminOrganizationsForUser;
     ensureOrganizationForUser: typeof organizationServices.ensureOrganizationForUser;
     setOrganizationPaddleCustomerId: typeof organizationServices.setOrganizationPaddleCustomerId;
+    updateOrganization: typeof organizationServices.updateOrganization;
+    isOrganizationAdmin: typeof organizationServices.isOrganizationAdmin;
+    listOrganizationAdmins: typeof organizationServices.listOrganizationAdmins;
+    listOrganizationAdminCandidates: typeof organizationServices.listOrganizationAdminCandidates;
+    grantOrganizationAdmin: typeof organizationServices.grantOrganizationAdmin;
+    removeOrganizationAdmin: typeof organizationServices.removeOrganizationAdmin;
+    lockOrganization: typeof organizationServices.lockOrganization;
   };
   billing: {
     getSubscriptionForOrganization: typeof subscriptionServices.getSubscriptionForOrganization;
@@ -198,6 +209,7 @@ export const createDBServices = (): DBServices => {
       deleteGroupUser: groupUserServices.deleteGroupUser,
       getAllGroupsForUser: groupUserServices.getAllGroupsForUser,
       getAdminGroupIdsForUser: groupUserServices.getAdminGroupIdsForUser,
+      countActiveMembershipsInOrganization: groupUserServices.countActiveMembershipsInOrganization,
       getMembershipPairs: groupUserServices.getMembershipPairs,
       countDistinctUsersInGroups: groupUserServices.countDistinctUsersInGroups,
     },
@@ -225,6 +237,7 @@ export const createDBServices = (): DBServices => {
       getGroupsWhereUserCanApprove: groupServices.getGroupsWhereUserCanApprove,
       countLiveGroupsForOrganization: groupServices.countLiveGroupsForOrganization,
       getLiveGroupIdsForOrganizationOrdered: groupServices.getLiveGroupIdsForOrganizationOrdered,
+      getLiveGroupIdsForOrganizations: groupServices.getLiveGroupIdsForOrganizations,
       getGroupUsageForOrganization: groupServices.getGroupUsageForOrganization,
     },
     groupMirror: {
@@ -301,8 +314,17 @@ export const createDBServices = (): DBServices => {
     organization: {
       getOrganizationById: organizationServices.getOrganizationById,
       getOrganizationForOwner: organizationServices.getOrganizationForOwner,
+      getOrganizationsByIds: organizationServices.getOrganizationsByIds,
+      getAdminOrganizationsForUser: organizationServices.getAdminOrganizationsForUser,
       ensureOrganizationForUser: organizationServices.ensureOrganizationForUser,
       setOrganizationPaddleCustomerId: organizationServices.setOrganizationPaddleCustomerId,
+      updateOrganization: organizationServices.updateOrganization,
+      isOrganizationAdmin: organizationServices.isOrganizationAdmin,
+      listOrganizationAdmins: organizationServices.listOrganizationAdmins,
+      listOrganizationAdminCandidates: organizationServices.listOrganizationAdminCandidates,
+      grantOrganizationAdmin: organizationServices.grantOrganizationAdmin,
+      removeOrganizationAdmin: organizationServices.removeOrganizationAdmin,
+      lockOrganization: organizationServices.lockOrganization,
     },
     billing: {
       getSubscriptionForOrganization: subscriptionServices.getSubscriptionForOrganization,

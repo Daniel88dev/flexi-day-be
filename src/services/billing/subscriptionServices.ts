@@ -1,7 +1,7 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { subscriptions } from "../../db/schema/subscription-schema.js";
 import { paddleEvents } from "../../db/schema/paddle-event-schema.js";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import type { Subscription, SubscriptionPatch } from "./types.js";
 
@@ -16,6 +16,18 @@ export const getSubscriptionForOrganization = async (
     .limit(1);
 
   return row;
+};
+
+/** Bulk variant for the per-group organization badge — one query, not one per group. */
+export const getSubscriptionsForOrganizations = async (
+  organizationIds: string[],
+  tx?: DbTransaction
+): Promise<Subscription[]> => {
+  if (organizationIds.length === 0) return [];
+  return (tx ?? db)
+    .select()
+    .from(subscriptions)
+    .where(inArray(subscriptions.organizationId, organizationIds));
 };
 
 export const getSubscriptionByPaddleId = async (

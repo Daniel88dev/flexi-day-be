@@ -52,6 +52,12 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
   }
 
   const removed = await db.transaction(async (tx) => {
+    // Organization first, then group — the order every other path takes (see
+    // `handlePostGroupInvite`). Reversing it deadlocks against any FK-checked
+    // write to `group_users`, which holds the organization lock and then needs
+    // a key-share lock on the group.
+    await services.organization.lockOrganization(group.organizationId, tx);
+
     // Re-read the group under a row lock: the approver columns below are
     // rewritten from the values read here, and the copy fetched before the
     // transaction can already be stale if another admin reassigned approvers.
@@ -84,6 +90,24 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
         locked.tempApprovalUser === userId ? null : locked.tempApprovalUser,
         tx
       );
+    }
+
+    // Same reasoning one level up: an org-admin grant is only ever issued to
+    // one of the organization's own people, so leaving the last of its groups
+    // must end it too. Otherwise someone removed from the company keeps
+    // administering every group in it until the owner notices.
+    //
+    // The count spans the whole organization, which is why the lock taken at
+    // the top of this transaction has to be the organization's: two removals
+    // from different groups would otherwise each see the other's membership as
+    // live and neither would revoke.
+    const remaining = await services.groupUser.countActiveMembershipsInOrganization(
+      userId,
+      locked.organizationId,
+      tx
+    );
+    if (remaining === 0) {
+      await services.organization.removeOrganizationAdmin(locked.organizationId, userId, tx);
     }
 
     return row;

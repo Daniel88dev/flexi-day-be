@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { createDBServices } from "../../services/DBServices.js";
+import { getAdministrableGroupIds, resolveGroupAdmin } from "../groupUser/utils.js";
 import AppError from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import type { MirrorCandidate, MirrorMember } from "../../services/groupMirror/types.js";
@@ -17,8 +18,12 @@ export const handleGetGroupMirrors = async (req: Request, res: Response) => {
 
   const groupId = z.uuid().parse(req.params.groupId);
 
+  const { canAdmin } = await resolveGroupAdmin(auth.userId, groupId);
   const membership = await services.groupUser.getGroupUser(auth.userId, groupId);
-  if (!membership) {
+
+  // An org admin has no membership here, so admin rights are checked first —
+  // the self view below only makes sense for someone who is actually a member.
+  if (!canAdmin && !membership) {
     throw new AppError({
       message: "No access for related group",
       logging: true,
@@ -27,7 +32,7 @@ export const handleGetGroupMirrors = async (req: Request, res: Response) => {
     });
   }
 
-  if (!membership.adminAccess) {
+  if (!canAdmin) {
     const mirrors = await services.groupMirror.getMirrorsIntoGroupForUser(auth.userId, groupId);
     const self: MirrorMember = {
       userId: auth.userId,
@@ -46,9 +51,21 @@ export const handleGetGroupMirrors = async (req: Request, res: Response) => {
   const members = await services.groupUser.getGroupUsers(groupId);
   const memberIds = members.map((member) => member.userId);
 
-  const adminGroupIds = (await services.groupUser.getAdminGroupIdsForUser(auth.userId)).filter(
-    (id) => id !== groupId
-  );
+  const group = await services.group.getGroup(groupId);
+  if (!group) {
+    throw new AppError({
+      message: "Group not found",
+      logging: true,
+      code: 404,
+      context: { url: req.url, userId: auth.userId, groupId },
+    });
+  }
+
+  // Same organization scope the write path enforces, so the picker never
+  // offers a source the PUT would reject.
+  const adminGroupIds = (
+    await getAdministrableGroupIds(auth.userId, { organizationId: group.organizationId })
+  ).filter((id) => id !== groupId);
 
   const [sourceGroups, membershipPairs, mirrorPairs] = await Promise.all([
     services.group.getAllGroups(adminGroupIds),

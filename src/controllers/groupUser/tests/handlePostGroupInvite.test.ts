@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Billing plan-limit guards are no-ops here; their behavior has its own suite.
+// `isOrganizationAdmin` returns false so these cases exercise membership alone
+// — org-admin access has its own suite.
 vi.mock("../../../services/organization/organizationServices.js", () => ({
   lockOrganization: vi.fn(),
+  isOrganizationAdmin: vi.fn().mockResolvedValue(false),
+  getAdminOrganizationsForUser: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../../services/billing/guards.js", () => ({
@@ -34,10 +38,16 @@ vi.mock("../../../db/db.js", () => ({
   db: { transaction: vi.fn((callback) => callback({})) },
 }));
 
-// `assertGroupAdmin` reaches for the service module directly rather than
+// `assertGroupAdmin` reaches for the service modules directly rather than
 // through createDBServices, so both routes must resolve to the same mock.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
+  getAdminGroupIdsForUser: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroup: mockGetGroup,
+  getLiveGroupIdsForOrganizations: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../../services/DBServices.js", () => ({
@@ -53,8 +63,9 @@ vi.mock("../../../services/DBServices.js", () => ({
 }));
 
 vi.mock("../../../services/groupUser/inviteNotifier.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../../../services/groupUser/inviteNotifier.js")>();
+  const actual = await importOriginal<
+    typeof import("../../../services/groupUser/inviteNotifier.js")
+  >();
   return { ...actual, notifyGroupInvited: mockNotifyGroupInvited };
 });
 

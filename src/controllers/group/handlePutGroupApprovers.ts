@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
+import { resolveGroupAdmin } from "../groupUser/utils.js";
 import type { ValidatedPutGroupApproversType } from "../../services/group/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -19,9 +20,8 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPutGroupApproversType = req.body;
 
-  const access = await services.groupUser.getGroupUser(auth.userId, groupId);
-
-  if (!access || !access.adminAccess) {
+  const { canAdmin, viaOrgAdmin } = await resolveGroupAdmin(auth.userId, groupId);
+  if (!canAdmin) {
     throw new AppError({
       message: "No permission for related group",
       logging: true,
@@ -35,6 +35,31 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   const candidates = [data.mainApprovalUser, data.tempApprovalUser].filter(
     (id): id is string => id !== null
   );
+
+  // These columns *are* approval authority, so writing them is the same
+  // escalation `handleUpdateGroupUsers` blocks on `approverAccess`. A group's
+  // own admin may still do it — a manager naming their team's approver is the
+  // normal case — but authority borrowed from the organization may not add an
+  // approver at all: blocking only `auth.userId` would leave a delegate free
+  // to name a second account of their own instead. Keeping the existing
+  // approvers, or removing one, stays allowed.
+  if (viaOrgAdmin) {
+    const group = await services.group.getGroup(groupId);
+    const existing = new Set(
+      [group?.mainApprovalUser, group?.tempApprovalUser].filter((id): id is string => id != null)
+    );
+    const added = candidates.filter((candidate) => !existing.has(candidate));
+
+    if (added.length > 0) {
+      throw new AppError({
+        message: "An organization admin cannot add an approver to this group",
+        logging: true,
+        code: 403,
+        context: { url: req.url, user: auth.userId, groupId, added },
+      });
+    }
+  }
+
   for (const candidate of candidates) {
     const membership = await services.groupUser.getGroupUser(candidate, groupId);
     if (!membership) {

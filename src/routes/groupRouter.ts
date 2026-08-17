@@ -2,6 +2,7 @@ import { Router } from "express";
 import { handlePostGroup } from "../controllers/group/handlePostGroup.js";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetGroups } from "../controllers/group/handleGetGroups.js";
+import { handleGetGroup } from "../controllers/group/handleGetGroup.js";
 import { handlePutGroupQuotas } from "../controllers/group/handlePutGroupQuotas.js";
 import { handlePutGroupWorkingDays } from "../controllers/group/handlePutGroupWorkingDays.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
@@ -73,6 +74,39 @@ export const groupRouter = (): Router => {
 
   /**
    * @openapi
+   * /api/group/{groupId}:
+   *   get:
+   *     tags:
+   *       - Groups
+   *     summary: One group with the caller's effective rights over it
+   *     description: |
+   *       Unlike `GET /api/group` — which is membership-only, because it also
+   *       drives the dashboard and the request dialog — this reaches groups the
+   *       caller administers through the organization. `access` reports exactly
+   *       what the mutation endpoints will allow, and `access.viaOrgAdmin`
+   *       marks authority that came from the organization rather than a
+   *       membership.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: groupId
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: The group, its organization badge and the caller's access
+   *       '403':
+   *         description: No access for related group
+   *       '404':
+   *         description: Group not found
+   */
+  app.get("/:groupId", tryCatch(handleGetGroup));
+
+  /**
+   * @openapi
    * /api/group/{groupId}/quotas:
    *   put:
    *     tags:
@@ -80,7 +114,7 @@ export const groupRouter = (): Router => {
    *     summary: Update the group's default allowances
    *     description: |
    *       Sets the vacation / home-office days new members start from. Existing
-   *       per-year quotas are not touched. Requires admin access on the group.
+   *       per-year quotas are not touched. Requires group admin access, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -134,7 +168,7 @@ export const groupRouter = (): Router => {
    *       Sets which weekdays the group treats as working days. Vacation
    *       requests are only booked — and only counted against quotas — on these
    *       days. Days are `Date.getUTCDay()` numbers (0=Sunday … 6=Saturday); at
-   *       least one is required. Requires admin access on the group.
+   *       least one is required. Requires group admin access, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -271,7 +305,7 @@ export const groupRouter = (): Router => {
    *     description: |
    *       Names the main and optional stand-in approver. Both must already be
    *       members of the group. A group always has a main approver — clearing it
-   *       would leave its requests undecidable. Requires admin access on the group.
+   *       would leave its requests undecidable. Requires group admin access, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -304,7 +338,9 @@ export const groupRouter = (): Router => {
    *           lapsed. `errors[].context` carries
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
-   *         description: No permission for related group
+   *         description: |
+   *           No permission for related group; or a caller acting on
+   *           organization authority named themselves as an approver.
    *       '404':
    *         description: Group not found
    *       '422':

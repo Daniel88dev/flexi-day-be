@@ -1,5 +1,6 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
+import { groups } from "../../db/schema/group-schema.js";
 import { and, asc, count, countDistinct, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type {
@@ -106,6 +107,32 @@ export const getAdminGroupIdsForUser = async (
     );
 
   return rows.map((row) => row.groupId);
+};
+
+/**
+ * How many of an organization's live groups the user still actively belongs to.
+ * Zero means they are no longer one of the organization's people, which is what
+ * an org-admin grant is scoped to.
+ */
+export const countActiveMembershipsInOrganization = async (
+  userId: string,
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<number> => {
+  const [row] = await (tx ?? db)
+    .select({ value: count() })
+    .from(groupUsers)
+    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
+    .where(
+      and(
+        eq(groupUsers.userId, userId),
+        eq(groups.organizationId, organizationId),
+        isNull(groupUsers.deletedAt),
+        isNull(groups.deletedAt)
+      )
+    );
+
+  return Number(row?.value ?? 0);
 };
 
 /** Active (user, group) membership pairs, for cross-referencing many at once. */

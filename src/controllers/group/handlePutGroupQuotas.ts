@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
+import { assertGroupAdmin } from "../groupUser/utils.js";
 import type { ValidatedPutGroupQuotasType } from "../../services/group/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -23,16 +24,7 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPutGroupQuotasType = req.body;
 
-  const access = await services.groupUser.getGroupUser(auth.userId, groupId);
-
-  if (!access || !access.adminAccess) {
-    throw new AppError({
-      message: "No permission for related group",
-      logging: true,
-      code: 403,
-      context: { url: req.url, user: auth.userId, groupId },
-    });
-  }
+  await assertGroupAdmin(auth.userId, groupId);
 
   await assertGroupWritable(groupId);
 

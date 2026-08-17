@@ -3,11 +3,13 @@ import { user } from "./auth-schema.js";
 
 /**
  * Billing owner sitting above `groups`, so "who pays" is decoupled from "who
- * manages a group". Phase 1: exactly one org per user (unique index on
- * ownerUserId) and membership stays implicit (owner only) — an
- * `organization_users` table can be added later without touching `groups`.
+ * manages a group". Exactly one org per user (unique index on ownerUserId).
  * Rows are created lazily by `ensureOrganizationForUser`; users with no
  * groups get no row.
+ *
+ * The owner is **not** stored in `organization_users` — that table holds
+ * delegated admins only, so "is this user an org admin" is owner-or-row and
+ * `isOrganizationAdmin` is the only correct way to ask.
  */
 export const organizations = pgTable(
   "organizations",
