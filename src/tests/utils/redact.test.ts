@@ -12,6 +12,58 @@ describe("redactPath", () => {
     );
   });
 
+  it("strips the password-reset token, which better-auth puts in the path", () => {
+    // Query redaction cannot reach this one, and the GET behind it does not
+    // consume the token — so a leaked log line is a live account takeover for
+    // the rest of the hour.
+    expect(redactPath("/api/auth/reset-password/qX9kR2mTn7pL4vB8")).toBe(
+      "/api/auth/reset-password/:token"
+    );
+  });
+
+  it("keeps redacting the reset token when the token holds control characters", () => {
+    expect(redactPath("/api/auth/reset-password/qX9k\r\ninfo: forged")).toBe(
+      "/api/auth/reset-password/:token"
+    );
+  });
+
+  it.each([
+    [
+      "a trailing slash",
+      "/api/auth/reset-password/qX9kR2mTn7pL4vB8/",
+      "/api/auth/reset-password/:token/",
+    ],
+    [
+      "a repeated segment",
+      "/api/auth/reset-password/first/reset-password/second",
+      "/api/auth/reset-password/:token/reset-password/:token",
+    ],
+  ])("hides the reset token despite %s", (_case, path, expected) => {
+    // This runs before routing, so it sees paths no route matches — and an
+    // unmatched request is logged just the same, token and all.
+    expect(redactPath(path)).toBe(expected);
+  });
+
+  it("hides the calendar token despite a trailing slash", () => {
+    expect(redactPath("/calendars/9f3a1c7e5b2d4a8f.ics/")).toBe("/calendars/:token.ics/");
+  });
+
+  it.each([
+    ["/calendars/9f3a1c7e5b2d4a8f.ICS", "/calendars/:token.ics"],
+    ["/CALENDARS/9f3a1c7e5b2d4a8f.ics", "/calendars/:token.ics"],
+    ["/api/auth/Reset-Password/qX9kR2mTn7pL4vB8", "/api/auth/reset-password/:token"],
+  ])("hides %s, which Express routes all the same", (path, expected) => {
+    // Express matches routes case-insensitively, so an uppercase spelling is
+    // served normally — and the feed token behind it never expires.
+    expect(redactPath(path)).toBe(expected);
+  });
+
+  it("leaves the reset endpoint that carries no token alone", () => {
+    // POST /reset-password takes the token in the body, so there is nothing
+    // in the path to hide and the route name stays readable in logs.
+    expect(redactPath("/api/auth/reset-password")).toBe("/api/auth/reset-password");
+  });
+
   it("leaves ordinary paths untouched", () => {
     expect(redactPath("/api/vacation/123")).toBe("/api/vacation/123");
     expect(redactPath("/health")).toBe("/health");

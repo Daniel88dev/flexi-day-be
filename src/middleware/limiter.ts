@@ -80,6 +80,29 @@ export const credentialsLimiter = rateLimit({
 });
 
 /**
+ * Password-reset requests, which `credentialsLimiter` cannot cover: that one
+ * sets `skipSuccessfulRequests`, and this endpoint answers 200 to every input
+ * on purpose so it reveals nothing about which addresses exist. Nothing would
+ * ever increment the counter.
+ *
+ * What needs bounding here is not guessing but sending: each accepted request
+ * puts a real email in someone else's inbox and spends SES quota, so a loop
+ * against one address is both harassment and cost. Low enough to make that
+ * pointless, high enough for someone who genuinely mistypes and retries.
+ *
+ * Two limits worth knowing. It keys on the IP, so it bounds volume per source
+ * and not per address — a flood from many sources at one address is still open.
+ * And better-auth applies its own 3-per-60s rule to this route first, so this
+ * is the longer-window ceiling rather than the burst control.
+ */
+export const passwordResetLimiter = rateLimit({
+  ...shared,
+  windowMs: FIFTEEN_MINUTES,
+  limit: 5,
+  keyGenerator: ipKey,
+});
+
+/**
  * Calendar clients subscribe with a token and no cookie, and Google polls every
  * subscribed feed from a handful of shared ranges — keying this on the IP would
  * make one popular provider throttle every user at once.

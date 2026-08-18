@@ -3,8 +3,10 @@ import type { Request } from "express";
 const REDACTED = "[redacted]";
 const MAX_QUERY_LENGTH = 512;
 
-// `token` and `code` cover better-auth's verification/reset links and group
-// invite codes: anyone reading one out of a log could complete the flow.
+// `token` and `code` cover the secrets better-auth passes in the *query*
+// string — verification links, group invite codes: anyone reading one out of a
+// log could complete the flow. Secrets it puts in the path are handled by
+// `redactPath` below instead.
 const SENSITIVE_EXACT = new Set([
   "token",
   "code",
@@ -41,14 +43,32 @@ const CONTROL_CHARS = new RegExp("[\\u0000-\\u001f\\u007f]", "g");
 const sanitizeValue = (value: string): string =>
   value.replace(CONTROL_CHARS, "").replace(/&/g, "%26").replace(/=/g, "%3D");
 
-// The iCalendar feed authenticates with a long-lived token in the *path*, so
-// query redaction alone would not cover it.
-const CALENDAR_FEED = /^\/calendars\/[^/]+\.ics$/;
+// Secrets better-auth and the feed carry in a *path segment*, where query
+// redaction cannot reach them. Every rule is applied, and each is global and
+// unanchored on purpose: this middleware runs before routing, so it sees paths
+// no route would ever match — a trailing slash, a repeated segment, a scanner's
+// invention — and an anchored pattern would pass those straight through with
+// the live secret in them.
+// Case-insensitive because Express routing is: `/calendars/TOKEN.ICS` serves
+// the feed exactly as the lowercase spelling does, so a case-sensitive rule
+// would hand out the response and log the token with it.
+const SECRET_PATHS: [RegExp, string][] = [
+  // The iCalendar feed authenticates with a long-lived token — and unlike the
+  // reset token, one that never expires.
+  [/\/calendars\/[^/]+\.ics/gi, "/calendars/:token.ics"],
+  // better-auth's password reset. The mailed link lands here, and this GET
+  // only *reads* the verification value before redirecting — it does not
+  // consume it — so a token logged here stays usable for its whole lifetime.
+  [/\/reset-password\/[^/?#]+/gi, "/reset-password/:token"],
+];
 
 // Control characters are stripped because both values are interpolated into log
 // messages, where a surviving CR/LF would let a caller forge a whole log line.
 export const redactPath = (path: string): string =>
-  CALENDAR_FEED.test(path) ? "/calendars/:token.ics" : path.replace(CONTROL_CHARS, "");
+  SECRET_PATHS.reduce(
+    (acc, [matcher, template]) => acc.replace(matcher, template),
+    path.replace(CONTROL_CHARS, "")
+  );
 
 // Node's parser already rejects a method outside the HTTP token grammar, so this
 // only matters if that ever stops being true.

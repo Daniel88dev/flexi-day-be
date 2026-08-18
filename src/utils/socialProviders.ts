@@ -20,11 +20,13 @@ type SocialCredentials = {
  * So social sign-in never confers a verified address. The account is created
  * unverified and better-auth sends our own confirmation email, exactly as an
  * email/password sign-up would; only clicking that link marks the address
- * verified. Consequence worth knowing: because better-auth gates implicit
- * account linking on this same flag, a social sign-in cannot attach itself to
- * a pre-existing account with the same address — it reports
- * `account_not_linked`, which the frontend renders as "use the method you
- * signed up with".
+ * verified.
+ *
+ * Consequence worth knowing: a social sign-in cannot attach itself to a
+ * pre-existing account with the same address. It reports `account_not_linked`,
+ * which the frontend renders as "sign in with the method you used, then connect
+ * this one from Settings". Attaching one is a deliberate act instead — see
+ * `accountLinking` in `auth.ts` and the connected-accounts card in settings.
  */
 const NEVER_TRUST_PROVIDER_EMAIL = () => ({ emailVerified: false });
 
@@ -65,4 +67,31 @@ export function buildSocialProviders(auth?: SocialCredentials) {
   };
 
   return Object.keys(providers).length > 0 ? providers : undefined;
+}
+
+/**
+ * Account-linking policy, derived from whichever providers are configured.
+ *
+ * The two settings only make sense together. `trustedProviders` is what lets a
+ * provider be attached to an account at all — without it the deliberately-false
+ * `emailVerified` above blocks every link. `disableImplicitLinking` then takes
+ * back the part of that trust we do not want: the automatic attach during
+ * sign-in, where the provider's claim about an address would be the only thing
+ * standing between an attacker's directory and someone else's account.
+ *
+ * What remains is the explicit route: POST /link-social from a signed-in
+ * session. There the session proves the Flexi Day account is the caller's and
+ * the OAuth round trip proves the provider account is too, so no email claim is
+ * load-bearing. `allowDifferentEmails` is left off, so the provider must still
+ * report the account's own address.
+ *
+ * Naming a provider that is not configured would be harmless but misleading, so
+ * the list is derived rather than written out.
+ */
+export function buildAccountLinking(providers: ReturnType<typeof buildSocialProviders>) {
+  return {
+    enabled: true,
+    trustedProviders: Object.keys(providers ?? {}),
+    disableImplicitLinking: true,
+  };
 }
