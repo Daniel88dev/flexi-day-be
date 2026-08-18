@@ -91,6 +91,36 @@ resource "aws_secretsmanager_secret_version" "google_client_secret" {
   secret_string = var.google_client_secret
 }
 
+# Microsoft Entra ID client secret, same opt-in shape as Google above. The
+# application (client) id and the tenant id are both public and injected as
+# plain env vars in apprunner.tf.
+resource "aws_secretsmanager_secret" "microsoft_client_secret" {
+  count                   = var.microsoft_client_id != "" ? 1 : 0
+  name                    = "${var.project_name}-${var.environment}-microsoft-client-secret"
+  description             = "Microsoft Entra ID client secret for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-microsoft-client-secret"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "microsoft_client_secret" {
+  count         = var.microsoft_client_id != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.microsoft_client_secret[0].id
+  secret_string = var.microsoft_client_secret
+
+  # Entra client secrets expire (24 months at most), and a half-configured
+  # rotation is the likely failure mode. Catch it at plan time rather than
+  # letting App Runner boot a service whose Microsoft button 500s.
+  lifecycle {
+    precondition {
+      condition     = var.microsoft_client_secret != ""
+      error_message = "microsoft_client_secret is required when microsoft_client_id is set."
+    }
+  }
+}
+
 # Paddle API key and webhook signing secret. Only provisioned when billing is
 # enabled (paddle_api_key set), matching the google_client_secret pattern
 # above, so an empty secret_string never reaches Secrets Manager. The six

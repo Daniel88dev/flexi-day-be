@@ -51,6 +51,24 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
+    // The address binding below is only worth as much as the address behind it.
+    // Social sign-in can hand us a session whose address the provider never
+    // vouched for — Microsoft Entra lets a tenant admin set `mail` to any
+    // string, and better-auth then marks the account unverified rather than
+    // refusing it. Without this, someone controlling their own Entra tenant
+    // could claim a colleague's address and redeem an invite issued to them.
+    if (validateLink.email && !auth.emailVerified) {
+      throw new AppError({
+        message: "Verify your email address before joining a team",
+        logging: true,
+        code: 403,
+        context: {
+          url: req.url,
+          userId: auth.userId,
+        },
+      });
+    }
+
     // Invites issued to an address may only be redeemed by that address, so a
     // forwarded or leaked code is useless to anyone else. Rows with no email
     // predate email invites and stay unrestricted.

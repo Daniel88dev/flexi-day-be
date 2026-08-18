@@ -50,6 +50,24 @@ better_auth_secret = ""
 google_client_id     = ""
 google_client_secret = ""
 
+# Microsoft Entra ID OAuth: leave both empty to disable Microsoft sign-in.
+# Register this redirect URI on the app registration (Web platform):
+#   https://api.flexi-day.com/api/auth/callback/microsoft
+# The registration also needs the `email` optional ID-token claim (Entra ->
+# Token configuration); without it sign-in fails with error=email_not_found.
+# microsoft_client_secret is the secret VALUE, not the Secret ID shown next to
+# it in the portal. terraform.tfvars is gitignored, so the value can live there;
+# TF_VAR_microsoft_client_secret works too, but note it changes nothing about
+# exposure — either way the value ends up in terraform.tfstate in the clear.
+# Give production its own secret instead of reusing the one in .env, so rotating
+# one does not break the other.
+# Entra client secrets expire (24 months max) — put the expiry in the calendar.
+microsoft_client_id     = ""
+microsoft_client_secret = ""
+# "common" = any work/school account + personal Microsoft accounts,
+# "organizations" = work/school only, or a tenant GUID for a single directory.
+microsoft_tenant_id = "common"
+
 # Paddle billing. Leave paddle_api_key empty to disable billing entirely: no
 # Paddle secrets are created, no Paddle env vars are injected, and the
 # backend's /api/billing/* routes return 503.

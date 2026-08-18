@@ -13,6 +13,13 @@ type AuthConfig = {
   // provisioned. The client secret is sensitive; the client id is not.
   googleClientId?: string;
   googleClientSecret?: string;
+  // Microsoft Entra ID OAuth. Same opt-in shape as Google. `tenantId` selects
+  // which directory may sign in — "common" (the better-auth default) accepts
+  // any work/school account plus personal Microsoft accounts; a GUID restricts
+  // sign-in to that single tenant.
+  microsoftClientId?: string;
+  microsoftClientSecret?: string;
+  microsoftTenantId?: string;
 };
 
 type EmailConfig = {
@@ -201,6 +208,9 @@ export const config: Config = {
           trustedOrigins: process.env.TRUSTED_ORIGINS?.split(",") ?? ["http://localhost:3000"],
           googleClientId: process.env.GOOGLE_CLIENT_ID,
           googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
+          microsoftClientId: process.env.MICROSOFT_CLIENT_ID,
+          microsoftClientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+          microsoftTenantId: process.env.MICROSOFT_TENANT_ID,
         }
       : undefined,
   email: {

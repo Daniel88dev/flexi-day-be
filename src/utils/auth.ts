@@ -6,23 +6,13 @@ import { haveIBeenPwned, openAPI } from "better-auth/plugins";
 import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
+import { buildSocialProviders } from "./socialProviders.js";
 
 // better-auth's default verification-token expiry is 3600 s. Keep this string
 // in sync if `emailVerification.expiresIn` is ever configured below.
 const VERIFICATION_EXPIRES_IN = "1 hour";
 
-// Register the Google provider only when both credentials are present, so
-// non-production/test environments (and any deploy before the secrets are
-// wired) start cleanly instead of failing with an empty client id/secret.
-const socialProviders =
-  config?.auth?.googleClientId && config?.auth?.googleClientSecret
-    ? {
-        google: {
-          clientId: config.auth.googleClientId,
-          clientSecret: config.auth.googleClientSecret,
-        },
-      }
-    : undefined;
+const socialProviders = buildSocialProviders(config?.auth);
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
