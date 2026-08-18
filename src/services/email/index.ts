@@ -9,6 +9,7 @@ export type {
   EmailTemplateName,
   TemplatedEmail,
   EmailConfirmationData,
+  PasswordResetData,
   VacationApprovalRequestData,
   VacationApprovedData,
   VacationCancelledData,

@@ -9,6 +9,7 @@ import {
   credentialsLimiter,
   floodLimiter,
   paddleWebhookLimiter,
+  passwordResetLimiter,
 } from "./middleware/limiter.js";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./utils/auth.js";
@@ -51,11 +52,17 @@ export const createServer = () => {
       "/api/auth/sign-in",
       "/api/auth/sign-up",
       "/api/auth/sign-up-with-team",
-      "/api/auth/forget-password",
+      // Covers the POST that spends the token. The GET at
+      // `/reset-password/:token` prefix-matches too but is never counted: it
+      // answers 302 either way, and this limiter skips anything under 400.
       "/api/auth/reset-password",
     ],
     credentialsLimiter
   );
+
+  // Not `credentialsLimiter`: it counts only failures, and asking for a reset
+  // always succeeds by design. The cost here is the email it sends.
+  app.use("/api/auth/request-password-reset", passwordResetLimiter);
 
   // Project-specific auth orchestration endpoints. These must be registered
   // BEFORE better-auth's catch-all `.all()` so the catch-all does not swallow

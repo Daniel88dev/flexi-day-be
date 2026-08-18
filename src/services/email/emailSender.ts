@@ -19,6 +19,18 @@ export interface EmailConfirmationData {
   expiresIn: string;
 }
 
+/**
+ * `password-reset`: sent by better-auth's sendResetPassword hook. Also the
+ * only way a user who signed up through Google or Microsoft can acquire a
+ * password — `resetPassword` creates the credential account when there is
+ * none — so the template does not assume a previous password existed.
+ */
+export interface PasswordResetData {
+  name: string;
+  resetUrl: string;
+  expiresIn: string;
+}
+
 /** `vacation-approval-request`: sent to a group approver. */
 export interface VacationApprovalRequestData {
   approverName: string;
@@ -121,6 +133,7 @@ export interface SubscriptionGraceData {
  */
 export type TemplatedEmail =
   | { to: string; template: "email-confirmation"; data: EmailConfirmationData }
+  | { to: string; template: "password-reset"; data: PasswordResetData }
   | { to: string; template: "vacation-approval-request"; data: VacationApprovalRequestData }
   | { to: string; template: "vacation-approved"; data: VacationApprovedData }
   | { to: string; template: "vacation-rejected"; data: VacationRejectedData }
