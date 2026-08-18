@@ -88,7 +88,9 @@ describe("two-factor authentication", () => {
       .set("Cookie", cookie)
       .send({ password: "not-the-password" });
 
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    // Pinned (not >= 400): a 429 from the shared credentialsLimiter store
+    // would otherwise satisfy this without proving the password check.
+    expect(res.status).toBe(400);
     const rows = await db.select().from(twoFactorTable).where(eq(twoFactorTable.userId, userId));
     expect(rows).toHaveLength(0);
   });
@@ -143,7 +145,7 @@ describe("two-factor authentication", () => {
       .post("/api/auth/two-factor/verify-totp")
       .set("Cookie", challengeCookies)
       .send({ code: "000000" });
-    expect(wrong.status).toBeGreaterThanOrEqual(400);
+    expect(wrong.status).toBe(401);
 
     const right = await request(app)
       .post("/api/auth/two-factor/verify-totp")
@@ -172,7 +174,7 @@ describe("two-factor authentication", () => {
       .post("/api/auth/two-factor/verify-backup-code")
       .set("Cookie", cookiesOf(second))
       .send({ code: backupCodes[0] });
-    expect(replay.status).toBeGreaterThanOrEqual(400);
+    expect(replay.status).toBe(401);
   });
 
   it("enrolls and signs in with an emailed code alone", async () => {
