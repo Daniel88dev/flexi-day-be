@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type { Request, Response } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 
@@ -101,6 +102,57 @@ export const passwordResetLimiter = rateLimit({
   limit: 5,
   keyGenerator: ipKey,
 });
+
+/**
+ * Keys `send-otp` on the better-auth challenge (or session) cookie rather
+ * than the IP: emailed-OTP sign-in is a routine per-user flow, so an IP key
+ * would pool a whole office NAT into one budget — the exact pooling the
+ * `apiLimiter` doctrine above rejects. The cookie value is stable for the
+ * life of one challenge, and a request with no/invalid cookie sends no email
+ * (the endpoint 401s), so invented cookies mint buckets that cost nothing.
+ * Falls back to the IP when no auth cookie is present at all.
+ */
+export const otpSendKey = (req: Request): string => {
+  const match = /(?:^|;\s*)(?:__Secure-)?better-auth\.(?:two_factor|session_token)=([^;]+)/.exec(
+    req.headers.cookie ?? ""
+  );
+  if (!match) return ipKey(req);
+  return `otp:${createHash("sha256").update(match[1]!).digest("base64")}`;
+};
+
+/**
+ * Two-factor `send-otp`, uncoverable by `credentialsLimiter` for the same
+ * reason as password reset: it answers 200 no matter what, so a
+ * failures-only counter never increments, and the cost to bound is the email
+ * it sends. The budget is per challenge/session (see `otpSendKey`), sized so
+ * one sign-in can burn several codes (expiry is 3 minutes, plus resends).
+ * The plugin's own 3-per-10s rule on `/two-factor/*` is the burst control.
+ */
+export const otpSendLimiter = rateLimit({
+  ...shared,
+  windowMs: FIFTEEN_MINUTES,
+  limit: 10,
+  keyGenerator: otpSendKey,
+});
+
+/**
+ * The auth endpoints where a wrong guess is the point, shared with
+ * `server.ts` and pinned by a guard test: every path here fails with 4xx on a
+ * bad guess, so the failures-only `credentialsLimiter` covers it. The
+ * two-factor prefix is deliberate breadth — verify-* are a 6-digit guessing
+ * surface, and enable/disable/get-totp-uri/generate-backup-codes are password
+ * oracles a stolen session cookie must not get to brute-force.
+ */
+export const CREDENTIAL_GUESSING_PATHS = [
+  "/api/auth/sign-in",
+  "/api/auth/sign-up",
+  "/api/auth/sign-up-with-team",
+  // Covers the POST that spends the token. The GET at
+  // `/reset-password/:token` prefix-matches too but is never counted: it
+  // answers 302 either way, and this limiter skips anything under 400.
+  "/api/auth/reset-password",
+  "/api/auth/two-factor",
+];
 
 /**
  * Calendar clients subscribe with a token and no cookie, and Google polls every

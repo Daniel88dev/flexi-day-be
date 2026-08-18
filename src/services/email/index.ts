@@ -17,6 +17,7 @@ export type {
   VacationCommentData,
   GroupInviteData,
   SubscriptionGraceData,
+  TwoFactorCodeData,
 } from "./emailSender.js";
 
 /**

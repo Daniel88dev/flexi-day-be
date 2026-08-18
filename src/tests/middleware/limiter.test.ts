@@ -10,8 +10,10 @@ import {
   apiFailureLimiter,
   apiLimiter,
   calendarFeedLimiter,
+  CREDENTIAL_GUESSING_PATHS,
   credentialsLimiter,
   floodLimiter,
+  otpSendKey,
 } from "../../middleware/limiter.js";
 
 function appWith(mount: (app: Express) => void): Express {
@@ -230,5 +232,60 @@ describe("calendarFeedLimiter", () => {
     expect(Number(second.headers["ratelimit-remaining"])).toBe(
       Number(first.headers["ratelimit-remaining"]) - 1
     );
+  });
+});
+
+describe("CREDENTIAL_GUESSING_PATHS", () => {
+  it("keeps the whole two-factor surface behind credentialsLimiter", () => {
+    // Not just the verify endpoints: enable / disable / get-totp-uri /
+    // generate-backup-codes are password oracles, and without the
+    // failures-only budget a stolen session cookie could brute-force the
+    // password via POST /two-factor/disable and switch 2FA off.
+    expect(CREDENTIAL_GUESSING_PATHS).toContain("/api/auth/two-factor");
+  });
+
+  it("keeps the original credential endpoints covered", () => {
+    expect(CREDENTIAL_GUESSING_PATHS).toEqual(
+      expect.arrayContaining([
+        "/api/auth/sign-in",
+        "/api/auth/sign-up",
+        "/api/auth/sign-up-with-team",
+        "/api/auth/reset-password",
+      ])
+    );
+  });
+});
+
+describe("otpSendKey", () => {
+  const reqWith = (cookie?: string, ip = "203.0.113.7") =>
+    ({ headers: cookie ? { cookie } : {}, ip }) as unknown as Request;
+
+  it("keys on the challenge cookie, so an office NAT never pools", () => {
+    const a = otpSendKey(reqWith("better-auth.two_factor=challenge-a"));
+    const b = otpSendKey(reqWith("better-auth.two_factor=challenge-b"));
+    expect(a).not.toBe(b);
+    expect(a.startsWith("otp:")).toBe(true);
+  });
+
+  it("gives the same challenge the same bucket across IPs", () => {
+    const a = otpSendKey(reqWith("better-auth.two_factor=challenge-a", "203.0.113.7"));
+    const b = otpSendKey(reqWith("better-auth.two_factor=challenge-a", "198.51.100.9"));
+    expect(a).toBe(b);
+  });
+
+  it("ignores unrelated cookies around the auth cookie", () => {
+    const bare = otpSendKey(reqWith("better-auth.session_token=sess-1"));
+    const noisy = otpSendKey(reqWith("theme=dark; better-auth.session_token=sess-1; foo=bar"));
+    expect(noisy).toBe(bare);
+  });
+
+  it("accepts the production __Secure- cookie prefix", () => {
+    const key = otpSendKey(reqWith("__Secure-better-auth.two_factor=challenge-a"));
+    expect(key.startsWith("otp:")).toBe(true);
+  });
+
+  it("falls back to the IP when no auth cookie is present", () => {
+    const key = otpSendKey(reqWith(undefined, "203.0.113.7"));
+    expect(key.startsWith("otp:")).toBe(false);
   });
 });
