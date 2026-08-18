@@ -127,6 +127,18 @@ export interface SubscriptionGraceData {
 }
 
 /**
+ * `two-factor-code`: sent by the twoFactor plugin's sendOTP hook when a user
+ * with 2FA enabled asks for a sign-in code by email. Security mail, so it
+ * ignores `user_settings.emailNotifications`.
+ */
+export interface TwoFactorCodeData {
+  name: string;
+  /** The 6-digit OTP as a string — a leading zero must survive. */
+  code: string;
+  expiresIn: string;
+}
+
+/**
  * A templated email to send. `template` is the logical template name; the
  * adapter maps it to the concrete, stage-suffixed SES template name. The
  * union keeps each template's variables tied to its name.
@@ -140,7 +152,8 @@ export type TemplatedEmail =
   | { to: string; template: "vacation-cancelled"; data: VacationCancelledData }
   | { to: string; template: "vacation-comment"; data: VacationCommentData }
   | { to: string; template: "group-invite"; data: GroupInviteData }
-  | { to: string; template: "subscription-grace"; data: SubscriptionGraceData };
+  | { to: string; template: "subscription-grace"; data: SubscriptionGraceData }
+  | { to: string; template: "two-factor-code"; data: TwoFactorCodeData };
 
 export type EmailTemplateName = TemplatedEmail["template"];
 

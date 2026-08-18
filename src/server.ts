@@ -6,9 +6,11 @@ import {
   apiFailureLimiter,
   apiLimiter,
   calendarFeedLimiter,
+  CREDENTIAL_GUESSING_PATHS,
   credentialsLimiter,
   floodLimiter,
   paddleWebhookLimiter,
+  otpSendLimiter,
   passwordResetLimiter,
 } from "./middleware/limiter.js";
 import { toNodeHandler } from "better-auth/node";
@@ -44,25 +46,18 @@ export const createServer = () => {
     .use(helmetHeaders)
     .use(floodLimiter);
 
-  // Only the endpoints where a wrong guess is the point. Registered before
-  // better-auth's catch-all so it cannot swallow them, and before any body
-  // parser so better-auth still receives its raw body.
-  app.use(
-    [
-      "/api/auth/sign-in",
-      "/api/auth/sign-up",
-      "/api/auth/sign-up-with-team",
-      // Covers the POST that spends the token. The GET at
-      // `/reset-password/:token` prefix-matches too but is never counted: it
-      // answers 302 either way, and this limiter skips anything under 400.
-      "/api/auth/reset-password",
-    ],
-    credentialsLimiter
-  );
+  // Only the endpoints where a wrong guess is the point (see the list's own
+  // doc for why two-factor is covered whole). Registered before better-auth's
+  // catch-all so it cannot swallow them, and before any body parser so
+  // better-auth still receives its raw body.
+  app.use(CREDENTIAL_GUESSING_PATHS, credentialsLimiter);
 
   // Not `credentialsLimiter`: it counts only failures, and asking for a reset
   // always succeeds by design. The cost here is the email it sends.
   app.use("/api/auth/request-password-reset", passwordResetLimiter);
+
+  // Same shape as password reset: always 200, the cost is the email.
+  app.use("/api/auth/two-factor/send-otp", otpSendLimiter);
 
   // Project-specific auth orchestration endpoints. These must be registered
   // BEFORE better-auth's catch-all `.all()` so the catch-all does not swallow

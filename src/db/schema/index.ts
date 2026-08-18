@@ -1,4 +1,4 @@
-import { account, session, user, verification } from "./auth-schema.js";
+import { account, session, twoFactor, user, verification } from "./auth-schema.js";
 import { groupUsers } from "./group-users-schema.js";
 import { groups } from "./group-schema.js";
 import { groupMirrors } from "./group-mirror-schema.js";
@@ -19,6 +19,7 @@ import { paddleEvents } from "./paddle-event-schema.js";
 export const schema = {
   account,
   session,
+  twoFactor,
   user,
   verification,
   groupUsers,

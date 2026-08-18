@@ -4,7 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { account as accountTable, user as userTable } from "../db/schema/auth-schema.js";
-import { haveIBeenPwned, openAPI } from "better-auth/plugins";
+import { haveIBeenPwned, openAPI, twoFactor } from "better-auth/plugins";
 import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
@@ -17,6 +17,10 @@ const VERIFICATION_EXPIRES_IN = "1 hour";
 // Likewise for `emailAndPassword.resetPasswordTokenExpiresIn`, which also
 // defaults to 3600 s.
 const RESET_EXPIRES_IN = "1 hour";
+
+// The twoFactor plugin's OTP expiry defaults to 180 s. Keep this string in
+// sync if `otpOptions.period` is ever configured below.
+const OTP_EXPIRES_IN = "3 minutes";
 
 const socialProviders = buildSocialProviders(config?.auth);
 
@@ -148,10 +152,52 @@ export const auth = betterAuth({
     autoSignInAfterVerification: true,
   },
   rateLimit: {
-    enabled: true,
+    // Off under vitest: the twoFactor plugin registers a 3-per-10s rule on
+    // /two-factor/* that would 429 an e2e suite hitting it back-to-back.
+    enabled: config.api.env !== "test",
     window: 10,
     max: 50,
   },
   trustedOrigins: config?.auth?.trustedOrigins ?? [],
-  plugins: [haveIBeenPwned(), openAPI()],
+  plugins: [
+    haveIBeenPwned(),
+    openAPI(),
+    // 2FA gates password sign-in only — social sign-in never enters the
+    // plugin's hook. `skipVerificationOnEnable` stays unset: enrollment must
+    // be proven with a code before `twoFactorEnabled` flips, so an abandoned
+    // enable() can never lock anyone out of their account.
+    twoFactor({
+      issuer: "Flexi Day",
+      otpOptions: {
+        // The default stores the emailed code in cleartext in the
+        // verification table.
+        storeOTP: "hashed",
+        sendOTP: async ({ user, otp }, _request) => {
+          // Seeded @dev.local recipients are suppressed before SES, so this
+          // log line is the only way to read the code locally. `config.dev`
+          // cannot exist in production — config startup throws.
+          if (config.dev) {
+            logger.info("two-factor.otp", { email: user.email, otp });
+          }
+          try {
+            await emailSender.sendTemplated({
+              to: user.email,
+              template: "two-factor-code",
+              data: {
+                // Same blank-name fallback as the reset mail above.
+                name: user.name?.trim() || user.email,
+                code: otp,
+                expiresIn: OTP_EXPIRES_IN,
+              },
+            });
+          } catch (error) {
+            logger.error("Failed to send two-factor code email", {
+              userId: user.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        },
+      },
+    }),
+  ],
 });
