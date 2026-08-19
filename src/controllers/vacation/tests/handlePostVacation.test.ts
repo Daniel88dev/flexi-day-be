@@ -16,7 +16,11 @@ const {
   mockTransaction,
   mockCreateVacationEvents,
   mockNotifyVacationRequested,
+  mockNotifyVacationDecision,
+  mockNotifyVacationBookedOnBehalf,
   mockAssertRequestWithinQuota,
+  mockAssertGroupAdmin,
+  mockGetUserById,
 } = vi.hoisted(() => ({
   mockPostVacationBulk: vi.fn(),
   mockGetGroupUser: vi.fn(),
@@ -25,7 +29,15 @@ const {
   mockTransaction: vi.fn(),
   mockCreateVacationEvents: vi.fn(),
   mockNotifyVacationRequested: vi.fn(),
+  mockNotifyVacationDecision: vi.fn(),
+  mockNotifyVacationBookedOnBehalf: vi.fn(),
   mockAssertRequestWithinQuota: vi.fn(),
+  mockAssertGroupAdmin: vi.fn(),
+  mockGetUserById: vi.fn(),
+}));
+
+vi.mock("../../groupUser/utils.js", () => ({
+  assertGroupAdmin: mockAssertGroupAdmin,
 }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
@@ -38,6 +50,8 @@ vi.mock("../../../middleware/authSession.js", () => ({
 
 vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
   notifyVacationRequested: mockNotifyVacationRequested,
+  notifyVacationDecision: mockNotifyVacationDecision,
+  notifyVacationBookedOnBehalf: mockNotifyVacationBookedOnBehalf,
 }));
 
 vi.mock("../../../services/vacation/quotaGuard.js", () => ({
@@ -64,6 +78,9 @@ vi.mock("../../../services/DBServices.js", () => ({
     group: {
       getGroup: mockGetGroup,
       getApprovalUsers: mockGetApprovalUsers,
+    },
+    user: {
+      getUserById: mockGetUserById,
     },
   }),
 }));
@@ -331,6 +348,138 @@ describe("handlePostVacation", () => {
       "Selected range contains no working days"
     );
     expect(mockPostVacationBulk).not.toHaveBeenCalled();
+  });
+
+  describe("booking on behalf of a member", () => {
+    const onBehalfBody = (overrides: Record<string, unknown> = {}) =>
+      baseBody({ userId: "member_456", ...overrides });
+
+    beforeEach(() => {
+      mockAssertGroupAdmin.mockResolvedValue(undefined);
+      mockGetGroupUser.mockResolvedValue({
+        userId: "member_456",
+        groupId: "group_123",
+        controlledUser: true,
+      });
+      mockGetUserById.mockResolvedValue({
+        id: "member_456",
+        name: "Member Name",
+        email: "member@example.com",
+      });
+      mockPostVacationBulk.mockImplementation(async (records: unknown[]) => records);
+    });
+
+    it("books for the target member, stamps the admin as creator, and notifies the member", async () => {
+      const { req, res } = makeReqRes({ body: onBehalfBody() });
+
+      await handlePostVacation(req, res);
+
+      expect(mockAssertGroupAdmin).toHaveBeenCalledWith(mockAuthData.userId, "group_123");
+      expect(mockGetGroupUser).toHaveBeenCalledWith("member_456", "group_123");
+      expect(mockPostVacationBulk).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            userId: "member_456",
+            createdByUserId: mockAuthData.userId,
+          }),
+        ],
+        {}
+      );
+      const [records] = mockPostVacationBulk.mock.calls[0] as [{ approvedAt?: Date }[], unknown];
+      expect(records[0]?.approvedAt).toBeUndefined();
+      // Approvers are asked about the member's leave, not the admin's.
+      expect(mockNotifyVacationRequested).toHaveBeenCalledWith(
+        expect.any(Array),
+        { id: "member_456", name: "Member Name" },
+        null
+      );
+      expect(mockNotifyVacationBookedOnBehalf).toHaveBeenCalledWith(expect.any(Array), {
+        id: mockAuthData.userId,
+        name: mockAuthData.userName,
+      });
+      expect(mockNotifyVacationDecision).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it("creates already-approved rows with two timeline events when autoApprove is set", async () => {
+      const { req, res } = makeReqRes({ body: onBehalfBody({ autoApprove: true }) });
+
+      await handlePostVacation(req, res);
+
+      expect(mockPostVacationBulk).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            userId: "member_456",
+            createdByUserId: mockAuthData.userId,
+            approvedBy: mockAuthData.userId,
+            approvedAt: expect.any(Date),
+          }),
+        ],
+        {}
+      );
+      const eventTypes = mockCreateVacationEvents.mock.calls.map(
+        ([events]) => (events as { eventType: string }[])[0]?.eventType
+      );
+      expect(eventTypes).toEqual(["CREATED", "APPROVED"]);
+      expect(mockNotifyVacationDecision).toHaveBeenCalledWith(expect.any(Array), "approved", {
+        id: mockAuthData.userId,
+        name: mockAuthData.userName,
+      });
+      expect(mockNotifyVacationRequested).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it("rejects a non-admin caller passing userId", async () => {
+      const { req, res } = makeReqRes({ body: onBehalfBody() });
+      mockAssertGroupAdmin.mockRejectedValue(new Error("No permission for related group"));
+
+      await expect(handlePostVacation(req, res)).rejects.toThrow("No permission for related group");
+      expect(mockPostVacationBulk).not.toHaveBeenCalled();
+    });
+
+    it("rejects autoApprove on a self-booking", async () => {
+      const { req, res } = makeReqRes({
+        body: baseBody({ userId: mockAuthData.userId, autoApprove: true }),
+      });
+
+      await expect(handlePostVacation(req, res)).rejects.toThrow(
+        "`autoApprove` is only valid when booking on behalf of a member"
+      );
+      expect(mockAssertGroupAdmin).not.toHaveBeenCalled();
+      expect(mockPostVacationBulk).not.toHaveBeenCalled();
+    });
+
+    it("rejects a target member who cannot book in the group", async () => {
+      const { req, res } = makeReqRes({ body: onBehalfBody() });
+      mockGetGroupUser.mockResolvedValue({
+        userId: "member_456",
+        groupId: "group_123",
+        controlledUser: false,
+      });
+
+      await expect(handlePostVacation(req, res)).rejects.toThrow(
+        "That member cannot book leave in this group"
+      );
+      expect(mockPostVacationBulk).not.toHaveBeenCalled();
+    });
+
+    it("aborts inside the transaction when the member's access was just revoked", async () => {
+      const { req, res } = makeReqRes({ body: onBehalfBody() });
+      // Pre-transaction check passes; the re-check on the tx snapshot does not.
+      mockGetGroupUser
+        .mockResolvedValueOnce({ userId: "member_456", groupId: "group_123", controlledUser: true })
+        .mockResolvedValueOnce({
+          userId: "member_456",
+          groupId: "group_123",
+          controlledUser: false,
+        });
+
+      await expect(handlePostVacation(req, res)).rejects.toThrow(
+        "That member cannot book leave in this group"
+      );
+      expect(mockPostVacationBulk).not.toHaveBeenCalled();
+      expect(mockGetGroupUser).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("throws 404 when the group no longer exists", async () => {

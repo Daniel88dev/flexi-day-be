@@ -101,7 +101,8 @@ const groupByUser = (rows: VacationRow[]): Map<string, VacationRow[]> => {
  */
 type Delivery = {
   userId: string;
-  email: TemplatedEmail;
+  /** Absent for in-app-only notices (e.g. "booked on your behalf"). */
+  email?: TemplatedEmail;
   notification: {
     type: notificationType;
     title: string;
@@ -129,7 +130,10 @@ const deliver = async (deliveries: Delivery[]): Promise<void> => {
 
   await Promise.all(
     deliveries
-      .filter((delivery) => acceptsEmail.has(delivery.userId))
+      .filter(
+        (delivery): delivery is Delivery & { email: TemplatedEmail } =>
+          delivery.email !== undefined && acceptsEmail.has(delivery.userId)
+      )
       .map((delivery) => emailSender.sendTemplated(delivery.email))
   );
 };
@@ -214,6 +218,67 @@ export const notifyVacationRequested = async (
     );
   } catch (error) {
     logger.error("notifyVacationRequested failed", { error, requesterId: requester.id });
+  }
+};
+
+/**
+ * In-app-only notice to the member that an admin filed a (pending) request on
+ * their behalf. The approvers are notified separately by
+ * {@link notifyVacationRequested}; auto-approved bookings go through
+ * {@link notifyVacationDecision} instead.
+ */
+export const notifyVacationBookedOnBehalf = async (
+  rows: VacationRow[],
+  actor: { id: string; name: string }
+): Promise<void> => {
+  try {
+    const summary = summarize(rows);
+    if (!summary) return;
+
+    const memberId = rows[0]?.userId;
+    if (!memberId || memberId === actor.id) return;
+
+    await deliver([
+      {
+        userId: memberId,
+        notification: {
+          type: notificationType.ApprovalRequested,
+          title: `${actor.name} requested time off for you`,
+          body: `${summary.leaveType} · ${summary.dateRange} (${summary.dayCount})`,
+          href: summary.requestUrl,
+        },
+      },
+    ]);
+  } catch (error) {
+    logger.error("notifyVacationBookedOnBehalf failed", { error, actorId: actor.id });
+  }
+};
+
+/** In-app-only notice to the member that an admin edited their record. */
+export const notifyVacationUpdated = async (
+  rows: VacationRow[],
+  actor: { id: string; name: string }
+): Promise<void> => {
+  try {
+    const summary = summarize(rows);
+    if (!summary) return;
+
+    const memberId = rows[0]?.userId;
+    if (!memberId || memberId === actor.id) return;
+
+    await deliver([
+      {
+        userId: memberId,
+        notification: {
+          type: notificationType.ApprovalDecided,
+          title: `${actor.name} updated your time off`,
+          body: `${summary.leaveType} · ${summary.dateRange} (${summary.dayCount})`,
+          href: summary.requestUrl,
+        },
+      },
+    ]);
+  } catch (error) {
+    logger.error("notifyVacationUpdated failed", { error, actorId: actor.id });
   }
 };
 

@@ -58,8 +58,8 @@ const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<numb
 
   const group = await services.group.getGroup(check.groupId, tx);
   return check.leaveType === vacationType.Vacation
-    ? (group?.defaultVacationDays ?? 0)
-    : (group?.defaultHomeOfficeDays ?? 0);
+    ? group?.defaultVacationDays ?? 0
+    : group?.defaultHomeOfficeDays ?? 0;
 };
 
 /**
@@ -146,6 +146,26 @@ export const assertRequestWithinQuota = async (
   tx: DbTransaction
 ): Promise<void> => {
   await assertGrouped(rows, [], true, tx);
+};
+
+/**
+ * Guards an in-place edit (type or half-day weight change). The edited rows are
+ * excluded from the current totals and added back at their post-edit weight;
+ * pending days still count, exactly as on create.
+ */
+export const assertEditWithinQuota = async (
+  newStateRows: Pick<
+    VacationType,
+    "id" | "userId" | "groupId" | "requestedDay" | "vacationType" | "halfDay"
+  >[],
+  tx: DbTransaction
+): Promise<void> => {
+  await assertGrouped(
+    newStateRows,
+    newStateRows.map((row) => row.id),
+    true,
+    tx
+  );
 };
 
 /** Rows already count as pending, so they are excluded and added back as granted days. */

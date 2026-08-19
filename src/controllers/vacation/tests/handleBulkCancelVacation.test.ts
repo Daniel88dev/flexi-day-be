@@ -15,6 +15,7 @@ const {
   mockGetGroupsWhereUserCanApprove,
   mockGetGroupUser,
   mockNotifyVacationsCancelled,
+  mockResolveGroupAdmin,
 } = vi.hoisted(() => ({
   mockGetVacationsByIds: vi.fn(),
   mockCancelVacationsBulk: vi.fn(),
@@ -22,6 +23,11 @@ const {
   mockGetGroupsWhereUserCanApprove: vi.fn(),
   mockGetGroupUser: vi.fn(),
   mockNotifyVacationsCancelled: vi.fn(),
+  mockResolveGroupAdmin: vi.fn(),
+}));
+
+vi.mock("../../groupUser/utils.js", () => ({
+  resolveGroupAdmin: mockResolveGroupAdmin,
 }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
@@ -70,6 +76,7 @@ describe("handleBulkCancelVacation", () => {
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
     mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
     mockGetGroupUser.mockResolvedValue(null);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: false, viaOrgAdmin: false });
     mockCancelVacationsBulk.mockImplementation(async (ids: string[]) => ids.map((id) => ({ id })));
   });
 
@@ -79,7 +86,11 @@ describe("handleBulkCancelVacation", () => {
 
     await handleBulkCancelVacation(req, res);
 
-    expect(mockCancelVacationsBulk).toHaveBeenCalledWith(["v-1", "v-2"], expect.anything());
+    expect(mockCancelVacationsBulk).toHaveBeenCalledWith(
+      ["v-1", "v-2"],
+      mockAuthData.userId,
+      expect.anything()
+    );
     expect(mockCreateVacationEvents).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ eventType: "CANCELLED" })]),
       expect.anything()
@@ -100,7 +111,26 @@ describe("handleBulkCancelVacation", () => {
 
     await handleBulkCancelVacation(req, res);
 
-    expect(mockCancelVacationsBulk).toHaveBeenCalledWith(["v-1", "v-2"], expect.anything());
+    expect(mockCancelVacationsBulk).toHaveBeenCalledWith(
+      ["v-1", "v-2"],
+      mockAuthData.userId,
+      expect.anything()
+    );
+  });
+
+  it("lets an org admin cancel someone else's request", async () => {
+    const othersRows = ownedRows.map((r) => ({ ...r, userId: "someone_else" }));
+    const { req, res } = makeReqRes({ body: { ids: ["v-1", "v-2"] } });
+    mockGetVacationsByIds.mockResolvedValue(othersRows);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: true, viaOrgAdmin: true });
+
+    await handleBulkCancelVacation(req, res);
+
+    expect(mockCancelVacationsBulk).toHaveBeenCalledWith(
+      ["v-1", "v-2"],
+      mockAuthData.userId,
+      expect.anything()
+    );
   });
 
   it("rejects a plain member cancelling someone else's request", async () => {

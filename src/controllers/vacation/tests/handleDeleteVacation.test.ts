@@ -14,12 +14,18 @@ const {
   mockCreateVacationEvent,
   mockGetGroupUser,
   mockGetGroupsWhereUserCanApprove,
+  mockResolveGroupAdmin,
 } = vi.hoisted(() => ({
   mockGetVacationById: vi.fn(),
   mockDeleteVacation: vi.fn(),
   mockCreateVacationEvent: vi.fn(),
   mockGetGroupUser: vi.fn(),
   mockGetGroupsWhereUserCanApprove: vi.fn(),
+  mockResolveGroupAdmin: vi.fn(),
+}));
+
+vi.mock("../../groupUser/utils.js", () => ({
+  resolveGroupAdmin: mockResolveGroupAdmin,
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({
@@ -65,6 +71,7 @@ describe("handleDeleteVacation", () => {
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
     mockDeleteVacation.mockResolvedValue({ id: vacationId });
     mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: false, viaOrgAdmin: false });
   });
 
   it("lets the owner cancel their own approved vacation and records the reason", async () => {
@@ -78,7 +85,11 @@ describe("handleDeleteVacation", () => {
 
     await handleDeleteVacation(req, res);
 
-    expect(mockDeleteVacation).toHaveBeenCalledWith(vacationId, expect.anything());
+    expect(mockDeleteVacation).toHaveBeenCalledWith(
+      vacationId,
+      mockAuthData.userId,
+      expect.anything()
+    );
     expect(mockCreateVacationEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         vacationId,
@@ -100,7 +111,27 @@ describe("handleDeleteVacation", () => {
 
     await handleDeleteVacation(req, res);
 
-    expect(mockDeleteVacation).toHaveBeenCalledWith(vacationId, expect.anything());
+    expect(mockDeleteVacation).toHaveBeenCalledWith(
+      vacationId,
+      mockAuthData.userId,
+      expect.anything()
+    );
+  });
+
+  it("lets an org admin cancel someone else's vacation", async () => {
+    const { req, res } = makeReqRes({ params: { id: vacationId } });
+
+    mockGetVacationById.mockResolvedValue({ ...ownedVacation, userId: "someone_else" });
+    mockGetGroupUser.mockResolvedValue(undefined);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: true, viaOrgAdmin: true });
+
+    await handleDeleteVacation(req, res);
+
+    expect(mockDeleteVacation).toHaveBeenCalledWith(
+      vacationId,
+      mockAuthData.userId,
+      expect.anything()
+    );
   });
 
   it("rejects a plain member cancelling someone else's vacation", async () => {

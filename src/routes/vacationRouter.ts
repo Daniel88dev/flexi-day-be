@@ -11,6 +11,7 @@ import {
   validateCommentVacation,
   validatePostVacation,
   validateRejectVacation,
+  validateUpdateVacation,
 } from "../services/vacation/types.js";
 import { handleGetVacation } from "../controllers/vacation/handleGetVacation.js";
 import { handlePostVacation } from "../controllers/vacation/handlePostVacation.js";
@@ -21,6 +22,7 @@ import { handleDeleteVacation } from "../controllers/vacation/handleDeleteVacati
 import { handleBulkApproveVacation } from "../controllers/vacation/handleBulkApproveVacation.js";
 import { handleBulkRejectVacation } from "../controllers/vacation/handleBulkRejectVacation.js";
 import { handleBulkCancelVacation } from "../controllers/vacation/handleBulkCancelVacation.js";
+import { handleUpdateVacation } from "../controllers/vacation/handleUpdateVacation.js";
 
 export const vacationRouter = (): Router => {
   const app = Router();
@@ -68,6 +70,17 @@ export const vacationRouter = (): Router => {
    *         schema:
    *           type: string
    *           format: uuid
+   *       - name: includeCancelled
+   *         in: query
+   *         required: false
+   *         description: |
+   *           When `true`, cancelled (soft-deleted) rows are included so the
+   *           requests view can show them with their `deletedAt` /
+   *           `deletedByUserId` stamps. Defaults to `false`, keeping the
+   *           calendar and dashboard on live rows only.
+   *         schema:
+   *           type: string
+   *           enum: ["true", "false"]
    *     responses:
    *       '200':
    *         description: Array of vacations matching the query
@@ -126,11 +139,13 @@ export const vacationRouter = (): Router => {
    *       - Vacations
    *     summary: Retrieve one vacation with its history
    *     description: |
-   *       Returns the request enriched with the requester, the group name and
-   *       the decision makers, the append-only event timeline (created,
-   *       approved, rejected, cancelled), and the actions this caller may take
-   *       (`canApprove`, `canCancel`). Cancelled requests remain retrievable so
-   *       the timeline can explain what happened to them.
+   *       Returns the request enriched with the requester, the group name, the
+   *       decision makers, who created it (`createdByUser` — an admin when it
+   *       was booked on the member's behalf) and who cancelled it
+   *       (`deletedByUser`), the append-only event timeline (created, approved,
+   *       rejected, cancelled, updated), and the actions this caller may take
+   *       (`canApprove`, `canCancel`, `canEdit`). Cancelled requests remain
+   *       retrievable so the timeline can explain what happened to them.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -161,6 +176,15 @@ export const vacationRouter = (): Router => {
    *       Creates a vacation request that spans an inclusive `from`/`to` range. The
    *       server fans the range out into one row per day, skipping any days the
    *       user already has a vacation for (unique on user + day).
+   *
+   *       Admins may book on behalf of a member by passing `userId`: the caller
+   *       must hold group admin access or administer the group's organization,
+   *       and the member must be allowed to book in the group. `createdByUserId`
+   *       records who filed the request. With `autoApprove` (valid only
+   *       together with `userId`) the rows are created already approved by the
+   *       caller and the timeline gets both a CREATED and an APPROVED event;
+   *       without it the request enters the normal approval flow and the member
+   *       is notified it was filed for them.
    *     operationId: handlePostVacation
    *     security:
    *       - bearerAuth: []
@@ -204,6 +228,9 @@ export const vacationRouter = (): Router => {
    *         groupId:
    *           type: string
    *           format: uuid
+   *         userId:
+   *           type: string
+   *           description: Book on behalf of this member (admins only).
    *         from:
    *           type: string
    *           format: date
@@ -221,6 +248,9 @@ export const vacationRouter = (): Router => {
    *         note:
    *           type: string
    *           nullable: true
+   *         autoApprove:
+   *           type: boolean
+   *           description: Create the rows already approved (on-behalf bookings only).
    *     Vacation:
    *       type: object
    *       properties:
@@ -485,8 +515,10 @@ export const vacationRouter = (): Router => {
    *     description: |
    *       Cancels every supplied day id together — used by the detail view to
    *       cancel a whole multi-day request at once. The caller must, for every
-   *       row, be the owner or have admin/approval rights on its group. An
-   *       optional `reason` is stored on each cancellation event.
+   *       row, be the owner, a group admin, an admin of the group's
+   *       organization, or an approver of its group. Each row is stamped with
+   *       `deletedByUserId`, and an optional `reason` is stored on each
+   *       cancellation event.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -526,16 +558,94 @@ export const vacationRouter = (): Router => {
 
   /**
    * @openapi
+   * /api/vacation:
+   *   patch:
+   *     tags:
+   *       - Vacations
+   *     summary: Edit per-day fields of one member's vacation rows (admins only)
+   *     description: |
+   *       In-place edit of existing day rows: `startTime`/`endTime`, `halfDay`,
+   *       `vacationType` and `note`. Requires group admin access, or admin of
+   *       the group's organization. All ids must belong to the same member and
+   *       group; the detail view passes a whole contiguous run so it is edited
+   *       atomically. Dates are deliberately not editable — moving a record to
+   *       another day is a cancel + re-create, both audited.
+   *
+   *       Rejected rows cannot be edited (their decision is final) and
+   *       cancelled rows are reported as not found. Type and half-day changes
+   *       re-run the quota check at the rows' post-edit weight. Every row gets
+   *       an UPDATED timeline event whose `reason` summarizes what changed, and
+   *       the member gets an in-app notice when someone else edited their
+   *       record.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - ids
+   *             properties:
+   *               ids:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   format: uuid
+   *               vacationType:
+   *                 type: string
+   *               startTime:
+   *                 type: string
+   *                 nullable: true
+   *               endTime:
+   *                 type: string
+   *                 nullable: true
+   *               halfDay:
+   *                 type: boolean
+   *                 description: Only valid when editing a single day row.
+   *               note:
+   *                 type: string
+   *                 nullable: true
+   *     responses:
+   *       '200':
+   *         description: The updated vacation rows
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/Vacation'
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
+   *       '403':
+   *         description: Not a group or organization admin for these records
+   *       '404':
+   *         description: One or more vacations not found (cancelled rows included)
+   *       '409':
+   *         description: Rejected rows in the batch, or a concurrent change won the race
+   *       '422':
+   *         description: Validation error, mixed members/groups, or the edit exceeds the allowance
+   */
+  app.patch("/", bodyValidationMiddleware(validateUpdateVacation), tryCatch(handleUpdateVacation));
+
+  /**
+   * @openapi
    * /api/vacation/{id}:
    *   delete:
    *     tags:
    *       - Vacations
    *     summary: Cancel (soft delete) a vacation request
    *     description: |
-   *       Soft deletes the vacation row by setting `deletedAt`, including
-   *       already-approved requests. The caller must own the row, or have admin
-   *       access or approval rights on the parent group. An optional `reason`
-   *       is stored on the cancellation event.
+   *       Soft deletes the vacation row by setting `deletedAt` and stamping
+   *       `deletedByUserId` with the caller, including already-approved
+   *       requests. The caller must own the row, or be a group admin, an
+   *       organization admin, or an approver of the parent group. An optional
+   *       `reason` is stored on the cancellation event; the row stays
+   *       retrievable on the detail view and in lists via `includeCancelled`.
    *     security:
    *       - bearerAuth: []
    *     parameters:
