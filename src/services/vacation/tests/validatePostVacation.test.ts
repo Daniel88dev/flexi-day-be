@@ -21,7 +21,9 @@ describe("validatePostVacation", () => {
   });
 
   it("rejects autoApprove without a target userId", () => {
-    expect(() => validatePostVacation.parse({ ...base, autoApprove: true })).toThrow();
+    const result = validatePostVacation.safeParse({ ...base, autoApprove: true });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.path.join("."))).toContain("autoApprove");
   });
 
   it("defaults autoApprove to false", () => {

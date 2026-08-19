@@ -462,6 +462,24 @@ describe("handlePostVacation", () => {
       );
       expect(mockPostVacationBulk).not.toHaveBeenCalled();
     });
+
+    it("aborts inside the transaction when the member's access was just revoked", async () => {
+      const { req, res } = makeReqRes({ body: onBehalfBody() });
+      // Pre-transaction check passes; the re-check on the tx snapshot does not.
+      mockGetGroupUser
+        .mockResolvedValueOnce({ userId: "member_456", groupId: "group_123", controlledUser: true })
+        .mockResolvedValueOnce({
+          userId: "member_456",
+          groupId: "group_123",
+          controlledUser: false,
+        });
+
+      await expect(handlePostVacation(req, res)).rejects.toThrow(
+        "That member cannot book leave in this group"
+      );
+      expect(mockPostVacationBulk).not.toHaveBeenCalled();
+      expect(mockGetGroupUser).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("throws 404 when the group no longer exists", async () => {

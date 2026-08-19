@@ -360,16 +360,21 @@ export const cancelVacationsBulk = async (
 /**
  * Fetches vacation rows by id (active rows only). Used during bulk approve /
  * reject to authorize the caller against every distinct group in the batch.
+ * `forUpdate` locks the rows for the transaction — the edit path needs it so a
+ * concurrent PATCH serializes behind this read instead of overwriting it with
+ * values (and an UPDATED-event summary) computed from a stale snapshot.
  */
 export const getVacationsByIds = async (
   vacationIds: string[],
-  tx?: DbTransaction
+  tx?: DbTransaction,
+  options?: { forUpdate?: boolean }
 ): Promise<VacationType[]> => {
   if (vacationIds.length === 0) return [];
-  return (tx ?? db)
+  const query = (tx ?? db)
     .select()
     .from(vacation)
     .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)));
+  return options?.forUpdate ? query.for("update") : query;
 };
 
 export const rejectVacation = async (

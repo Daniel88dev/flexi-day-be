@@ -50,7 +50,9 @@ export const describeVacationChanges = (
   }
 
   if (patch.note !== undefined && (patch.note ?? null) !== previous.note) {
-    diffs.push(previous.note ? "Note updated" : "Note added");
+    diffs.push(
+      patch.note === null ? "Note removed" : previous.note ? "Note updated" : "Note added"
+    );
   }
 
   return diffs.length > 0 ? diffs.join("; ") : "Re-saved with no change";

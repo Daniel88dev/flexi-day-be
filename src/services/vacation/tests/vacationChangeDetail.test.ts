@@ -23,10 +23,13 @@ describe("describeVacationChanges", () => {
     );
   });
 
-  it("reports note adds without leaking the note text", () => {
+  it("reports note adds, updates and removals without leaking the note text", () => {
     expect(describeVacationChanges(baseRow, { note: "medical" })).toBe("Note added");
     expect(describeVacationChanges({ ...baseRow, note: "old" }, { note: "new" })).toBe(
       "Note updated"
+    );
+    expect(describeVacationChanges({ ...baseRow, note: "old" }, { note: null })).toBe(
+      "Note removed"
     );
   });
 

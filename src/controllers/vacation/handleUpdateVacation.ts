@@ -39,7 +39,9 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
   const { updated, previous } = await db.transaction(async (tx) => {
     // Excludes soft-deleted rows, so a cancelled id lands in the 404 too — a
     // cancelled record is history and must be re-created, not edited back.
-    const rows = await services.vacation.getVacationsByIds(uniqueIds, tx);
+    // Locked: a concurrent PATCH must wait and re-read, or its change summary
+    // would describe values this edit is about to replace.
+    const rows = await services.vacation.getVacationsByIds(uniqueIds, tx, { forUpdate: true });
 
     if (rows.length !== uniqueIds.length) {
       throw new AppError({

@@ -164,6 +164,22 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     // into a group that has just become read-only.
     await assertGroupWritable(data.groupId, tx);
 
+    if (onBehalf) {
+      // Same reasoning for delegated authority: the pre-transaction checks
+      // fail fast for the client, but a revocation committing in between must
+      // still abort the write, so both are re-asserted on the tx snapshot.
+      await assertGroupAdmin(auth.userId, data.groupId, tx);
+      const liveAccess = await services.groupUser.getGroupUser(targetUserId, data.groupId, tx);
+      if (!liveAccess?.controlledUser) {
+        throw new AppError({
+          message: "That member cannot book leave in this group",
+          logging: true,
+          code: 403,
+          context: { targetUserId, groupId: data.groupId },
+        });
+      }
+    }
+
     await assertRequestWithinQuota(records, tx);
 
     const rows = await services.vacation.postVacationBulk(records, tx);
