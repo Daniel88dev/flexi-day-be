@@ -5,11 +5,17 @@ const {
   mockGetVacationEvents,
   mockGetGroupUser,
   mockGetGroupsWhereUserCanApprove,
+  mockResolveGroupAdmin,
 } = vi.hoisted(() => ({
   mockGetVacationDetailById: vi.fn(),
   mockGetVacationEvents: vi.fn(),
   mockGetGroupUser: vi.fn(),
   mockGetGroupsWhereUserCanApprove: vi.fn(),
+  mockResolveGroupAdmin: vi.fn(),
+}));
+
+vi.mock("../../groupUser/utils.js", () => ({
+  resolveGroupAdmin: mockResolveGroupAdmin,
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({
@@ -48,6 +54,7 @@ describe("handleGetVacation", () => {
     vi.clearAllMocks();
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
     mockGetVacationEvents.mockResolvedValue([]);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: false, viaOrgAdmin: false });
   });
 
   it("returns the detail with history and the owner's permissions", async () => {
@@ -66,8 +73,43 @@ describe("handleGetVacation", () => {
         id: vacationId,
         canApprove: false,
         canCancel: true,
+        canEdit: false,
         history: [{ id: "e-1", eventType: "CREATED" }],
       })
+    );
+  });
+
+  it("marks an org admin as able to view, cancel and edit but not approve", async () => {
+    const { req, res } = makeReqRes({ params: { id: vacationId } });
+
+    mockGetVacationDetailById.mockResolvedValue({ ...detail, userId: "someone_else" });
+    mockGetGroupUser.mockResolvedValue(undefined);
+    mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: true, viaOrgAdmin: true });
+
+    await handleGetVacation(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ canApprove: false, canCancel: true, canEdit: true })
+    );
+  });
+
+  it("reports a cancelled record as neither cancellable nor editable", async () => {
+    const { req, res } = makeReqRes({ params: { id: vacationId } });
+
+    mockGetVacationDetailById.mockResolvedValue({
+      ...detail,
+      userId: "someone_else",
+      deletedAt: new Date("2026-08-01T00:00:00Z"),
+    });
+    mockGetGroupUser.mockResolvedValue(undefined);
+    mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: true, viaOrgAdmin: false });
+
+    await handleGetVacation(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ canApprove: false, canCancel: false, canEdit: false })
     );
   });
 

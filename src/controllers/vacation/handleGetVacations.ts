@@ -25,12 +25,19 @@ const validateMonth = z.coerce
 
 const validateGroupId = z.string().min(1).optional();
 
+// Opt-in: the calendar and dashboard keep their live-rows-only view.
+const validateIncludeCancelled = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((value) => value === "true");
+
 export const handleGetVacations = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const year = validateYear.parse(req.query.year);
   const month = validateMonth.parse(req.query.month);
   const groupId = validateGroupId.parse(req.query.groupId);
+  const includeCancelled = validateIncludeCancelled.parse(req.query.includeCancelled);
 
   const range = formatStartAndEndDate(year, month);
 
@@ -38,7 +45,8 @@ export const handleGetVacations = async (req: Request, res: Response) => {
     const result = await services.vacation.getVacationsForUser(
       auth.userId,
       range.startDate,
-      range.endDate
+      range.endDate,
+      { includeCancelled }
     );
     const canApprove = await resolveCanApproveForList(auth.userId, result);
     // Same shape either way, so the calendar does not branch on scope.
@@ -65,7 +73,9 @@ export const handleGetVacations = async (req: Request, res: Response) => {
   const result = await services.vacation.getVacationsForGroup(
     groupId,
     range.startDate,
-    range.endDate
+    range.endDate,
+    null,
+    { includeCancelled }
   );
   const canApprove = await resolveCanApproveForList(auth.userId, result);
 

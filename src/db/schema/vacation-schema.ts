@@ -51,12 +51,21 @@ export const vacation = pgTable(
       onDelete: "set null",
     }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    // Who cancelled the row. Nullable for rows deleted before the column
+    // existed; the CANCELLED timeline event carries the reason.
+    deletedByUserId: text("deleted_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     rejectedAt: timestamp("rejected_at", { withTimezone: true }),
     rejectedBy: text("rejected_by").references(() => user.id, {
       onDelete: "set null",
     }),
     rejectionReason: text("rejection_reason"),
     note: text("note"),
+    // Differs from `userId` when an admin booked on the member's behalf.
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()

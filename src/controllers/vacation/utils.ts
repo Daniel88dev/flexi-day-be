@@ -2,6 +2,7 @@ import { createDBServices } from "../../services/DBServices.js";
 import type { DbTransaction } from "../../db/db.js";
 import type { VacationType } from "../../services/vacation/types.js";
 import { mayDecideOwn } from "./decisionGuards.js";
+import { resolveGroupAdmin } from "../groupUser/utils.js";
 
 const services = createDBServices();
 
@@ -12,6 +13,8 @@ export type VacationPermissions = {
   canApprove: boolean;
   /** May cancel it — the owner, a group admin, or an approver. */
   canCancel: boolean;
+  /** May edit its per-day fields — group or organization admins only. */
+  canEdit: boolean;
 };
 
 /**
@@ -33,7 +36,10 @@ export const resolveVacationPermissions = async (
     tx
   );
   const isApprover = approvableGroups.includes(vacationRow.groupId);
-  const isAdmin = membership?.adminAccess ?? false;
+  // Group admins and org admins alike: they may manage records on behalf of
+  // members (create / edit / cancel), which is administration — deciding a
+  // member-submitted request stays an approver-only power (`canApprove`).
+  const { canAdmin } = await resolveGroupAdmin(userId, vacationRow.groupId, tx);
   const isCancelled = vacationRow.deletedAt !== null;
   // A decision is final; re-deciding would overturn it and wipe its stamps.
   const isDecidable =
@@ -42,9 +48,10 @@ export const resolveVacationPermissions = async (
     isOwner && isApprover ? await mayDecideOwn(userId, vacationRow.groupId, tx) : false;
 
   return {
-    canView: isOwner || isApprover || (membership?.viewAccess ?? false),
+    canView: isOwner || isApprover || canAdmin || (membership?.viewAccess ?? false),
     canApprove: isApprover && isDecidable && (!isOwner || ownAllowed),
-    canCancel: !isCancelled && (isOwner || isAdmin || isApprover),
+    canCancel: !isCancelled && (isOwner || canAdmin || isApprover),
+    canEdit: canAdmin && !isCancelled && vacationRow.rejectedAt === null,
   };
 };
 

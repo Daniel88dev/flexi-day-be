@@ -53,7 +53,7 @@ export const handleDeleteVacation = async (req: Request, res: Response) => {
 
     await assertGroupWritable(vacationData.groupId, tx);
 
-    const deleted = await services.vacation.deleteVacation(vacationId, tx);
+    const deleted = await services.vacation.deleteVacation(vacationId, auth.userId, tx);
     if (!deleted) {
       throw new AppError({
         code: 500,

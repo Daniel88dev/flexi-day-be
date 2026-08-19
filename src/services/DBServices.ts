@@ -30,6 +30,7 @@ export type DBServices = Readonly<{
     cancelVacationsBulk: typeof vacationServices.cancelVacationsBulk;
     getVacationsByIds: typeof vacationServices.getVacationsByIds;
     deleteVacation: typeof vacationServices.deleteVacation;
+    updateVacationRows: typeof vacationServices.updateVacationRows;
     getPendingApprovalsForApprover: typeof vacationServices.getPendingApprovalsForApprover;
     countUsersOutOnDay: typeof vacationServices.countUsersOutOnDay;
     countApprovedVacationsInRange: typeof vacationServices.countApprovedVacationsInRange;
@@ -190,6 +191,7 @@ export const createDBServices = (): DBServices => {
       cancelVacationsBulk: vacationServices.cancelVacationsBulk,
       getVacationsByIds: vacationServices.getVacationsByIds,
       deleteVacation: vacationServices.deleteVacation,
+      updateVacationRows: vacationServices.updateVacationRows,
       getPendingApprovalsForApprover: vacationServices.getPendingApprovalsForApprover,
       countUsersOutOnDay: vacationServices.countUsersOutOnDay,
       countApprovedVacationsInRange: vacationServices.countApprovedVacationsInRange,

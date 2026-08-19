@@ -60,10 +60,12 @@ const baseVacationSelection = {
   approvedAt: vacation.approvedAt,
   approvedBy: vacation.approvedBy,
   deletedAt: vacation.deletedAt,
+  deletedByUserId: vacation.deletedByUserId,
   rejectedAt: vacation.rejectedAt,
   rejectedBy: vacation.rejectedBy,
   rejectionReason: vacation.rejectionReason,
   note: vacation.note,
+  createdByUserId: vacation.createdByUserId,
   createdAt: vacation.createdAt,
   updatedAt: vacation.updatedAt,
   userName: user.name,
@@ -84,7 +86,8 @@ export const getVacationsForGroup = async (
   groupId: string,
   startDate: string,
   endDate: string,
-  userId: string | null = null
+  userId: string | null = null,
+  options?: { includeCancelled?: boolean }
 ): Promise<GroupVacationListItem[]> => {
   // A mirror only projects records of someone who still belongs to the target
   // group; without this a member who left would keep leaking time off into it.
@@ -105,7 +108,7 @@ export const getVacationsForGroup = async (
   const mirroredIntoThisGroup = and(isNotNull(groupMirrors.id), stillAMember);
 
   const base = [
-    isNull(vacation.deletedAt),
+    options?.includeCancelled ? undefined : isNull(vacation.deletedAt),
     gte(vacation.requestedDay, startDate),
     lt(vacation.requestedDay, endDate),
     or(inThisGroup, mirroredIntoThisGroup),
@@ -148,11 +151,12 @@ export const getVacationsForGroup = async (
 export const getVacationsForUser = async (
   userId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  options?: { includeCancelled?: boolean }
 ): Promise<VacationListItem[]> => {
   const where = and(
     eq(vacation.userId, userId),
-    isNull(vacation.deletedAt),
+    options?.includeCancelled ? undefined : isNull(vacation.deletedAt),
     gte(vacation.requestedDay, startDate),
     lt(vacation.requestedDay, endDate)
   );
@@ -339,6 +343,7 @@ export const rejectVacationsBulk = async (
 /** Bulk-cancels (soft-deletes) many vacation rows in a single statement. See rejectVacationsBulk. */
 export const cancelVacationsBulk = async (
   vacationIds: string[],
+  cancellingPerson: string,
   tx?: DbTransaction
 ): Promise<VacationType[]> => {
   if (vacationIds.length === 0) return [];
@@ -346,6 +351,7 @@ export const cancelVacationsBulk = async (
     .update(vacation)
     .set({
       deletedAt: new Date(),
+      deletedByUserId: cancellingPerson,
     })
     .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)))
     .returning();
@@ -387,17 +393,50 @@ export const rejectVacation = async (
 
 export const deleteVacation = async (
   vacationId: string,
+  cancellingPerson: string,
   tx?: DbTransaction
 ): Promise<VacationType | undefined> => {
   const [row] = await (tx ?? db)
     .update(vacation)
     .set({
       deletedAt: new Date(),
+      deletedByUserId: cancellingPerson,
     })
     .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)))
     .returning();
 
   return row;
+};
+
+/** Per-day fields an admin may edit in place; day moves are cancel + re-create. */
+export type VacationUpdatePatch = Partial<
+  Pick<VacationType, "startTime" | "endTime" | "vacationType" | "halfDay" | "note">
+>;
+
+/**
+ * Applies one patch to many day rows in a single statement. Live rows only —
+ * the WHERE repeats the not-deleted/not-rejected predicate so a concurrent
+ * cancel or reject drops the row from RETURNING and the caller can 409 instead
+ * of silently resurrecting it. `deletedAt`/`rejectedAt` are never touched here,
+ * which keeps the partial `uniq_vacation_user_day` index out of play.
+ */
+export const updateVacationRows = async (
+  vacationIds: string[],
+  patch: VacationUpdatePatch,
+  tx?: DbTransaction
+): Promise<VacationType[]> => {
+  if (vacationIds.length === 0) return [];
+  return (tx ?? db)
+    .update(vacation)
+    .set(patch)
+    .where(
+      and(
+        inArray(vacation.id, vacationIds),
+        isNull(vacation.deletedAt),
+        isNull(vacation.rejectedAt)
+      )
+    )
+    .returning();
 };
 
 // Given all sibling rows, returns the consecutive-day run containing `targetDay` ([] if absent).
@@ -440,6 +479,8 @@ export const getVacationDetailById = async (
 ): Promise<VacationDetail | undefined> => {
   const approver = alias(user, "approvedByUser");
   const rejecter = alias(user, "rejectedByUser");
+  const creator = alias(user, "createdByUser");
+  const canceller = alias(user, "deletedByUser");
 
   const [row] = await (tx ?? db)
     .select({
@@ -447,18 +488,29 @@ export const getVacationDetailById = async (
       groupName: groups.groupName,
       approvedByName: approver.name,
       rejectedByName: rejecter.name,
+      createdByName: creator.name,
+      deletedByName: canceller.name,
     })
     .from(vacation)
     .innerJoin(user, eq(vacation.userId, user.id))
     .innerJoin(groups, eq(vacation.groupId, groups.id))
     .leftJoin(approver, eq(vacation.approvedBy, approver.id))
     .leftJoin(rejecter, eq(vacation.rejectedBy, rejecter.id))
+    .leftJoin(creator, eq(vacation.createdByUserId, creator.id))
+    .leftJoin(canceller, eq(vacation.deletedByUserId, canceller.id))
     .where(eq(vacation.id, vacationId))
     .limit(1);
 
   if (!row) return undefined;
 
-  const { groupName, approvedByName, rejectedByName, ...vacationRow } = row;
+  const {
+    groupName,
+    approvedByName,
+    rejectedByName,
+    createdByName,
+    deletedByName,
+    ...vacationRow
+  } = row;
 
   // Match the row's deletedAt/rejectedAt state so a re-booked day can't merge
   // into the cancelled or rejected run it replaced — both can sit on the same
@@ -495,6 +547,14 @@ export const getVacationDetailById = async (
     rejectedByUser:
       vacationRow.rejectedBy && rejectedByName
         ? buildUserSummary({ id: vacationRow.rejectedBy, name: rejectedByName })
+        : null,
+    createdByUser:
+      vacationRow.createdByUserId && createdByName
+        ? buildUserSummary({ id: vacationRow.createdByUserId, name: createdByName })
+        : null,
+    deletedByUser:
+      vacationRow.deletedByUserId && deletedByName
+        ? buildUserSummary({ id: vacationRow.deletedByUserId, name: deletedByName })
         : null,
   };
 };

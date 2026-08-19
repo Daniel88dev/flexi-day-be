@@ -8,6 +8,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationsCancelled } from "../../services/vacation/vacationNotifier.js";
 import { assertGroupsWritable } from "../../services/billing/guards.js";
+import { resolveGroupAdmin } from "../groupUser/utils.js";
 
 const services = createDBServices();
 
@@ -33,10 +34,12 @@ export const handleBulkCancelVacation = async (req: Request, res: Response) => {
     const approvableGroups = new Set(
       await services.group.getGroupsWhereUserCanApprove(distinctGroupIds, auth.userId, tx)
     );
+    // Same admin verdict as the single-cancel path (`resolveVacationPermissions`):
+    // group admins and org admins alike.
     const adminGroups = new Set<string>();
     for (const groupId of distinctGroupIds) {
-      const membership = await services.groupUser.getGroupUser(auth.userId, groupId, tx);
-      if (membership?.adminAccess) adminGroups.add(groupId);
+      const { canAdmin } = await resolveGroupAdmin(auth.userId, groupId, tx);
+      if (canAdmin) adminGroups.add(groupId);
     }
 
     const unauthorized = rows.filter(
@@ -54,7 +57,7 @@ export const handleBulkCancelVacation = async (req: Request, res: Response) => {
 
     await assertGroupsWritable(distinctGroupIds, tx);
 
-    const updated = await services.vacation.cancelVacationsBulk(uniqueIds, tx);
+    const updated = await services.vacation.cancelVacationsBulk(uniqueIds, auth.userId, tx);
 
     await services.vacationEvent.createVacationEvents(
       updated.map((row) => ({

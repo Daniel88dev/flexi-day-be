@@ -43,6 +43,7 @@ export const handleGetVacation = async (req: Request, res: Response) => {
     ...detail,
     canApprove: permissions.canApprove,
     canCancel: permissions.canCancel,
+    canEdit: permissions.canEdit,
     history,
   });
 };

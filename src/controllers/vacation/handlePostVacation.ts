@@ -11,9 +11,14 @@ import {
 import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
-import { notifyVacationRequested } from "../../services/vacation/vacationNotifier.js";
+import {
+  notifyVacationBookedOnBehalf,
+  notifyVacationDecision,
+  notifyVacationRequested,
+} from "../../services/vacation/vacationNotifier.js";
 import { assertRequestWithinQuota } from "../../services/vacation/quotaGuard.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
+import { assertGroupAdmin } from "../groupUser/utils.js";
 
 const services = createDBServices();
 
@@ -69,13 +74,34 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const access = await services.groupUser.getGroupUser(auth.userId, data.groupId);
+  const targetUserId = data.userId ?? auth.userId;
+  const onBehalf = targetUserId !== auth.userId;
+
+  if (onBehalf) {
+    // Group admins and org admins may book for a member; the booking itself is
+    // still gated on the member's own `controlledUser` membership below.
+    await assertGroupAdmin(auth.userId, data.groupId);
+  } else if (data.autoApprove) {
+    // Self-booking keeps the normal flow — whether an admin may wave their own
+    // request through is governed by the approval rules (`mayDecideOwn`), not
+    // by this shortcut.
+    throw new AppError({
+      message: "`autoApprove` is only valid when booking on behalf of a member",
+      logging: true,
+      code: 422,
+    });
+  }
+
+  const access = await services.groupUser.getGroupUser(targetUserId, data.groupId);
 
   if (!access || !access.controlledUser) {
     throw new AppError({
-      message: "No access for related group",
+      message: onBehalf
+        ? "That member cannot book leave in this group"
+        : "No access for related group",
       logging: true,
       code: 403,
+      context: { targetUserId, groupId: data.groupId },
     });
   }
 
@@ -116,9 +142,11 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
+  const approvalStamp = data.autoApprove ? { approvedAt: new Date(), approvedBy: auth.userId } : {};
+
   const records = workingDays.map((day) => ({
     id: generateRandomUUID(),
-    userId: auth.userId,
+    userId: targetUserId,
     groupId: data.groupId,
     requestedDay: day,
     startTime: data.startTime,
@@ -126,6 +154,8 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     vacationType: data.vacationType,
     halfDay: data.halfDay,
     note: data.note,
+    createdByUserId: auth.userId,
+    ...approvalStamp,
   }));
 
   const created = await db.transaction(async (tx) => {
@@ -146,6 +176,19 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       })),
       tx
     );
+    if (data.autoApprove) {
+      // A separate APPROVED event so the timeline reads like the normal flow:
+      // the admin both created and approved the record.
+      await services.vacationEvent.createVacationEvents(
+        rows.map((row) => ({
+          id: generateRandomUUID(),
+          vacationId: row.id,
+          eventType: vacationEventType.Approved,
+          actorUserId: auth.userId,
+        })),
+        tx
+      );
+    }
     return rows;
   });
 
@@ -158,17 +201,35 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  // Best-effort notification. The rows above are already committed, so any
+  // Best-effort notifications. The rows above are already committed, so any
   // failure here must NOT bubble up: a 5xx would tempt the client to retry a
   // non-idempotent endpoint (the insert uses onConflictDoNothing, so the retry
   // would return an empty set and our "no rows created" guard would mislead
-  // the caller into thinking nothing was booked). notifyVacationRequested
-  // swallows and logs its own errors.
-  await notifyVacationRequested(
-    created,
-    { id: auth.userId, name: auth.userName },
-    data.note ?? null
-  );
+  // the caller into thinking nothing was booked). The notifiers swallow and
+  // log their own errors.
+  const actor = { id: auth.userId, name: auth.userName };
+  if (data.autoApprove) {
+    // Nothing left to decide, so approvers are not asked; the member hears the
+    // record was booked and approved for them.
+    await notifyVacationDecision(created, "approved", actor);
+  } else if (onBehalf) {
+    // Approvers must see the member as the requester — the leave is theirs;
+    // the admin who filed it is attributed on the timeline and in the member's
+    // own notice, and must not displace the member in the approver mail.
+    const member = await services.user.getUserById(targetUserId).catch(() => undefined);
+    if (member) {
+      await notifyVacationRequested(
+        created,
+        { id: member.id, name: member.name },
+        data.note ?? null
+      );
+    }
+    // No fallback to the admin: a mail naming the wrong requester is worse
+    // than no mail — the request still sits in every approver's queue.
+    await notifyVacationBookedOnBehalf(created, actor);
+  } else {
+    await notifyVacationRequested(created, actor, data.note ?? null);
+  }
 
   return res.status(201).json(created);
 };

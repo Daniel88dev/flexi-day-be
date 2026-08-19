@@ -88,6 +88,18 @@ describe("handleGetVacations", () => {
     vi.restoreAllMocks();
   });
 
+  it("passes includeCancelled=true through so the requests view can show cancelled rows", async () => {
+    const { req, res } = makeReqRes({ year: "2024", month: "3", includeCancelled: "true" });
+    mockGetVacationsForUser.mockResolvedValue([]);
+
+    await handleGetVacations(req, res);
+
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31", {
+      includeCancelled: true,
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
   it("should return vacations for the authenticated user with provided year and month", async () => {
     const { req, res } = makeReqRes({ year: "2024", month: "3" });
     const mockVacations = [
@@ -110,7 +122,9 @@ describe("handleGetVacations", () => {
 
     expect(getAuth).toHaveBeenCalledWith(req);
     expect(formatStartAndEndDate).toHaveBeenCalledWith(2024, 3);
-    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31");
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31", {
+      includeCancelled: false,
+    });
     expect(res.status).toHaveBeenCalledWith(200);
     // Own records carry the same mirror fields as group ones so the calendar
     // never has to branch on which scope produced the row.
@@ -176,7 +190,9 @@ describe("handleGetVacations", () => {
 
     await handleGetVacations(req, res);
 
-    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31");
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31", {
+      includeCancelled: false,
+    });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith([]);
   });
@@ -242,7 +258,8 @@ describe("handleGetVacations", () => {
     expect(mockGetVacationsForUser).toHaveBeenCalledWith(
       "different_user_456",
       "2024-01-01",
-      "2024-01-31"
+      "2024-01-31",
+      { includeCancelled: false }
     );
   });
 
@@ -280,7 +297,15 @@ describe("handleGetVacations", () => {
 
       await handleGetVacations(req, res);
 
-      expect(mockGetVacationsForGroup).toHaveBeenCalledWith("group_1", "2024-01-01", "2024-01-31");
+      expect(mockGetVacationsForGroup).toHaveBeenCalledWith(
+        "group_1",
+        "2024-01-01",
+        "2024-01-31",
+        null,
+        {
+          includeCancelled: false,
+        }
+      );
       expect(mockGetVacationsForUser).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(
         groupRows.map((row) => ({ ...row, canApprove: false }))
@@ -357,6 +382,8 @@ describe("handleGetVacations", () => {
 
     await handleGetVacations(req, res);
 
-    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-07-01", "2024-07-31");
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-07-01", "2024-07-31", {
+      includeCancelled: false,
+    });
   });
 });

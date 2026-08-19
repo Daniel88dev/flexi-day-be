@@ -15,10 +15,12 @@ export type VacationType = {
   approvedAt: Date | null;
   approvedBy: string | null;
   deletedAt: Date | null;
+  deletedByUserId: string | null;
   rejectedAt: Date | null;
   rejectedBy: string | null;
   rejectionReason: string | null;
   note: string | null;
+  createdByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -33,8 +35,11 @@ export type VacationInsertType = Pick<
   | "endTime"
   | "vacationType"
   | "halfDay"
+  | "createdByUserId"
 > & {
   note?: string | null;
+  approvedAt?: Date;
+  approvedBy?: string;
 };
 
 export type VacationListItem = VacationType & {
@@ -60,6 +65,8 @@ export type VacationDetail = VacationListItem & {
   groupName: string;
   approvedByUser: UserSummary | null;
   rejectedByUser: UserSummary | null;
+  createdByUser: UserSummary | null;
+  deletedByUser: UserSummary | null;
   // The contiguous same-type run this row belongs to: inclusive span + every day-row id in it.
   rangeStart: DateString;
   rangeEnd: DateString;
@@ -90,6 +97,10 @@ const requestableKindEnum = z.enum(REQUESTABLE_VACATION_TYPES);
 export const validatePostVacation = z
   .object({
     groupId: z.uuid(),
+    // Book on behalf of this member instead of the caller. Requires group
+    // admin rights; the handler authorizes it. Plain string, not uuid: real
+    // accounts carry better-auth's 32-char alphanumeric ids.
+    userId: z.string().min(1).optional(),
     from: z.coerce.date(),
     to: z.coerce.date(),
     vacationType: requestableKindEnum.default(vacationType.Vacation),
@@ -99,6 +110,7 @@ export const validatePostVacation = z
     // optional start/end times above are free-form and cannot stand in for it.
     halfDay: z.boolean().default(false),
     note: z.string().max(1000).nullable().default(null),
+    autoApprove: z.boolean().default(false),
   })
   .refine((data) => !(data.startTime && data.endTime) || data.endTime > data.startTime, {
     message: "`endTime` must be later than `startTime`",
@@ -107,6 +119,10 @@ export const validatePostVacation = z
   .refine((data) => !data.halfDay || data.from.getTime() === data.to.getTime(), {
     message: "`halfDay` is only valid for a single-day request",
     path: ["halfDay"],
+  })
+  .refine((data) => !data.autoApprove || data.userId !== undefined, {
+    message: "`autoApprove` is only valid when booking on behalf of a member",
+    path: ["autoApprove"],
   });
 
 export type ValidatedPostVacationType = z.infer<typeof validatePostVacation>;
@@ -162,3 +178,37 @@ export const validateBulkCancelVacation = z.object({
 });
 
 export type ValidatedBulkCancelVacationType = z.infer<typeof validateBulkCancelVacation>;
+
+/**
+ * Admin edit of existing day rows. Only per-day presentation and accounting
+ * fields are editable — moving a record to another day is a cancel + re-create,
+ * which keeps the partial `uniq_vacation_user_day` index authoritative.
+ */
+export const validateUpdateVacation = z
+  .object({
+    ids,
+    vacationType: requestableKindEnum.optional(),
+    startTime: z.iso.time().nullable().optional(),
+    endTime: z.iso.time().nullable().optional(),
+    halfDay: z.boolean().optional(),
+    note: z.string().max(1000).nullable().optional(),
+  })
+  .refine(
+    (data) =>
+      data.vacationType !== undefined ||
+      data.startTime !== undefined ||
+      data.endTime !== undefined ||
+      data.halfDay !== undefined ||
+      data.note !== undefined,
+    { message: "At least one field to update is required" }
+  )
+  .refine((data) => !(data.startTime && data.endTime) || data.endTime > data.startTime, {
+    message: "`endTime` must be later than `startTime`",
+    path: ["endTime"],
+  })
+  .refine((data) => data.halfDay !== true || new Set(data.ids).size === 1, {
+    message: "`halfDay` is only valid for a single-day record",
+    path: ["halfDay"],
+  });
+
+export type ValidatedUpdateVacationType = z.infer<typeof validateUpdateVacation>;
