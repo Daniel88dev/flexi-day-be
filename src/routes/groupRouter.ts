@@ -5,9 +5,11 @@ import { handleGetGroups } from "../controllers/group/handleGetGroups.js";
 import { handleGetGroup } from "../controllers/group/handleGetGroup.js";
 import { handlePutGroupQuotas } from "../controllers/group/handlePutGroupQuotas.js";
 import { handlePutGroupWorkingDays } from "../controllers/group/handlePutGroupWorkingDays.js";
+import { handlePutGroupHolidayCountry } from "../controllers/group/handlePutGroupHolidayCountry.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
   validatePutGroupApprovers,
+  validatePutGroupHolidayCountry,
   validatePutGroupQuotas,
   validatePutGroupWorkingDays,
 } from "../services/group/types.js";
@@ -212,6 +214,65 @@ export const groupRouter = (): Router => {
     "/:groupId/working-days",
     bodyValidationMiddleware(validatePutGroupWorkingDays),
     tryCatch(handlePutGroupWorkingDays)
+  );
+
+  /**
+   * @openapi
+   * /api/group/{groupId}/holiday-country:
+   *   put:
+   *     tags:
+   *       - Groups
+   *     summary: Set the group's public holiday country
+   *     description: |
+   *       Sets the country whose public holidays are shown on the dashboard
+   *       calendar for everyone in the group. Holidays are display-only: they
+   *       are not counted against quotas and are never exported by calendar
+   *       feeds. `null` disables them. Codes are ISO 3166-1 alpha-2 and must
+   *       be one of `GET /api/bank-holidays/countries`. Requires group admin
+   *       access, or admin of the group's organization.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - holidayCountry
+   *             properties:
+   *               holidayCountry:
+   *                 type: string
+   *                 nullable: true
+   *                 minLength: 2
+   *                 maxLength: 2
+   *                 example: CZ
+   *     responses:
+   *       '200':
+   *         description: The updated group
+   *       '402':
+   *         description: |
+   *           Plan limit reached, or the group is read-only because the plan
+   *           lapsed. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
+   *       '403':
+   *         description: No permission for related group
+   *       '404':
+   *         description: Group not found
+   *       '422':
+   *         description: Unsupported country code
+   */
+  app.put(
+    "/:groupId/holiday-country",
+    bodyValidationMiddleware(validatePutGroupHolidayCountry),
+    tryCatch(handlePutGroupHolidayCountry)
   );
 
   /**

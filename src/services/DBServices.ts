@@ -74,6 +74,7 @@ export type DBServices = Readonly<{
     deleteGroup: typeof groupServices.deleteGroup;
     updateGroupQuotas: typeof groupServices.updateGroupQuotas;
     updateGroupWorkingDays: typeof groupServices.updateGroupWorkingDays;
+    updateGroupHolidayCountry: typeof groupServices.updateGroupHolidayCountry;
     getApprovalUsers: typeof groupServices.getApprovalUsers;
     getGroupsWhereUserCanApprove: typeof groupServices.getGroupsWhereUserCanApprove;
     countLiveGroupsForOrganization: typeof groupServices.countLiveGroupsForOrganization;
@@ -113,6 +114,7 @@ export type DBServices = Readonly<{
   };
   bankHoliday: {
     listBankHolidays: typeof bankHolidayServices.listBankHolidays;
+    insertBankHolidays: typeof bankHolidayServices.insertBankHolidays;
   };
   notification: {
     listNotificationsForUser: typeof notificationServices.listNotificationsForUser;
@@ -235,6 +237,7 @@ export const createDBServices = (): DBServices => {
       deleteGroup: groupServices.deleteGroup,
       updateGroupQuotas: groupServices.updateGroupQuotas,
       updateGroupWorkingDays: groupServices.updateGroupWorkingDays,
+      updateGroupHolidayCountry: groupServices.updateGroupHolidayCountry,
       getApprovalUsers: groupServices.getApprovalUsers,
       getGroupsWhereUserCanApprove: groupServices.getGroupsWhereUserCanApprove,
       countLiveGroupsForOrganization: groupServices.countLiveGroupsForOrganization,
@@ -274,6 +277,7 @@ export const createDBServices = (): DBServices => {
     },
     bankHoliday: {
       listBankHolidays: bankHolidayServices.listBankHolidays,
+      insertBankHolidays: bankHolidayServices.insertBankHolidays,
     },
     notification: {
       listNotificationsForUser: notificationServices.listNotificationsForUser,

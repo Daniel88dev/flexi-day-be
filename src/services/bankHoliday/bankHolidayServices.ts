@@ -1,7 +1,7 @@
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
-import type { BankHolidayType } from "./types.js";
+import type { BankHolidayInsertType, BankHolidayType } from "./types.js";
 
 /**
  * Lists bank holidays for the given country (and optional region) in a single
@@ -29,4 +29,18 @@ export const listBankHolidays = async (
     .from(bankHolidays)
     .where(and(...filters))
     .orderBy(asc(bankHolidays.date));
+};
+
+/**
+ * Inserts bank holiday rows, ignoring any that already exist. Concurrent
+ * first-time fills are safe because of the partial unique index on
+ * `(country, date) WHERE region IS NULL` — the `(country, region, date)`
+ * index alone never fires for the NULL-region rows the dataset writes.
+ */
+export const insertBankHolidays = async (
+  rows: BankHolidayInsertType[],
+  tx?: DbTransaction
+): Promise<void> => {
+  if (rows.length === 0) return;
+  await (tx ?? db).insert(bankHolidays).values(rows).onConflictDoNothing();
 };
