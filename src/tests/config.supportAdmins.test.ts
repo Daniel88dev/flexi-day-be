@@ -51,9 +51,23 @@ describe("config support allowlist", () => {
     expect(config.support?.userIds).toEqual([ID_A, ID_B]);
   });
 
+  it("accepts a dev-seeded dashed UUID", async () => {
+    const uuid = "88bf2347-3d61-47e2-90ea-0d2b800f4e72";
+    const config = await loadConfig({ ...BASE, SUPPORT_ADMIN_USER_IDS: uuid });
+    expect(config.support?.userIds).toEqual([uuid]);
+  });
+
   it("throws at boot on an entry that is not a user id", async () => {
-    await expect(
-      loadConfig({ ...BASE, SUPPORT_ADMIN_USER_IDS: "owner@dev.local" })
-    ).rejects.toThrow(/does not look like a user id/);
+    for (const bad of [
+      "owner@dev.local",
+      // Dash-only and wrong-length values must not slip through as ids.
+      "----------------",
+      "88bf2347-3d61-47e2-90ea",
+      "e9dl7v5efgnn0cjrmn7hqz3aswwqxg2", // 31 chars
+    ]) {
+      await expect(loadConfig({ ...BASE, SUPPORT_ADMIN_USER_IDS: bad })).rejects.toThrow(
+        /does not look like a user id/
+      );
+    }
   });
 });

@@ -218,7 +218,9 @@ const parseSupport = (): SupportConfig | undefined => {
   // UUIDs; anything else is a typo or a pasted email. Failing at boot beats an
   // allowlist that silently never matches.
   for (const id of userIds) {
-    if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) {
+    const isBetterAuthId = /^[A-Za-z0-9]{32}$/.test(id);
+    const isUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id);
+    if (!isBetterAuthId && !isUuid) {
       throw new Error(
         `SUPPORT_ADMIN_USER_IDS contains "${id}", which does not look like a user id`
       );

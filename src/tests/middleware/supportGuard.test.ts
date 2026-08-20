@@ -33,6 +33,7 @@ vi.mock("../../services/support/supportServices.js", () => ({
 
 import { requireSupportAdmin } from "../../middleware/supportGuard.js";
 import { config } from "../../config.js";
+import { logger } from "../../middleware/logger.js";
 import AppError from "../../utils/appError.js";
 
 const ADMIN_ID = "e9dl7v5efgnn0cjrmn7hqz3aswwqxg2b";
@@ -47,7 +48,9 @@ const makeReq = (userId: string): Request =>
       emailVerified: true,
     },
     method: "GET",
-    originalUrl: "/api/support/organizations",
+    baseUrl: "/api/support",
+    path: "/organizations",
+    originalUrl: "/api/support/organizations?query=jane%40acme.com",
   } as unknown as Request);
 
 const run = async (req: Request) => {
@@ -66,22 +69,28 @@ describe("requireSupportAdmin", () => {
     selectResult.rows = [{ twoFactorEnabled: true }];
   });
 
-  it("passes an allowlisted 2FA-enabled caller and audits the request", async () => {
+  it("passes an allowlisted 2FA-enabled caller and audits the full request target", async () => {
     const next = await run(makeReq(ADMIN_ID));
     expect(next).toHaveBeenCalledWith();
+    // The audit row keeps the query string on purpose — for the search
+    // endpoint the query IS the target the trail exists to record.
     expect(recordSupportAccess).toHaveBeenCalledWith({
       userId: ADMIN_ID,
       method: "GET",
-      path: "/api/support/organizations",
+      path: "/api/support/organizations?query=jane%40acme.com",
     });
   });
 
-  it("404s a caller who is not on the allowlist", async () => {
+  it("404s a caller who is not on the allowlist without logging the query string", async () => {
     const next = await run(makeReq("someoneelse00000000000000000000x"));
     const err = errorFrom(next);
     expect(err).toBeInstanceOf(AppError);
     expect(err.statusCode).toBe(404);
     expect(recordSupportAccess).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith("supportGuard rejected non-allowlisted request", {
+      userId: "someoneelse00000000000000000000x",
+      path: "/api/support/organizations",
+    });
   });
 
   it("404s everyone when the allowlist is not configured", async () => {

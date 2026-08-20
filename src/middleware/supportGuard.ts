@@ -31,9 +31,12 @@ export const requireSupportAdmin = async (req: Request, _res: Response, next: Ne
     }
 
     if (!config.support?.userIds.includes(auth.userId)) {
+      // baseUrl+path, not originalUrl: the search endpoint's query string
+      // carries free text that has no business in a log line. The audit row
+      // below keeps the full target on purpose — see the schema comment.
       logger.warn("supportGuard rejected non-allowlisted request", {
         userId: auth.userId,
-        path: req.originalUrl,
+        path: `${req.baseUrl}${req.path}`,
       });
       return next(new AppError({ message: "Not found", code: 404 }));
     }
