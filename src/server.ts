@@ -35,6 +35,7 @@ import { requestContext } from "./middleware/requestContext.js";
 import { billingRouter } from "./routes/billingRouter.js";
 import { organizationRouter } from "./routes/organizationRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
+import { supportRouter } from "./routes/supportRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -104,6 +105,13 @@ export const createServer = () => {
   app.use("/api/reports", reportRouter());
   app.use("/api/billing", billingRouter());
   app.use("/api/organization", organizationRouter());
+
+  // Platform-support read surface. `config.support` is undefined unless the
+  // deploy explicitly carries an allowlist, so for everyone else these routes
+  // simply do not exist.
+  if (config.support) {
+    app.use("/api/support", supportRouter());
+  }
 
   // Public, token-authenticated iCalendar feed. Deliberately NOT behind
   // `authSession`: calendar clients subscribe with just the secret token in
