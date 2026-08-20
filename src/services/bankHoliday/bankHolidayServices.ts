@@ -32,9 +32,10 @@ export const listBankHolidays = async (
 };
 
 /**
- * Inserts bank holiday rows, ignoring any that already exist. Conflict-free by
- * the `(country, region, date)` unique index, so concurrent first-time fills
- * for the same country and year are safe.
+ * Inserts bank holiday rows, ignoring any that already exist. Concurrent
+ * first-time fills are safe because of the partial unique index on
+ * `(country, date) WHERE region IS NULL` — the `(country, region, date)`
+ * index alone never fires for the NULL-region rows the dataset writes.
  */
 export const insertBankHolidays = async (
   rows: BankHolidayInsertType[],
