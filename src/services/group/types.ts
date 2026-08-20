@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSupportedCountry } from "../bankHoliday/holidayDataset.js";
 
 export type GroupType = {
   id: string;
@@ -7,6 +8,7 @@ export type GroupType = {
   defaultVacationDays: number;
   defaultHomeOfficeDays: number;
   workingDays: number[];
+  holidayCountry: string | null;
   managerUserId: string;
   mainApprovalUser: string | null;
   tempApprovalUser: string | null;
@@ -41,6 +43,19 @@ export const validatePutGroupWorkingDays = z.object({
 });
 
 export type ValidatedPutGroupWorkingDaysType = z.infer<typeof validatePutGroupWorkingDays>;
+
+// Validated against the holiday dataset, not just the alpha-2 shape — a code
+// we cannot compute holidays for would silently show nothing on the dashboard.
+export const validatePutGroupHolidayCountry = z.object({
+  holidayCountry: z
+    .string()
+    .length(2)
+    .transform((value) => value.toUpperCase())
+    .refine(isSupportedCountry, { message: "Unsupported country code" })
+    .nullable(),
+});
+
+export type ValidatedPutGroupHolidayCountryType = z.infer<typeof validatePutGroupHolidayCountry>;
 
 // better-auth user ids are opaque non-UUID strings. The main approver is
 // required: a group without one can never decide on a request.

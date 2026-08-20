@@ -1,4 +1,5 @@
 import { date, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { isNull } from "drizzle-orm";
 
 export const bankHolidays = pgTable(
   "bank_holidays",
@@ -22,5 +23,11 @@ export const bankHolidays = pgTable(
       table.region,
       table.date
     ),
+    // The index above never fires for NULL regions (Postgres treats NULLs as
+    // distinct), yet the dataset fill writes exactly those rows — without this
+    // partial index, concurrent first fills would duplicate every holiday.
+    uniqueIndex("bank_holidays_country_date_no_region_uidx")
+      .on(table.country, table.date)
+      .where(isNull(table.region)),
   ]
 );
