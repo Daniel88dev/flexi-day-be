@@ -53,6 +53,7 @@ export type DBServices = Readonly<{
     countActiveMembershipsInOrganization: typeof groupUserServices.countActiveMembershipsInOrganization;
     getMembershipPairs: typeof groupUserServices.getMembershipPairs;
     countDistinctUsersInGroups: typeof groupUserServices.countDistinctUsersInGroups;
+    countMembersByGroup: typeof groupUserServices.countMembersByGroup;
   };
   inviteLinks: {
     createInviteLink: typeof groupUserServices.createInviteLink;
@@ -216,6 +217,7 @@ export const createDBServices = (): DBServices => {
       countActiveMembershipsInOrganization: groupUserServices.countActiveMembershipsInOrganization,
       getMembershipPairs: groupUserServices.getMembershipPairs,
       countDistinctUsersInGroups: groupUserServices.countDistinctUsersInGroups,
+      countMembersByGroup: groupUserServices.countMembersByGroup,
     },
     inviteLinks: {
       createInviteLink: groupUserServices.createInviteLink,
