@@ -4,7 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { account as accountTable, user as userTable } from "../db/schema/auth-schema.js";
-import { haveIBeenPwned, openAPI, twoFactor } from "better-auth/plugins";
+import { customSession, haveIBeenPwned, openAPI, twoFactor } from "better-auth/plugins";
 import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
@@ -199,5 +199,17 @@ export const auth = betterAuth({
         },
       },
     }),
+    // Last on purpose (better-auth infers session fields added by earlier
+    // plugins into this callback). Rides on the session fetch the client
+    // already makes, so the frontend learns whether to render the support UI
+    // without any extra request. A UI hint only — the enforcement is
+    // `requireSupportAdmin` on /api/support/*.
+    customSession(({ user, session }) =>
+      Promise.resolve({
+        user,
+        session,
+        supportAdmin: config.support?.userIds.includes(user.id) ?? false,
+      })
+    ),
   ],
 });

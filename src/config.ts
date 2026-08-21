@@ -56,6 +56,11 @@ type PaddleConfig = {
   };
 };
 
+type SupportConfig = {
+  /** User ids allowed on `/api/support/*` and flagged `supportAdmin` in the session. */
+  userIds: string[];
+};
+
 type DevToolsConfig = {
   /** Shared secret every `/api/dev/*` request must present as `x-dev-token`. */
   token: string;
@@ -73,6 +78,8 @@ type Config = {
   paddle?: PaddleConfig;
   /** Local seeding/session surface. `undefined` means the routes do not exist. */
   dev?: DevToolsConfig;
+  /** Platform-support read surface. `undefined` means the routes do not exist. */
+  support?: SupportConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -187,6 +194,42 @@ const parseDevTools = (): DevToolsConfig | undefined => {
   };
 };
 
+/**
+ * Allowlist for the read-only support surface (`/api/support/*`). An env var
+ * rather than a DB flag on purpose: no API can ever grant it, so there is no
+ * privilege-escalation surface — it changes only via deploy. Unset means the
+ * router is never mounted and the surface does not exist.
+ */
+const parseSupport = (): SupportConfig | undefined => {
+  const raw = process.env.SUPPORT_ADMIN_USER_IDS;
+  if (!raw) return undefined;
+
+  const userIds = [
+    ...new Set(
+      raw
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (userIds.length === 0) return undefined;
+
+  // better-auth ids are 32-char alphanumeric and dev-seeded ones are dashed
+  // UUIDs; anything else is a typo or a pasted email. Failing at boot beats an
+  // allowlist that silently never matches.
+  for (const id of userIds) {
+    const isBetterAuthId = /^[A-Za-z0-9]{32}$/.test(id);
+    const isUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id);
+    if (!isBetterAuthId && !isUuid) {
+      throw new Error(
+        `SUPPORT_ADMIN_USER_IDS contains "${id}", which does not look like a user id`
+      );
+    }
+  }
+
+  return { userIds };
+};
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -236,6 +279,7 @@ export const config: Config = {
   },
   paddle: parsePaddle(),
   dev: parseDevTools(),
+  support: parseSupport(),
 };
 
 export type { PaddleConfig };

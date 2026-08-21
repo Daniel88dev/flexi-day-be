@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { organizations } from "../../../db/schema/organization-schema.js";
 import { subscriptions } from "../../../db/schema/subscription-schema.js";
 import { paddleEvents } from "../../../db/schema/paddle-event-schema.js";
+import { supportAccess } from "../../../db/schema/support-access-schema.js";
 import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 export interface TestUser {
@@ -134,6 +135,8 @@ export async function cleanupTestData() {
     await db.delete(subscriptions);
     await db.delete(organizations);
     await db.delete(paddleEvents);
+    // Before `user`: support_access deliberately has no ON DELETE cascade.
+    await db.delete(supportAccess);
     await db.delete(user);
 
     // Clear cache
