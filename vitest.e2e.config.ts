@@ -14,6 +14,8 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/*.e2e.test.ts"],
+    // .claude/worktrees holds full checkouts of this repo; their tests are not ours to run.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/**"],
     // Every e2e file talks to the same database and truncates shared tables on
     // teardown, so running two files at once lets one wipe the other's rows.
     fileParallelism: false,
