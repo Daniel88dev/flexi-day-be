@@ -21,7 +21,8 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 
 ## Vacation workflow
 
-1. User creates a vacation request for a specific day and group.
+1. User creates a vacation request for a group over an inclusive date range (`from`/`to` on
+   `POST /create-vacation`; a single day is `from == to`). One row is stored per day.
 2. The request is pending until an approver decides it.
 3. A group has main approvers and optional temp approvers.
 4. Approval updates vacation status and quota tracking.

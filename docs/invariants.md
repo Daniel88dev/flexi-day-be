@@ -66,10 +66,12 @@ read-only) to debug customer reports.
    and take their scope as explicit ids. Keep support carve-outs out of `assertGroupAdmin` /
    `validateUserGroupAccess` / `isOrganizationAdmin` — one there would silently turn every route,
    including writes, into a superuser route.
-3. **`requireSupportAdmin` 404s non-allowlisted callers** (not 403 — the surface should be
-   invisible to probers) and **403s an allowlisted account without 2FA enabled**. It reads
-   `req.auth` directly rather than importing `authSession.js`, keeping better-auth out of its
-   import graph.
+3. **`requireSupportAdmin` answers three ways.** 401 when `req.auth` is absent, **404 for an
+   authenticated caller not in `config.support.userIds`** (not 403 — the surface should be
+   invisible to probers), and **403 for an allowlisted account without 2FA enabled**. The 2FA
+   check is on the account, not the session, so a password alone never opens this surface. It
+   reads `req.auth` directly rather than importing `authSession.js`, keeping better-auth out of
+   its import graph.
 4. **Every request is audited.** The guard writes a `support_access` row (user, method,
    path+query) before the handler runs. Write-only, like `report_exports`.
 5. **The frontend learns about the role from the session.** The `customSession` plugin in

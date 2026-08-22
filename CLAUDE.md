@@ -36,12 +36,24 @@ callable and testable outside the timer.
 ## Database access goes through DBServices
 
 `createDBServices()` (`src/services/DBServices.ts`) returns one typed object with a property per
-domain (`vacation`, `group`, `groupUser`, `organization`, `report`, …). Controllers take it rather
-than importing `db` directly. Each domain lives in `src/services/{domain}/` as
-`{domain}Services.ts` plus a `types.ts` holding its TypeScript types and Zod schemas.
+domain (`vacation`, `group`, `groupUser`, `organization`, `report`, …). Each domain lives in
+`src/services/{domain}/` as `{domain}Services.ts` plus a `types.ts` holding its TypeScript types
+and Zod schemas.
 
-Use Drizzle's `db.transaction(...)` when a write must be atomic. Anything that appends a
-`vacation_events` row belongs in the same transaction as the change it records.
+**The controller owns the transaction boundary.** A write handler imports `db`, opens
+`db.transaction(async (tx) => ...)`, and threads that `tx` through every service call and guard
+inside it, so the whole request commits or rolls back together:
+
+```typescript
+const approved = await db.transaction(async (tx) => {
+  const vacationData = await services.vacation.getVacationById(vacationId, tx);
+  await assertMayDecide(auth.userId, [vacationData], "approve", tx);
+  return services.vacation.approveVacation(vacationId, auth.userId, tx);
+});
+```
+
+Anything that appends a `vacation_events` row belongs in the same transaction as the change it
+records. Notifications go out after the commit, never inside it.
 
 ## Route conventions
 
