@@ -78,11 +78,13 @@ on the live database even by accident, and `--yes` does not get around it.
 | `npm run db:status:prod`   | prints the applied ledger, writes nothing   | anyone                  |
 | `npm run db:migrate:prod`  | RDS, connection string from Secrets Manager | the user, at a terminal |
 
-The prod target pins the RDS CA bundle, connects with `sslmode=verify-full`, and never prints the
-connection string.
+The prod target pins the RDS CA bundle and connects with `sslmode=verify-full`. The connection
+string is never printed and never passed as a command-line argument, where `ps` would hand it to
+every other local user; psql gets the parts through libpq's `PG*` variables.
 
-`--reset` drops the schema, the data and the ledger, then migrates from scratch, behind a typed
-confirmation. Reach for it on a local database whose ledger has drifted from the migration files.
+`--reset` drops the schema, the data and the ledger, then migrates from scratch. On prod it demands
+the typed phrase even with `--yes`, because unattended is never the right way to drop a production
+database. Reach for it on a local database whose ledger has drifted from the migration files.
 
 ## Route conventions
 

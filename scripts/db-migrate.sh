@@ -7,15 +7,20 @@
 #   scripts/db-migrate.sh prod --status   print the applied ledger and exit, no writes
 #   scripts/db-migrate.sh prod --reset    drop the whole schema first, then migrate
 #
-# --yes skips the confirmation prompts. Meant for CD. Think twice by hand.
+# --yes skips the confirmation prompt on an ordinary migrate. Dropping a
+# production database is never unattended: `prod --reset` asks for the typed
+# phrase even with --yes, even under DB_MIGRATE_CI.
 #
 # A PRODUCTION MIGRATION IS RUN BY A HUMAN, NEVER BY AN AGENT. The prod target
 # refuses to start unless stdin is a terminal, which is what stops a coding
 # agent or a stray script from applying DDL to the live database. CD can set
 # DB_MIGRATE_CI=1 to opt out once someone has decided that is what they want.
+# --status only reads, so it stays open to anyone.
 #
-# The connection string never reaches the terminal, the shell history or the
-# process list of anything but this script.
+# The connection string is never printed and never passed as a command-line
+# argument, where `ps` and /proc would expose it to every other local user.
+# psql receives the parts through libpq's PG* environment variables and
+# drizzle-kit receives the whole URL through DATABASE.
 
 set -euo pipefail
 
@@ -60,9 +65,64 @@ describe_url() {
   sed -E 's#^([a-z]+)://[^@]*@#\1://#; s#\?.*$##' <<<"$1"
 }
 
+# force=1 means --yes does not apply. Used for the production reset, where
+# unattended is never the right answer.
+urldecode() {
+  printf '%b' "${1//%/\\x}"
+}
+
+# libpq reads these, so psql never takes the credentials on its command line.
+# Process arguments are world-readable through `ps` and /proc; the environment
+# of a running process is not.
+export_pg_env() {
+  local url="$1" rest query userinfo hostport user pass host port dbname kv k v
+
+  rest="${url#*://}"
+  query=""
+  if [[ "$rest" == *\?* ]]; then
+    query="${rest#*\?}"
+    rest="${rest%%\?*}"
+  fi
+
+  userinfo=""
+  if [[ "$rest" == *@* ]]; then
+    userinfo="${rest%%@*}"
+    rest="${rest#*@}"
+  fi
+
+  hostport="${rest%%/*}"
+  dbname="${rest#*/}"
+  user="${userinfo%%:*}"
+  pass=""
+  if [[ "$userinfo" == *:* ]]; then pass="${userinfo#*:}"; fi
+  host="${hostport%%:*}"
+  port=""
+  if [[ "$hostport" == *:* ]]; then port="${hostport#*:}"; fi
+
+  if [[ -n "$host" ]]; then export PGHOST="$(urldecode "$host")"; fi
+  if [[ -n "$port" ]]; then export PGPORT="$port"; fi
+  if [[ -n "$user" ]]; then export PGUSER="$(urldecode "$user")"; fi
+  if [[ -n "$pass" ]]; then export PGPASSWORD="$(urldecode "$pass")"; fi
+  if [[ -n "$dbname" ]]; then export PGDATABASE="$(urldecode "$dbname")"; fi
+
+  local IFS='&'
+  for kv in $query; do
+    k="${kv%%=*}"
+    v="${kv#*=}"
+    case "$k" in
+      sslmode) export PGSSLMODE="$(urldecode "$v")" ;;
+      sslrootcert) export PGSSLROOTCERT="$(urldecode "$v")" ;;
+    esac
+  done
+
+  return 0
+}
+
 confirm() {
-  local prompt="$1" expected="$2" answer
-  [[ "$ASSUME_YES" == "1" ]] && return 0
+  local prompt="$1" expected="$2" force="${3:-0}" answer
+  if [[ "$ASSUME_YES" == "1" && "$force" != "1" ]]; then
+    return 0
+  fi
   echo
   echo "$prompt"
   read -r -p "Type '$expected' to continue: " answer
@@ -123,7 +183,8 @@ echo "database: $(describe_url "$DATABASE_URL")"
 
 if [[ "$DO_STATUS" == "1" ]]; then
   need psql
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+  export_pg_env "$DATABASE_URL"
+  psql -v ON_ERROR_STOP=1 -c "
     select id,
            left(hash, 12) as hash,
            to_timestamp(created_at / 1000) at time zone 'UTC' as applied_at
@@ -144,9 +205,12 @@ fi
 
 if [[ "$DO_RESET" == "1" ]]; then
   need psql
+  reset_force=0
+  if [[ "$TARGET" == "prod" ]]; then reset_force=1; fi
   confirm "This DROPS every table, every row and the migration ledger on the database above." \
-    "$RESET_PHRASE"
-  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 <<'SQL'
+    "$RESET_PHRASE" "$reset_force"
+  export_pg_env "$DATABASE_URL"
+  psql -v ON_ERROR_STOP=1 -1 <<'SQL'
 DROP SCHEMA IF EXISTS drizzle CASCADE;
 DROP SCHEMA public CASCADE;
 CREATE SCHEMA public;
