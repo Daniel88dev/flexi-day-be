@@ -5,11 +5,12 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/*.test.ts"],
-    exclude: ["src/**/*.e2e.test.ts", "**/node_modules/**", "**/dist/**"],
+    // .claude/worktrees holds full checkouts of this repo; their tests are not ours to run.
+    exclude: ["src/**/*.e2e.test.ts", "**/node_modules/**", "**/dist/**", "**/.claude/**"],
     coverage: {
       provider: "istanbul",
       reporter: ["text", "json", "html"],
-      exclude: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/*.config.*"],
+      exclude: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/*.config.*", "**/.claude/**"],
     },
   },
 });
