@@ -110,3 +110,20 @@ and response schemas, auth requirements, error codes, parameter validation. Foll
 `src/config.ts` parses and validates every environment variable, and throws at startup when one is
 missing or invalid. Read it rather than a list here. Three blocks are opt-in and stay that way:
 `DEV_TOOLS_*`, `SUPPORT_ADMIN_USER_IDS`, and `PADDLE_*` — see [`docs/invariants.md`](docs/invariants.md).
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues, reached with the `gh` CLI. See
+[`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+
+### Triage labels
+
+The five canonical triage roles, each label string equal to its name. See
+[`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See
+[`docs/agents/domain.md`](docs/agents/domain.md).
