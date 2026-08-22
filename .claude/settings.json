@@ -4,6 +4,25 @@
       "Bash(gh pr *)",
       "Bash(gh api *)",
       "Bash(npm run *)"
+    ],
+    "deny": [
+      "NotebookEdit",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "PushNotification",
+      "ReportFindings",
+      "ScheduleWakeup"
     ]
-  }
+  },
+  "deniedMcpServers": [
+    {
+      "serverName": "claude-in-chrome"
+    }
+  ],
+  "skillListingMaxDescChars": 250,
+  "disableClaudeAiConnectors": true,
+  "disableWorkflows": true,
+  "disableBundledSkills": true,
+  "disableArtifact": true
 }
