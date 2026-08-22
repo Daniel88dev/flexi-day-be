@@ -81,13 +81,28 @@ export const deleteGroupUser = async (
   return row;
 };
 
-export const getAllGroupsForUser = async (userId: string): Promise<{ groupId: string }[]> => {
+export const getAllGroupsForUser = async (
+  userId: string
+): Promise<{ groupId: string; adminAccess: boolean; approverAccess: boolean }[]> => {
   return db
     .select({
       groupId: groupUsers.groupId,
+      adminAccess: groupUsers.adminAccess,
+      approverAccess: groupUsers.approverAccess,
     })
     .from(groupUsers)
     .where(and(eq(groupUsers.userId, userId), isNull(groupUsers.deletedAt)));
+};
+
+/** Active-member headcount per group, one grouped query for the whole list. */
+export const countMembersByGroup = async (groupIds: string[]): Promise<Map<string, number>> => {
+  if (groupIds.length === 0) return new Map();
+  const rows = await db
+    .select({ groupId: groupUsers.groupId, members: count() })
+    .from(groupUsers)
+    .where(and(inArray(groupUsers.groupId, groupIds), isNull(groupUsers.deletedAt)))
+    .groupBy(groupUsers.groupId);
+  return new Map(rows.map((row) => [row.groupId, row.members]));
 };
 
 /** The groups the user administers — the reach of any admin-only action. */

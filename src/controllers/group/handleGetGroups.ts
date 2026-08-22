@@ -15,17 +15,29 @@ const services = createDBServices();
 export const handleGetGroups = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const groups = (await services.groupUser.getAllGroupsForUser(auth.userId)).map(
-    (group) => group.groupId
+  const memberships = await services.groupUser.getAllGroupsForUser(auth.userId);
+  const membershipByGroup = new Map(memberships.map((m) => [m.groupId, m]));
+  const groupIds = memberships.map((m) => m.groupId);
+
+  const result = await services.group.getAllGroups(groupIds);
+
+  const [badges, memberCounts] = await Promise.all([
+    resolveOrganizationBadges(result.map((group) => group.organizationId)),
+    services.groupUser.countMembersByGroup(groupIds),
+  ]);
+
+  return res.status(200).json(
+    result.map((group) => {
+      const membership = membershipByGroup.get(group.id);
+      return {
+        ...group,
+        organization: badges.get(group.organizationId) ?? null,
+        memberCount: memberCounts.get(group.id) ?? 0,
+        membership: {
+          adminAccess: membership?.adminAccess ?? false,
+          approverAccess: membership?.approverAccess ?? false,
+        },
+      };
+    })
   );
-
-  const result = await services.group.getAllGroups(groups);
-
-  const badges = await resolveOrganizationBadges(result.map((group) => group.organizationId));
-
-  return res
-    .status(200)
-    .json(
-      result.map((group) => ({ ...group, organization: badges.get(group.organizationId) ?? null }))
-    );
 };

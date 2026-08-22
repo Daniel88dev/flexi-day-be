@@ -44,7 +44,8 @@ export const getAllGroups = async (
   return (tx ?? db)
     .select()
     .from(groups)
-    .where(and(inArray(groups.id, groupIds), isNull(groups.deletedAt)));
+    .where(and(inArray(groups.id, groupIds), isNull(groups.deletedAt)))
+    .orderBy(asc(groups.groupName));
 };
 
 export const createGroup = async (

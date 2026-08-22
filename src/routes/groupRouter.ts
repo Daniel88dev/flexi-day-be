@@ -72,6 +72,84 @@ export const groupRouter = (): Router => {
    */
   app.post("/", tryCatch(handlePostGroup));
 
+  /**
+   * @openapi
+   * /api/group:
+   *   get:
+   *     tags:
+   *       - Groups
+   *     summary: The caller's groups
+   *     description: |
+   *       Membership-only on purpose: this list also drives the dashboard, the
+   *       calendar and the request dialog, so groups the caller merely
+   *       administers through their organization do not appear (those come from
+   *       `/api/organization`). Ordered by group name. Each group carries its
+   *       organization badge, an active-member headcount and the caller's own
+   *       membership flags.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: Groups the caller belongs to
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                     format: uuid
+   *                   organizationId:
+   *                     type: string
+   *                     format: uuid
+   *                   groupName:
+   *                     type: string
+   *                   defaultVacationDays:
+   *                     type: integer
+   *                   defaultHomeOfficeDays:
+   *                     type: integer
+   *                   workingDays:
+   *                     type: array
+   *                     items:
+   *                       type: integer
+   *                   holidayCountry:
+   *                     type: string
+   *                     nullable: true
+   *                   managerUserId:
+   *                     type: string
+   *                   mainApprovalUser:
+   *                     type: string
+   *                     nullable: true
+   *                   tempApprovalUser:
+   *                     type: string
+   *                     nullable: true
+   *                   deletedAt:
+   *                     type: string
+   *                     format: date-time
+   *                     nullable: true
+   *                   createdAt:
+   *                     type: string
+   *                     format: date-time
+   *                   updatedAt:
+   *                     type: string
+   *                     format: date-time
+   *                   organization:
+   *                     type: object
+   *                     nullable: true
+   *                   memberCount:
+   *                     type: integer
+   *                     description: Active members of the group
+   *                   membership:
+   *                     type: object
+   *                     description: The caller's own membership row flags
+   *                     properties:
+   *                       adminAccess:
+   *                         type: boolean
+   *                       approverAccess:
+   *                         type: boolean
+   */
   app.get("/", tryCatch(handleGetGroups));
 
   /**
