@@ -58,8 +58,8 @@ const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<numb
 
   const group = await services.group.getGroup(check.groupId, tx);
   return check.leaveType === vacationType.Vacation
-    ? group?.defaultVacationDays ?? 0
-    : group?.defaultHomeOfficeDays ?? 0;
+    ? (group?.defaultVacationDays ?? 0)
+    : (group?.defaultHomeOfficeDays ?? 0);
 };
 
 /**

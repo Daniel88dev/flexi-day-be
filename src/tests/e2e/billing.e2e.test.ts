@@ -185,9 +185,8 @@ describe("billing limits", () => {
   });
 
   it("grants a member no organization until they create a group", async () => {
-    const { getOrganizationForOwner } = await import(
-      "../../services/organization/organizationServices.js"
-    );
+    const { getOrganizationForOwner } =
+      await import("../../services/organization/organizationServices.js");
     expect(await getOrganizationForOwner(member.id)).toBeUndefined();
   });
 });

@@ -51,8 +51,7 @@ describe("two-factor authentication", () => {
     return code;
   };
 
-  const signIn = () =>
-    request(app).post("/api/auth/sign-in/email").send({ email, password });
+  const signIn = () => request(app).post("/api/auth/sign-in/email").send({ email, password });
 
   beforeAll(async () => {
     await cleanupTestData();
