@@ -14,6 +14,13 @@ what breaks if it is undone; several have tests that fail on regression.
 [`CONTEXT.md`](CONTEXT.md) — vacation workflow, group and organization structure, invites,
 mirroring, quota rollover, and the schema rows that are not self-describing.
 
+## Infrastructure
+
+[`docs/terraform.md`](docs/terraform.md) — read before adding an environment variable, an IAM
+permission, or any AWS resource. Production runs on App Runner and RDS defined in `terraform/`, so a
+variable that only reaches `config.ts` and `.env` never reaches production. Secrets go in via
+Secrets Manager, and the live values live in the gitignored `terraform/terraform.tfvars`.
+
 ## Imports need `.js` extensions
 
 `"type": "module"` plus `verbatimModuleSyntax: true` means every relative import carries a `.js`
@@ -54,6 +61,28 @@ const approved = await db.transaction(async (tx) => {
 
 Anything that appends a `vacation_events` row belongs in the same transaction as the change it
 records. Notifications go out after the commit, never inside it.
+
+## Migrations
+
+`npm run db:generate` writes a new file into `src/db/schema/out/`. `scripts/db-migrate.sh` applies
+it, and its header documents every flag.
+
+**Apply migrations to local databases. Hand every production migration to the user.** Write the
+migration, apply it locally, confirm the app still works, then give the user the exact command and
+stop. The prod target refuses to start unless stdin is a terminal, so an agent shell cannot put DDL
+on the live database even by accident, and `--yes` does not get around it.
+
+| Command                    | Target                                      | Who runs it             |
+| -------------------------- | ------------------------------------------- | ----------------------- |
+| `npm run db:migrate:local` | the `DATABASE` in `.env`                    | anyone                  |
+| `npm run db:status:prod`   | prints the applied ledger, writes nothing   | anyone                  |
+| `npm run db:migrate:prod`  | RDS, connection string from Secrets Manager | the user, at a terminal |
+
+The prod target pins the RDS CA bundle, connects with `sslmode=verify-full`, and never prints the
+connection string.
+
+`--reset` drops the schema, the data and the ledger, then migrates from scratch, behind a typed
+confirmation. Reach for it on a local database whose ledger has drifted from the migration files.
 
 ## Route conventions
 
