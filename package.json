@@ -26,7 +26,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "cross-env NODE_OPTIONS=\"--import tsx\" drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:migrate:local": "./scripts/db-migrate.sh local",
+    "db:migrate:prod": "./scripts/db-migrate.sh prod",
+    "db:status:prod": "./scripts/db-migrate.sh prod --status"
   },
   "repository": {
     "type": "git",

@@ -1,1 +1,0 @@
-ALTER TABLE "user_year_quotas" ADD CONSTRAINT "user_year_quotas_related_year_range_chk" CHECK ("user_year_quotas"."related_year"::int BETWEEN 2025 AND 2100);
