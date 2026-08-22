@@ -16,7 +16,7 @@ resolved.
 
 ## File structure
 
-```
+```text
 /
 ├── CONTEXT.md
 ├── docs/adr/
