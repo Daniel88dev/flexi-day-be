@@ -1,1 +1,0 @@
-ALTER TABLE "groups" ADD COLUMN "working_days" integer[] DEFAULT '{1,2,3,4,5}' NOT NULL;

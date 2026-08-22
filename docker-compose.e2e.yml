@@ -23,7 +23,10 @@ services:
     environment:
       PORT: 8080
       NODE_ENV: test
-      DATABASE: postgresql://postgres:password@postgres:5434/testdb
+      # 5432 is the port inside the compose network. 5434 is only the host
+      # mapping above, which .env.e2e.test uses to reach the same container
+      # when the suite runs outside compose.
+      DATABASE: postgresql://postgres:password@postgres:5432/testdb
       BETTER_AUTH_SECRET: test-secret-key-for-e2e-testing-only
       BETTER_AUTH_URL: http://localhost:8080
     command: >

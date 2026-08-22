@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX "bank_holidays_country_date_no_region_uidx" ON "bank_holidays" USING btree ("country","date") WHERE "bank_holidays"."region" is null;

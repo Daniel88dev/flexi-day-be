@@ -1,2 +1,0 @@
-DROP INDEX "uniq_vacation_user_day";--> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_vacation_user_day" ON "vacation" USING btree ("user_id","requested_day") WHERE "vacation"."deleted_at" IS NULL AND "vacation"."rejected_at" IS NULL;

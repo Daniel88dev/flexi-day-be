@@ -69,10 +69,15 @@ output "rds_security_group_id" {
   value       = aws_security_group.rds.id
 }
 
-# Manual migration helper: run from the repo root on your machine.
-# sslmode=no-verify -> encrypted connection without needing the RDS CA
-# bundle installed locally (the app itself does full verification).
-output "manual_migration_command" {
-  description = "Command to run drizzle migrations from your machine"
-  value       = "DATABASE=\"$(aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.database_url.name} --region ${var.aws_region} --query SecretString --output text)?sslmode=no-verify\" npm run db:migrate"
+# Schema deployment. `npm run db:migrate:prod` (scripts/db-migrate.sh) reads
+# this same secret, pins the RDS CA bundle and runs drizzle-kit migrate, so
+# nothing here has to be copied by hand. This output stays for the case where
+# you want a psql shell on the instance instead.
+#
+# sslmode=verify-full + sslrootcert verifies the RDS certificate chain. Download
+# the bundle once from
+# https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+output "psql_command" {
+  description = "psql connection command for the production database (fetches the password from Secrets Manager)"
+  value       = "psql \"$(aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.database_url.name} --region ${var.aws_region} --query SecretString --output text)?sslmode=verify-full&sslrootcert=$HOME/.cache/flexi-day/rds-global-bundle.pem\""
 }
