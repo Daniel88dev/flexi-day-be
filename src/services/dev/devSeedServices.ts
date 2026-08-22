@@ -7,6 +7,7 @@ import { groups } from "../../db/schema/group-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { subscriptions } from "../../db/schema/subscription-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
+import { supportAccess } from "../../db/schema/support-access-schema.js";
 import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { createDBServices } from "../DBServices.js";
@@ -267,8 +268,8 @@ export type ResetSummary = { users: number; groups: number };
 /**
  * Deletes only seeded data. Groups go first because `groups.manager_user_id`
  * and the approval columns reference `user` without a cascade, as do
- * `changes.changing_user_id`; everything else hangs off one of those two
- * deletes via ON DELETE CASCADE.
+ * `changes.changing_user_id` and `support_access.user_id`; everything else
+ * hangs off one of those deletes via ON DELETE CASCADE.
  */
 export const resetDevData = async (): Promise<ResetSummary> => {
   const domain = devDomain();
@@ -283,6 +284,10 @@ export const resetDevData = async (): Promise<ResetSummary> => {
 
   return db.transaction(async (tx) => {
     await tx.delete(changesSchema).where(inArray(changesSchema.changingUserId, ids));
+
+    // The support audit trail deliberately has no cascade so a deleted staff
+    // account cannot erase it; seeded rows have to be cleared explicitly.
+    await tx.delete(supportAccess).where(inArray(supportAccess.userId, ids));
 
     const deletedGroups = await tx
       .delete(groups)
