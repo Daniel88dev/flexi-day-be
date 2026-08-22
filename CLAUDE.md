@@ -1,0 +1,69 @@
+# CLAUDE.md
+
+Guidance for Claude Code working in `flexi-day-be`, the Express 5 + TypeScript + Drizzle + Better
+Auth backend for Flexi Day, a vacation management product.
+
+## Invariants
+
+[`docs/invariants.md`](docs/invariants.md) — read before changing auth or account linking,
+`/api/dev/*`, `/api/support/*`, a rate limiter, or an org-admin permission check. Each entry states
+what breaks if it is undone; several have tests that fail on regression.
+
+## Domain
+
+[`CONTEXT.md`](CONTEXT.md) — vacation workflow, group and organization structure, invites,
+mirroring, quota rollover, and the schema rows that are not self-describing.
+
+## Imports need `.js` extensions
+
+`"type": "module"` plus `verbatimModuleSyntax: true` means every relative import carries a `.js`
+extension, even when the source is `.ts`:
+
+```typescript
+import { auth } from "../utils/auth.js";
+```
+
+## Layout
+
+`src/routes/` define endpoints → `src/controllers/` handle request/response → `src/services/` hold
+business logic and database access → `src/db/` is the Drizzle schema and client. `src/index.ts`
+creates the server and handles graceful shutdown; `src/server.ts` assembles middleware and routes.
+
+`src/jobs/` schedules background work with croner, started from `src/index.ts` and stopped on
+shutdown. Job modules only schedule and log — the work itself lives in a service, so it stays
+callable and testable outside the timer.
+
+## Database access goes through DBServices
+
+`createDBServices()` (`src/services/DBServices.ts`) returns one typed object with a property per
+domain (`vacation`, `group`, `groupUser`, `organization`, `report`, …). Controllers take it rather
+than importing `db` directly. Each domain lives in `src/services/{domain}/` as
+`{domain}Services.ts` plus a `types.ts` holding its TypeScript types and Zod schemas.
+
+Use Drizzle's `db.transaction(...)` when a write must be atomic. Anything that appends a
+`vacation_events` row belongs in the same transaction as the change it records.
+
+## Route conventions
+
+A protected route composes `authSession` → `bodyValidationMiddleware(schema)` → `tryCatch(handler)`,
+with the Zod schema imported from that domain's `types.ts`. `tryCatch` forwards to `errorMiddleware`,
+which turns `AppError` (`src/utils/appError.ts`: `code`, `message`, `logging`) into the JSON
+response — throw `AppError` rather than writing error responses by hand.
+
+**API docs are generated, so `@openapi` JSDoc on every route stays complete and current** — request
+and response schemas, auth requirements, error codes, parameter validation. Follow
+`src/routes/vacationRouter.ts`.
+
+## Testing
+
+- Unit: `src/**/*.test.ts`, run with `npm test`. Mock database calls and test the logic.
+- E2E: `src/**/*.e2e.test.ts`, run with `npm run test:e2e` — it checks the DB connection first
+  (`src/tests/e2e/check-db.ts`) and reads `.env.e2e.test`. Real database, helpers in
+  `src/tests/e2e/helpers/`, and each test cleans up after itself. `npm run docker:e2e:run` runs
+  the suite against a containerised Postgres, as CI does.
+
+## Configuration
+
+`src/config.ts` parses and validates every environment variable, and throws at startup when one is
+missing or invalid. Read it rather than a list here. Three blocks are opt-in and stay that way:
+`DEV_TOOLS_*`, `SUPPORT_ADMIN_USER_IDS`, and `PADDLE_*` — see [`docs/invariants.md`](docs/invariants.md).
