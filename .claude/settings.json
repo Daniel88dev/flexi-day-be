@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": ["Bash(gh pr *)", "Bash(gh api *)", "Bash(npm run *)"],
+    "deny": [
+      "NotebookEdit",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "PushNotification",
+      "ReportFindings",
+      "ScheduleWakeup"
+    ]
+  },
+  "deniedMcpServers": [
+    {
+      "serverName": "claude-in-chrome"
+    }
+  ],
+  "skillListingMaxDescChars": 250,
+  "disableClaudeAiConnectors": true,
+  "disableWorkflows": true,
+  "disableBundledSkills": true,
+  "disableArtifact": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; npx --no-install prettier --write --ignore-unknown \"$f\"; } 2>/dev/null || true",
+            "statusMessage": "Formatting with prettier...",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

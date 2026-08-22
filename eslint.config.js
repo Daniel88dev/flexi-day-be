@@ -9,6 +9,7 @@ export default [
   {
     ignores: [
       "dist/**",
+      ".claude/**",
       "node_modules/**",
       "coverage/**",
       "build/**",

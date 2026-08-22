@@ -51,7 +51,7 @@ const makeReq = (userId: string): Request =>
     baseUrl: "/api/support",
     path: "/organizations",
     originalUrl: "/api/support/organizations?query=jane%40acme.com",
-  } as unknown as Request);
+  }) as unknown as Request;
 
 const run = async (req: Request) => {
   const next = vi.fn() as unknown as NextFunction & { mock: { calls: unknown[][] } };

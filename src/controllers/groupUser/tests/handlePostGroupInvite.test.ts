@@ -63,9 +63,8 @@ vi.mock("../../../services/DBServices.js", () => ({
 }));
 
 vi.mock("../../../services/groupUser/inviteNotifier.js", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("../../../services/groupUser/inviteNotifier.js")
-  >();
+  const actual =
+    await importOriginal<typeof import("../../../services/groupUser/inviteNotifier.js")>();
   return { ...actual, notifyGroupInvited: mockNotifyGroupInvited };
 });
 
