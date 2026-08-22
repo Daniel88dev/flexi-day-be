@@ -5,19 +5,19 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 
 ## Glossary
 
-| Term | Meaning |
-|---|---|
-| **Vacation** | One booking row for one user, one group, one day. A multi-day request is many rows. |
-| **Vacation event** | Append-only timeline entry per vacation (created / approved / rejected / cancelled / updated). |
-| **Group** | A team. Has a manager, working days, a holiday country, default quotas, and a list of approvers. |
-| **Manager** | The group's owner. Holds no `group_users` row. |
-| **Approver** | May decide member-submitted requests in a group. Main or temp. |
-| **Group admin** | May administer a group: the manager, or an org admin of the owning organization. |
-| **Organization** | Billing owner above groups. One per user, created lazily. |
-| **Org admin** | The organization's owner, or a delegate holding an `organization_users` row. |
-| **Quota** | A user's allowance for one year in one group (`user_year_quotas`). |
-| **Mirror** | A read-side projection of a user's records from one group into another. |
-| **Invite link** | Single-use code binding one email address to one group. |
+| Term               | Meaning                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| **Vacation**       | One booking row for one user, one group, one day. A multi-day request is many rows.              |
+| **Vacation event** | Append-only timeline entry per vacation (created / approved / rejected / cancelled / updated).   |
+| **Group**          | A team. Has a manager, working days, a holiday country, default quotas, and a list of approvers. |
+| **Manager**        | The group's owner. Holds no `group_users` row.                                                   |
+| **Approver**       | May decide member-submitted requests in a group. Main or temp.                                   |
+| **Group admin**    | May administer a group: the manager, or an org admin of the owning organization.                 |
+| **Organization**   | Billing owner above groups. One per user, created lazily.                                        |
+| **Org admin**      | The organization's owner, or a delegate holding an `organization_users` row.                     |
+| **Quota**          | A user's allowance for one year in one group (`user_year_quotas`).                               |
+| **Mirror**         | A read-side projection of a user's records from one group into another.                          |
+| **Invite link**    | Single-use code binding one email address to one group.                                          |
 
 ## Vacation workflow
 
