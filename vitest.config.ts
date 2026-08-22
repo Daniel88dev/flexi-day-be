@@ -10,7 +10,13 @@ export default defineConfig({
     coverage: {
       provider: "istanbul",
       reporter: ["text", "json", "html"],
-      exclude: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/*.config.*", "**/.claude/**"],
+      exclude: [
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/coverage/**",
+        "**/*.config.*",
+        "**/.claude/**",
+      ],
     },
   },
 });
