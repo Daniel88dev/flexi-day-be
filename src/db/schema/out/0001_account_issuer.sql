@@ -70,6 +70,19 @@ BEGIN
     claim_iss := payload ->> 'iss';
     claim_oid := payload ->> 'oid';
 
+    -- The claims are shape-checked, not merely present. This token was handed
+    -- to us by Microsoft's token endpoint over TLS during the code exchange, so
+    -- it is not re-verified here — but it has sat in a mutable column since,
+    -- and an unchecked string from it becomes half of an account's identity.
+    -- Entra v2 issuers are always `https://<host>/<tenant guid>/v2.0` and `oid`
+    -- is always a GUID, so anything else is not a claim we can key an account
+    -- on. Those rows are recorded and dropped rather than trusted.
+    IF claim_iss !~ '^https://[A-Za-z0-9.-]+/[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}/v2\.0$'
+       OR claim_oid !~ '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$' THEN
+      claim_iss := NULL;
+      claim_oid := NULL;
+    END IF;
+
     IF claim_iss IS NOT NULL AND claim_oid IS NOT NULL THEN
       UPDATE "account" SET "issuer" = claim_iss, "account_id" = claim_oid WHERE "id" = r."id";
       rekeyed := rekeyed + 1;
@@ -79,7 +92,9 @@ BEGIN
       SELECT a."user_id", u."email", a."provider_id", a."account_id",
              CASE WHEN r."id_token" IS NULL THEN 'no id_token stored'
                   WHEN payload IS NULL THEN 'id_token payload did not decode'
-                  ELSE 'id_token payload lacks iss or oid' END
+                  WHEN payload ->> 'iss' IS NULL OR payload ->> 'oid' IS NULL
+                    THEN 'id_token payload lacks iss or oid'
+                  ELSE 'id_token iss or oid is not a valid Entra claim' END
       FROM "account" a LEFT JOIN "user" u ON u."id" = a."user_id"
       WHERE a."id" = r."id";
 

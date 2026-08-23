@@ -56,8 +56,15 @@ Follow the order below exactly.
 7. `aws apprunner resume-service`, then **`aws apprunner start-deployment`** —
    resume alone brings back 1.6, which would fail every account write against
    the new `NOT NULL` column.
-8. Verify before reopening: `/health`, one real email sign-in, and one
-   `list-accounts` on an account that had a Google link.
+8. Verify before reopening: `/health`, one real email sign-in, one
+   `list-accounts` on an account that had a Google link, and — this is the one
+   that proves the re-key — a returning **Microsoft** sign-in on an account the
+   migration re-keyed. Google and credential rows only gained a column; the
+   Microsoft rows had both halves of their key rewritten, so they are the only
+   ones where a wrong value shows up as `account not linked` rather than as
+   nothing at all. Pick an address from
+   `SELECT u.email FROM account a JOIN "user" u ON u.id = a.user_id
+WHERE a.provider_id = 'microsoft'` before step 4.
 9. Merge the frontend PR. It only speaks the 1.7 shapes, so it goes after the
    backend is confirmed, never before.
 10. Send the emails from the next section, then drop
@@ -160,9 +167,18 @@ SELECT email, legacy_account_id, reason FROM account_issuer_migration_dropped
 ORDER BY email;
 ```
 
-`reason` distinguishes the three cases the migration cannot recover from: no
-`id_token` stored, a payload that did not decode, and a payload without `iss`
-or `oid`. Drop the table once the emails are out.
+`reason` distinguishes the four cases the migration cannot recover from: no
+`id_token` stored, a payload that did not decode, a payload without `iss` or
+`oid`, and claims that are not shaped like Entra's (the migration will not key
+an account on an issuer that is not `https://<host>/<tenant guid>/v2.0` or an
+`oid` that is not a GUID, since that column is mutable and the value becomes
+half of an identity). Drop the table once the emails are out.
+
+If that list is ever long enough that mass password resets are not acceptable,
+the upstream guide's alternative is to source the missing `oid` values from a
+trusted Microsoft Entra directory export and load them before step 6, instead of
+letting the migration delete those rows. Nothing here needed that, but the
+option is real and this is where it would go.
 
 ## Afterwards
 
