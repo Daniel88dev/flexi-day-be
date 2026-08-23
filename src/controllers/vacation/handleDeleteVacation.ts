@@ -7,7 +7,7 @@ import { db } from "../../db/db.js";
 import type { ValidatedCancelVacationType } from "../../services/vacation/types.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
-import { resolveVacationPermissions } from "./utils.js";
+import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
 import { notifyVacationCancelled } from "../../services/vacation/vacationNotifier.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 

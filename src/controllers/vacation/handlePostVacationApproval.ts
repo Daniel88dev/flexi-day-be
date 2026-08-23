@@ -9,7 +9,7 @@ import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
 import type { ValidatedApproveVacationType } from "../../services/vacation/types.js";
 import { assertApprovalWithinQuota } from "../../services/vacation/quotaGuard.js";
-import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
+import { assertMayDecide, assertStillPending } from "../../services/vacation/decisionGuards.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();

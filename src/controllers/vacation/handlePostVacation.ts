@@ -18,7 +18,7 @@ import {
 } from "../../services/vacation/vacationNotifier.js";
 import { assertRequestWithinQuota } from "../../services/vacation/quotaGuard.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
-import { assertGroupAdmin } from "../groupUser/utils.js";
+import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 
 const services = createDBServices();
 

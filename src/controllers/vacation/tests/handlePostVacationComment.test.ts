@@ -33,7 +33,7 @@ vi.mock("../../../services/DBServices.js", () => ({
   }),
 }));
 
-vi.mock("../utils.js", () => ({
+vi.mock("../../../services/vacation/vacationPermissions.js", () => ({
   resolveVacationPermissions: mockResolvePermissions,
 }));
 

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
 import AppError from "../../utils/appError.js";
-import { resolveCanApproveForList } from "./utils.js";
+import { resolveCanApproveForList } from "../../services/vacation/vacationPermissions.js";
 
 const services = createDBServices();
 

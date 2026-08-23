@@ -32,7 +32,7 @@ vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
-vi.mock("../../groupUser/utils.js", () => ({
+vi.mock("../../../services/groupUser/groupAccess.js", () => ({
   resolveGroupAdmin: mockResolveGroupAdmin,
 }));
 

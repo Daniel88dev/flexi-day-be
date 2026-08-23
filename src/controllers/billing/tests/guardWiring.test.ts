@@ -104,7 +104,7 @@ vi.mock("../../../middleware/authSession.js", () => ({
   }),
 }));
 
-vi.mock("../../vacation/decisionGuards.js", () => ({
+vi.mock("../../../services/vacation/decisionGuards.js", () => ({
   assertMayDecide: vi.fn(),
   assertStillPending: vi.fn(),
   mayDecideOwn: vi.fn(),
@@ -121,7 +121,7 @@ vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
   notifyVacationRequested: vi.fn(),
 }));
 
-vi.mock("../../vacation/utils.js", () => ({
+vi.mock("../../../services/vacation/vacationPermissions.js", () => ({
   resolveVacationPermissions: () => ({ canCancel: true, canView: true }),
 }));
 

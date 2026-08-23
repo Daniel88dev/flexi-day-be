@@ -8,7 +8,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationsCancelled } from "../../services/vacation/vacationNotifier.js";
 import { assertGroupsWritable } from "../../services/billing/guards.js";
-import { resolveGroupAdmin } from "../groupUser/utils.js";
+import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 
 const services = createDBServices();
 

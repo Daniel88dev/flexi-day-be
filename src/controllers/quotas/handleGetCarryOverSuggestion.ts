@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { createDBServices } from "../../services/DBServices.js";
-import { assertGroupAdmin } from "../groupUser/utils.js";
+import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 
 const services = createDBServices();
 

@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPutGroupUserUpdateType } from "../../services/groupUser/types.js";
-import { resolveGroupAdmin } from "./utils.js";
+import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import AppError from "../../utils/appError.js";
 import { logger } from "../../middleware/logger.js";
 import { db } from "../../db/db.js";

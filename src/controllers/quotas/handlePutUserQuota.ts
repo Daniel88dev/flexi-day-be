@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
-import { assertGroupAdmin } from "../groupUser/utils.js";
+import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import type { ValidatedPutUserQuotaType } from "../../services/userYearQuotas/types.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";

@@ -21,7 +21,7 @@ import {
   getAdministrableGroupIds,
   resolveGroupAdmin,
   validateUserGroupAccess,
-} from "../../controllers/groupUser/utils.js";
+} from "../../services/groupUser/groupAccess.js";
 
 /**
  * Org admins administer an organization's groups without belonging to them,

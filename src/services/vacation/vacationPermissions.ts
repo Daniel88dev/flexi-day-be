@@ -1,8 +1,8 @@
-import { createDBServices } from "../../services/DBServices.js";
+import { createDBServices } from "../DBServices.js";
 import type { DbTransaction } from "../../db/db.js";
-import type { VacationType } from "../../services/vacation/types.js";
+import type { VacationType } from "./types.js";
 import { mayDecideOwn } from "./decisionGuards.js";
-import { resolveGroupAdmin } from "../groupUser/utils.js";
+import { resolveGroupAdmin } from "../groupUser/groupAccess.js";
 
 const services = createDBServices();
 

@@ -5,7 +5,7 @@ import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedRejectVacationType } from "../../services/vacation/types.js";
-import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
+import { assertMayDecide, assertStillPending } from "../../services/vacation/decisionGuards.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";

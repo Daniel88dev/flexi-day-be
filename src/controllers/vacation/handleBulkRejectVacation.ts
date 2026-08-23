@@ -7,7 +7,7 @@ import type { ValidatedBulkRejectVacationType } from "../../services/vacation/ty
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { notifyVacationDecision } from "../../services/vacation/vacationNotifier.js";
-import { assertMayDecide, assertStillPending } from "./decisionGuards.js";
+import { assertMayDecide, assertStillPending } from "../../services/vacation/decisionGuards.js";
 import { assertGroupsWritable } from "../../services/billing/guards.js";
 
 const services = createDBServices();

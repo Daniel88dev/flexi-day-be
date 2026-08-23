@@ -2,7 +2,10 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { createDBServices } from "../../services/DBServices.js";
-import { getAdministrableGroupIds, resolveGroupAdmin } from "../groupUser/utils.js";
+import {
+  getAdministrableGroupIds,
+  resolveGroupAdmin,
+} from "../../services/groupUser/groupAccess.js";
 import AppError from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import type { MirrorCandidate, MirrorMember } from "../../services/groupMirror/types.js";

@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
-import { validateUserGroupAccess } from "./utils.js";
+import { validateUserGroupAccess } from "../../services/groupUser/groupAccess.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 
