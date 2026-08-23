@@ -60,7 +60,8 @@ type LiveVacationRow = Pick<VacationType, "userId" | "groupId">;
 
 /**
  * The same `canCancel` verdict as {@link resolveVacationPermissions}, for a
- * whole list in a fixed number of queries — the per-record form would turn a
+ * whole list in a number of queries that scales with the distinct groups in the
+ * batch rather than with its rows — the per-record form would turn a
  * fifty-record cancel into hundreds of queries inside an open transaction
  * holding row locks. It carries no cancelled-row term, so the rows must come
  * from a reader that excludes them.
@@ -92,7 +93,8 @@ type DecidableRow = Pick<
 
 /**
  * The same `canApprove` verdict as {@link resolveVacationPermissions}, for a
- * whole list in a fixed number of queries.
+ * whole list in a number of queries that scales with the distinct groups in the
+ * batch rather than with its rows.
  */
 export const resolveCanApproveForList = async <T extends DecidableRow>(
   userId: string,
