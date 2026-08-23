@@ -64,6 +64,11 @@ records. Notifications go out after the commit, never inside it.
 
 ## Migrations
 
+**In progress:** [`docs/better-auth-1.7-migration.md`](docs/better-auth-1.7-migration.md) — the 1.7
+upgrade re-keys the `account` table and needs a maintenance window with a specific deploy order
+(App Runner will not pick up the new image on resume by itself). Read it before deploying or
+migrating anything auth-related, and delete it once production is on 1.7.
+
 `npm run db:generate` writes a new file into `src/db/schema/out/`. `scripts/db-migrate.sh` applies
 it, and its header documents every flag.
 

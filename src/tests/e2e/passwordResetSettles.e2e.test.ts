@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
+import { createLocalAccountIssuer, createOAuthAccountIssuer } from "better-auth/db";
 import { account, user, verification } from "../../db/schema/auth-schema.js";
 import { auth } from "../../utils/auth.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
@@ -38,6 +39,10 @@ describe("password reset settles the account", () => {
       id: uuidv4(),
       userId,
       providerId,
+      issuer:
+        providerId === "credential"
+          ? createLocalAccountIssuer(providerId)
+          : createOAuthAccountIssuer(providerId),
       accountId: `${providerId}-${userId}`,
       createdAt: new Date(),
       updatedAt: new Date(),

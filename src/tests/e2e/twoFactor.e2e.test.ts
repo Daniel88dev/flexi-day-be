@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { base32 } from "@better-auth/utils/base32";
 import { db } from "../../db/db.js";
+import { createLocalAccountIssuer } from "better-auth/db";
 import { account, twoFactor as twoFactorTable, user } from "../../db/schema/auth-schema.js";
 import { auth } from "../../utils/auth.js";
 import { createServer } from "../../server.js";
@@ -69,6 +70,7 @@ describe("two-factor authentication", () => {
       id: uuidv4(),
       userId,
       providerId: "credential",
+      issuer: createLocalAccountIssuer("credential"),
       accountId: userId,
       password: await hashPassword(password),
       createdAt: new Date(),
@@ -192,6 +194,7 @@ describe("two-factor authentication", () => {
       id: uuidv4(),
       userId: otpUserId,
       providerId: "credential",
+      issuer: createLocalAccountIssuer("credential"),
       accountId: otpUserId,
       password: await hashPassword(password),
       createdAt: new Date(),
