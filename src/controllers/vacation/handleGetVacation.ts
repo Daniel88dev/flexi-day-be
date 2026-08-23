@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
-import { resolveVacationPermissions } from "./utils.js";
+import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
 
 const services = createDBServices();
 

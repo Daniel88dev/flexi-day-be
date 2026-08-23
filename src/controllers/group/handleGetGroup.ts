@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
-import { resolveGroupAccess } from "../groupUser/utils.js";
+import { resolveGroupAccess } from "../../services/groupUser/groupAccess.js";
 import { resolveOrganizationBadges } from "../../services/organization/organizationBadge.js";
 
 const services = createDBServices();

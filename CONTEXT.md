@@ -29,7 +29,11 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 5. Quota changes are logged in `changes`.
 6. Every transition also appends a `vacation_events` row **inside the same transaction**, and
    `src/services/vacation/vacationNotifier.ts` fans out the email + in-app notification
-   **after** the commit. The notifier swallows and logs its own errors on purpose — a mail
+   **after** the commit. `src/services/vacation/vacationTransitions.ts` is what holds that
+   ordering: approve, reject, cancel and comment, single and bulk alike, all run through its one
+   sequence, so a new transition inherits the ordering instead of restating it. Creating and
+   editing a booking still order it by hand in their own handlers.
+   The notifier swallows and logs its own errors on purpose — a mail
    failure must never turn a committed change into a 5xx the client would retry. Workflow mail
    respects `user_settings.emailNotifications`; account mail (email confirmation) does not.
 

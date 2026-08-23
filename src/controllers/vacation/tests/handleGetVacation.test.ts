@@ -14,7 +14,7 @@ const {
   mockResolveGroupAdmin: vi.fn(),
 }));
 
-vi.mock("../../groupUser/utils.js", () => ({
+vi.mock("../../../services/groupUser/groupAccess.js", () => ({
   resolveGroupAdmin: mockResolveGroupAdmin,
 }));
 

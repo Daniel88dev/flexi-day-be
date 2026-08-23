@@ -3,7 +3,10 @@ import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
-import { assertGroupAdmin, getAdministrableGroupIds } from "../groupUser/utils.js";
+import {
+  assertGroupAdmin,
+  getAdministrableGroupIds,
+} from "../../services/groupUser/groupAccess.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedPutGroupMirrorsType } from "../../services/groupMirror/types.js";

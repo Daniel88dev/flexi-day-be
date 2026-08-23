@@ -10,7 +10,7 @@ import type { VacationUpdatePatch } from "../../services/vacation/vacationServic
 import { describeVacationChanges } from "../../services/vacation/vacationChangeDetail.js";
 import { assertEditWithinQuota } from "../../services/vacation/quotaGuard.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
-import { resolveGroupAdmin } from "../groupUser/utils.js";
+import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { notifyVacationUpdated } from "../../services/vacation/vacationNotifier.js";
 
 const services = createDBServices();

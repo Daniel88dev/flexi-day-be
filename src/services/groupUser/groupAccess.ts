@@ -1,16 +1,13 @@
-import {
-  getAdminGroupIdsForUser,
-  getGroupUser,
-} from "../../services/groupUser/groupUserServices.js";
+import { getAdminGroupIdsForUser, getGroupUser } from "./groupUserServices.js";
 import {
   filterGroupIdsByOrganization,
   getGroup,
   getLiveGroupIdsForOrganizations,
-} from "../../services/group/groupServices.js";
+} from "../group/groupServices.js";
 import {
   getAdminOrganizationsForUser,
   isOrganizationAdmin,
-} from "../../services/organization/organizationServices.js";
+} from "../organization/organizationServices.js";
 import type { DbTransaction } from "../../db/db.js";
 import AppError from "../../utils/appError.js";
 

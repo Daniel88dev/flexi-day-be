@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
-import { resolveGroupAdmin } from "../groupUser/utils.js";
+import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import type { ValidatedPutGroupApproversType } from "../../services/group/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";

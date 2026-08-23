@@ -36,7 +36,7 @@ const {
   mockGetUserById: vi.fn(),
 }));
 
-vi.mock("../../groupUser/utils.js", () => ({
+vi.mock("../../../services/groupUser/groupAccess.js", () => ({
   assertGroupAdmin: mockAssertGroupAdmin,
 }));
 

@@ -1,11 +1,11 @@
 import AppError from "../../utils/appError.js";
 import type { DbTransaction } from "../../db/db.js";
-import { createDBServices } from "../../services/DBServices.js";
-import type { VacationType } from "../../services/vacation/types.js";
+import { createDBServices } from "../DBServices.js";
+import type { VacationType } from "./types.js";
 
 const services = createDBServices();
 
-type Decision = "approve" | "reject";
+export type Decision = "approve" | "reject";
 
 /**
  * Whether the actor may decide on their *own* request in this group. Only the

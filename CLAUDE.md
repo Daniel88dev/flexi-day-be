@@ -36,6 +36,13 @@ import { auth } from "../utils/auth.js";
 business logic and database access → `src/db/` is the Drizzle schema and client. `src/index.ts`
 creates the server and handles graceful shutdown; `src/server.ts` assembles middleware and routes.
 
+Those arrows run one way. `src/services/` imports nothing from `src/controllers/`, which is why the
+permission guards live in the services layer rather than beside the handlers that call them:
+`vacation/decisionGuards.ts` and `vacation/vacationPermissions.ts` for who may decide or cancel a
+booking, `groupUser/groupAccess.ts` for standing in a group, `billing/guards.ts` for whether a
+group's plan still allows writes. Controllers import them; so does the transition module, which
+could not if they had stayed a layer up.
+
 `src/jobs/` schedules background work with croner, started from `src/index.ts` and stopped on
 shutdown. Job modules only schedule and log — the work itself lives in a service, so it stays
 callable and testable outside the timer.
@@ -47,20 +54,30 @@ domain (`vacation`, `group`, `groupUser`, `organization`, `report`, …). Each d
 `src/services/{domain}/` as `{domain}Services.ts` plus a `types.ts` holding its TypeScript types
 and Zod schemas.
 
-**The controller owns the transaction boundary.** A write handler imports `db`, opens
+Two rules hold for every write, wherever its transaction is opened. Anything that appends a
+`vacation_events` row belongs in the same transaction as the change it records. Notifications go
+out after the commit, never inside it.
+
+**For the seven vacation transitions, the transition module owns the boundary.** Approve, reject,
+cancel and comment, in their single and bulk forms, open no transaction of their own. They call
+`src/services/vacation/vacationTransitions.ts`, which runs the whole sequence in one place: load,
+authorize, plan guard, quota guard, mutate, lost-race check, event append, commit, then notify. The
+two rules above therefore hold by construction rather than by each route remembering them. A
+transition supplies only what differs, its load, its authorization, its mutation and its own
+not-found and conflict wording, and its controller is left parsing the request and shaping the
+response. Reach for the module for any new vacation state change.
+
+**Every other write handler owns its own boundary.** It imports `db`, opens
 `db.transaction(async (tx) => ...)`, and threads that `tx` through every service call and guard
 inside it, so the whole request commits or rolls back together:
 
 ```typescript
-const approved = await db.transaction(async (tx) => {
-  const vacationData = await services.vacation.getVacationById(vacationId, tx);
-  await assertMayDecide(auth.userId, [vacationData], "approve", tx);
-  return services.vacation.approveVacation(vacationId, auth.userId, tx);
+const quota = await db.transaction(async (tx) => {
+  await assertGroupAdmin(auth.userId, groupId, tx);
+  await assertGroupWritable(groupId, tx);
+  return services.userYearQuotas.upsertUserYearQuota(payload, tx);
 });
 ```
-
-Anything that appends a `vacation_events` row belongs in the same transaction as the change it
-records. Notifications go out after the commit, never inside it.
 
 ## Migrations
 
