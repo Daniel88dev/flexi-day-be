@@ -194,7 +194,14 @@ const mayComment =
     // cannot fire. It throws rather than returns so that a guard can never
     // fail open if that ordering ever changes.
     const row = rows[0];
-    if (!row) throw new Error("mayComment called with no vacation row");
+    if (!row) {
+      throw new AppError({
+        code: 500,
+        message: "Failed to add comment",
+        logging: true,
+        context: { auth, vacationId },
+      });
+    }
 
     const permissions = await resolveVacationPermissions(auth.userId, row, tx);
     if (!permissions.canView) {

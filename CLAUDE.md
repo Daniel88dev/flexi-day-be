@@ -73,6 +73,7 @@ inside it, so the whole request commits or rolls back together:
 
 ```typescript
 const quota = await db.transaction(async (tx) => {
+  await assertGroupAdmin(auth.userId, groupId, tx);
   await assertGroupWritable(groupId, tx);
   return services.userYearQuotas.upsertUserYearQuota(payload, tx);
 });
