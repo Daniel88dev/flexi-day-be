@@ -549,6 +549,10 @@ export const vacationRouter = (): Router => {
    *         description: Not allowed to cancel one or more rows
    *       '404':
    *         description: One or more vacations not found
+   *       '409':
+   *         description: |
+   *           A concurrent cancel won the race for one or more rows. The whole
+   *           batch is refused — nothing is cancelled.
    */
   app.post(
     "/cancel",
@@ -676,6 +680,8 @@ export const vacationRouter = (): Router => {
    *         description: Not allowed
    *       '404':
    *         description: Vacation not found
+   *       '409':
+   *         description: A concurrent cancel won the race; the row is already cancelled
    */
   app.delete(
     "/:id",

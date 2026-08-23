@@ -122,22 +122,28 @@ const mayDecide =
     assertStillPending(rows);
   };
 
-const oneAlreadyDecided = (auth: AuthSession, vacationId: string) => () =>
-  new AppError({
-    code: 409,
-    message: "This request has already been decided",
-    logging: true,
-    context: { auth, vacationId },
-  });
+const oneConflict = (message: string) => (auth: AuthSession, vacationId: string) => () =>
+  new AppError({ code: 409, message, logging: true, context: { auth, vacationId } });
 
-const someAlreadyDecided =
-  (auth: AuthSession, vacationIds: string[]) => (updated: VacationType[]) =>
+const someConflict =
+  (message: string) => (auth: AuthSession, vacationIds: string[]) => (updated: VacationType[]) =>
     new AppError({
       code: 409,
-      message: "One or more of these requests has already been decided",
+      message,
       logging: true,
       context: { auth, requested: vacationIds, updated: updated.map((row) => row.id) },
     });
+
+const oneAlreadyDecided = oneConflict("This request has already been decided");
+const someAlreadyDecided = someConflict("One or more of these requests has already been decided");
+
+// Cancel keeps its own wording rather than the decision wording: a cancel is not
+// a decision, and because both cancel loads filter out soft-deleted rows, the
+// only way to lose this race is to another cancel.
+const oneAlreadyCancelled = oneConflict("This request has already been cancelled");
+const someAlreadyCancelled = someConflict(
+  "One or more of these requests has already been cancelled"
+);
 
 const appendEventsRowByRow =
   (auth: AuthSession, eventType: vacationEventType, reason: string | null) =>
@@ -343,15 +349,7 @@ export const cancelRequest = async (params: {
       const row = await services.vacation.deleteVacation(vacationId, auth.userId, tx);
       return row ? [row] : [];
     },
-    // Answering a lost race with a 500 is what this route does today; its
-    // siblings answer 409.
-    lostRace: () =>
-      new AppError({
-        code: 500,
-        message: "Failed to cancel vacation",
-        logging: true,
-        context: { auth, vacationId },
-      }),
+    lostRace: oneAlreadyCancelled(auth, vacationId),
     appendEvents: appendEventsRowByRow(auth, vacationEventType.Cancelled, reason),
     // The cancelled row no longer carries the approval stamp the notifier reads
     // to decide whether the cancellation is worth an email.
@@ -367,9 +365,7 @@ export const cancelRequestBatch = async (params: {
   const { auth, reason } = params;
   const vacationIds = Array.from(new Set(params.vacationIds));
 
-  // No `lostRace`: this route runs no such check today, so its count reports
-  // the rows it loaded even when the update moved fewer.
-  const { loaded } = await runTransition({
+  const { changed } = await runTransition({
     load: loadMany(vacationIds),
     requestedCount: vacationIds.length,
     notFound: someNotFound(auth, vacationIds),
@@ -384,11 +380,12 @@ export const cancelRequestBatch = async (params: {
         })
     ),
     mutate: (tx) => services.vacation.cancelVacationsBulk(vacationIds, auth.userId, tx),
+    lostRace: someAlreadyCancelled(auth, vacationIds),
     appendEvents: appendEventsInOneInsert(auth, vacationEventType.Cancelled, reason),
     notify: ({ loaded: rows }) => notifyVacationsCancelled(rows, actorOf(auth), reason),
   });
 
-  return loaded;
+  return changed;
 };
 
 export const commentOnRequest = async (params: {

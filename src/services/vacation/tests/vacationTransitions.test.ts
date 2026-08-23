@@ -486,24 +486,43 @@ describe("vacationTransitions", () => {
       );
     });
 
-    it("answers a lost single cancel with its own 500 wording", async () => {
+    it("answers a lost single cancel with a conflict, not a server fault", async () => {
       mockGetVacationById.mockResolvedValue(approvedVacation());
       mockDeleteVacation.mockResolvedValue(undefined);
 
       await expect(
         cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null })
-      ).rejects.toThrow("Failed to cancel vacation");
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: "This request has already been cancelled",
+      });
 
       expect(mockCreateVacationEvent).not.toHaveBeenCalled();
       expect(mockNotifyVacationCancelled).not.toHaveBeenCalled();
     });
 
-    // Preserved as it stands: the batch route runs no lost-race check, so its
-    // count reports the rows it loaded even when the update moved fewer.
-    it("runs no lost-race check on a batch, and counts what it loaded", async () => {
+    it("fails the whole batch when a bulk cancel loses the race", async () => {
       const rows = [approvedVacation(), approvedVacation({ id: SECOND_ID })];
       mockGetVacationsByIds.mockResolvedValue(rows);
       mockCancelVacationsBulk.mockResolvedValue([{ ...rows[0], deletedAt: new Date() }]);
+
+      await expect(
+        cancelRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID, SECOND_ID], reason: null })
+      ).rejects.toMatchObject({
+        statusCode: 409,
+        message: "One or more of these requests has already been cancelled",
+      });
+
+      expect(mockCreateVacationEvents).not.toHaveBeenCalled();
+      expect(mockNotifyVacationsCancelled).not.toHaveBeenCalled();
+    });
+
+    it("returns the rows a successful batch actually cancelled", async () => {
+      const rows = [approvedVacation(), approvedVacation({ id: SECOND_ID })];
+      mockGetVacationsByIds.mockResolvedValue(rows);
+      mockCancelVacationsBulk.mockResolvedValue(
+        rows.map((row) => ({ ...row, deletedAt: new Date() }))
+      );
 
       const cancelled = await cancelRequestBatch({
         auth: mockAuthData,
@@ -512,8 +531,13 @@ describe("vacationTransitions", () => {
       });
 
       expect(cancelled).toHaveLength(2);
+      // The rows the update moved, not the rows the load found.
+      expect(cancelled.every((row) => row.deletedAt !== null)).toBe(true);
       expect(mockCreateVacationEvents).toHaveBeenCalledWith(
-        [expect.objectContaining({ vacationId: FIRST_ID, eventType: "CANCELLED" })],
+        [
+          expect.objectContaining({ vacationId: FIRST_ID, eventType: "CANCELLED" }),
+          expect.objectContaining({ vacationId: SECOND_ID, eventType: "CANCELLED" }),
+        ],
         tx
       );
     });
