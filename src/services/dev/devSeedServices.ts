@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { db } from "../../db/db.js";
+import { createLocalAccountIssuer } from "better-auth/db";
 import { account, user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
@@ -101,6 +102,7 @@ export const seedUser = async (input: {
       id: generateRandomUUID(),
       accountId: userId,
       providerId: "credential",
+      issuer: createLocalAccountIssuer("credential"),
       userId,
       password: await hashPassword(password),
       createdAt: new Date(),

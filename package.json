@@ -29,6 +29,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:local": "./scripts/db-migrate.sh local",
     "db:migrate:prod": "./scripts/db-migrate.sh prod",
+    "db:baseline:prod": "./scripts/db-migrate.sh prod --baseline",
     "db:status:prod": "./scripts/db-migrate.sh prod --status"
   },
   "repository": {
@@ -46,7 +47,7 @@
     "@paddle/paddle-node-sdk": "^3.10.0",
     "@sentry/node": "^10.70.0",
     "@sentry/profiling-node": "^10.70.0",
-    "better-auth": "^1.6.29",
+    "better-auth": "^1.7.1",
     "cors": "^2.8.5",
     "croner": "^10.0.1",
     "date-holidays": "^3.35.0",
