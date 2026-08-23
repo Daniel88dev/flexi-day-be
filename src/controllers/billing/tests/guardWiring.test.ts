@@ -123,6 +123,7 @@ vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
 
 vi.mock("../../../services/vacation/vacationPermissions.js", () => ({
   resolveVacationPermissions: () => ({ canCancel: true, canView: true }),
+  resolveCanCancelForList: () => () => true,
 }));
 
 import { handlePostVacationApproval } from "../../vacation/handlePostVacationApproval.js";
@@ -150,7 +151,7 @@ describe("billing guard wiring", () => {
     services.upsertUserYearQuota.mockResolvedValue({ id: "q-1" });
   });
 
-  // The transition module runs every decision through the multi-group form,
+  // The transition module runs every transition through the multi-group form,
   // which produces the same 402 for one group as the single-group guard did.
   it("handlePostVacationApproval checks the group is writable", async () => {
     const { req, res } = makeReqRes({ params: { id: "3f1b1a2c-0000-4000-8000-000000000000" } });
@@ -161,7 +162,7 @@ describe("billing guard wiring", () => {
   it("handleDeleteVacation checks the group is writable", async () => {
     const { req, res } = makeReqRes({ params: { id: "3f1b1a2c-0000-4000-8000-000000000000" } });
     await handleDeleteVacation(req, res);
-    expect(mockAssertGroupWritable).toHaveBeenCalledWith("group-1", {});
+    expect(mockAssertGroupsWritable).toHaveBeenCalledWith(["group-1"], {});
   });
 
   it("handlePostGroup checks the organization may create another group", async () => {

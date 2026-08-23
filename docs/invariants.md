@@ -140,8 +140,8 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
   administration, so org admins (like group admins) may create a booking for a member via
   `POST /create-vacation` with `userId` — including `autoApprove`, which stamps them as
   `approvedBy` — edit its per-day fields via `PATCH /api/vacation`, and cancel it
-  (`resolveVacationPermissions` / `handleBulkCancelVacation` resolve admin standing through
-  `resolveGroupAdmin`). Every such write is attributed (`createdByUserId` / `deletedByUserId`,
+  (`resolveVacationPermissions` and the cancel transitions in `vacationTransitions.ts` resolve
+  admin standing through `resolveGroupAdmin`). Every such write is attributed (`createdByUserId` / `deletedByUserId`,
   CREATED/APPROVED/UPDATED/CANCELLED timeline events). The boundary itself stands: deciding a
   **member-submitted** request stays approver-only (`getGroupsWhereUserCanApprove` still excludes
   org admins, `autoApprove` is refused for self-bookings), and both defenses above remain.

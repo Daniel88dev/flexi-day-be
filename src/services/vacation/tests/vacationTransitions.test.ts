@@ -9,6 +9,8 @@ const {
   mockApproveVacationsBulk,
   mockRejectVacation,
   mockRejectVacationsBulk,
+  mockDeleteVacation,
+  mockCancelVacationsBulk,
   mockCreateVacationEvent,
   mockCreateVacationEvents,
   mockGetGroupsWhereUserCanApprove,
@@ -16,7 +18,12 @@ const {
   mockHasMirrorIntoGroup,
   mockAssertApprovalWithinQuota,
   mockAssertGroupsWritable,
+  mockResolveGroupAdmin,
+  mockResolveVacationPermissions,
   mockNotifyVacationDecision,
+  mockNotifyVacationCancelled,
+  mockNotifyVacationsCancelled,
+  mockNotifyVacationComment,
 } = vi.hoisted(() => ({
   timeline: [] as string[],
   tx: {},
@@ -26,6 +33,8 @@ const {
   mockApproveVacationsBulk: vi.fn(),
   mockRejectVacation: vi.fn(),
   mockRejectVacationsBulk: vi.fn(),
+  mockDeleteVacation: vi.fn(),
+  mockCancelVacationsBulk: vi.fn(),
   mockCreateVacationEvent: vi.fn(),
   mockCreateVacationEvents: vi.fn(),
   mockGetGroupsWhereUserCanApprove: vi.fn(),
@@ -33,7 +42,12 @@ const {
   mockHasMirrorIntoGroup: vi.fn(),
   mockAssertApprovalWithinQuota: vi.fn(),
   mockAssertGroupsWritable: vi.fn(),
+  mockResolveGroupAdmin: vi.fn(),
+  mockResolveVacationPermissions: vi.fn(),
   mockNotifyVacationDecision: vi.fn(),
+  mockNotifyVacationCancelled: vi.fn(),
+  mockNotifyVacationsCancelled: vi.fn(),
+  mockNotifyVacationComment: vi.fn(),
 }));
 
 vi.mock("../../../db/db.js", () => ({
@@ -55,6 +69,8 @@ vi.mock("../../DBServices.js", () => ({
       approveVacationsBulk: mockApproveVacationsBulk,
       rejectVacation: mockRejectVacation,
       rejectVacationsBulk: mockRejectVacationsBulk,
+      deleteVacation: mockDeleteVacation,
+      cancelVacationsBulk: mockCancelVacationsBulk,
     },
     vacationEvent: {
       createVacationEvent: mockCreateVacationEvent,
@@ -75,13 +91,30 @@ vi.mock("../quotaGuard.js", () => ({
   assertApprovalWithinQuota: mockAssertApprovalWithinQuota,
 }));
 
+vi.mock("../../groupUser/groupAccess.js", () => ({
+  resolveGroupAdmin: mockResolveGroupAdmin,
+}));
+
+// Only the per-record resolver is stubbed; the set-based cancel verdict runs
+// for real against the mocked services, so its query count stays under test.
+vi.mock("../vacationPermissions.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../vacationPermissions.js")>()),
+  resolveVacationPermissions: mockResolveVacationPermissions,
+}));
+
 vi.mock("../vacationNotifier.js", () => ({
   notifyVacationDecision: mockNotifyVacationDecision,
+  notifyVacationCancelled: mockNotifyVacationCancelled,
+  notifyVacationsCancelled: mockNotifyVacationsCancelled,
+  notifyVacationComment: mockNotifyVacationComment,
 }));
 
 import {
   approveRequest,
   approveRequestBatch,
+  cancelRequest,
+  cancelRequestBatch,
+  commentOnRequest,
   rejectRequest,
   rejectRequestBatch,
 } from "../vacationTransitions.js";
@@ -89,6 +122,7 @@ import { mockAuthData } from "../../../tests/testUtils.js";
 
 const FIRST_ID = "550e8400-e29b-41d4-a716-446655440000";
 const SECOND_ID = "550e8400-e29b-41d4-a716-446655440001";
+const THIRD_ID = "550e8400-e29b-41d4-a716-446655440002";
 
 const pendingVacation = (over: Record<string, unknown> = {}) => ({
   id: FIRST_ID,
@@ -120,10 +154,15 @@ describe("vacationTransitions", () => {
     mockHasMirrorIntoGroup.mockResolvedValue(false);
     mockAssertApprovalWithinQuota.mockResolvedValue(undefined);
     mockAssertGroupsWritable.mockResolvedValue(undefined);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: false, viaOrgAdmin: false });
+    mockResolveVacationPermissions.mockResolvedValue({ canView: true });
 
     mockCreateVacationEvent.mockImplementation(trackedResolve("event", undefined));
     mockCreateVacationEvents.mockImplementation(trackedResolve("event", []));
     mockNotifyVacationDecision.mockImplementation(trackedResolve("notify", undefined));
+    mockNotifyVacationCancelled.mockImplementation(trackedResolve("notify", undefined));
+    mockNotifyVacationsCancelled.mockImplementation(trackedResolve("notify", undefined));
+    mockNotifyVacationComment.mockImplementation(trackedResolve("notify", undefined));
   });
 
   describe("ordering", () => {
@@ -383,6 +422,257 @@ describe("vacationTransitions", () => {
 
       expect(mockGetVacationsByIds).toHaveBeenCalledWith([FIRST_ID], tx);
       expect(mockApproveVacationsBulk).toHaveBeenCalledWith([FIRST_ID], "user_123", tx);
+    });
+  });
+  describe("cancellation", () => {
+    const approvedVacation = (over: Record<string, unknown> = {}) =>
+      pendingVacation({ approvedAt: new Date("2026-08-01T09:00:00Z"), ...over });
+
+    it("appends the cancellation event inside the transaction and notifies after it commits", async () => {
+      mockGetVacationById.mockResolvedValue(approvedVacation());
+      mockDeleteVacation.mockImplementation(
+        trackedResolve("mutate", approvedVacation({ deletedAt: new Date() }))
+      );
+
+      await cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null });
+
+      expect(timeline).toEqual(["mutate", "event", "commit", "notify"]);
+    });
+
+    // The cancelled row has no `approvedAt` left, and the notifier reads it to
+    // decide whether the cancellation is worth an email at all.
+    it("notifies with the row as it stood before the cancellation", async () => {
+      const before = approvedVacation();
+      mockGetVacationById.mockResolvedValue(before);
+      mockDeleteVacation.mockResolvedValue(
+        pendingVacation({ deletedAt: new Date(), approvedAt: null })
+      );
+
+      await cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: "Trip called off" });
+
+      expect(mockNotifyVacationCancelled).toHaveBeenCalledWith(
+        before,
+        { id: "user_123", name: "Test User" },
+        "Trip called off"
+      );
+      expect(mockCreateVacationEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          vacationId: FIRST_ID,
+          eventType: "CANCELLED",
+          actorUserId: "user_123",
+          reason: "Trip called off",
+        }),
+        tx
+      );
+    });
+
+    it("notifies a batch with the pre-cancellation rows", async () => {
+      const rows = [approvedVacation(), approvedVacation({ id: SECOND_ID })];
+      mockGetVacationsByIds.mockResolvedValue(rows);
+      mockCancelVacationsBulk.mockResolvedValue(
+        rows.map((row) => ({ ...row, deletedAt: new Date() }))
+      );
+
+      await cancelRequestBatch({
+        auth: mockAuthData,
+        vacationIds: [FIRST_ID, SECOND_ID],
+        reason: "Plans changed",
+      });
+
+      expect(mockNotifyVacationsCancelled).toHaveBeenCalledWith(
+        rows,
+        { id: "user_123", name: "Test User" },
+        "Plans changed"
+      );
+    });
+
+    it("answers a lost single cancel with its own 500 wording", async () => {
+      mockGetVacationById.mockResolvedValue(approvedVacation());
+      mockDeleteVacation.mockResolvedValue(undefined);
+
+      await expect(
+        cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null })
+      ).rejects.toThrow("Failed to cancel vacation");
+
+      expect(mockCreateVacationEvent).not.toHaveBeenCalled();
+      expect(mockNotifyVacationCancelled).not.toHaveBeenCalled();
+    });
+
+    // Preserved as it stands: the batch route runs no lost-race check, so its
+    // count reports the rows it loaded even when the update moved fewer.
+    it("runs no lost-race check on a batch, and counts what it loaded", async () => {
+      const rows = [approvedVacation(), approvedVacation({ id: SECOND_ID })];
+      mockGetVacationsByIds.mockResolvedValue(rows);
+      mockCancelVacationsBulk.mockResolvedValue([{ ...rows[0], deletedAt: new Date() }]);
+
+      const cancelled = await cancelRequestBatch({
+        auth: mockAuthData,
+        vacationIds: [FIRST_ID, SECOND_ID],
+        reason: null,
+      });
+
+      expect(cancelled).toHaveLength(2);
+      expect(mockCreateVacationEvents).toHaveBeenCalledWith(
+        [expect.objectContaining({ vacationId: FIRST_ID, eventType: "CANCELLED" })],
+        tx
+      );
+    });
+
+    it("lets the owner cancel a request they hold no approver standing over", async () => {
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+      mockGetVacationById.mockResolvedValue(approvedVacation({ userId: "user_123" }));
+      mockDeleteVacation.mockResolvedValue(approvedVacation({ deletedAt: new Date() }));
+
+      await cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null });
+
+      expect(mockDeleteVacation).toHaveBeenCalledWith(FIRST_ID, "user_123", tx);
+    });
+
+    it("lets a group admin cancel someone else's request", async () => {
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+      mockResolveGroupAdmin.mockResolvedValue({ canAdmin: true, viaOrgAdmin: true });
+      mockGetVacationById.mockResolvedValue(approvedVacation());
+      mockDeleteVacation.mockResolvedValue(approvedVacation({ deletedAt: new Date() }));
+
+      await cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null });
+
+      expect(mockDeleteVacation).toHaveBeenCalled();
+    });
+
+    it("refuses a plain member cancelling someone else's request", async () => {
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+      mockGetVacationById.mockResolvedValue(approvedVacation());
+
+      await expect(
+        cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null })
+      ).rejects.toThrow("You are not allowed to cancel this vacation");
+
+      expect(mockDeleteVacation).not.toHaveBeenCalled();
+    });
+
+    it("keeps the bulk wording when a batch holds a request the caller may not cancel", async () => {
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+      mockGetVacationsByIds.mockResolvedValue([approvedVacation()]);
+
+      await expect(
+        cancelRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID], reason: null })
+      ).rejects.toThrow("You are not allowed to cancel one or more of these vacations");
+
+      expect(mockCancelVacationsBulk).not.toHaveBeenCalled();
+    });
+
+    // The per-record resolver would have run this once per row inside an open
+    // transaction holding row locks; the set-based one runs it once per group.
+    it("resolves approver and admin standing once per distinct group", async () => {
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue(["group_123", "group_456"]);
+      const rows = [
+        approvedVacation(),
+        approvedVacation({ id: SECOND_ID }),
+        approvedVacation({ id: THIRD_ID, groupId: "group_456" }),
+      ];
+      mockGetVacationsByIds.mockResolvedValue(rows);
+      mockCancelVacationsBulk.mockResolvedValue(rows);
+
+      await cancelRequestBatch({
+        auth: mockAuthData,
+        vacationIds: [FIRST_ID, SECOND_ID, THIRD_ID],
+        reason: null,
+      });
+
+      expect(mockGetGroupsWhereUserCanApprove).toHaveBeenCalledTimes(1);
+      expect(mockGetGroupsWhereUserCanApprove).toHaveBeenCalledWith(
+        ["group_123", "group_456"],
+        "user_123",
+        tx
+      );
+      expect(mockResolveGroupAdmin).toHaveBeenCalledTimes(2);
+    });
+
+    it("cancels an already-approved request, and runs no quota guard doing it", async () => {
+      mockGetVacationById.mockResolvedValue(approvedVacation());
+      mockDeleteVacation.mockResolvedValue(approvedVacation({ deletedAt: new Date() }));
+
+      await cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null });
+
+      expect(mockDeleteVacation).toHaveBeenCalled();
+      expect(mockAssertApprovalWithinQuota).not.toHaveBeenCalled();
+    });
+
+    it("uses the single-record not-found wording", async () => {
+      mockGetVacationById.mockResolvedValue(undefined);
+
+      await expect(
+        cancelRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null })
+      ).rejects.toThrow("Vacation not found");
+    });
+  });
+
+  describe("comment", () => {
+    it("appends the comment inside the transaction, changing no vacation row", async () => {
+      mockGetVacationById.mockResolvedValue(pendingVacation());
+
+      await commentOnRequest({
+        auth: mockAuthData,
+        vacationId: FIRST_ID,
+        message: "Any update on this?",
+      });
+
+      expect(timeline).toEqual(["event", "commit", "notify"]);
+      expect(mockCreateVacationEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          vacationId: FIRST_ID,
+          eventType: "COMMENT",
+          actorUserId: "user_123",
+          reason: "Any update on this?",
+        }),
+        tx
+      );
+      expect(mockDeleteVacation).not.toHaveBeenCalled();
+      expect(mockApproveVacation).not.toHaveBeenCalled();
+      expect(mockRejectVacation).not.toHaveBeenCalled();
+    });
+
+    it("notifies with the row it loaded", async () => {
+      const row = pendingVacation();
+      mockGetVacationById.mockResolvedValue(row);
+
+      await commentOnRequest({ auth: mockAuthData, vacationId: FIRST_ID, message: "Bumping this" });
+
+      expect(mockNotifyVacationComment).toHaveBeenCalledWith(
+        row,
+        { id: "user_123", name: "Test User" },
+        "Bumping this"
+      );
+    });
+
+    it("refuses a caller who may not view the request", async () => {
+      mockGetVacationById.mockResolvedValue(pendingVacation());
+      mockResolveVacationPermissions.mockResolvedValue({ canView: false });
+
+      await expect(
+        commentOnRequest({ auth: mockAuthData, vacationId: FIRST_ID, message: "Hello" })
+      ).rejects.toThrow("You are not allowed to comment on this vacation");
+
+      expect(mockCreateVacationEvent).not.toHaveBeenCalled();
+      expect(mockNotifyVacationComment).not.toHaveBeenCalled();
+    });
+
+    it("uses the single-record not-found wording", async () => {
+      mockGetVacationById.mockResolvedValue(undefined);
+
+      await expect(
+        commentOnRequest({ auth: mockAuthData, vacationId: FIRST_ID, message: "Hello" })
+      ).rejects.toThrow("Vacation not found");
+
+      expect(mockResolveVacationPermissions).not.toHaveBeenCalled();
+    });
+
+    it("runs no quota guard", async () => {
+      mockGetVacationById.mockResolvedValue(pendingVacation());
+
+      await commentOnRequest({ auth: mockAuthData, vacationId: FIRST_ID, message: "Hello" });
+
+      expect(mockAssertApprovalWithinQuota).not.toHaveBeenCalled();
     });
   });
 });

@@ -5,7 +5,7 @@ import type { VacationType } from "./types.js";
 
 const services = createDBServices();
 
-type Decision = "approve" | "reject";
+export type Decision = "approve" | "reject";
 
 /**
  * Whether the actor may decide on their *own* request in this group. Only the

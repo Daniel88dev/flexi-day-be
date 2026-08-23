@@ -55,6 +55,36 @@ export const resolveVacationPermissions = async (
   };
 };
 
+/** A row a live-only reader returned — never a soft-deleted one. */
+type LiveVacationRow = Pick<VacationType, "userId" | "groupId">;
+
+/**
+ * The same `canCancel` verdict as {@link resolveVacationPermissions}, for a
+ * whole list in a fixed number of queries — the per-record form would turn a
+ * fifty-record cancel into hundreds of queries inside an open transaction
+ * holding row locks. It carries no cancelled-row term, so the rows must come
+ * from a reader that excludes them.
+ */
+export const resolveCanCancelForList = async <T extends LiveVacationRow>(
+  userId: string,
+  rows: T[],
+  tx?: DbTransaction
+): Promise<(row: T) => boolean> => {
+  const groupIds = Array.from(new Set(rows.map((row) => row.groupId)));
+  const approvable = new Set(
+    await services.group.getGroupsWhereUserCanApprove(groupIds, userId, tx)
+  );
+
+  const adminGroups = new Set<string>();
+  for (const groupId of groupIds) {
+    const { canAdmin } = await resolveGroupAdmin(userId, groupId, tx);
+    if (canAdmin) adminGroups.add(groupId);
+  }
+
+  return (row) =>
+    row.userId === userId || approvable.has(row.groupId) || adminGroups.has(row.groupId);
+};
+
 type DecidableRow = Pick<
   VacationType,
   "userId" | "groupId" | "deletedAt" | "approvedAt" | "rejectedAt"
