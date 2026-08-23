@@ -77,15 +77,22 @@ migration, apply it locally, confirm the app still works, then give the user the
 stop. The prod target refuses to start unless stdin is a terminal, so an agent shell cannot put DDL
 on the live database even by accident, and `--yes` does not get around it.
 
-| Command                    | Target                                      | Who runs it             |
-| -------------------------- | ------------------------------------------- | ----------------------- |
-| `npm run db:migrate:local` | the `DATABASE` in `.env`                    | anyone                  |
-| `npm run db:status:prod`   | prints the applied ledger, writes nothing   | anyone                  |
-| `npm run db:migrate:prod`  | RDS, connection string from Secrets Manager | the user, at a terminal |
+| Command                    | Target                                         | Who runs it             |
+| -------------------------- | ---------------------------------------------- | ----------------------- |
+| `npm run db:migrate:local` | the `DATABASE` in `.env`                       | anyone                  |
+| `npm run db:status:prod`   | prints the applied ledger, writes nothing      | anyone                  |
+| `npm run db:baseline:prod` | records a squashed baseline as applied, no DDL | the user, at a terminal |
+| `npm run db:migrate:prod`  | RDS, connection string from Secrets Manager    | the user, at a terminal |
 
 The prod target pins the RDS CA bundle and connects with `sslmode=verify-full`. The connection
 string is never printed and never passed as a command-line argument, where `ps` would hand it to
 every other local user; psql gets the parts through libpq's `PG*` variables.
+
+`--baseline` is for the other kind of ledger drift: a squashed history, where the database ran the
+original migrations and `0000_init` has since been rewritten to stand for all of them. Drizzle
+compares only the newest ledger row, so it would replay the baseline over a live schema and fail on
+the first `CREATE TYPE ... already exists`. `--baseline` records it as applied instead. It refuses
+on a database with no `account` table, where the baseline is a real migration that has to run.
 
 `--reset` drops the schema, the data and the ledger, then migrates from scratch. On prod it demands
 the typed phrase even with `--yes`, because unattended is never the right way to drop a production

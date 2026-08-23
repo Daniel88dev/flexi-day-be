@@ -52,7 +52,13 @@ Follow the order below exactly.
    6 rewrites keys and deletes rows, and this snapshot is the only rollback.
 5. Merge the backend PR so CD builds and pushes the 1.7 image to ECR. It will
    not deploy while paused; that is expected.
-6. `npm run db:migrate:prod`.
+6. `npm run db:status:prod`. If the ledger still holds the pre-squash entries —
+   ten rows ending 2026-06-14 rather than one row for `0000_init` — run
+   `npm run db:baseline:prod` first. The squash rewrote `0000_init` into a
+   baseline standing for all ten, and drizzle only compares the newest ledger
+   row, so it would otherwise replay the whole baseline over the live schema and
+   die on `CREATE TYPE ... already exists`. `--baseline` records the baseline as
+   applied; it writes no DDL and touches no data. Then `npm run db:migrate:prod`.
 7. `aws apprunner resume-service`, then **`aws apprunner start-deployment`** —
    resume alone brings back 1.6, which would fail every account write against
    the new `NOT NULL` column.
@@ -76,6 +82,12 @@ Read-only, run before the window. Each query maps to a way the migration aborts
 or loses data.
 
 ```sql
+-- 0. The ledger. One row for 0000_init means it is reconciled; the pre-squash
+--    entries mean `npm run db:baseline:prod` is needed before step 6.
+--    (`npm run db:status:prod` prints this.)
+SELECT id, left(hash, 12), to_timestamp(created_at / 1000) FROM drizzle.__drizzle_migrations
+ORDER BY created_at;
+
 -- 1. Every provider needs a rule. Anything outside credential/google/microsoft
 --    stops the migration at "no mapping for provider_id".
 SELECT provider_id, count(*) FROM account GROUP BY provider_id;

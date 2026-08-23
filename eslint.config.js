@@ -30,6 +30,19 @@ export default [
   // 3) TypeScript rules with type-aware linting
   ...tseslint.configs.recommendedTypeChecked,
 
+  // 3b) Plain JS/MJS is not in the tsconfig project, so the type-aware rules
+  // cannot run on it and throw rather than skip. Standalone scripts still get
+  // the base JS rules.
+  {
+    files: ["**/*.js", "**/*.mjs", "**/*.cjs"],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      sourceType: "module",
+      globals: { ...globals.node },
+    },
+  },
+
   // 4) Project-specific config
   {
     files: ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],

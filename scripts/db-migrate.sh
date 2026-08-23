@@ -31,12 +31,14 @@ shift || true
 
 DO_RESET=0
 DO_STATUS=0
+DO_BASELINE=0
 ASSUME_YES=0
 
 for arg in "$@"; do
   case "$arg" in
     --reset) DO_RESET=1 ;;
     --status) DO_STATUS=1 ;;
+    --baseline) DO_BASELINE=1 ;;
     --yes | -y) ASSUME_YES=1 ;;
     *)
       echo "Unknown option: $arg" >&2
@@ -173,7 +175,7 @@ case "$TARGET" in
   local) DATABASE_URL="$(resolve_local_url)" ;;
   prod) DATABASE_URL="$(resolve_prod_url)" ;;
   *)
-    echo "usage: $0 <local|prod> [--status] [--reset] [--yes]" >&2
+    echo "usage: $0 <local|prod> [--status] [--baseline] [--reset] [--yes]" >&2
     exit 2
     ;;
 esac
@@ -203,6 +205,65 @@ if [[ "$TARGET" == "prod" && ! -t 0 && "${DB_MIGRATE_CI:-0}" != "1" ]]; then
   exit 3
 fi
 
+# Squashing the migration history rewrites 0000_init into a baseline that stands
+# for every migration before it. A database that already ran the originals still
+# has their ledger rows, and drizzle only compares the newest one — so it sees a
+# baseline newer than anything applied and replays it over a live schema, which
+# dies on the first `CREATE TYPE ... already exists`. This records the baseline
+# as applied instead of running it. It writes no DDL and touches no data.
+if [[ "$DO_BASELINE" == "1" ]]; then
+  need psql
+  need shasum
+  BASELINE_TAG="$(node -e "
+    const j = require('./src/db/schema/out/meta/_journal.json');
+    process.stdout.write(j.entries[0].tag);
+  ")"
+  BASELINE_MILLIS="$(node -e "
+    const j = require('./src/db/schema/out/meta/_journal.json');
+    process.stdout.write(String(j.entries[0].when));
+  ")"
+  BASELINE_FILE="src/db/schema/out/${BASELINE_TAG}.sql"
+  [[ -f "$BASELINE_FILE" ]] || die "no baseline file at $BASELINE_FILE"
+  # Same input drizzle hashes: the raw file, sha256, hex.
+  BASELINE_HASH="$(shasum -a 256 "$BASELINE_FILE" | cut -d' ' -f1)"
+
+  export_pg_env "$DATABASE_URL"
+
+  # Refuse on an empty database. There the baseline is a real migration that has
+  # to run, and marking it applied would leave a schema that never got created.
+  if ! psql -tAc "select to_regclass('public.account') is not null" | grep -q '^t$'; then
+    die "this database has no 'account' table, so the baseline has not been applied — run a normal migrate, not --baseline"
+  fi
+
+  echo
+  echo "Baseline: $BASELINE_TAG"
+  echo "  hash:   $BASELINE_HASH"
+  echo "  millis: $BASELINE_MILLIS"
+  psql -v ON_ERROR_STOP=1 -c "
+    select count(*) as ledger_rows_to_replace from drizzle.__drizzle_migrations
+     where created_at < ${BASELINE_MILLIS};"
+
+  confirm "This REPLACES the pre-baseline ledger rows above with one row for ${BASELINE_TAG}. No DDL, no data change." \
+    "baseline" 1
+
+  psql -v ON_ERROR_STOP=1 -1 <<SQL
+create schema if not exists drizzle;
+create table if not exists drizzle.__drizzle_migrations (
+  id serial primary key,
+  hash text not null,
+  created_at bigint
+);
+delete from drizzle.__drizzle_migrations where created_at < ${BASELINE_MILLIS};
+insert into drizzle.__drizzle_migrations (hash, created_at)
+select '${BASELINE_HASH}', ${BASELINE_MILLIS}
+ where not exists (
+   select 1 from drizzle.__drizzle_migrations where created_at = ${BASELINE_MILLIS}
+ );
+SQL
+  echo "ledger reconciled; run a normal migrate next"
+  exit 0
+fi
+
 if [[ "$DO_RESET" == "1" ]]; then
   need psql
   reset_force=0
@@ -222,6 +283,4 @@ if [[ "$TARGET" == "prod" && "$DO_RESET" != "1" ]]; then
   confirm "About to apply pending migrations to PRODUCTION." "yes"
 fi
 
-DATABASE="$DATABASE_URL" npx drizzle-kit migrate
-
-echo "migrations applied"
+DATABASE="$DATABASE_URL" node scripts/drizzle-migrate.mjs

@@ -29,6 +29,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:local": "./scripts/db-migrate.sh local",
     "db:migrate:prod": "./scripts/db-migrate.sh prod",
+    "db:baseline:prod": "./scripts/db-migrate.sh prod --baseline",
     "db:status:prod": "./scripts/db-migrate.sh prod --status"
   },
   "repository": {
