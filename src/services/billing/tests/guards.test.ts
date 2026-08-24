@@ -33,6 +33,9 @@ vi.mock("../../group/groupServices.js", () => ({
 
 vi.mock("../../groupUser/groupUserServices.js", () => ({
   countActiveMembersInGroup: mockCountMembers,
+}));
+
+vi.mock("../../groupUser/inviteLinkServices.js", () => ({
   countOpenInvitesForGroup: mockCountInvites,
 }));
 

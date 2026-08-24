@@ -8,10 +8,8 @@ import {
   getGroup,
   getLiveGroupIdsForOrganizationOrdered,
 } from "../group/groupServices.js";
-import {
-  countActiveMembersInGroup,
-  countOpenInvitesForGroup,
-} from "../groupUser/groupUserServices.js";
+import { countActiveMembersInGroup } from "../groupUser/groupUserServices.js";
+import { countOpenInvitesForGroup } from "../groupUser/inviteLinkServices.js";
 import { lockOrganization } from "../organization/organizationServices.js";
 
 const planLimitError = (params: {

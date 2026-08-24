@@ -1,6 +1,7 @@
 import * as vacationServices from "./vacation/vacationServices.js";
 import * as vacationEventServices from "./vacationEvent/vacationEventServices.js";
 import * as groupUserServices from "./groupUser/groupUserServices.js";
+import * as inviteLinkServices from "./groupUser/inviteLinkServices.js";
 import * as groupServices from "./group/groupServices.js";
 import * as groupMirrorServices from "./groupMirror/groupMirrorServices.js";
 import * as userYearQuotasServices from "./userYearQuotas/userYearQuotasServices.js";
@@ -56,14 +57,14 @@ export type DBServices = Readonly<{
     countMembersByGroup: typeof groupUserServices.countMembersByGroup;
   };
   inviteLinks: {
-    createInviteLink: typeof groupUserServices.createInviteLink;
-    getInviteLinksForGroup: typeof groupUserServices.getInviteLinksForGroup;
-    getOpenInvitesForGroup: typeof groupUserServices.getOpenInvitesForGroup;
-    getInviteLinkByCode: typeof groupUserServices.getInviteLinkByCode;
-    getInviteLinkById: typeof groupUserServices.getInviteLinkById;
-    revokeOpenInviteForEmail: typeof groupUserServices.revokeOpenInviteForEmail;
-    revokeInviteLink: typeof groupUserServices.revokeInviteLink;
-    useInviteLink: typeof groupUserServices.useInviteLink;
+    createInviteLink: typeof inviteLinkServices.createInviteLink;
+    getInviteLinksForGroup: typeof inviteLinkServices.getInviteLinksForGroup;
+    getOpenInvitesForGroup: typeof inviteLinkServices.getOpenInvitesForGroup;
+    getInviteLinkByCode: typeof inviteLinkServices.getInviteLinkByCode;
+    getInviteLinkById: typeof inviteLinkServices.getInviteLinkById;
+    revokeOpenInviteForEmail: typeof inviteLinkServices.revokeOpenInviteForEmail;
+    revokeInviteLink: typeof inviteLinkServices.revokeInviteLink;
+    useInviteLink: typeof inviteLinkServices.useInviteLink;
   };
   group: {
     getGroup: typeof groupServices.getGroup;
@@ -220,14 +221,14 @@ export const createDBServices = (): DBServices => {
       countMembersByGroup: groupUserServices.countMembersByGroup,
     },
     inviteLinks: {
-      createInviteLink: groupUserServices.createInviteLink,
-      getInviteLinksForGroup: groupUserServices.getInviteLinksForGroup,
-      getOpenInvitesForGroup: groupUserServices.getOpenInvitesForGroup,
-      getInviteLinkByCode: groupUserServices.getInviteLinkByCode,
-      getInviteLinkById: groupUserServices.getInviteLinkById,
-      revokeOpenInviteForEmail: groupUserServices.revokeOpenInviteForEmail,
-      revokeInviteLink: groupUserServices.revokeInviteLink,
-      useInviteLink: groupUserServices.useInviteLink,
+      createInviteLink: inviteLinkServices.createInviteLink,
+      getInviteLinksForGroup: inviteLinkServices.getInviteLinksForGroup,
+      getOpenInvitesForGroup: inviteLinkServices.getOpenInvitesForGroup,
+      getInviteLinkByCode: inviteLinkServices.getInviteLinkByCode,
+      getInviteLinkById: inviteLinkServices.getInviteLinkById,
+      revokeOpenInviteForEmail: inviteLinkServices.revokeOpenInviteForEmail,
+      revokeInviteLink: inviteLinkServices.revokeInviteLink,
+      useInviteLink: inviteLinkServices.useInviteLink,
     },
     group: {
       getGroup: groupServices.getGroup,
