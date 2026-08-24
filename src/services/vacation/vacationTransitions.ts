@@ -7,7 +7,7 @@ import { createDBServices } from "../DBServices.js";
 import { assertGroupsWritable } from "../billing/guards.js";
 import { assertMayDecide, assertStillPending, type Decision } from "./decisionGuards.js";
 import { assertApprovalWithinQuota } from "./quotaGuard.js";
-import type { VacationType } from "./types.js";
+import type { LiveVacationType, VacationType } from "./types.js";
 import {
   notifyVacationCancelled,
   notifyVacationComment,
@@ -26,7 +26,7 @@ const actorOf = (auth: AuthSession) => ({ id: auth.userId, name: auth.userName }
  * stamp the cancellation has just cleared.
  */
 type TransitionRows = {
-  loaded: VacationType[];
+  loaded: LiveVacationType[];
   /** What the mutation returned — the loaded rows when there is no mutation. */
   changed: VacationType[];
 };
@@ -39,13 +39,13 @@ type TransitionRows = {
  */
 type Transition = {
   /** Rows named by the request that are still live; a short result is a not-found. */
-  load: (tx: DbTransaction) => Promise<VacationType[]>;
+  load: (tx: DbTransaction) => Promise<LiveVacationType[]>;
   requestedCount: number;
   /** This route's own wording for a load that came back short. */
-  notFound: (rows: VacationType[]) => AppError;
-  authorize: (rows: VacationType[], tx: DbTransaction) => Promise<void>;
+  notFound: (rows: LiveVacationType[]) => AppError;
+  authorize: (rows: LiveVacationType[], tx: DbTransaction) => Promise<void>;
   /** Only the approving transitions have one. */
-  assertWithinQuota?: (rows: VacationType[], tx: DbTransaction) => Promise<void>;
+  assertWithinQuota?: (rows: LiveVacationType[], tx: DbTransaction) => Promise<void>;
   /** Absent on a comment, which changes no vacation row at all. */
   mutate?: (tx: DbTransaction) => Promise<VacationType[]>;
   /**
@@ -91,14 +91,14 @@ const runTransition = async (transition: Transition): Promise<TransitionRows> =>
 
 const loadOne =
   (vacationId: string) =>
-  async (tx: DbTransaction): Promise<VacationType[]> => {
+  async (tx: DbTransaction): Promise<LiveVacationType[]> => {
     const row = await services.vacation.getVacationById(vacationId, tx);
     return row ? [row] : [];
   };
 
 const loadMany =
   (vacationIds: string[]) =>
-  (tx: DbTransaction): Promise<VacationType[]> =>
+  (tx: DbTransaction): Promise<LiveVacationType[]> =>
     services.vacation.getVacationsByIds(vacationIds, tx);
 
 const oneNotFound = (auth: AuthSession, vacationId: string) => () =>
@@ -108,7 +108,7 @@ const oneNotFound = (auth: AuthSession, vacationId: string) => () =>
     context: { auth, vacationId },
   });
 
-const someNotFound = (auth: AuthSession, vacationIds: string[]) => (rows: VacationType[]) =>
+const someNotFound = (auth: AuthSession, vacationIds: string[]) => (rows: LiveVacationType[]) =>
   new AppError({
     code: 404,
     message: "One or more vacations not found",
@@ -185,8 +185,8 @@ const notifyDecision =
     notifyVacationDecision(changed, decision, actorOf(auth), reason);
 
 const mayCancel =
-  (auth: AuthSession, forbidden: (unauthorized: VacationType[]) => AppError) =>
-  async (rows: VacationType[], tx: DbTransaction): Promise<void> => {
+  (auth: AuthSession, forbidden: (unauthorized: LiveVacationType[]) => AppError) =>
+  async (rows: LiveVacationType[], tx: DbTransaction): Promise<void> => {
     const canCancel = await resolveCanCancelForList(auth.userId, rows, tx);
 
     const unauthorized = rows.filter((row) => !canCancel(row));
@@ -195,7 +195,7 @@ const mayCancel =
 
 const mayComment =
   (auth: AuthSession, vacationId: string) =>
-  async (rows: VacationType[], tx: DbTransaction): Promise<void> => {
+  async (rows: LiveVacationType[], tx: DbTransaction): Promise<void> => {
     // The engine has already thrown a not-found for a short load, so this
     // cannot fire. It throws rather than returns so that a guard can never
     // fail open if that ordering ever changes.

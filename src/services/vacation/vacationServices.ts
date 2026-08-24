@@ -22,6 +22,7 @@ import {
 } from "drizzle-orm";
 import type {
   GroupVacationListItem,
+  LiveVacationType,
   VacationDetail,
   VacationInsertType,
   VacationListItem,
@@ -368,13 +369,15 @@ export const getVacationsByIds = async (
   vacationIds: string[],
   tx?: DbTransaction,
   options?: { forUpdate?: boolean }
-): Promise<VacationType[]> => {
+): Promise<LiveVacationType[]> => {
   if (vacationIds.length === 0) return [];
   const query = (tx ?? db)
     .select()
     .from(vacation)
     .where(and(inArray(vacation.id, vacationIds), isNull(vacation.deletedAt)));
-  return options?.forUpdate ? query.for("update") : query;
+  const rows = await (options?.forUpdate ? query.for("update") : query);
+  // Live by the `isNull` above; nothing checks the narrowing at runtime.
+  return rows as LiveVacationType[];
 };
 
 export const rejectVacation = async (
@@ -567,13 +570,14 @@ export const getVacationDetailById = async (
 export const getVacationById = async (
   vacationId: string,
   tx?: DbTransaction
-): Promise<VacationType | undefined> => {
+): Promise<LiveVacationType | undefined> => {
   const [row] = await (tx ?? db)
     .select()
     .from(vacation)
     .where(and(eq(vacation.id, vacationId), isNull(vacation.deletedAt)));
 
-  return row;
+  // Live by the `isNull` above; nothing checks the narrowing at runtime.
+  return row as LiveVacationType | undefined;
 };
 
 export type PendingApprovalRow = {

@@ -25,6 +25,9 @@ export type VacationType = {
   updatedAt: Date;
 };
 
+/** A row a live-only reader returned: its `deleted_at IS NULL` predicate, as a type. */
+export type LiveVacationType = Omit<VacationType, "deletedAt"> & { deletedAt: null };
+
 export type VacationInsertType = Pick<
   VacationType,
   | "id"

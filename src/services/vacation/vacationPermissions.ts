@@ -1,6 +1,6 @@
 import { createDBServices } from "../DBServices.js";
 import type { DbTransaction } from "../../db/db.js";
-import type { VacationType } from "./types.js";
+import type { LiveVacationType, VacationType } from "./types.js";
 import { mayDecideOwn } from "./decisionGuards.js";
 import { resolveGroupAdmin } from "../groupUser/groupAccess.js";
 
@@ -40,7 +40,9 @@ export const resolveVacationPermissions = async (
   // members (create / edit / cancel), which is administration — deciding a
   // member-submitted request stays an approver-only power (`canApprove`).
   const { canAdmin } = await resolveGroupAdmin(userId, vacationRow.groupId, tx);
-  const isCancelled = vacationRow.deletedAt !== null;
+  // Nullish, not strict: a row whose stamp is absent rather than null is live.
+  // A strict test reads `undefined` as cancelled and denies the owner.
+  const isCancelled = vacationRow.deletedAt != null;
   // A decision is final; re-deciding would overturn it and wipe its stamps.
   const isDecidable =
     !isCancelled && vacationRow.approvedAt === null && vacationRow.rejectedAt === null;
@@ -55,16 +57,15 @@ export const resolveVacationPermissions = async (
   };
 };
 
-/** A row a live-only reader returned — never a soft-deleted one. */
-type LiveVacationRow = Pick<VacationType, "userId" | "groupId">;
+type LiveVacationRow = Pick<LiveVacationType, "userId" | "groupId" | "deletedAt">;
 
 /**
  * The same `canCancel` verdict as {@link resolveVacationPermissions}, for a
  * whole list in a number of queries that scales with the distinct groups in the
  * batch rather than with its rows — the per-record form would turn a
  * fifty-record cancel into hundreds of queries inside an open transaction
- * holding row locks. It carries no cancelled-row term, so the rows must come
- * from a reader that excludes them.
+ * holding row locks. It carries no cancelled-row term; the row type is what
+ * keeps a soft-deleted row out, so only a live-only reader can feed it.
  */
 export const resolveCanCancelForList = async <T extends LiveVacationRow>(
   userId: string,
@@ -114,7 +115,7 @@ export const resolveCanApproveForList = async <T extends DecidableRow>(
 
   return (row) => {
     if (!approvable.has(row.groupId)) return false;
-    if (row.deletedAt !== null || row.approvedAt !== null || row.rejectedAt !== null) return false;
+    if (row.deletedAt != null || row.approvedAt !== null || row.rejectedAt !== null) return false;
     return row.userId !== userId || selfDecidable.has(row.groupId);
   };
 };
