@@ -18,6 +18,7 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Quota**          | A user's allowance for one year in one group (`user_year_quotas`).                               |
 | **Mirror**         | A read-side projection of a user's records from one group into another.                          |
 | **Invite link**    | Single-use code binding one email address to one group.                                          |
+| **Live row**       | A vacation row a reader returned under `deleted_at IS NULL`. `LiveVacationType` is its type.     |
 
 ## Vacation workflow
 
