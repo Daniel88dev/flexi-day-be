@@ -50,7 +50,9 @@ callable and testable outside the timer.
 ## Database access imports the service module
 
 Each domain lives in `src/services/{domain}/` as `{domain}Services.ts` plus a `types.ts` holding
-its TypeScript types and Zod schemas. Callers import the functions they need by name:
+its TypeScript types and Zod schemas. A domain splits into more than one service module when it
+carries a concept with its own lifecycle — `groupUser/` holds `inviteLinkServices.ts` beside
+`groupUserServices.ts`. Callers import the functions they need by name:
 
 ```typescript
 import { getGroup, getApprovalUsers } from "../../services/group/groupServices.js";
