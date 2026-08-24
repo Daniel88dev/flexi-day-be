@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
@@ -8,8 +7,8 @@ import type { ValidatedPutGroupHolidayCountryType } from "../../services/group/t
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
-
-const services = createDBServices();
+import { postChanges } from "../../services/changes/changesServices.js";
+import { updateGroupHolidayCountry } from "../../services/group/groupServices.js";
 
 export const handlePutGroupHolidayCountry = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -23,7 +22,7 @@ export const handlePutGroupHolidayCountry = async (req: Request, res: Response) 
 
   await assertGroupWritable(groupId);
 
-  const updated = await services.group.updateGroupHolidayCountry(groupId, data.holidayCountry);
+  const updated = await updateGroupHolidayCountry(groupId, data.holidayCountry);
 
   if (!updated) {
     throw new AppError({
@@ -34,7 +33,7 @@ export const handlePutGroupHolidayCountry = async (req: Request, res: Response) 
     });
   }
 
-  await services.changes.postChanges({
+  await postChanges({
     id: generateRandomUUID(),
     userId: auth.userId,
     groupId,

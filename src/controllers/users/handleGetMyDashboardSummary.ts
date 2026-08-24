@@ -1,17 +1,21 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
 import { collapsePendingApprovals } from "../../services/vacation/collapsePendingApprovals.js";
-
-const services = createDBServices();
+import {
+  countDistinctUsersInGroups,
+  getAllGroupsForUser,
+} from "../../services/groupUser/groupUserServices.js";
+import {
+  countApprovedVacationsInRange,
+  countUsersOutOnDay,
+  getPendingApprovalsForApprover,
+} from "../../services/vacation/vacationServices.js";
 
 export const handleGetMyDashboardSummary = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const visibleGroupIds = (await services.groupUser.getAllGroupsForUser(auth.userId)).map(
-    (row) => row.groupId
-  );
+  const visibleGroupIds = (await getAllGroupsForUser(auth.userId)).map((row) => row.groupId);
 
   const today = new Date();
   const todayIso = formatDateToISOString(
@@ -31,10 +35,10 @@ export const handleGetMyDashboardSummary = async (req: Request, res: Response) =
   // matches what the approver actually sees in the widget.
   const [pendingApprovalRows, outTodayCount, upcomingNext14DaysCount, teamSize] = await Promise.all(
     [
-      services.vacation.getPendingApprovalsForApprover(auth.userId),
-      services.vacation.countUsersOutOnDay(visibleGroupIds, todayIso),
-      services.vacation.countApprovedVacationsInRange(visibleGroupIds, todayIso, upcomingEndIso),
-      services.groupUser.countDistinctUsersInGroups(visibleGroupIds),
+      getPendingApprovalsForApprover(auth.userId),
+      countUsersOutOnDay(visibleGroupIds, todayIso),
+      countApprovedVacationsInRange(visibleGroupIds, todayIso, upcomingEndIso),
+      countDistinctUsersInGroups(visibleGroupIds),
     ]
   );
 

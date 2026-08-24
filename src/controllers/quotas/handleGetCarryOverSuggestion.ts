@@ -1,10 +1,8 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
-
-const services = createDBServices();
+import { getCarryOverSuggestion } from "../../services/report/reportServices.js";
 
 const queryParams = z.object({
   userId: z.string().min(1),
@@ -24,7 +22,7 @@ export const handleGetCarryOverSuggestion = async (req: Request, res: Response) 
 
   await assertGroupAdmin(auth.userId, groupId);
 
-  const suggestion = await services.report.getCarryOverSuggestion(userId, groupId, year);
+  const suggestion = await getCarryOverSuggestion(userId, groupId, year);
 
   return res.status(200).json(suggestion);
 };

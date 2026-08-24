@@ -22,14 +22,25 @@ vi.mock("../../email/index.js", () => ({
   emailSender: { sendTemplated: mockSendTemplated },
 }));
 
-vi.mock("../../DBServices.js", () => ({
-  createDBServices: () => ({
-    userSettings: { filterUsersAcceptingEmail: mockFilterUsersAcceptingEmail },
-    notification: { createNotification: mockCreateNotification },
-    group: { getApprovalUsers: mockGetApprovalUsers },
-    groupUser: { getGroupUsers: mockGetGroupUsers },
-    user: { getUsersByIds: mockGetUsersByIds, getUserById: mockGetUserById },
-  }),
+vi.mock("../../group/groupServices.js", () => ({
+  getApprovalUsers: mockGetApprovalUsers,
+}));
+
+vi.mock("../../groupUser/groupUserServices.js", () => ({
+  getGroupUsers: mockGetGroupUsers,
+}));
+
+vi.mock("../../notification/notificationServices.js", () => ({
+  createNotification: mockCreateNotification,
+}));
+
+vi.mock("../../user/userServices.js", () => ({
+  getUsersByIds: mockGetUsersByIds,
+  getUserById: mockGetUserById,
+}));
+
+vi.mock("../../userSettings/userSettingsServices.js", () => ({
+  filterUsersAcceptingEmail: mockFilterUsersAcceptingEmail,
 }));
 
 import {

@@ -1,9 +1,9 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { resolveEntitlements, PLAN_LIMITS } from "../../services/billing/entitlements.js";
-
-const services = createDBServices();
+import { getSubscriptionForOrganization } from "../../services/billing/subscriptionServices.js";
+import { getGroupUsageForOrganization } from "../../services/group/groupServices.js";
+import { getOrganizationForOwner } from "../../services/organization/organizationServices.js";
 
 /**
  * The caller's own organization only — the org is resolved from the session
@@ -13,7 +13,7 @@ const services = createDBServices();
 export const handleGetSubscription = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const organization = await services.organization.getOrganizationForOwner(auth.userId);
+  const organization = await getOrganizationForOwner(auth.userId);
 
   if (!organization) {
     return res.status(200).json({
@@ -25,9 +25,9 @@ export const handleGetSubscription = async (req: Request, res: Response) => {
     });
   }
 
-  const subscription = await services.billing.getSubscriptionForOrganization(organization.id);
+  const subscription = await getSubscriptionForOrganization(organization.id);
   const entitlements = resolveEntitlements(subscription ?? null, new Date());
-  const groups = await services.group.getGroupUsageForOrganization(organization.id);
+  const groups = await getGroupUsageForOrganization(organization.id);
 
   return res.status(200).json({
     organization: {

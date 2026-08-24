@@ -1,11 +1,14 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import type { ValidatedPostOrganizationAdminType } from "../../services/organization/types.js";
 import { assertOrganizationOwner, resolveAdministeredOrganization } from "./utils.js";
-
-const services = createDBServices();
+import { countActiveMembershipsInOrganization } from "../../services/groupUser/groupUserServices.js";
+import {
+  grantOrganizationAdmin,
+  listOrganizationAdminCandidates,
+  listOrganizationAdmins,
+} from "../../services/organization/organizationServices.js";
 
 /**
  * Promotes one of the organization's own people to org admin. Owner-only:
@@ -23,12 +26,12 @@ export const handlePostOrganizationAdmin = async (req: Request, res: Response) =
 
   // The candidate list is the authorization boundary, not just the UI's menu:
   // it is what confines a grant to people already inside the organization.
-  const candidates = await services.organization.listOrganizationAdminCandidates(organization.id);
+  const candidates = await listOrganizationAdminCandidates(organization.id);
   if (!candidates.some((candidate) => candidate.userId === data.userId)) {
     // The candidate list also excludes people who already administer the org,
     // so "not a member" would be a flatly wrong answer for them — which a
     // client hits whenever its list is stale after a concurrent grant.
-    const admins = await services.organization.listOrganizationAdmins(organization.id);
+    const admins = await listOrganizationAdmins(organization.id);
     if (admins.some((admin) => admin.userId === data.userId)) {
       throw new AppError({
         message: "This user already administers this organization",
@@ -46,7 +49,7 @@ export const handlePostOrganizationAdmin = async (req: Request, res: Response) =
     });
   }
 
-  await services.organization.grantOrganizationAdmin({
+  await grantOrganizationAdmin({
     organizationId: organization.id,
     userId: data.userId,
     grantedByUserId: auth.userId,
@@ -54,12 +57,12 @@ export const handlePostOrganizationAdmin = async (req: Request, res: Response) =
     // because it runs under the organization lock that the revocation in
     // `handleDeleteGroupUser` also takes.
     assertStillEligible: (tx) =>
-      services.groupUser
-        .countActiveMembershipsInOrganization(data.userId, organization.id, tx)
-        .then((count) => count > 0),
+      countActiveMembershipsInOrganization(data.userId, organization.id, tx).then(
+        (count) => count > 0
+      ),
   });
 
-  const admins = await services.organization.listOrganizationAdmins(organization.id);
+  const admins = await listOrganizationAdmins(organization.id);
 
   return res.status(201).json(admins);
 };

@@ -1,12 +1,10 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { resolveGroupAccess } from "../../services/groupUser/groupAccess.js";
 import { resolveOrganizationBadges } from "../../services/organization/organizationBadge.js";
-
-const services = createDBServices();
+import { getGroup } from "../../services/group/groupServices.js";
 
 /**
  * One group with the caller's effective rights over it. Unlike `GET /api/group`
@@ -20,7 +18,7 @@ export const handleGetGroup = async (req: Request, res: Response) => {
 
   const groupId = z.uuid().parse(req.params.groupId);
 
-  const group = await services.group.getGroup(groupId);
+  const group = await getGroup(groupId);
   if (!group) {
     throw new AppError({
       message: "Group not found",

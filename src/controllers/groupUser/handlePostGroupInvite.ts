@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import type { ValidatedPostGroupInviteType } from "../../services/groupUser/types.js";
 import AppError from "../../utils/appError.js";
@@ -11,8 +10,13 @@ import { db } from "../../db/db.js";
 import { inviteExpiryFrom, notifyGroupInvited } from "../../services/groupUser/inviteNotifier.js";
 import { assertCanAddMember, assertGroupWritable } from "../../services/billing/guards.js";
 import { lockOrganization } from "../../services/organization/organizationServices.js";
-
-const services = createDBServices();
+import { getGroup } from "../../services/group/groupServices.js";
+import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
+import {
+  createInviteLink,
+  revokeOpenInviteForEmail,
+} from "../../services/groupUser/inviteLinkServices.js";
+import { getUserByEmail } from "../../services/user/userServices.js";
 
 /**
  * Issues a single-use invite code for a group and emails it to the invited
@@ -33,7 +37,7 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
   // the limit, not adding more.
   await assertGroupWritable(groupId);
 
-  const group = await services.group.getGroup(groupId);
+  const group = await getGroup(groupId);
   if (!group) {
     throw new AppError({
       message: "Group not found",
@@ -43,9 +47,9 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
     });
   }
 
-  const existingUser = await services.user.getUserByEmail(data.email);
+  const existingUser = await getUserByEmail(data.email);
   if (existingUser) {
-    const membership = await services.groupUser.getGroupUser(existingUser.id, groupId);
+    const membership = await getGroupUser(existingUser.id, groupId);
     if (membership) {
       throw new AppError({
         message: "That person is already a member of this group",
@@ -68,14 +72,14 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
     // — and so the partial unique index does not reject the insert. This runs
     // BEFORE the seat check: a re-invite reuses the seat its own outstanding
     // invite already reserves, and counting both would 402 a no-op change.
-    await services.inviteLinks.revokeOpenInviteForEmail(groupId, data.email, tx);
+    await revokeOpenInviteForEmail(groupId, data.email, tx);
 
     // Inside the transaction, which row-locks the organization, so two admins
     // inviting at once cannot both pass a check made against the same
     // pre-insert seat count.
     await assertCanAddMember(groupId, tx);
 
-    const created = await services.inviteLinks.createInviteLink(
+    const created = await createInviteLink(
       {
         id: generateRandomUUID(),
         groupId,

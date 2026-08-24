@@ -30,16 +30,22 @@ vi.mock("../../../db/db.js", () => ({
   db: { transaction: vi.fn((callback) => callback({})) },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    groupUser: { createGroupUser: mockCreateGroupUser, getGroupUser: mockGetGroupUser },
-    inviteLinks: {
-      getInviteLinkByCode: mockGetInviteLinkByCode,
-      useInviteLink: mockUseInviteLink,
-    },
-    group: { getGroup: mockGetGroup },
-    userYearQuotas: { openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroup: mockGetGroup,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  createGroupUser: mockCreateGroupUser,
+  getGroupUser: mockGetGroupUser,
+}));
+
+vi.mock("../../../services/groupUser/inviteLinkServices.js", () => ({
+  getInviteLinkByCode: mockGetInviteLinkByCode,
+  useInviteLink: mockUseInviteLink,
+}));
+
+vi.mock("../../../services/userYearQuotas/userYearQuotasServices.js", () => ({
+  openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults,
 }));
 
 import { handlePostGroupUser } from "../handlePostGroupUser.js";

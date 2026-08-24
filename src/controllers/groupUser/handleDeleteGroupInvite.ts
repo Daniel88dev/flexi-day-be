@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import AppError from "../../utils/appError.js";
-
-const services = createDBServices();
+import {
+  getInviteLinkById,
+  revokeInviteLink,
+} from "../../services/groupUser/inviteLinkServices.js";
 
 /** Revokes an outstanding invite so its code stops working. */
 export const handleDeleteGroupInvite = async (req: Request, res: Response) => {
@@ -13,7 +14,7 @@ export const handleDeleteGroupInvite = async (req: Request, res: Response) => {
 
   const inviteId = z.uuid().parse(req.params.inviteId);
 
-  const invite = await services.inviteLinks.getInviteLinkById(inviteId);
+  const invite = await getInviteLinkById(inviteId);
 
   if (!invite) {
     throw new AppError({
@@ -27,7 +28,7 @@ export const handleDeleteGroupInvite = async (req: Request, res: Response) => {
   // Authorize against the invite's own group — the caller never names it.
   await assertGroupAdmin(auth.userId, invite.groupId);
 
-  const revoked = await services.inviteLinks.revokeInviteLink(inviteId);
+  const revoked = await revokeInviteLink(inviteId);
 
   if (!revoked) {
     throw new AppError({

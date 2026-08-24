@@ -6,12 +6,16 @@ const { mockSumCountedDaysForQuota, mockGetUserYearGroupQuotas, mockGetGroup } =
   mockGetGroup: vi.fn(),
 }));
 
-vi.mock("../../DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: { sumCountedDaysForQuota: mockSumCountedDaysForQuota },
-    userYearQuotas: { getUserYearGroupQuotas: mockGetUserYearGroupQuotas },
-    group: { getGroup: mockGetGroup },
-  }),
+vi.mock("../../group/groupServices.js", () => ({
+  getGroup: mockGetGroup,
+}));
+
+vi.mock("../../userYearQuotas/userYearQuotasServices.js", () => ({
+  getUserYearGroupQuotas: mockGetUserYearGroupQuotas,
+}));
+
+vi.mock("../vacationServices.js", () => ({
+  sumCountedDaysForQuota: mockSumCountedDaysForQuota,
 }));
 
 import { assertEditWithinQuota, assertRequestWithinQuota } from "../quotaGuard.js";

@@ -26,22 +26,27 @@ const {
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    organization: {
-      getOrganizationById: mockGetOrganizationById,
-      getAdminOrganizationsForUser: mockGetAdminOrganizationsForUser,
-      isOrganizationAdmin: mockIsOrganizationAdmin,
-      updateOrganization: mockUpdateOrganization,
-      listOrganizationAdmins: mockListOrganizationAdmins,
-      listOrganizationAdminCandidates: mockListOrganizationAdminCandidates,
-      grantOrganizationAdmin: mockGrantOrganizationAdmin,
-      removeOrganizationAdmin: mockRemoveOrganizationAdmin,
-    },
-    groupUser: { countActiveMembershipsInOrganization: vi.fn().mockResolvedValue(1) },
-    billing: { getSubscriptionForOrganization: mockGetSubscriptionForOrganization },
-    group: { getGroupUsageForOrganization: mockGetGroupUsageForOrganization },
-  }),
+vi.mock("../../../services/billing/subscriptionServices.js", () => ({
+  getSubscriptionForOrganization: mockGetSubscriptionForOrganization,
+}));
+
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroupUsageForOrganization: mockGetGroupUsageForOrganization,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  countActiveMembershipsInOrganization: vi.fn().mockResolvedValue(1),
+}));
+
+vi.mock("../../../services/organization/organizationServices.js", () => ({
+  getOrganizationById: mockGetOrganizationById,
+  getAdminOrganizationsForUser: mockGetAdminOrganizationsForUser,
+  isOrganizationAdmin: mockIsOrganizationAdmin,
+  updateOrganization: mockUpdateOrganization,
+  listOrganizationAdmins: mockListOrganizationAdmins,
+  listOrganizationAdminCandidates: mockListOrganizationAdminCandidates,
+  grantOrganizationAdmin: mockGrantOrganizationAdmin,
+  removeOrganizationAdmin: mockRemoveOrganizationAdmin,
 }));
 
 import { handleGetOrganization } from "../handleGetOrganization.js";

@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
@@ -8,8 +7,8 @@ import type { ValidatedPutGroupWorkingDaysType } from "../../services/group/type
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
-
-const services = createDBServices();
+import { postChanges } from "../../services/changes/changesServices.js";
+import { updateGroupWorkingDays } from "../../services/group/groupServices.js";
 
 // Sun-first so the label index matches `Date.getUTCDay()`.
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
@@ -26,7 +25,7 @@ export const handlePutGroupWorkingDays = async (req: Request, res: Response) => 
 
   await assertGroupWritable(groupId);
 
-  const updated = await services.group.updateGroupWorkingDays(groupId, data.workingDays);
+  const updated = await updateGroupWorkingDays(groupId, data.workingDays);
 
   if (!updated) {
     throw new AppError({
@@ -37,7 +36,7 @@ export const handlePutGroupWorkingDays = async (req: Request, res: Response) => 
     });
   }
 
-  await services.changes.postChanges({
+  await postChanges({
     id: generateRandomUUID(),
     userId: auth.userId,
     groupId,

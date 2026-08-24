@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import {
   getAdministrableGroupIds,
   resolveGroupAdmin,
@@ -9,8 +8,16 @@ import {
 import AppError from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import type { MirrorCandidate, MirrorMember } from "../../services/groupMirror/types.js";
-
-const services = createDBServices();
+import { getAllGroups, getGroup } from "../../services/group/groupServices.js";
+import {
+  getMirrorsIntoGroupForUser,
+  getMirrorsIntoGroupForUsers,
+} from "../../services/groupMirror/groupMirrorServices.js";
+import {
+  getGroupUser,
+  getGroupUsers,
+  getMembershipPairs,
+} from "../../services/groupUser/groupUserServices.js";
 
 /**
  * The mirroring setup for one group: for an admin, every member with the
@@ -22,7 +29,7 @@ export const handleGetGroupMirrors = async (req: Request, res: Response) => {
   const groupId = z.uuid().parse(req.params.groupId);
 
   const { canAdmin } = await resolveGroupAdmin(auth.userId, groupId);
-  const membership = await services.groupUser.getGroupUser(auth.userId, groupId);
+  const membership = await getGroupUser(auth.userId, groupId);
 
   // An org admin has no membership here, so admin rights are checked first —
   // the self view below only makes sense for someone who is actually a member.
@@ -36,7 +43,7 @@ export const handleGetGroupMirrors = async (req: Request, res: Response) => {
   }
 
   if (!canAdmin) {
-    const mirrors = await services.groupMirror.getMirrorsIntoGroupForUser(auth.userId, groupId);
+    const mirrors = await getMirrorsIntoGroupForUser(auth.userId, groupId);
     const self: MirrorMember = {
       userId: auth.userId,
       user: buildUserSummary({ id: auth.userId, name: auth.userName }),
@@ -51,10 +58,10 @@ export const handleGetGroupMirrors = async (req: Request, res: Response) => {
     return res.status(200).json({ groupId, canManage: false, members: [self] });
   }
 
-  const members = await services.groupUser.getGroupUsers(groupId);
+  const members = await getGroupUsers(groupId);
   const memberIds = members.map((member) => member.userId);
 
-  const group = await services.group.getGroup(groupId);
+  const group = await getGroup(groupId);
   if (!group) {
     throw new AppError({
       message: "Group not found",
@@ -71,9 +78,9 @@ export const handleGetGroupMirrors = async (req: Request, res: Response) => {
   ).filter((id) => id !== groupId);
 
   const [sourceGroups, membershipPairs, mirrorPairs] = await Promise.all([
-    services.group.getAllGroups(adminGroupIds),
-    services.groupUser.getMembershipPairs(memberIds, adminGroupIds),
-    services.groupMirror.getMirrorsIntoGroupForUsers(memberIds, groupId),
+    getAllGroups(adminGroupIds),
+    getMembershipPairs(memberIds, adminGroupIds),
+    getMirrorsIntoGroupForUsers(memberIds, groupId),
   ]);
 
   const manageableGroupNames = new Map(sourceGroups.map((group) => [group.id, group.groupName]));

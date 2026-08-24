@@ -1,9 +1,11 @@
-import { createDBServices } from "../../services/DBServices.js";
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { resolveOrganizationBadges } from "../../services/organization/organizationBadge.js";
-
-const services = createDBServices();
+import { getAllGroups } from "../../services/group/groupServices.js";
+import {
+  countMembersByGroup,
+  getAllGroupsForUser,
+} from "../../services/groupUser/groupUserServices.js";
 
 /**
  * The caller's own groups — the ones they book leave in. Deliberately
@@ -15,15 +17,15 @@ const services = createDBServices();
 export const handleGetGroups = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const memberships = await services.groupUser.getAllGroupsForUser(auth.userId);
+  const memberships = await getAllGroupsForUser(auth.userId);
   const membershipByGroup = new Map(memberships.map((m) => [m.groupId, m]));
   const groupIds = memberships.map((m) => m.groupId);
 
-  const result = await services.group.getAllGroups(groupIds);
+  const result = await getAllGroups(groupIds);
 
   const [badges, memberCounts] = await Promise.all([
     resolveOrganizationBadges(result.map((group) => group.organizationId)),
-    services.groupUser.countMembersByGroup(groupIds),
+    countMembersByGroup(groupIds),
   ]);
 
   return res.status(200).json(

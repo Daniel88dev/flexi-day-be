@@ -36,25 +36,25 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: {
-      getVacationById: mockGetVacationById,
-      approveVacation: mockApproveVacation,
-    },
-    group: {
-      getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
-    },
-    vacationEvent: {
-      createVacationEvent: mockCreateVacationEvent,
-    },
-    groupUser: {
-      getGroupUser: mockGetGroupUser,
-    },
-    groupMirror: {
-      hasMirrorIntoGroup: mockHasMirrorIntoGroup,
-    },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
+}));
+
+vi.mock("../../../services/groupMirror/groupMirrorServices.js", () => ({
+  hasMirrorIntoGroup: mockHasMirrorIntoGroup,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
+}));
+
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  getVacationById: mockGetVacationById,
+  approveVacation: mockApproveVacation,
+}));
+
+vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
+  createVacationEvent: mockCreateVacationEvent,
 }));
 
 vi.mock("../../../services/vacation/quotaGuard.js", () => ({

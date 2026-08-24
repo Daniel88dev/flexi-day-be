@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { assertOrganizationOwner, resolveAdministeredOrganization } from "./utils.js";
-
-const services = createDBServices();
+import {
+  listOrganizationAdmins,
+  removeOrganizationAdmin,
+} from "../../services/organization/organizationServices.js";
 
 /** Revokes an org admin grant. Owner-only, and the owner's own rights cannot be revoked. */
 export const handleDeleteOrganizationAdmin = async (req: Request, res: Response) => {
@@ -16,7 +17,7 @@ export const handleDeleteOrganizationAdmin = async (req: Request, res: Response)
   const { organization } = await resolveAdministeredOrganization(req);
   assertOrganizationOwner(organization, auth.userId);
 
-  const removed = await services.organization.removeOrganizationAdmin(organization.id, userId);
+  const removed = await removeOrganizationAdmin(organization.id, userId);
 
   if (!removed) {
     throw new AppError({
@@ -27,7 +28,7 @@ export const handleDeleteOrganizationAdmin = async (req: Request, res: Response)
     });
   }
 
-  const admins = await services.organization.listOrganizationAdmins(organization.id);
+  const admins = await listOrganizationAdmins(organization.id);
 
   return res.status(200).json(admins);
 };

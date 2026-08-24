@@ -1,10 +1,10 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { vacationType } from "../../db/schema/vacation-schema.js";
-
-const services = createDBServices();
+import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
+import { sumUserQuotasForYear } from "../../services/userYearQuotas/userYearQuotasServices.js";
+import { aggregateUserUsageForYear } from "../../services/vacation/vacationServices.js";
 
 const queryParams = z.object({
   year: z.coerce
@@ -27,13 +27,11 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
 
   const { year } = queryParams.parse(req.query);
 
-  const visibleGroupIds = (await services.groupUser.getAllGroupsForUser(auth.userId)).map(
-    (row) => row.groupId
-  );
+  const visibleGroupIds = (await getAllGroupsForUser(auth.userId)).map((row) => row.groupId);
 
   const [quotaSums, usage] = await Promise.all([
-    services.userYearQuotas.sumUserQuotasForYear(auth.userId, visibleGroupIds, year.toString()),
-    services.vacation.aggregateUserUsageForYear(auth.userId, visibleGroupIds, year),
+    sumUserQuotasForYear(auth.userId, visibleGroupIds, year.toString()),
+    aggregateUserUsageForYear(auth.userId, visibleGroupIds, year),
   ]);
 
   const buckets = new Map<vacationType, Bucket>();

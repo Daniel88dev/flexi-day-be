@@ -2,12 +2,14 @@ import { formatStartAndEndDate } from "../../utils/dateFunc.js";
 import { getAuth } from "../../middleware/authSession.js";
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
 import AppError from "../../utils/appError.js";
 import { resolveCanApproveForList } from "../../services/vacation/vacationPermissions.js";
-
-const services = createDBServices();
+import { getScopeEntries } from "../../services/report/reportServices.js";
+import {
+  getVacationsForGroup,
+  getVacationsForUser,
+} from "../../services/vacation/vacationServices.js";
 
 const validateYear = z.coerce
   .number()
@@ -42,12 +44,9 @@ export const handleGetVacations = async (req: Request, res: Response) => {
   const range = formatStartAndEndDate(year, month);
 
   if (groupId === undefined) {
-    const result = await services.vacation.getVacationsForUser(
-      auth.userId,
-      range.startDate,
-      range.endDate,
-      { includeCancelled }
-    );
+    const result = await getVacationsForUser(auth.userId, range.startDate, range.endDate, {
+      includeCancelled,
+    });
     const canApprove = await resolveCanApproveForList(auth.userId, result);
     // Same shape either way, so the calendar does not branch on scope.
     return res.status(200).json(
@@ -60,7 +59,7 @@ export const handleGetVacations = async (req: Request, res: Response) => {
     );
   }
 
-  const scope = await services.report.getScopeEntries(auth.userId);
+  const scope = await getScopeEntries(auth.userId);
   if (!canViewWholeGroup(scope, groupId)) {
     throw new AppError({
       code: 403,
@@ -70,13 +69,9 @@ export const handleGetVacations = async (req: Request, res: Response) => {
     });
   }
 
-  const result = await services.vacation.getVacationsForGroup(
-    groupId,
-    range.startDate,
-    range.endDate,
-    null,
-    { includeCancelled }
-  );
+  const result = await getVacationsForGroup(groupId, range.startDate, range.endDate, null, {
+    includeCancelled,
+  });
   const canApprove = await resolveCanApproveForList(auth.userId, result);
 
   return res.status(200).json(result.map((row) => ({ ...row, canApprove: canApprove(row) })));

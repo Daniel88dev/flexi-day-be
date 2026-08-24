@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import AppError from "../../utils/appError.js";
 import { feedBaseUrl, serializeConfig } from "./utils.js";
-
-const services = createDBServices();
+import {
+  generateFeedToken,
+  regenerateToken,
+} from "../../services/calendarSync/calendarSyncServices.js";
 
 const validateUUID = z.uuid();
 
@@ -19,11 +20,7 @@ export const handleRegenerateToken = async (req: Request, res: Response) => {
   }
   const id = parsedId.data;
 
-  const config = await services.calendarSync.regenerateToken(
-    id,
-    auth.userId,
-    services.calendarSync.generateFeedToken()
-  );
+  const config = await regenerateToken(id, auth.userId, generateFeedToken());
 
   if (!config) {
     throw new AppError({

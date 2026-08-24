@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import {
   assertGroupAdmin,
@@ -10,8 +9,9 @@ import {
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import type { ValidatedPutGroupMirrorsType } from "../../services/groupMirror/types.js";
-
-const services = createDBServices();
+import { getGroup } from "../../services/group/groupServices.js";
+import { setMirrorsIntoGroupForUser } from "../../services/groupMirror/groupMirrorServices.js";
+import { getGroupUser, getMembershipPairs } from "../../services/groupUser/groupUserServices.js";
 
 /**
  * Replaces one member's mirror sources for a group. Not self-service: the
@@ -39,7 +39,7 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
 
   await assertGroupWritable(targetGroupId);
 
-  const targetGroup = await services.group.getGroup(targetGroupId);
+  const targetGroup = await getGroup(targetGroupId);
   if (!targetGroup) {
     throw new AppError({
       message: "Group not found",
@@ -49,7 +49,7 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
     });
   }
 
-  const targetMembership = await services.groupUser.getGroupUser(data.userId, targetGroupId);
+  const targetMembership = await getGroupUser(data.userId, targetGroupId);
   if (!targetMembership) {
     throw new AppError({
       message: "Mirroring can only be set up for a member of this group",
@@ -78,9 +78,7 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
   }
 
   const memberOfSources = new Set(
-    (await services.groupUser.getMembershipPairs([data.userId], data.sourceGroupIds)).map(
-      (pair) => pair.groupId
-    )
+    (await getMembershipPairs([data.userId], data.sourceGroupIds)).map((pair) => pair.groupId)
   );
   const notAMember = data.sourceGroupIds.filter((id) => !memberOfSources.has(id));
   if (notAMember.length > 0) {
@@ -94,13 +92,7 @@ export const handlePutGroupMirrors = async (req: Request, res: Response) => {
   }
 
   const mirrors = await db.transaction((tx) =>
-    services.groupMirror.setMirrorsIntoGroupForUser(
-      data.userId,
-      targetGroupId,
-      data.sourceGroupIds,
-      adminGroupIds,
-      tx
-    )
+    setMirrorsIntoGroupForUser(data.userId, targetGroupId, data.sourceGroupIds, adminGroupIds, tx)
   );
 
   return res.status(200).json(mirrors);

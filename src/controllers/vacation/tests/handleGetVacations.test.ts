@@ -25,25 +25,25 @@ vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: {
-      getVacationsForUser: mockGetVacationsForUser,
-      getVacationsForGroup: mockGetVacationsForGroup,
-    },
-    report: {
-      getScopeEntries: mockGetScopeEntries,
-    },
-    group: {
-      getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
-    },
-    groupUser: {
-      getGroupUser: mockGetGroupUser,
-    },
-    groupMirror: {
-      hasMirrorIntoGroup: mockHasMirrorIntoGroup,
-    },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
+}));
+
+vi.mock("../../../services/groupMirror/groupMirrorServices.js", () => ({
+  hasMirrorIntoGroup: mockHasMirrorIntoGroup,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
+}));
+
+vi.mock("../../../services/report/reportServices.js", () => ({
+  getScopeEntries: mockGetScopeEntries,
+}));
+
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  getVacationsForUser: mockGetVacationsForUser,
+  getVacationsForGroup: mockGetVacationsForGroup,
 }));
 
 import { handleGetVacations } from "../handleGetVacations.js";

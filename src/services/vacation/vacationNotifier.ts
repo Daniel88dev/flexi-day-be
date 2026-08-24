@@ -2,14 +2,16 @@ import { config } from "../../config.js";
 import { logger } from "../../middleware/logger.js";
 import { emailSender } from "../email/index.js";
 import type { TemplatedEmail } from "../email/index.js";
-import { createDBServices } from "../DBServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
 import { vacationType } from "../../db/schema/vacation-schema.js";
 import type { VacationType } from "./types.js";
 import type { UserContact } from "../user/userServices.js";
-
-const services = createDBServices();
+import { getApprovalUsers } from "../group/groupServices.js";
+import { getGroupUsers } from "../groupUser/groupUserServices.js";
+import { createNotification } from "../notification/notificationServices.js";
+import { getUserById, getUsersByIds } from "../user/userServices.js";
+import { filterUsersAcceptingEmail } from "../userSettings/userSettingsServices.js";
 
 /** SES renders a missing variable as an empty string, so blanks get a dash. */
 const OR_DASH = "—";
@@ -114,13 +116,11 @@ type Delivery = {
 const deliver = async (deliveries: Delivery[]): Promise<void> => {
   if (deliveries.length === 0) return;
 
-  const acceptsEmail = await services.userSettings.filterUsersAcceptingEmail(
-    deliveries.map((d) => d.userId)
-  );
+  const acceptsEmail = await filterUsersAcceptingEmail(deliveries.map((d) => d.userId));
 
   await Promise.all(
     deliveries.map((delivery) =>
-      services.notification.createNotification({
+      createNotification({
         id: generateRandomUUID(),
         userId: delivery.userId,
         ...delivery.notification,
@@ -144,10 +144,10 @@ const deliver = async (deliveries: Delivery[]): Promise<void> => {
  * `excludeUserId` dropped.
  */
 const approverContacts = async (
-  group: NonNullable<Awaited<ReturnType<typeof services.group.getApprovalUsers>>>,
+  group: NonNullable<Awaited<ReturnType<typeof getApprovalUsers>>>,
   excludeUserId: string
 ): Promise<UserContact[]> => {
-  const members = await services.groupUser.getGroupUsers(group.groupId);
+  const members = await getGroupUsers(group.groupId);
 
   const candidates = [
     {
@@ -185,7 +185,7 @@ export const notifyVacationRequested = async (
     if (!summary) return;
 
     const groupId = rows[0]?.groupId ?? "";
-    const group = await services.group.getApprovalUsers(groupId);
+    const group = await getApprovalUsers(groupId);
     if (!group) return;
 
     const unique = await approverContacts(group, requester.id);
@@ -297,8 +297,8 @@ export const notifyVacationDecision = async (
     if (rows.length === 0) return;
 
     const byUser = groupByUser(rows);
-    const group = await services.group.getApprovalUsers(rows[0]?.groupId ?? "");
-    const employees = await services.user.getUsersByIds([...byUser.keys()]);
+    const group = await getApprovalUsers(rows[0]?.groupId ?? "");
+    const employees = await getUsersByIds([...byUser.keys()]);
     const contacts = new Map(employees.map((e) => [e.id, e]));
 
     const deliveries: Delivery[] = [];
@@ -361,10 +361,10 @@ export const notifyVacationComment = async (
     const summary = summarize([row]);
     if (!summary) return;
 
-    const group = await services.group.getApprovalUsers(row.groupId);
+    const group = await getApprovalUsers(row.groupId);
     if (!group) return;
 
-    const employee = await services.user.getUserById(row.userId);
+    const employee = await getUserById(row.userId);
     if (!employee) return;
 
     const recipients: UserContact[] =
@@ -423,10 +423,10 @@ export const notifyVacationCancelled = async (
     const summary = summarize([row]);
     if (!summary) return;
 
-    const group = await services.group.getApprovalUsers(row.groupId);
+    const group = await getApprovalUsers(row.groupId);
     if (!group) return;
 
-    const employee = await services.user.getUserById(row.userId);
+    const employee = await getUserById(row.userId);
     if (!employee) return;
 
     const recipients: UserContact[] =
@@ -476,7 +476,7 @@ export const notifyVacationsCancelled = async (
     if (approvedRows.length === 0) return;
 
     const byUser = groupByUser(approvedRows);
-    const employees = await services.user.getUsersByIds([...byUser.keys()]);
+    const employees = await getUsersByIds([...byUser.keys()]);
     const contacts = new Map(employees.map((e) => [e.id, e]));
 
     const deliveries: Delivery[] = [];
@@ -486,7 +486,7 @@ export const notifyVacationsCancelled = async (
       const summary = summarize(userRows);
       if (!employee || !summary) continue;
 
-      const group = await services.group.getApprovalUsers(userRows[0]?.groupId ?? "");
+      const group = await getApprovalUsers(userRows[0]?.groupId ?? "");
       if (!group) continue;
 
       const recipients: UserContact[] =

@@ -60,26 +60,32 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: {
-      getVacationById: mockGetVacationById,
-      getVacationsByIds: mockGetVacationsByIds,
-      approveVacation: mockApproveVacation,
-      approveVacationsBulk: mockApproveVacationsBulk,
-      rejectVacation: mockRejectVacation,
-      rejectVacationsBulk: mockRejectVacationsBulk,
-      deleteVacation: mockDeleteVacation,
-      cancelVacationsBulk: mockCancelVacationsBulk,
-    },
-    vacationEvent: {
-      createVacationEvent: mockCreateVacationEvent,
-      createVacationEvents: mockCreateVacationEvents,
-    },
-    group: { getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove },
-    groupUser: { getGroupUser: mockGetGroupUser },
-    groupMirror: { hasMirrorIntoGroup: mockHasMirrorIntoGroup },
-  }),
+vi.mock("../../group/groupServices.js", () => ({
+  getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
+}));
+
+vi.mock("../../groupMirror/groupMirrorServices.js", () => ({
+  hasMirrorIntoGroup: mockHasMirrorIntoGroup,
+}));
+
+vi.mock("../../groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
+}));
+
+vi.mock("../vacationServices.js", () => ({
+  getVacationById: mockGetVacationById,
+  getVacationsByIds: mockGetVacationsByIds,
+  approveVacation: mockApproveVacation,
+  approveVacationsBulk: mockApproveVacationsBulk,
+  rejectVacation: mockRejectVacation,
+  rejectVacationsBulk: mockRejectVacationsBulk,
+  deleteVacation: mockDeleteVacation,
+  cancelVacationsBulk: mockCancelVacationsBulk,
+}));
+
+vi.mock("../../vacationEvent/vacationEventServices.js", () => ({
+  createVacationEvent: mockCreateVacationEvent,
+  createVacationEvents: mockCreateVacationEvents,
 }));
 
 vi.mock("../../billing/guards.js", () => ({

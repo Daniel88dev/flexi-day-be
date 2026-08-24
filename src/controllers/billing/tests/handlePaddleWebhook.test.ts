@@ -42,19 +42,11 @@ vi.mock("../../../utils/paddle.js", () => ({
   }),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    billing: {
-      recordPaddleEvent: mockRecordPaddleEvent,
-      upsertSubscription: mockUpsertSubscription,
-      getSubscriptionForOrganization: mockGetSubForOrg,
-      getSubscriptionByPaddleId: mockGetSubByPaddleId,
-    },
-    organization: {
-      getOrganizationById: mockGetOrgById,
-      setOrganizationPaddleCustomerId: mockSetCustomerId,
-    },
-  }),
+vi.mock("../../../services/billing/subscriptionServices.js", () => ({
+  recordPaddleEvent: mockRecordPaddleEvent,
+  upsertSubscription: mockUpsertSubscription,
+  getSubscriptionForOrganization: mockGetSubForOrg,
+  getSubscriptionByPaddleId: mockGetSubByPaddleId,
 }));
 
 vi.mock("../../../services/billing/billingNotifier.js", () => ({
@@ -65,6 +57,8 @@ vi.mock("../../../services/billing/billingNotifier.js", () => ({
 // e2e suite against a real database.
 vi.mock("../../../services/organization/organizationServices.js", () => ({
   lockOrganization: vi.fn(),
+  getOrganizationById: mockGetOrgById,
+  setOrganizationPaddleCustomerId: mockSetCustomerId,
 }));
 
 // The handler wraps the idempotency record and the state change in one

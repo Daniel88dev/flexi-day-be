@@ -1,4 +1,3 @@
-import { createDBServices } from "../../services/DBServices.js";
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -7,8 +6,10 @@ import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import { currentYear } from "../../utils/dateFunc.js";
 import { assertCanCreateGroup } from "../../services/billing/guards.js";
-
-const services = createDBServices();
+import { createGroup } from "../../services/group/groupServices.js";
+import { createGroupUser } from "../../services/groupUser/groupUserServices.js";
+import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { openQuotaFromGroupDefaults } from "../../services/userYearQuotas/userYearQuotasServices.js";
 
 const validatePostGroup = z.object({
   groupName: z.string().trim().min(1).max(120),
@@ -34,11 +35,11 @@ export const handlePostGroup = async (req: Request, res: Response) => {
   }
 
   const result = await db.transaction(async (tx) => {
-    const organization = await services.organization.ensureOrganizationForUser(auth.userId, tx);
+    const organization = await ensureOrganizationForUser(auth.userId, tx);
 
     await assertCanCreateGroup(organization.id, tx);
 
-    const record = await services.group.createGroup(
+    const record = await createGroup(
       {
         id: generateRandomUUID(),
         organizationId: organization.id,
@@ -65,7 +66,7 @@ export const handlePostGroup = async (req: Request, res: Response) => {
       });
     }
 
-    const createGroupUser = await services.groupUser.createGroupUser(
+    const membership = await createGroupUser(
       {
         id: generateRandomUUID(),
         userId: auth.userId,
@@ -78,7 +79,7 @@ export const handlePostGroup = async (req: Request, res: Response) => {
       tx
     );
 
-    if (!createGroupUser) {
+    if (!membership) {
       throw new AppError({
         message: "Failed to create group user",
         logging: true,
@@ -91,7 +92,7 @@ export const handlePostGroup = async (req: Request, res: Response) => {
       });
     }
 
-    await services.userYearQuotas.openQuotaFromGroupDefaults(
+    await openQuotaFromGroupDefaults(
       {
         id: generateRandomUUID(),
         userId: auth.userId,

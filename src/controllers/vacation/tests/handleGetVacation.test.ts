@@ -22,13 +22,20 @@ vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: { getVacationDetailById: mockGetVacationDetailById },
-    vacationEvent: { getVacationEvents: mockGetVacationEvents },
-    groupUser: { getGroupUser: mockGetGroupUser },
-    group: { getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
+}));
+
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  getVacationDetailById: mockGetVacationDetailById,
+}));
+
+vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
+  getVacationEvents: mockGetVacationEvents,
 }));
 
 import { handleGetVacation } from "../handleGetVacation.js";

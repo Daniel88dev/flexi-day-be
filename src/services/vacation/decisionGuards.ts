@@ -1,9 +1,9 @@
 import AppError from "../../utils/appError.js";
 import type { DbTransaction } from "../../db/db.js";
-import { createDBServices } from "../DBServices.js";
 import type { VacationType } from "./types.js";
-
-const services = createDBServices();
+import { getGroupsWhereUserCanApprove } from "../group/groupServices.js";
+import { hasMirrorIntoGroup } from "../groupMirror/groupMirrorServices.js";
+import { getGroupUser } from "../groupUser/groupUserServices.js";
 
 export type Decision = "approve" | "reject";
 
@@ -17,10 +17,10 @@ export const mayDecideOwn = async (
   groupId: string,
   tx?: DbTransaction
 ): Promise<boolean> => {
-  const membership = await services.groupUser.getGroupUser(actorUserId, groupId, tx);
+  const membership = await getGroupUser(actorUserId, groupId, tx);
   if (!membership?.approverAccess) return false;
 
-  return !(await services.groupMirror.hasMirrorIntoGroup(actorUserId, groupId, tx));
+  return !(await hasMirrorIntoGroup(actorUserId, groupId, tx));
 };
 
 /**
@@ -35,7 +35,7 @@ export const assertMayDecide = async (
 ): Promise<void> => {
   const distinctGroupIds = Array.from(new Set(rows.map((row) => row.groupId)));
   const allowedGroupIds = new Set(
-    await services.group.getGroupsWhereUserCanApprove(distinctGroupIds, actorUserId, tx)
+    await getGroupsWhereUserCanApprove(distinctGroupIds, actorUserId, tx)
   );
 
   const unauthorizedGroups = distinctGroupIds.filter((id) => !allowedGroupIds.has(id));

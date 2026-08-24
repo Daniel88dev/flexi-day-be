@@ -22,11 +22,12 @@ vi.mock("../../../services/billing/guards.js", () => ({
   assertGroupWritable: mockAssertGroupWritable,
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    group: { updateGroupHolidayCountry: mockUpdateGroupHolidayCountry },
-    changes: { postChanges: mockPostChanges },
-  }),
+vi.mock("../../../services/changes/changesServices.js", () => ({
+  postChanges: mockPostChanges,
+}));
+
+vi.mock("../../../services/group/groupServices.js", () => ({
+  updateGroupHolidayCountry: mockUpdateGroupHolidayCountry,
 }));
 
 import { handlePutGroupHolidayCountry } from "../handlePutGroupHolidayCountry.js";

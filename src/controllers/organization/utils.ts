@@ -1,11 +1,13 @@
 import type { Request } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import type { OrganizationType } from "../../services/organization/types.js";
-
-const services = createDBServices();
+import {
+  getAdminOrganizationsForUser,
+  getOrganizationById,
+  isOrganizationAdmin,
+} from "../../services/organization/organizationServices.js";
 
 /**
  * The organization to act on when the request names none: the caller's own.
@@ -14,7 +16,7 @@ const services = createDBServices();
  * the oldest would let an unqualified `PATCH` rename the wrong organization.
  */
 const resolveDefaultOrganization = async (userId: string) => {
-  const administered = await services.organization.getAdminOrganizationsForUser(userId);
+  const administered = await getAdminOrganizationsForUser(userId);
   const owned = administered.find((organization) => organization.ownerUserId === userId);
   if (owned) return owned;
 
@@ -43,7 +45,7 @@ export const resolveAdministeredOrganization = async (
   const organizationId = z.string().min(1).optional().parse(req.query.organizationId);
 
   const organization = organizationId
-    ? await services.organization.getOrganizationById(organizationId)
+    ? await getOrganizationById(organizationId)
     : await resolveDefaultOrganization(auth.userId);
 
   if (!organization) {
@@ -55,7 +57,7 @@ export const resolveAdministeredOrganization = async (
     });
   }
 
-  const isAdmin = await services.organization.isOrganizationAdmin(auth.userId, organization.id);
+  const isAdmin = await isOrganizationAdmin(auth.userId, organization.id);
   if (!isAdmin) {
     throw new AppError({
       message: "No permission for related organization",

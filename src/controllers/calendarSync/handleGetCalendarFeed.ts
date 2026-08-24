@@ -1,11 +1,13 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import AppError from "../../utils/appError.js";
 import { buildIcsCalendar, type IcsEvent } from "../../utils/ics.js";
 import { VACATION_TYPE_LABELS } from "./utils.js";
-
-const services = createDBServices();
+import {
+  getCalendarSyncByToken,
+  getFeedRecords,
+  touchLastFetched,
+} from "../../services/calendarSync/calendarSyncServices.js";
 
 // Feed tokens are `flx_live_` + 40 hex chars. Reject anything else before
 // touching the database so scanners don't generate lookups.
@@ -23,7 +25,7 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
     throw new AppError({ code: 404, message: "Calendar feed not found" });
   }
 
-  const config = await services.calendarSync.getCalendarSyncByToken(parsed.data);
+  const config = await getCalendarSyncByToken(parsed.data);
 
   if (!config) {
     throw new AppError({
@@ -33,7 +35,7 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
     });
   }
 
-  const records = await services.calendarSync.getFeedRecords(config);
+  const records = await getFeedRecords(config);
 
   const events: IcsEvent[] = records.map((r) => {
     const label = VACATION_TYPE_LABELS[r.vacationType];
@@ -51,7 +53,7 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
 
   // Best-effort "last fetched" bookkeeping; never fail the feed over it.
   try {
-    await services.calendarSync.touchLastFetched(config.id);
+    await touchLastFetched(config.id);
   } catch {
     // ignore — the feed content is already computed and valid
   }

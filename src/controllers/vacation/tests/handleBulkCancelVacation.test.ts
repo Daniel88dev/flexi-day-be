@@ -48,16 +48,21 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: {
-      getVacationsByIds: mockGetVacationsByIds,
-      cancelVacationsBulk: mockCancelVacationsBulk,
-    },
-    vacationEvent: { createVacationEvents: mockCreateVacationEvents },
-    group: { getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove },
-    groupUser: { getGroupUser: mockGetGroupUser },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
+}));
+
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  getVacationsByIds: mockGetVacationsByIds,
+  cancelVacationsBulk: mockCancelVacationsBulk,
+}));
+
+vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
+  createVacationEvents: mockCreateVacationEvents,
 }));
 
 import { handleBulkCancelVacation } from "../handleBulkCancelVacation.js";

@@ -1,15 +1,16 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { normalizeInviteCode } from "../../utils/inviteCode.js";
 import AppError from "../../utils/appError.js";
 import { currentYear } from "../../utils/dateFunc.js";
 import { assertCanAddMember } from "../../services/billing/guards.js";
-
-const services = createDBServices();
+import { getGroup } from "../../services/group/groupServices.js";
+import { createGroupUser, getGroupUser } from "../../services/groupUser/groupUserServices.js";
+import { getInviteLinkByCode, useInviteLink } from "../../services/groupUser/inviteLinkServices.js";
+import { openQuotaFromGroupDefaults } from "../../services/userYearQuotas/userYearQuotasServices.js";
 
 export const handlePostGroupUser = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -31,7 +32,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
   }
 
   const result = await db.transaction(async (tx) => {
-    const validateLink = await services.inviteLinks.getInviteLinkByCode(validationCode, tx);
+    const validateLink = await getInviteLinkByCode(validationCode, tx);
 
     if (
       !validateLink ||
@@ -87,11 +88,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
-    const existingMembership = await services.groupUser.getGroupUser(
-      auth.userId,
-      validateLink.groupId,
-      tx
-    );
+    const existingMembership = await getGroupUser(auth.userId, validateLink.groupId, tx);
 
     if (existingMembership) {
       throw new AppError({
@@ -106,7 +103,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
     // transaction, where the invite being redeemed still counts as open.
     await assertCanAddMember(validateLink.groupId, tx, { redeemingOpenInvite: true });
 
-    const createGroupUser = await services.groupUser.createGroupUser(
+    const membership = await createGroupUser(
       {
         id: generateRandomUUID(),
         userId: auth.userId,
@@ -119,7 +116,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       tx
     );
 
-    if (!createGroupUser) {
+    if (!membership) {
       throw new AppError({
         message: "Failed to create group user",
         logging: true,
@@ -135,8 +132,8 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
 
     // MUST take `tx`: checking out a second pool connection while this
     // transaction holds one deadlocks the pool at concurrency >= pool size.
-    const group = await services.group.getGroup(validateLink.groupId, tx);
-    await services.userYearQuotas.openQuotaFromGroupDefaults(
+    const group = await getGroup(validateLink.groupId, tx);
+    await openQuotaFromGroupDefaults(
       {
         id: generateRandomUUID(),
         userId: auth.userId,
@@ -150,7 +147,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
 
     // `usedAt IS NULL` in the update is what makes the code single-use: a
     // concurrent second redemption matches no row and rolls this back.
-    const updateInviteLink = await services.inviteLinks.useInviteLink(validationCode, tx);
+    const updateInviteLink = await useInviteLink(validationCode, tx);
 
     if (!updateInviteLink) {
       throw new AppError({
@@ -166,7 +163,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
-    return createGroupUser;
+    return membership;
   });
 
   return res.status(201).json(result);

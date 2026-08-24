@@ -1,17 +1,16 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { requirePaddle } from "../../utils/paddle.js";
 import AppError from "../../utils/appError.js";
-
-const services = createDBServices();
+import { getSubscriptionForOrganization } from "../../services/billing/subscriptionServices.js";
+import { getOrganizationForOwner } from "../../services/organization/organizationServices.js";
 
 /** Returns a Paddle customer-portal URL for managing the payment method. */
 export const handlePostPortal = async (req: Request, res: Response) => {
   const auth = getAuth(req);
   const { paddle } = requirePaddle();
 
-  const organization = await services.organization.getOrganizationForOwner(auth.userId);
+  const organization = await getOrganizationForOwner(auth.userId);
   if (!organization?.paddleCustomerId) {
     throw new AppError({
       message: "No billing account yet — subscribe first",
@@ -21,7 +20,7 @@ export const handlePostPortal = async (req: Request, res: Response) => {
     });
   }
 
-  const subscription = await services.billing.getSubscriptionForOrganization(organization.id);
+  const subscription = await getSubscriptionForOrganization(organization.id);
 
   const session = await paddle.customerPortalSessions.create(
     organization.paddleCustomerId,

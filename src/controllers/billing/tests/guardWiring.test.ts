@@ -50,48 +50,46 @@ const services = vi.hoisted(() => ({
   postChanges: vi.fn(),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: {
-      getVacationById: services.getVacationById,
-      approveVacation: services.approveVacation,
-      deleteVacation: services.deleteVacation,
-    },
-    vacationEvent: { createVacationEvent: services.createVacationEvent },
-    group: { createGroup: services.createGroup },
-    groupUser: {
-      createGroupUser: services.createGroupUser,
-      getGroupUser: services.getGroupUser,
-    },
-    userYearQuotas: {
-      openQuotaFromGroupDefaults: services.openQuotaFromGroupDefaults,
-      upsertUserYearQuota: services.upsertUserYearQuota,
-      getUserYearGroupQuotas: services.getUserYearGroupQuotas,
-    },
-    changes: { postChanges: services.postChanges },
-    organization: { ensureOrganizationForUser: services.ensureOrganizationForUser },
-  }),
+vi.mock("../../../services/changes/changesServices.js", () => ({
+  postChanges: services.postChanges,
+}));
+
+vi.mock("../../../services/userYearQuotas/userYearQuotasServices.js", () => ({
+  openQuotaFromGroupDefaults: services.openQuotaFromGroupDefaults,
+  upsertUserYearQuota: services.upsertUserYearQuota,
+  getUserYearGroupQuotas: services.getUserYearGroupQuotas,
+}));
+
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  getVacationById: services.getVacationById,
+  approveVacation: services.approveVacation,
+  deleteVacation: services.deleteVacation,
+}));
+
+vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
+  createVacationEvent: services.createVacationEvent,
 }));
 
 vi.mock("../../../db/db.js", () => ({
   db: { transaction: (cb: (tx: unknown) => unknown) => cb({}) },
 }));
 
-// `assertGroupAdmin` reaches for the service modules directly rather than
-// through createDBServices, so both routes must resolve to the same mock.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: services.getGroupUser,
   getAdminGroupIdsForUser: vi.fn().mockResolvedValue([]),
+  createGroupUser: services.createGroupUser,
 }));
 
 vi.mock("../../../services/group/groupServices.js", () => ({
   getGroup: vi.fn().mockResolvedValue({ id: "group", organizationId: "org" }),
   getLiveGroupIdsForOrganizations: vi.fn().mockResolvedValue([]),
+  createGroup: services.createGroup,
 }));
 
 vi.mock("../../../services/organization/organizationServices.js", () => ({
   isOrganizationAdmin: vi.fn().mockResolvedValue(false),
   getAdminOrganizationsForUser: vi.fn().mockResolvedValue([]),
+  ensureOrganizationForUser: services.ensureOrganizationForUser,
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({
