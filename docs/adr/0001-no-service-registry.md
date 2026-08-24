@@ -8,7 +8,7 @@ We had a registry, `createDBServices()`, and deleted it in August 2026. It was 3
 every type entry read `typeof theRealFunction` and every factory entry read `theRealFunction`, so
 adding one database function meant editing three files. The seam it looked like it offered was
 never used: the `DBServices` type was exported but named as a parameter type nowhere, nothing was
-injected, and all 67 callers built the object at module level to reach a static import. The tests
+injected, and all 66 callers built the object at module level to reach a static import. The tests
 that swapped an implementation did it with `vi.mock` on the module path, which works exactly the
 same without the hop.
 

@@ -38,6 +38,8 @@ vi.mock("../../../db/db.js", () => ({
   db: { transaction: vi.fn((callback) => callback({})) },
 }));
 
+// `getAdminGroupIdsForUser` is here for `assertGroupAdmin`, not for the
+// handler — an unmocked one would hit the database.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
   getAdminGroupIdsForUser: vi.fn().mockResolvedValue([]),
