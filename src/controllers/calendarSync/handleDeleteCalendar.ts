@@ -1,10 +1,8 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import AppError from "../../utils/appError.js";
-
-const services = createDBServices();
+import { softDeleteCalendarSync } from "../../services/calendarSync/calendarSyncServices.js";
 
 const validateUUID = z.uuid();
 
@@ -18,7 +16,7 @@ export const handleDeleteCalendar = async (req: Request, res: Response) => {
   }
   const id = parsedId.data;
 
-  const deleted = await services.calendarSync.softDeleteCalendarSync(id, auth.userId);
+  const deleted = await softDeleteCalendarSync(id, auth.userId);
 
   if (!deleted) {
     throw new AppError({

@@ -1,8 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
-
-const services = createDBServices();
+import { getReportScope } from "../../services/report/reportServices.js";
 
 /**
  * Everything the report's filter controls need: which groups the caller may
@@ -13,7 +11,7 @@ const services = createDBServices();
 export const handleGetReportScope = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const scope = await services.report.getReportScope(auth.userId);
+  const scope = await getReportScope(auth.userId);
 
   return res.status(200).json(scope);
 };

@@ -1,10 +1,14 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { validateReportQuery } from "../../services/report/types.js";
 import { buildSummaryEntries } from "../../services/report/buildSummary.js";
-
-const services = createDBServices();
+import {
+  aggregateUsageByUserMonth,
+  aggregateUsageSplit,
+  getQuotasForScope,
+  getScopeEntries,
+  getScopeMembers,
+} from "../../services/report/reportServices.js";
 
 /**
  * The report's main payload: monthly series per member for the charts, plus
@@ -16,14 +20,14 @@ export const handleGetReportOverview = async (req: Request, res: Response) => {
 
   const { year, groupIds, userIds, types } = validateReportQuery.parse(req.query);
 
-  const scope = await services.report.getScopeEntries(auth.userId);
+  const scope = await getScopeEntries(auth.userId);
   const filters = { groupIds, userIds, types };
 
   const [monthly, usage, quotas, allMembers] = await Promise.all([
-    services.report.aggregateUsageByUserMonth(scope, auth.userId, year, filters),
-    services.report.aggregateUsageSplit(scope, auth.userId, year, filters),
-    services.report.getQuotasForScope(scope, auth.userId, year, { groupIds, userIds }),
-    services.report.getScopeMembers(scope, auth.userId),
+    aggregateUsageByUserMonth(scope, auth.userId, year, filters),
+    aggregateUsageSplit(scope, auth.userId, year, filters),
+    getQuotasForScope(scope, auth.userId, year, { groupIds, userIds }),
+    getScopeMembers(scope, auth.userId),
   ]);
 
   const selectableMembers = allMembers.filter(

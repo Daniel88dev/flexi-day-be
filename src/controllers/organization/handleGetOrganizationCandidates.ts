@@ -1,9 +1,7 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { assertOrganizationOwner, resolveAdministeredOrganization } from "./utils.js";
-
-const services = createDBServices();
+import { listOrganizationAdminCandidates } from "../../services/organization/organizationServices.js";
 
 /**
  * Who may be promoted to organization admin: the members of the org's own
@@ -16,7 +14,7 @@ export const handleGetOrganizationCandidates = async (req: Request, res: Respons
   const { organization } = await resolveAdministeredOrganization(req);
   assertOrganizationOwner(organization, auth.userId);
 
-  const candidates = await services.organization.listOrganizationAdminCandidates(organization.id);
+  const candidates = await listOrganizationAdminCandidates(organization.id);
 
   return res.status(200).json(candidates);
 };

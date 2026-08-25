@@ -1,10 +1,10 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { resolveEntitlements } from "../../services/billing/entitlements.js";
 import { resolveAdministeredOrganization } from "./utils.js";
-
-const services = createDBServices();
+import { getSubscriptionForOrganization } from "../../services/billing/subscriptionServices.js";
+import { getGroupUsageForOrganization } from "../../services/group/groupServices.js";
+import { listOrganizationAdmins } from "../../services/organization/organizationServices.js";
 
 /**
  * The organization management screen: identity, the plan it runs on, its
@@ -19,10 +19,10 @@ export const handleGetOrganization = async (req: Request, res: Response) => {
 
   const { organization, isOwner } = await resolveAdministeredOrganization(req);
 
-  const subscription = await services.billing.getSubscriptionForOrganization(organization.id);
+  const subscription = await getSubscriptionForOrganization(organization.id);
   const entitlements = resolveEntitlements(subscription ?? null, new Date());
-  const groups = await services.group.getGroupUsageForOrganization(organization.id);
-  const admins = await services.organization.listOrganizationAdmins(organization.id);
+  const groups = await getGroupUsageForOrganization(organization.id);
+  const admins = await listOrganizationAdmins(organization.id);
 
   return res.status(200).json({
     organization: {

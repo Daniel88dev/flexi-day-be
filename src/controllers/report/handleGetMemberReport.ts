@@ -1,13 +1,20 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { validateMemberReportQuery } from "../../services/report/types.js";
 import { buildSummaryEntries } from "../../services/report/buildSummary.js";
 import AppError from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
-
-const services = createDBServices();
+import {
+  aggregateUsageByUserMonth,
+  aggregateUsageSplit,
+  getBookingsForScope,
+  getMemberChanges,
+  getMemberGroupsInScope,
+  getQuotasForScope,
+  getScopeEntries,
+} from "../../services/report/reportServices.js";
+import { getUserById } from "../../services/user/userServices.js";
 
 /**
  * One member's year: allowances, monthly usage, every booking, and the
@@ -22,13 +29,13 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
   const targetUserId = z.string().min(1).parse(req.params.userId);
   const { year } = validateMemberReportQuery.parse(req.query);
 
-  const scope = await services.report.getScopeEntries(auth.userId);
+  const scope = await getScopeEntries(auth.userId);
   const isSelf = targetUserId === auth.userId;
 
   // Looking at someone else is only possible through a group the caller can
   // see in full; their own detail is visible through any membership.
   const searchable = isSelf ? scope : scope.filter((entry) => entry.access === "all");
-  const sharedGroupIds = await services.report.getMemberGroupsInScope(
+  const sharedGroupIds = await getMemberGroupsInScope(
     targetUserId,
     searchable.map((entry) => entry.groupId)
   );
@@ -45,12 +52,12 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
   const filters = { groupIds: sharedGroupIds, userIds: [targetUserId] };
 
   const [member, monthly, usage, quotas, bookings, changes] = await Promise.all([
-    services.user.getUserById(targetUserId),
-    services.report.aggregateUsageByUserMonth(scope, auth.userId, year, filters),
-    services.report.aggregateUsageSplit(scope, auth.userId, year, filters),
-    services.report.getQuotasForScope(scope, auth.userId, year, filters),
-    services.report.getBookingsForScope(scope, auth.userId, year, filters),
-    services.report.getMemberChanges(targetUserId, sharedGroupIds, year),
+    getUserById(targetUserId),
+    aggregateUsageByUserMonth(scope, auth.userId, year, filters),
+    aggregateUsageSplit(scope, auth.userId, year, filters),
+    getQuotasForScope(scope, auth.userId, year, filters),
+    getBookingsForScope(scope, auth.userId, year, filters),
+    getMemberChanges(targetUserId, sharedGroupIds, year),
   ]);
 
   if (!member) {

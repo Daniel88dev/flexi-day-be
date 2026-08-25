@@ -10,16 +10,13 @@ vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    userSettings: {
-      getUserSettings: mockGetUserSettings,
-      upsertUserSettings: mockUpsertUserSettings,
-    },
-    report: {
-      getScopeEntries: mockGetScopeEntries,
-    },
-  }),
+vi.mock("../../../services/report/reportServices.js", () => ({
+  getScopeEntries: mockGetScopeEntries,
+}));
+
+vi.mock("../../../services/userSettings/userSettingsServices.js", () => ({
+  getUserSettings: mockGetUserSettings,
+  upsertUserSettings: mockUpsertUserSettings,
 }));
 
 import { handleGetMySettings } from "../handleGetMySettings.js";

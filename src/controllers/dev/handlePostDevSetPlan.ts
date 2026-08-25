@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import AppError from "../../utils/appError.js";
 import {
   manualPlanOverride,
@@ -9,8 +8,9 @@ import {
 } from "../../db/schema/subscription-schema.js";
 import { resolveEntitlements } from "../../services/billing/entitlements.js";
 import { assertSeedEmail } from "../../services/dev/devSeedServices.js";
-
-const services = createDBServices();
+import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
+import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { getUserByEmail } from "../../services/user/userServices.js";
 
 export const validatePostDevSetPlan = z.object({
   email: z.email(),
@@ -42,12 +42,12 @@ export const handlePostDevSetPlan = async (req: Request, res: Response) => {
   // `POST /api/dev/reset` can always undo whatever this created.
   assertSeedEmail(data.email);
 
-  const user = await services.user.getUserByEmail(data.email.toLowerCase());
+  const user = await getUserByEmail(data.email.toLowerCase());
   if (!user) {
     throw new AppError({ message: "User not found", code: 404, context: { email: data.email } });
   }
 
-  const organization = await services.organization.ensureOrganizationForUser(user.id);
+  const organization = await ensureOrganizationForUser(user.id);
 
   const clearPatch = {
     manualPlanOverride: null,
@@ -84,7 +84,7 @@ export const handlePostDevSetPlan = async (req: Request, res: Response) => {
     }
   })();
 
-  const subscription = await services.billing.upsertSubscription(organization.id, patch);
+  const subscription = await upsertSubscription(organization.id, patch);
 
   return res.status(200).json({
     organizationId: organization.id,

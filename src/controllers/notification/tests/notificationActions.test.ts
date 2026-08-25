@@ -10,14 +10,10 @@ vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    notification: {
-      deleteNotificationForUser: mockDeleteOne,
-      deleteAllNotificationsForUser: mockDeleteAll,
-      markAllNotificationsRead: mockMarkAllRead,
-    },
-  }),
+vi.mock("../../../services/notification/notificationServices.js", () => ({
+  deleteNotificationForUser: mockDeleteOne,
+  deleteAllNotificationsForUser: mockDeleteAll,
+  markAllNotificationsRead: mockMarkAllRead,
 }));
 
 import { handleDeleteNotification } from "../handleDeleteNotification.js";

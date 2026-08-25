@@ -26,11 +26,12 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: { getVacationById: mockGetVacationById },
-    vacationEvent: { createVacationEvent: mockCreateVacationEvent },
-  }),
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  getVacationById: mockGetVacationById,
+}));
+
+vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
+  createVacationEvent: mockCreateVacationEvent,
 }));
 
 vi.mock("../../../services/vacation/vacationPermissions.js", () => ({

@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
@@ -8,8 +7,8 @@ import type { ValidatedPutGroupQuotasType } from "../../services/group/types.js"
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
-
-const services = createDBServices();
+import { postChanges } from "../../services/changes/changesServices.js";
+import { updateGroupQuotas } from "../../services/group/groupServices.js";
 
 /**
  * Updates the group-wide default allowances. A member's allowance is opened
@@ -28,7 +27,7 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
 
   await assertGroupWritable(groupId);
 
-  const updated = await services.group.updateGroupQuotas(
+  const updated = await updateGroupQuotas(
     groupId,
     data.defaultVacationDays,
     data.defaultHomeOfficeDays
@@ -43,7 +42,7 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
     });
   }
 
-  await services.changes.postChanges({
+  await postChanges({
     id: generateRandomUUID(),
     userId: auth.userId,
     groupId,

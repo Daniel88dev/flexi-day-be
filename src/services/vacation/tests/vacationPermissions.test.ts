@@ -12,11 +12,12 @@ const {
   mockMayDecideOwn: vi.fn(),
 }));
 
-vi.mock("../../DBServices.js", () => ({
-  createDBServices: () => ({
-    group: { getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove },
-    groupUser: { getGroupUser: mockGetGroupUser },
-  }),
+vi.mock("../../group/groupServices.js", () => ({
+  getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
+}));
+
+vi.mock("../../groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
 }));
 
 vi.mock("../../groupUser/groupAccess.js", () => ({

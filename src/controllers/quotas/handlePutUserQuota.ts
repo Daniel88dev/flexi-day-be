@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import type { ValidatedPutUserQuotaType } from "../../services/userYearQuotas/types.js";
@@ -10,8 +9,12 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
 import { describeQuotaChange } from "../../services/userYearQuotas/quotaChangeDetail.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
-
-const services = createDBServices();
+import { postChanges } from "../../services/changes/changesServices.js";
+import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
+import {
+  getUserYearGroupQuotas,
+  upsertUserYearQuota,
+} from "../../services/userYearQuotas/userYearQuotasServices.js";
 
 /**
  * Sets one member's vacation / home-office allowance for a year. Only group
@@ -29,7 +32,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
   const result = await db.transaction(async (tx) => {
     await assertGroupAdmin(auth.userId, groupId, tx);
 
-    const member = await services.groupUser.getGroupUser(data.userId, groupId, tx);
+    const member = await getGroupUser(data.userId, groupId, tx);
 
     if (!member) {
       throw new AppError({
@@ -44,14 +47,9 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
 
     const relatedYear = data.year.toString();
 
-    const [existing] = await services.userYearQuotas.getUserYearGroupQuotas(
-      relatedYear,
-      groupId,
-      data.userId,
-      tx
-    );
+    const [existing] = await getUserYearGroupQuotas(relatedYear, groupId, data.userId, tx);
 
-    const quota = await services.userYearQuotas.upsertUserYearQuota(
+    const quota = await upsertUserYearQuota(
       {
         id: existing?.id ?? generateRandomUUID(),
         userId: data.userId,
@@ -73,7 +71,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
       });
     }
 
-    await services.changes.postChanges(
+    await postChanges(
       {
         id: generateRandomUUID(),
         userId: data.userId,

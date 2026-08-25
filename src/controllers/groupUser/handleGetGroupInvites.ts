@@ -1,10 +1,8 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
-
-const services = createDBServices();
+import { getOpenInvitesForGroup } from "../../services/groupUser/inviteLinkServices.js";
 
 /** The group's still-redeemable invites. Admin-only: the codes are secrets. */
 export const handleGetGroupInvites = async (req: Request, res: Response) => {
@@ -14,7 +12,7 @@ export const handleGetGroupInvites = async (req: Request, res: Response) => {
 
   await assertGroupAdmin(auth.userId, groupId);
 
-  const invites = await services.inviteLinks.getOpenInvitesForGroup(groupId);
+  const invites = await getOpenInvitesForGroup(groupId);
 
   return res.status(200).json(invites);
 };

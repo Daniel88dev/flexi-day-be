@@ -1,11 +1,9 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import type { ValidatedPatchOrganizationType } from "../../services/organization/types.js";
 import { assertOrganizationOwner, resolveAdministeredOrganization } from "./utils.js";
-
-const services = createDBServices();
+import { updateOrganization } from "../../services/organization/organizationServices.js";
 
 /**
  * Renames the organization, or repoints the billing address. The name is
@@ -24,7 +22,7 @@ export const handlePatchOrganization = async (req: Request, res: Response) => {
     assertOrganizationOwner(organization, auth.userId);
   }
 
-  const updated = await services.organization.updateOrganization(organization.id, {
+  const updated = await updateOrganization(organization.id, {
     ...(data.name !== undefined ? { name: data.name } : {}),
     ...(data.billingEmail !== undefined ? { billingEmail: data.billingEmail } : {}),
   });

@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
@@ -9,8 +8,9 @@ import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { changesType } from "../../db/schema/changes-schema.js";
 import { db } from "../../db/db.js";
-
-const services = createDBServices();
+import { postChanges } from "../../services/changes/changesServices.js";
+import { getGroup, updateGroupApprovalUsers } from "../../services/group/groupServices.js";
+import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
 
 export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -44,7 +44,7 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   // to name a second account of their own instead. Keeping the existing
   // approvers, or removing one, stays allowed.
   if (viaOrgAdmin) {
-    const group = await services.group.getGroup(groupId);
+    const group = await getGroup(groupId);
     const existing = new Set(
       [group?.mainApprovalUser, group?.tempApprovalUser].filter((id): id is string => id != null)
     );
@@ -61,7 +61,7 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   }
 
   for (const candidate of candidates) {
-    const membership = await services.groupUser.getGroupUser(candidate, groupId);
+    const membership = await getGroupUser(candidate, groupId);
     if (!membership) {
       throw new AppError({
         message: "An approver must be a member of the group",
@@ -73,7 +73,7 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   }
 
   const updated = await db.transaction(async (tx) => {
-    const row = await services.group.updateGroupApprovalUsers(
+    const row = await updateGroupApprovalUsers(
       groupId,
       data.mainApprovalUser,
       data.tempApprovalUser,
@@ -89,7 +89,7 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
       });
     }
 
-    await services.changes.postChanges(
+    await postChanges(
       {
         id: generateRandomUUID(),
         userId: auth.userId,

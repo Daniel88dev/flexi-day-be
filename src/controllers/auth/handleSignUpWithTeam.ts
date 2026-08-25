@@ -6,12 +6,13 @@ import { auth } from "../../utils/auth.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
 import { user, verification } from "../../db/schema/auth-schema.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { logger } from "../../middleware/logger.js";
 import { currentYear } from "../../utils/dateFunc.js";
-
-const services = createDBServices();
+import { createGroup } from "../../services/group/groupServices.js";
+import { createGroupUser } from "../../services/groupUser/groupUserServices.js";
+import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { openQuotaFromGroupDefaults } from "../../services/userYearQuotas/userYearQuotasServices.js";
 
 export const validateSignUpWithTeam = z.object({
   name: z.string().min(1).max(120),
@@ -131,9 +132,9 @@ export const handleSignUpWithTeam = async (req: Request, res: Response) => {
 
 const createTeamForUser = async (userId: string, teamName: string) =>
   db.transaction(async (tx) => {
-    const organization = await services.organization.ensureOrganizationForUser(userId, tx);
+    const organization = await ensureOrganizationForUser(userId, tx);
 
-    const newGroup = await services.group.createGroup(
+    const newGroup = await createGroup(
       {
         id: generateRandomUUID(),
         organizationId: organization.id,
@@ -153,7 +154,7 @@ const createTeamForUser = async (userId: string, teamName: string) =>
       });
     }
 
-    const membership = await services.groupUser.createGroupUser(
+    const membership = await createGroupUser(
       {
         id: generateRandomUUID(),
         userId,
@@ -175,7 +176,7 @@ const createTeamForUser = async (userId: string, teamName: string) =>
       });
     }
 
-    await services.userYearQuotas.openQuotaFromGroupDefaults(
+    await openQuotaFromGroupDefaults(
       {
         id: generateRandomUUID(),
         userId,

@@ -10,8 +10,6 @@ const { mockGetGroup, mockGetGroupUser, mockIsOrganizationAdmin, mockResolveOrga
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
 
-// The access helpers reach for the service modules directly rather than through
-// createDBServices, so both routes must resolve to the same mocks.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
   getAdminGroupIdsForUser: vi.fn().mockResolvedValue([]),
@@ -29,13 +27,6 @@ vi.mock("../../../services/organization/organizationServices.js", () => ({
 
 vi.mock("../../../services/organization/organizationBadge.js", () => ({
   resolveOrganizationBadges: mockResolveOrganizationBadges,
-}));
-
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    group: { getGroup: mockGetGroup },
-    groupUser: { getGroupUser: mockGetGroupUser },
-  }),
 }));
 
 import { handleGetGroup } from "../handleGetGroup.js";

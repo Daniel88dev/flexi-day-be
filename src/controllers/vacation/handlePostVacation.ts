@@ -8,7 +8,6 @@ import {
   filterWorkingDays,
   formatDateToISOString,
 } from "../../utils/dateFunc.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { db } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import {
@@ -19,8 +18,11 @@ import {
 import { assertRequestWithinQuota } from "../../services/vacation/quotaGuard.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
-
-const services = createDBServices();
+import { getGroup } from "../../services/group/groupServices.js";
+import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
+import { getUserById } from "../../services/user/userServices.js";
+import { postVacationBulk } from "../../services/vacation/vacationServices.js";
+import { createVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
 
 // One full year. Caps the per-day fan-out so a pathological `from`/`to` pair
 // can't allocate tens of thousands of rows or stall a bulk insert.
@@ -92,7 +94,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const access = await services.groupUser.getGroupUser(targetUserId, data.groupId);
+  const access = await getGroupUser(targetUserId, data.groupId);
 
   if (!access || !access.controlledUser) {
     throw new AppError({
@@ -105,7 +107,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const group = await services.group.getGroup(data.groupId);
+  const group = await getGroup(data.groupId);
 
   if (!group) {
     throw new AppError({
@@ -169,7 +171,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       // fail fast for the client, but a revocation committing in between must
       // still abort the write, so both are re-asserted on the tx snapshot.
       await assertGroupAdmin(auth.userId, data.groupId, tx);
-      const liveAccess = await services.groupUser.getGroupUser(targetUserId, data.groupId, tx);
+      const liveAccess = await getGroupUser(targetUserId, data.groupId, tx);
       if (!liveAccess?.controlledUser) {
         throw new AppError({
           message: "That member cannot book leave in this group",
@@ -182,8 +184,8 @@ export const handlePostVacation = async (req: Request, res: Response) => {
 
     await assertRequestWithinQuota(records, tx);
 
-    const rows = await services.vacation.postVacationBulk(records, tx);
-    await services.vacationEvent.createVacationEvents(
+    const rows = await postVacationBulk(records, tx);
+    await createVacationEvents(
       rows.map((row) => ({
         id: generateRandomUUID(),
         vacationId: row.id,
@@ -195,7 +197,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     if (data.autoApprove) {
       // A separate APPROVED event so the timeline reads like the normal flow:
       // the admin both created and approved the record.
-      await services.vacationEvent.createVacationEvents(
+      await createVacationEvents(
         rows.map((row) => ({
           id: generateRandomUUID(),
           vacationId: row.id,
@@ -232,7 +234,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     // Approvers must see the member as the requester — the leave is theirs;
     // the admin who filed it is attributed on the timeline and in the member's
     // own notice, and must not displace the member in the approver mail.
-    const member = await services.user.getUserById(targetUserId).catch(() => undefined);
+    const member = await getUserById(targetUserId).catch(() => undefined);
     if (member) {
       await notifyVacationRequested(
         created,

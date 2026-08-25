@@ -18,14 +18,13 @@ vi.mock("../../../services/organization/organizationBadge.js", () => ({
   resolveOrganizationBadges: mockResolveOrganizationBadges,
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    group: { getAllGroups: mockGetAllGroups },
-    groupUser: {
-      getAllGroupsForUser: mockGetAllGroupsForUser,
-      countMembersByGroup: mockCountMembersByGroup,
-    },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getAllGroups: mockGetAllGroups,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  getAllGroupsForUser: mockGetAllGroupsForUser,
+  countMembersByGroup: mockCountMembersByGroup,
 }));
 
 import { handleGetGroups } from "../handleGetGroups.js";

@@ -38,8 +38,8 @@ vi.mock("../../../db/db.js", () => ({
   db: { transaction: vi.fn((callback) => callback({})) },
 }));
 
-// `assertGroupAdmin` reaches for the service modules directly rather than
-// through createDBServices, so both routes must resolve to the same mock.
+// `getAdminGroupIdsForUser` is here for `assertGroupAdmin`, not for the
+// handler — an unmocked one would hit the database.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
   getAdminGroupIdsForUser: vi.fn().mockResolvedValue([]),
@@ -50,16 +50,13 @@ vi.mock("../../../services/group/groupServices.js", () => ({
   getLiveGroupIdsForOrganizations: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    groupUser: { getGroupUser: mockGetGroupUser },
-    group: { getGroup: mockGetGroup },
-    user: { getUserByEmail: mockGetUserByEmail },
-    inviteLinks: {
-      createInviteLink: mockCreateInviteLink,
-      revokeOpenInviteForEmail: mockRevokeOpenInviteForEmail,
-    },
-  }),
+vi.mock("../../../services/groupUser/inviteLinkServices.js", () => ({
+  createInviteLink: mockCreateInviteLink,
+  revokeOpenInviteForEmail: mockRevokeOpenInviteForEmail,
+}));
+
+vi.mock("../../../services/user/userServices.js", () => ({
+  getUserByEmail: mockGetUserByEmail,
 }));
 
 vi.mock("../../../services/groupUser/inviteNotifier.js", async (importOriginal) => {

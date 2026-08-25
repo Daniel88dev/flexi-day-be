@@ -1,13 +1,19 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import type { ValidatedExportRequest } from "../../services/report/types.js";
 import { buildSummaryEntries } from "../../services/report/buildSummary.js";
 import { buildReportWorkbook, type SummaryRow } from "../../services/report/excelBuilder.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-
-const services = createDBServices();
+import {
+  aggregateUsageSplit,
+  getBookingsForScope,
+  getQuotasForScope,
+  getScopeEntries,
+  getScopeMembers,
+  recordReportExport,
+} from "../../services/report/reportServices.js";
+import { getUsersByIds } from "../../services/user/userServices.js";
 
 // Guards against a filter-free export over a large tenant turning into an
 // out-of-memory workbook build. Well above any realistic single-year team.
@@ -24,23 +30,17 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedExportRequest = req.body;
 
-  const scope = await services.report.getScopeEntries(auth.userId);
+  const scope = await getScopeEntries(auth.userId);
   const filters = { groupIds: data.groupIds, userIds: data.userIds, types: data.types };
 
   const [bookings, usage, quotas, allMembers] = await Promise.all([
-    services.report.getBookingsForScope(
-      scope,
-      auth.userId,
-      data.year,
-      filters,
-      MAX_EXPORT_BOOKINGS + 1
-    ),
-    services.report.aggregateUsageSplit(scope, auth.userId, data.year, filters),
-    services.report.getQuotasForScope(scope, auth.userId, data.year, {
+    getBookingsForScope(scope, auth.userId, data.year, filters, MAX_EXPORT_BOOKINGS + 1),
+    aggregateUsageSplit(scope, auth.userId, data.year, filters),
+    getQuotasForScope(scope, auth.userId, data.year, {
       groupIds: data.groupIds,
       userIds: data.userIds,
     }),
-    services.report.getScopeMembers(scope, auth.userId),
+    getScopeMembers(scope, auth.userId),
   ]);
 
   if (bookings.length > MAX_EXPORT_BOOKINGS) {
@@ -72,7 +72,7 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   // group still earns a summary line — and is not in `members`. Resolve those
   // names directly rather than printing a raw id in the Name column.
   const unnamed = [...new Set(entries.map((e) => e.userId))].filter((id) => !nameByUserId.has(id));
-  for (const row of await services.user.getUsersByIds(unnamed)) {
+  for (const row of await getUsersByIds(unnamed)) {
     nameByUserId.set(row.id, row.name);
   }
 
@@ -90,7 +90,7 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
     }))
     .sort((a, b) => a.userName.localeCompare(b.userName) || a.groupName.localeCompare(b.groupName));
 
-  await services.report.recordReportExport({
+  await recordReportExport({
     id: generateRandomUUID(),
     userId: auth.userId,
     relatedYear: data.year.toString(),

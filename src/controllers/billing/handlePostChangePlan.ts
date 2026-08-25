@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { requirePaddle } from "../../utils/paddle.js";
 import { PLAN_LIMITS } from "../../services/billing/entitlements.js";
 import {
@@ -12,8 +11,7 @@ import { billingCycle, subscriptionPlan } from "../../db/schema/subscription-sch
 import type { ValidatedChangePlanType } from "../../services/billing/types.js";
 import { requireOwnedActiveSubscription } from "./handlePatchSlots.js";
 import { logger } from "../../middleware/logger.js";
-
-const services = createDBServices();
+import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 
 /** Pro ⇄ Enterprise and monthly ⇄ yearly on the existing subscription. */
 export const handlePostChangePlan = async (req: Request, res: Response) => {
@@ -55,7 +53,7 @@ export const handlePostChangePlan = async (req: Request, res: Response) => {
     updated.items.map((item) => ({ priceId: item.price?.id, quantity: item.quantity }))
   );
   if (derived) {
-    await services.billing.upsertSubscription(organizationId, derived);
+    await upsertSubscription(organizationId, derived);
   } else {
     // Paddle accepted the change but returned prices outside our catalog.
     // Persisting the intended state is better than leaving the row on the old
@@ -65,7 +63,7 @@ export const handlePostChangePlan = async (req: Request, res: Response) => {
       paddleSubscriptionId: subscription.paddleSubscriptionId,
       priceIds: updated.items.map((item) => item.price?.id),
     });
-    await services.billing.upsertSubscription(organizationId, {
+    await upsertSubscription(organizationId, {
       plan: newPlan,
       billingCycle: newCycle,
       extraGroupSlots: keptSlots,

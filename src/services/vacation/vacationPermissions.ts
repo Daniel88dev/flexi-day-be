@@ -1,10 +1,9 @@
-import { createDBServices } from "../DBServices.js";
 import type { DbTransaction } from "../../db/db.js";
 import type { LiveVacationType, VacationType } from "./types.js";
 import { mayDecideOwn } from "./decisionGuards.js";
 import { resolveGroupAdmin } from "../groupUser/groupAccess.js";
-
-const services = createDBServices();
+import { getGroupsWhereUserCanApprove } from "../group/groupServices.js";
+import { getGroupUser } from "../groupUser/groupUserServices.js";
 
 export type VacationPermissions = {
   /** May see the request at all. */
@@ -29,12 +28,8 @@ export const resolveVacationPermissions = async (
 ): Promise<VacationPermissions> => {
   const isOwner = vacationRow.userId === userId;
 
-  const membership = await services.groupUser.getGroupUser(userId, vacationRow.groupId, tx);
-  const approvableGroups = await services.group.getGroupsWhereUserCanApprove(
-    [vacationRow.groupId],
-    userId,
-    tx
-  );
+  const membership = await getGroupUser(userId, vacationRow.groupId, tx);
+  const approvableGroups = await getGroupsWhereUserCanApprove([vacationRow.groupId], userId, tx);
   const isApprover = approvableGroups.includes(vacationRow.groupId);
   // Group admins and org admins alike: they may manage records on behalf of
   // members (create / edit / cancel), which is administration — deciding a
@@ -73,9 +68,7 @@ export const resolveCanCancelForList = async <T extends LiveVacationRow>(
   tx?: DbTransaction
 ): Promise<(row: T) => boolean> => {
   const groupIds = Array.from(new Set(rows.map((row) => row.groupId)));
-  const approvable = new Set(
-    await services.group.getGroupsWhereUserCanApprove(groupIds, userId, tx)
-  );
+  const approvable = new Set(await getGroupsWhereUserCanApprove(groupIds, userId, tx));
 
   const adminGroups = new Set<string>();
   for (const groupId of groupIds) {
@@ -102,7 +95,7 @@ export const resolveCanApproveForList = async <T extends DecidableRow>(
   rows: T[]
 ): Promise<(row: T) => boolean> => {
   const groupIds = Array.from(new Set(rows.map((row) => row.groupId)));
-  const approvable = new Set(await services.group.getGroupsWhereUserCanApprove(groupIds, userId));
+  const approvable = new Set(await getGroupsWhereUserCanApprove(groupIds, userId));
 
   const ownGroupIds = Array.from(
     new Set(rows.filter((row) => row.userId === userId).map((row) => row.groupId))

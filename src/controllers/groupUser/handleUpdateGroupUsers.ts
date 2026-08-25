@@ -1,13 +1,15 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPutGroupUserUpdateType } from "../../services/groupUser/types.js";
 import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import AppError from "../../utils/appError.js";
 import { logger } from "../../middleware/logger.js";
 import { db } from "../../db/db.js";
-
-const services = createDBServices();
+import {
+  getGroupUser,
+  getGroupUsers,
+  updateGroupUserPermissions,
+} from "../../services/groupUser/groupUserServices.js";
 
 export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -31,7 +33,7 @@ export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
   // inviting a second account of their own and promoting that. Clearing
   // `approverAccess` stays allowed: taking rights away is always safe.
   if (viaOrgAdmin) {
-    const current = await services.groupUser.getGroupUsers(data.groupId);
+    const current = await getGroupUsers(data.groupId);
     const approverBefore = new Map(current.map((row) => [row.userId, row.approverAccess]));
     const grantsApprover = data.data.some(
       (record) => record.approverAccess && !approverBefore.get(record.userId)
@@ -53,7 +55,7 @@ export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
   // record pass the check while a later one does the raising.
   const selfRecords = data.data.filter((record) => record.userId === auth.userId);
   if (selfRecords.length > 0) {
-    const current = await services.groupUser.getGroupUser(auth.userId, data.groupId);
+    const current = await getGroupUser(auth.userId, data.groupId);
     const raises = selfRecords.some(
       (self) =>
         (self.viewAccess && !current?.viewAccess) ||
@@ -73,7 +75,7 @@ export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
 
   await db.transaction(async (tx) => {
     for (const userRecord of data.data) {
-      const updatedUser = await services.groupUser.updateGroupUserPermissions(
+      const updatedUser = await updateGroupUserPermissions(
         userRecord.userId,
         data.groupId,
         {

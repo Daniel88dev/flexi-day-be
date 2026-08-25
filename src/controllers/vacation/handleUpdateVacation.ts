@@ -2,7 +2,6 @@ import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import type { ValidatedUpdateVacationType } from "../../services/vacation/types.js";
@@ -12,8 +11,8 @@ import { assertEditWithinQuota } from "../../services/vacation/quotaGuard.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { notifyVacationUpdated } from "../../services/vacation/vacationNotifier.js";
-
-const services = createDBServices();
+import { getVacationsByIds, updateVacationRows } from "../../services/vacation/vacationServices.js";
+import { createVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
 
 /**
  * Admin-only in-place edit of one member's day rows. Only per-day fields are
@@ -41,7 +40,7 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
     // cancelled record is history and must be re-created, not edited back.
     // Locked: a concurrent PATCH must wait and re-read, or its change summary
     // would describe values this edit is about to replace.
-    const rows = await services.vacation.getVacationsByIds(uniqueIds, tx, { forUpdate: true });
+    const rows = await getVacationsByIds(uniqueIds, tx, { forUpdate: true });
 
     if (rows.length !== uniqueIds.length) {
       throw new AppError({
@@ -122,7 +121,7 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
       );
     }
 
-    const updatedRows = await services.vacation.updateVacationRows(uniqueIds, patch, tx);
+    const updatedRows = await updateVacationRows(uniqueIds, patch, tx);
     if (updatedRows.length !== uniqueIds.length) {
       // A concurrent cancel or reject won the race for some row.
       throw new AppError({
@@ -133,7 +132,7 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
       });
     }
 
-    await services.vacationEvent.createVacationEvents(
+    await createVacationEvents(
       rows.map((row) => ({
         id: generateRandomUUID(),
         vacationId: row.id,

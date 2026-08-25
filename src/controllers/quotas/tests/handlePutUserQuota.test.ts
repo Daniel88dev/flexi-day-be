@@ -16,8 +16,6 @@ const { mockGetGroupUser, mockGetUserYearGroupQuotas, mockUpsertUserYearQuota, m
     mockPostChanges: vi.fn(),
   }));
 
-// `assertGroupAdmin` reaches for the service modules directly rather than
-// through createDBServices, so both routes must resolve to the same mock.
 // Org-admin access is off here; it has its own suite.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
@@ -44,15 +42,13 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    groupUser: { getGroupUser: mockGetGroupUser },
-    userYearQuotas: {
-      getUserYearGroupQuotas: mockGetUserYearGroupQuotas,
-      upsertUserYearQuota: mockUpsertUserYearQuota,
-    },
-    changes: { postChanges: mockPostChanges },
-  }),
+vi.mock("../../../services/changes/changesServices.js", () => ({
+  postChanges: mockPostChanges,
+}));
+
+vi.mock("../../../services/userYearQuotas/userYearQuotasServices.js", () => ({
+  getUserYearGroupQuotas: mockGetUserYearGroupQuotas,
+  upsertUserYearQuota: mockUpsertUserYearQuota,
 }));
 
 import { handlePutUserQuota } from "../handlePutUserQuota.js";

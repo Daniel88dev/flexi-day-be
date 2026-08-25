@@ -1,12 +1,11 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import AppError from "../../utils/appError.js";
 import { validateUpdateCalendarSync } from "../../services/calendarSync/types.js";
 import { feedBaseUrl, resolveTeamIds, serializeConfig } from "./utils.js";
-
-const services = createDBServices();
+import { updateCalendarSync } from "../../services/calendarSync/calendarSyncServices.js";
+import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
 
 const validateUUID = z.uuid();
 
@@ -21,7 +20,7 @@ export const handleUpdateCalendar = async (req: Request, res: Response) => {
   const id = parsedId.data;
   const data = validateUpdateCalendarSync.parse(req.body);
 
-  const userGroups = await services.groupUser.getAllGroupsForUser(auth.userId);
+  const userGroups = await getAllGroupsForUser(auth.userId);
   const userGroupIds = new Set(userGroups.map((g) => g.groupId));
 
   const teamIds = resolveTeamIds(data, userGroupIds);
@@ -33,7 +32,7 @@ export const handleUpdateCalendar = async (req: Request, res: Response) => {
     });
   }
 
-  const config = await services.calendarSync.updateCalendarSync(
+  const config = await updateCalendarSync(
     id,
     auth.userId,
     {

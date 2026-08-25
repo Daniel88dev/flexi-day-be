@@ -1,12 +1,23 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
-
-const services = createDBServices();
+import {
+  getGroup,
+  lockGroup,
+  updateGroupApprovalUsers,
+} from "../../services/group/groupServices.js";
+import {
+  countActiveMembershipsInOrganization,
+  deleteGroupUser,
+  getGroupUser,
+} from "../../services/groupUser/groupUserServices.js";
+import {
+  lockOrganization,
+  removeOrganizationAdmin,
+} from "../../services/organization/organizationServices.js";
 
 /**
  * Removes a member from a group (soft delete). This is also how a downgraded
@@ -22,7 +33,7 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
 
   await assertGroupAdmin(auth.userId, groupId);
 
-  const group = await services.group.getGroup(groupId);
+  const group = await getGroup(groupId);
   if (!group) {
     throw new AppError({
       message: "Group not found",
@@ -41,7 +52,7 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
     });
   }
 
-  const membership = await services.groupUser.getGroupUser(userId, groupId);
+  const membership = await getGroupUser(userId, groupId);
   if (!membership) {
     throw new AppError({
       message: "User is not a member of this group",
@@ -56,12 +67,12 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
     // `handlePostGroupInvite`). Reversing it deadlocks against any FK-checked
     // write to `group_users`, which holds the organization lock and then needs
     // a key-share lock on the group.
-    await services.organization.lockOrganization(group.organizationId, tx);
+    await lockOrganization(group.organizationId, tx);
 
     // Re-read the group under a row lock: the approver columns below are
     // rewritten from the values read here, and the copy fetched before the
     // transaction can already be stale if another admin reassigned approvers.
-    const locked = await services.group.lockGroup(groupId, tx);
+    const locked = await lockGroup(groupId, tx);
     if (!locked) {
       throw new AppError({
         message: "Group not found",
@@ -71,7 +82,7 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
       });
     }
 
-    const row = await services.groupUser.deleteGroupUser(membership.id, tx);
+    const row = await deleteGroupUser(membership.id, tx);
     if (!row) {
       throw new AppError({
         message: "Failed to remove group member",
@@ -84,7 +95,7 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
     // A former member must not keep approval rights through the group's
     // approver columns: main falls back to the manager, temp is cleared.
     if (locked.mainApprovalUser === userId || locked.tempApprovalUser === userId) {
-      await services.group.updateGroupApprovalUsers(
+      await updateGroupApprovalUsers(
         groupId,
         locked.mainApprovalUser === userId ? locked.managerUserId : locked.mainApprovalUser,
         locked.tempApprovalUser === userId ? null : locked.tempApprovalUser,
@@ -101,13 +112,9 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
     // the top of this transaction has to be the organization's: two removals
     // from different groups would otherwise each see the other's membership as
     // live and neither would revoke.
-    const remaining = await services.groupUser.countActiveMembershipsInOrganization(
-      userId,
-      locked.organizationId,
-      tx
-    );
+    const remaining = await countActiveMembershipsInOrganization(userId, locked.organizationId, tx);
     if (remaining === 0) {
-      await services.organization.removeOrganizationAdmin(locked.organizationId, userId, tx);
+      await removeOrganizationAdmin(locked.organizationId, userId, tx);
     }
 
     return row;

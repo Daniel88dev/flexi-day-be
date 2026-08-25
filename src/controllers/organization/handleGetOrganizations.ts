@@ -1,8 +1,6 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
-
-const services = createDBServices();
+import { getAdminOrganizationsForUser } from "../../services/organization/organizationServices.js";
 
 /**
  * The organizations the caller owns or administers — owned first. Drives the
@@ -11,7 +9,7 @@ const services = createDBServices();
 export const handleGetOrganizations = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const organizations = await services.organization.getAdminOrganizationsForUser(auth.userId);
+  const organizations = await getAdminOrganizationsForUser(auth.userId);
 
   return res.status(200).json(
     organizations.map((organization) => ({

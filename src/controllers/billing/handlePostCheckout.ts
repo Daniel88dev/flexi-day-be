@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { requirePaddle } from "../../utils/paddle.js";
 import AppError from "../../utils/appError.js";
 import { PLAN_LIMITS } from "../../services/billing/entitlements.js";
@@ -11,8 +10,8 @@ import {
   subscriptionStatus,
 } from "../../db/schema/subscription-schema.js";
 import type { ValidatedPostCheckoutType } from "../../services/billing/types.js";
-
-const services = createDBServices();
+import { getSubscriptionForOrganization } from "../../services/billing/subscriptionServices.js";
+import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 
 /**
  * Statuses that still represent a subscription Paddle can bill or resume.
@@ -52,9 +51,9 @@ export const handlePostCheckout = async (req: Request, res: Response) => {
     });
   }
 
-  const organization = await services.organization.ensureOrganizationForUser(auth.userId);
+  const organization = await ensureOrganizationForUser(auth.userId);
 
-  const existing = await services.billing.getSubscriptionForOrganization(organization.id);
+  const existing = await getSubscriptionForOrganization(organization.id);
   if (existing?.paddleSubscriptionId && existing.status && ACTIVE_STATUSES.has(existing.status)) {
     throw new AppError({
       message: "This organization already has a subscription — use change-plan instead",

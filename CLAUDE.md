@@ -47,12 +47,21 @@ could not if they had stayed a layer up.
 shutdown. Job modules only schedule and log — the work itself lives in a service, so it stays
 callable and testable outside the timer.
 
-## Database access goes through DBServices
+## Database access imports the service module
 
-`createDBServices()` (`src/services/DBServices.ts`) returns one typed object with a property per
-domain (`vacation`, `group`, `groupUser`, `organization`, `report`, …). Each domain lives in
-`src/services/{domain}/` as `{domain}Services.ts` plus a `types.ts` holding its TypeScript types
-and Zod schemas.
+Each domain lives in `src/services/{domain}/` as `{domain}Services.ts` plus a `types.ts` holding
+its TypeScript types and Zod schemas. A domain splits into more than one service module when it
+carries a concept with its own lifecycle — `groupUser/` holds `inviteLinkServices.ts` beside
+`groupUserServices.ts`. Callers import the functions they need by name:
+
+```typescript
+import { getGroup, getApprovalUsers } from "../../services/group/groupServices.js";
+```
+
+There is no registry, container or injected `services` object in between, and adding one back
+needs [`docs/adr/0001-no-service-registry.md`](docs/adr/0001-no-service-registry.md) read first.
+A unit test mocks the module the code under test imports, by path — see
+`src/services/billing/tests/guards.test.ts`.
 
 Two rules hold for every write, wherever its transaction is opened. Anything that appends a
 `vacation_events` row belongs in the same transaction as the change it records. Notifications go
@@ -75,7 +84,7 @@ inside it, so the whole request commits or rolls back together:
 const quota = await db.transaction(async (tx) => {
   await assertGroupAdmin(auth.userId, groupId, tx);
   await assertGroupWritable(groupId, tx);
-  return services.userYearQuotas.upsertUserYearQuota(payload, tx);
+  return upsertUserYearQuota(payload, tx);
 });
 ```
 

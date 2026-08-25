@@ -36,12 +36,12 @@ vi.mock("../../../db/db.js", () => ({
   db: { transaction: vi.fn((callback) => callback({})) },
 }));
 
-// The group-access helpers reach for the service modules directly rather than
-// through createDBServices, so both routes must resolve to the same mocks.
 // Org-admin access is off here; it has its own suite.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
   getAdminGroupIdsForUser: mockGetAdminGroupIdsForUser,
+  getGroupUsers: mockGetGroupUsers,
+  getMembershipPairs: mockGetMembershipPairs,
 }));
 
 vi.mock("../../../services/group/groupServices.js", () => ({
@@ -50,6 +50,7 @@ vi.mock("../../../services/group/groupServices.js", () => ({
   // With no org-admin groups in play, the organization scope is a pass-through
   // over the caller's membership-derived admin groups.
   filterGroupIdsByOrganization: vi.fn((groupIds: string[]) => Promise.resolve(groupIds)),
+  getAllGroups: mockGetAllGroups,
 }));
 
 vi.mock("../../../services/organization/organizationServices.js", () => ({
@@ -57,21 +58,10 @@ vi.mock("../../../services/organization/organizationServices.js", () => ({
   getAdminOrganizationsForUser: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    groupUser: {
-      getGroupUser: mockGetGroupUser,
-      getGroupUsers: mockGetGroupUsers,
-      getAdminGroupIdsForUser: mockGetAdminGroupIdsForUser,
-      getMembershipPairs: mockGetMembershipPairs,
-    },
-    group: { getAllGroups: mockGetAllGroups, getGroup: mockGetGroup },
-    groupMirror: {
-      getMirrorsIntoGroupForUser: mockGetMirrorsIntoGroupForUser,
-      getMirrorsIntoGroupForUsers: mockGetMirrorsIntoGroupForUsers,
-      setMirrorsIntoGroupForUser: mockSetMirrorsIntoGroupForUser,
-    },
-  }),
+vi.mock("../../../services/groupMirror/groupMirrorServices.js", () => ({
+  getMirrorsIntoGroupForUser: mockGetMirrorsIntoGroupForUser,
+  getMirrorsIntoGroupForUsers: mockGetMirrorsIntoGroupForUsers,
+  setMirrorsIntoGroupForUser: mockSetMirrorsIntoGroupForUser,
 }));
 
 import { handleGetGroupMirrors } from "../handleGetGroupMirrors.js";

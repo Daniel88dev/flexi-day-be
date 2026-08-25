@@ -11,13 +11,14 @@ import { changesSchema } from "../../db/schema/changes-schema.js";
 import { supportAccess } from "../../db/schema/support-access-schema.js";
 import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
-import { createDBServices } from "../DBServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
 import AppError from "../../utils/appError.js";
 import { config } from "../../config.js";
-
-const services = createDBServices();
+import { createGroup } from "../group/groupServices.js";
+import { createGroupUser } from "../groupUser/groupUserServices.js";
+import { ensureOrganizationForUser } from "../organization/organizationServices.js";
+import { upsertUserYearQuota } from "../userYearQuotas/userYearQuotasServices.js";
 
 export type SeededUser = {
   id: string;
@@ -117,9 +118,9 @@ export const seedTeam = async (input: {
   teamName: string;
   managerUserId: string;
 }): Promise<{ id: string; groupName: string }> => {
-  const organization = await services.organization.ensureOrganizationForUser(input.managerUserId);
+  const organization = await ensureOrganizationForUser(input.managerUserId);
 
-  const group = await services.group.createGroup({
+  const group = await createGroup({
     id: generateRandomUUID(),
     organizationId: organization.id,
     groupName: input.teamName,
@@ -153,7 +154,7 @@ export const addMember = async (input: {
   adminAccess?: boolean;
   approverAccess?: boolean;
 }): Promise<void> => {
-  await services.groupUser.createGroupUser({
+  await createGroupUser({
     id: generateRandomUUID(),
     userId: input.userId,
     groupId: input.groupId,
@@ -172,7 +173,7 @@ export const setQuota = async (input: {
   homeOfficeDays?: number;
   carriedOverDays?: number;
 }): Promise<void> => {
-  await services.userYearQuotas.upsertUserYearQuota({
+  await upsertUserYearQuota({
     id: generateRandomUUID(),
     userId: input.userId,
     groupId: input.groupId,

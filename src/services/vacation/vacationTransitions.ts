@@ -3,7 +3,6 @@ import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import type { AuthSession } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { createDBServices } from "../DBServices.js";
 import { assertGroupsWritable } from "../billing/guards.js";
 import { assertMayDecide, assertStillPending, type Decision } from "./decisionGuards.js";
 import { assertApprovalWithinQuota } from "./quotaGuard.js";
@@ -15,8 +14,20 @@ import {
   notifyVacationsCancelled,
 } from "./vacationNotifier.js";
 import { resolveCanCancelForList, resolveVacationPermissions } from "./vacationPermissions.js";
-
-const services = createDBServices();
+import {
+  approveVacation,
+  approveVacationsBulk,
+  cancelVacationsBulk,
+  deleteVacation,
+  getVacationById,
+  getVacationsByIds,
+  rejectVacation,
+  rejectVacationsBulk,
+} from "./vacationServices.js";
+import {
+  createVacationEvent,
+  createVacationEvents,
+} from "../vacationEvent/vacationEventServices.js";
 
 const actorOf = (auth: AuthSession) => ({ id: auth.userId, name: auth.userName });
 
@@ -92,14 +103,14 @@ const runTransition = async (transition: Transition): Promise<TransitionRows> =>
 const loadOne =
   (vacationId: string) =>
   async (tx: DbTransaction): Promise<LiveVacationType[]> => {
-    const row = await services.vacation.getVacationById(vacationId, tx);
+    const row = await getVacationById(vacationId, tx);
     return row ? [row] : [];
   };
 
 const loadMany =
   (vacationIds: string[]) =>
   (tx: DbTransaction): Promise<LiveVacationType[]> =>
-    services.vacation.getVacationsByIds(vacationIds, tx);
+    getVacationsByIds(vacationIds, tx);
 
 const oneNotFound = (auth: AuthSession, vacationId: string) => () =>
   new AppError({
@@ -149,7 +160,7 @@ const appendEventsRowByRow =
   (auth: AuthSession, eventType: vacationEventType, reason: string | null) =>
   async (updated: VacationType[], tx: DbTransaction): Promise<void> => {
     for (const row of updated) {
-      await services.vacationEvent.createVacationEvent(
+      await createVacationEvent(
         {
           id: generateRandomUUID(),
           vacationId: row.id,
@@ -165,7 +176,7 @@ const appendEventsRowByRow =
 const appendEventsInOneInsert =
   (auth: AuthSession, eventType: vacationEventType, reason: string | null) =>
   async (updated: VacationType[], tx: DbTransaction): Promise<void> => {
-    await services.vacationEvent.createVacationEvents(
+    await createVacationEvents(
       updated.map((row) => ({
         id: generateRandomUUID(),
         vacationId: row.id,
@@ -244,7 +255,7 @@ export const approveRequest = async (params: {
     authorize: mayDecide(auth, "approve"),
     assertWithinQuota: assertApprovalWithinQuota,
     mutate: async (tx) => {
-      const row = await services.vacation.approveVacation(vacationId, auth.userId, tx);
+      const row = await approveVacation(vacationId, auth.userId, tx);
       return row ? [row] : [];
     },
     lostRace: oneAlreadyDecided(auth, vacationId),
@@ -269,7 +280,7 @@ export const approveRequestBatch = async (params: {
     notFound: someNotFound(auth, vacationIds),
     authorize: mayDecide(auth, "approve"),
     assertWithinQuota: assertApprovalWithinQuota,
-    mutate: (tx) => services.vacation.approveVacationsBulk(vacationIds, auth.userId, tx),
+    mutate: (tx) => approveVacationsBulk(vacationIds, auth.userId, tx),
     lostRace: someAlreadyDecided(auth, vacationIds),
     appendEvents: appendEventsInOneInsert(auth, vacationEventType.Approved, null),
     notify: notifyDecision(auth, "approved", null),
@@ -291,7 +302,7 @@ export const rejectRequest = async (params: {
     notFound: oneNotFound(auth, vacationId),
     authorize: mayDecide(auth, "reject"),
     mutate: async (tx) => {
-      const row = await services.vacation.rejectVacation(vacationId, auth.userId, reason, tx);
+      const row = await rejectVacation(vacationId, auth.userId, reason, tx);
       return row ? [row] : [];
     },
     lostRace: oneAlreadyDecided(auth, vacationId),
@@ -315,7 +326,7 @@ export const rejectRequestBatch = async (params: {
     requestedCount: vacationIds.length,
     notFound: someNotFound(auth, vacationIds),
     authorize: mayDecide(auth, "reject"),
-    mutate: (tx) => services.vacation.rejectVacationsBulk(vacationIds, auth.userId, reason, tx),
+    mutate: (tx) => rejectVacationsBulk(vacationIds, auth.userId, reason, tx),
     lostRace: someAlreadyDecided(auth, vacationIds),
     appendEvents: appendEventsInOneInsert(auth, vacationEventType.Rejected, reason),
     notify: notifyDecision(auth, "rejected", reason),
@@ -346,7 +357,7 @@ export const cancelRequest = async (params: {
         })
     ),
     mutate: async (tx) => {
-      const row = await services.vacation.deleteVacation(vacationId, auth.userId, tx);
+      const row = await deleteVacation(vacationId, auth.userId, tx);
       return row ? [row] : [];
     },
     lostRace: oneAlreadyCancelled(auth, vacationId),
@@ -379,7 +390,7 @@ export const cancelRequestBatch = async (params: {
           context: { auth, unauthorized: unauthorized.map((row) => row.id) },
         })
     ),
-    mutate: (tx) => services.vacation.cancelVacationsBulk(vacationIds, auth.userId, tx),
+    mutate: (tx) => cancelVacationsBulk(vacationIds, auth.userId, tx),
     lostRace: someAlreadyCancelled(auth, vacationIds),
     appendEvents: appendEventsInOneInsert(auth, vacationEventType.Cancelled, reason),
     notify: ({ loaded: rows }) => notifyVacationsCancelled(rows, actorOf(auth), reason),

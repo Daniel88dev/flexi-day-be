@@ -1,11 +1,9 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { validateUserGroupAccess } from "../../services/groupUser/groupAccess.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
-
-const services = createDBServices();
+import { getGroupUsers } from "../../services/groupUser/groupUserServices.js";
 
 export const handleGetGroupUsers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -30,7 +28,7 @@ export const handleGetGroupUsers = async (req: Request, res: Response) => {
     return res.status(403).json({ message: "No access for related group" });
   }
 
-  const groupUsers = await services.groupUser.getGroupUsers(groupId);
+  const groupUsers = await getGroupUsers(groupId);
 
   return res.status(200).json(groupUsers);
 };

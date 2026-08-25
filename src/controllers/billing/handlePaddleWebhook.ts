@@ -2,7 +2,6 @@ import type { Request, Response } from "express";
 import { EventName, type SubscriptionNotification } from "@paddle/paddle-node-sdk";
 import AppError from "../../utils/appError.js";
 import { requirePaddle } from "../../utils/paddle.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { derivePlanFromItems } from "../../services/billing/paddleCatalog.js";
 import { subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import type { SubscriptionPatch } from "../../services/billing/types.js";
@@ -10,9 +9,17 @@ import { notifySubscriptionGrace } from "../../services/billing/billingNotifier.
 import { logger } from "../../middleware/logger.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import type { OrganizationType } from "../../services/organization/types.js";
-import { lockOrganization } from "../../services/organization/organizationServices.js";
-
-const services = createDBServices();
+import {
+  getOrganizationById,
+  lockOrganization,
+  setOrganizationPaddleCustomerId,
+} from "../../services/organization/organizationServices.js";
+import {
+  getSubscriptionByPaddleId,
+  getSubscriptionForOrganization,
+  recordPaddleEvent,
+  upsertSubscription,
+} from "../../services/billing/subscriptionServices.js";
 
 export const GRACE_PERIOD_DAYS = 14;
 
@@ -48,10 +55,10 @@ const resolveOrganizationId = async (
 ): Promise<string | undefined> => {
   const custom = (data.customData as { organizationId?: unknown } | null)?.organizationId;
   if (typeof custom === "string" && custom.length > 0) {
-    const organization = await services.organization.getOrganizationById(custom, tx);
+    const organization = await getOrganizationById(custom, tx);
     if (organization) return organization.id;
   }
-  const existing = await services.billing.getSubscriptionByPaddleId(data.id, tx);
+  const existing = await getSubscriptionByPaddleId(data.id, tx);
   return existing?.organizationId;
 };
 
@@ -74,7 +81,7 @@ const syncSubscriptionFromEvent = async (
   // `past_due` re-arms grace on top of an `active` that just committed.
   await lockOrganization(organizationId, tx);
 
-  const existing = await services.billing.getSubscriptionForOrganization(organizationId, tx);
+  const existing = await getSubscriptionForOrganization(organizationId, tx);
 
   // Paddle does not guarantee delivery order, and a retry can land an old
   // event after a newer one. Applying it would resurrect stale state — e.g. a
@@ -141,21 +148,17 @@ const syncSubscriptionFromEvent = async (
     patch.graceEndsAt = startedGrace;
   }
 
-  const organization = await services.organization.getOrganizationById(organizationId, tx);
+  const organization = await getOrganizationById(organizationId, tx);
 
   // The organization UPDATE runs BEFORE the subscription upsert on purpose.
   // Inserting a subscription takes a FK share lock on the organization row;
   // upgrading that to exclusive afterwards is the classic Postgres lock-upgrade
   // deadlock against a concurrent `lockOrganization` in assertCanCreateGroup.
   if (organization && !organization.paddleCustomerId) {
-    await services.organization.setOrganizationPaddleCustomerId(
-      organizationId,
-      data.customerId,
-      tx
-    );
+    await setOrganizationPaddleCustomerId(organizationId, data.customerId, tx);
   }
 
-  await services.billing.upsertSubscription(organizationId, patch, tx);
+  await upsertSubscription(organizationId, patch, tx);
 
   if (startedGrace && organization) {
     return {
@@ -173,13 +176,13 @@ const handlePaymentFailed = async (
   tx: DbTransaction
 ): Promise<PendingGraceEmail | null> => {
   if (!paddleSubscriptionId) return null;
-  const found = await services.billing.getSubscriptionByPaddleId(paddleSubscriptionId, tx);
+  const found = await getSubscriptionByPaddleId(paddleSubscriptionId, tx);
   if (!found) return null;
 
   // Same check-then-act on `graceEndsAt`: two concurrent payment_failed events
   // would otherwise both read null and both send a grace email.
   await lockOrganization(found.organizationId, tx);
-  const existing = await services.billing.getSubscriptionForOrganization(found.organizationId, tx);
+  const existing = await getSubscriptionForOrganization(found.organizationId, tx);
   if (!existing || existing.graceEndsAt) return null;
 
   // Paddle retries a failed delivery, and the payment can succeed before the
@@ -198,9 +201,9 @@ const handlePaymentFailed = async (
   }
 
   const endsAt = graceEnd(new Date());
-  await services.billing.upsertSubscription(existing.organizationId, { graceEndsAt: endsAt }, tx);
+  await upsertSubscription(existing.organizationId, { graceEndsAt: endsAt }, tx);
 
-  const organization = await services.organization.getOrganizationById(existing.organizationId, tx);
+  const organization = await getOrganizationById(existing.organizationId, tx);
   if (!organization) return null;
   return { organization, plan: existing.plan ?? "PRO", graceEndsAt: endsAt };
 };
@@ -242,11 +245,7 @@ export const handlePaddleWebhook = async (req: Request, res: Response) => {
   // processing throws, the event id rolls back with it and Paddle's retry
   // reprocesses instead of being swallowed as a duplicate.
   const { duplicate, graceEmail } = await db.transaction(async (tx) => {
-    const firstDelivery = await services.billing.recordPaddleEvent(
-      event.eventId,
-      event.eventType,
-      tx
-    );
+    const firstDelivery = await recordPaddleEvent(event.eventId, event.eventType, tx);
     if (!firstDelivery) return { duplicate: true, graceEmail: null };
 
     let pending: PendingGraceEmail | null = null;

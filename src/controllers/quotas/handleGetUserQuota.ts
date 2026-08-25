@@ -1,12 +1,10 @@
 import type { Request, Response } from "express";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { validateUserGroupAccess } from "../../services/groupUser/groupAccess.js";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { db } from "../../db/db.js";
-
-const services = createDBServices();
+import { getUserYearGroupQuotas } from "../../services/userYearQuotas/userYearQuotasServices.js";
 
 const queryParams = z.object({
   year: z.coerce
@@ -40,7 +38,7 @@ export const handleGetUserQuota = async (req: Request, res: Response) => {
       });
     }
 
-    return services.userYearQuotas.getUserYearGroupQuotas(
+    return getUserYearGroupQuotas(
       parsedParams.year.toString(),
       groupId,
       parsedParams.userId ?? null,

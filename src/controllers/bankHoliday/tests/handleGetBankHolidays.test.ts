@@ -8,13 +8,9 @@ const { mockListBankHolidays, mockInsertBankHolidays, mockComputePublicHolidays 
   })
 );
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    bankHoliday: {
-      listBankHolidays: mockListBankHolidays,
-      insertBankHolidays: mockInsertBankHolidays,
-    },
-  }),
+vi.mock("../../../services/bankHoliday/bankHolidayServices.js", () => ({
+  listBankHolidays: mockListBankHolidays,
+  insertBankHolidays: mockInsertBankHolidays,
 }));
 
 vi.mock("../../../services/bankHoliday/holidayDataset.js", () => ({

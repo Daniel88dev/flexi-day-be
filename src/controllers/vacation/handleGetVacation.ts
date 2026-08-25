@@ -1,11 +1,10 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { createDBServices } from "../../services/DBServices.js";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
-
-const services = createDBServices();
+import { getVacationDetailById } from "../../services/vacation/vacationServices.js";
+import { getVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
 
 /**
  * One request with its full audit trail — who asked, who decided, who
@@ -16,7 +15,7 @@ export const handleGetVacation = async (req: Request, res: Response) => {
 
   const vacationId = z.uuid().parse(req.params.id);
 
-  const detail = await services.vacation.getVacationDetailById(vacationId);
+  const detail = await getVacationDetailById(vacationId);
 
   if (!detail) {
     throw new AppError({
@@ -37,7 +36,7 @@ export const handleGetVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const history = await services.vacationEvent.getVacationEvents(vacationId);
+  const history = await getVacationEvents(vacationId);
 
   return res.status(200).json({
     ...detail,

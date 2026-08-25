@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import {
   DEFAULT_USER_SETTINGS,
   type UserSettingsPatch,
@@ -9,8 +8,11 @@ import {
 import { dashboardScope } from "../../db/schema/user-settings-schema.js";
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
 import AppError from "../../utils/appError.js";
-
-const services = createDBServices();
+import { getScopeEntries } from "../../services/report/reportServices.js";
+import {
+  getUserSettings,
+  upsertUserSettings,
+} from "../../services/userSettings/userSettingsServices.js";
 
 export const handlePutMySettings = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -18,7 +20,7 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPutUserSettingsType = req.body;
 
-  const current = await services.userSettings.getUserSettings(auth.userId);
+  const current = await getUserSettings(auth.userId);
 
   const patch: UserSettingsPatch = {};
   if (data.emailNotifications !== undefined) patch.emailNotifications = data.emailNotifications;
@@ -43,7 +45,7 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
   }
 
   if (nextGroupId) {
-    const scope = await services.report.getScopeEntries(auth.userId);
+    const scope = await getScopeEntries(auth.userId);
     if (!canViewWholeGroup(scope, nextGroupId)) {
       throw new AppError({
         code: 403,
@@ -54,7 +56,7 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
     }
   }
 
-  const updated = await services.userSettings.upsertUserSettings(auth.userId, patch);
+  const updated = await upsertUserSettings(auth.userId, patch);
 
   if (!updated) {
     throw new AppError({

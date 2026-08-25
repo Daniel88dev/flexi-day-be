@@ -50,14 +50,13 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: {
-      getVacationsByIds: mockGetVacationsByIds,
-      updateVacationRows: mockUpdateVacationRows,
-    },
-    vacationEvent: { createVacationEvents: mockCreateVacationEvents },
-  }),
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  getVacationsByIds: mockGetVacationsByIds,
+  updateVacationRows: mockUpdateVacationRows,
+}));
+
+vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
+  createVacationEvents: mockCreateVacationEvents,
 }));
 
 import { handleUpdateVacation } from "../handleUpdateVacation.js";

@@ -3,10 +3,10 @@ import AppError from "../../utils/appError.js";
 import type { DbTransaction } from "../../db/db.js";
 import { vacationType } from "../../db/schema/vacation-schema.js";
 import { QUOTA_BEARING_TYPES } from "../report/buildSummary.js";
-import { createDBServices } from "../DBServices.js";
 import type { VacationType } from "./types.js";
-
-const services = createDBServices();
+import { getGroup } from "../group/groupServices.js";
+import { getUserYearGroupQuotas } from "../userYearQuotas/userYearQuotasServices.js";
+import { sumCountedDaysForQuota } from "./vacationServices.js";
 
 type QuotaRow = {
   userId: string;
@@ -43,7 +43,7 @@ const lockAllowance = async (check: QuotaCheck, tx: DbTransaction): Promise<void
 
 /** Falls back to the group defaults so a membership with no quota row yet is bounded, not blocked. */
 const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<number> => {
-  const [quota] = await services.userYearQuotas.getUserYearGroupQuotas(
+  const [quota] = await getUserYearGroupQuotas(
     check.year.toString(),
     check.groupId,
     check.userId,
@@ -56,7 +56,7 @@ const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<numb
       : quota.homeOfficeDays;
   }
 
-  const group = await services.group.getGroup(check.groupId, tx);
+  const group = await getGroup(check.groupId, tx);
   return check.leaveType === vacationType.Vacation
     ? (group?.defaultVacationDays ?? 0)
     : (group?.defaultHomeOfficeDays ?? 0);
@@ -74,7 +74,7 @@ const assertOne = async (
 ): Promise<void> => {
   await lockAllowance(check, tx);
 
-  const { approved, pending } = await services.vacation.sumCountedDaysForQuota(
+  const { approved, pending } = await sumCountedDaysForQuota(
     check.userId,
     check.groupId,
     check.year,

@@ -1,11 +1,9 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import AppError from "../../utils/appError.js";
 import { feedBaseUrl, serializeConfig } from "./utils.js";
-
-const services = createDBServices();
+import { getCalendarSyncById } from "../../services/calendarSync/calendarSyncServices.js";
 
 const validateUUID = z.uuid();
 
@@ -15,7 +13,7 @@ export const handleGetCalendar = async (req: Request, res: Response) => {
 
   const id = validateUUID.parse(req.params.id);
 
-  const config = await services.calendarSync.getCalendarSyncById(id, auth.userId);
+  const config = await getCalendarSyncById(id, auth.userId);
 
   if (!config) {
     throw new AppError({

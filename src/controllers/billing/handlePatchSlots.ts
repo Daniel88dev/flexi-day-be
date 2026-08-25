@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { requirePaddle } from "../../utils/paddle.js";
 import AppError from "../../utils/appError.js";
 import { PLAN_LIMITS } from "../../services/billing/entitlements.js";
@@ -15,8 +14,11 @@ import {
   subscriptionStatus,
 } from "../../db/schema/subscription-schema.js";
 import type { Subscription, ValidatedPatchSlotsType } from "../../services/billing/types.js";
-
-const services = createDBServices();
+import {
+  getSubscriptionForOrganization,
+  upsertSubscription,
+} from "../../services/billing/subscriptionServices.js";
+import { getOrganizationForOwner } from "../../services/organization/organizationServices.js";
 
 export type ActiveSubscription = Subscription & {
   paddleSubscriptionId: string;
@@ -28,9 +30,9 @@ export type ActiveSubscription = Subscription & {
 export const requireOwnedActiveSubscription = async (
   userId: string
 ): Promise<{ organizationId: string; subscription: ActiveSubscription }> => {
-  const organization = await services.organization.getOrganizationForOwner(userId);
+  const organization = await getOrganizationForOwner(userId);
   const subscription = organization
-    ? await services.billing.getSubscriptionForOrganization(organization.id)
+    ? await getSubscriptionForOrganization(organization.id)
     : undefined;
 
   if (
@@ -112,7 +114,7 @@ export const handlePatchSlots = async (req: Request, res: Response) => {
     updated.items.map((item) => ({ priceId: item.price?.id, quantity: item.quantity }))
   );
   if (derived) {
-    await services.billing.upsertSubscription(organizationId, derived);
+    await upsertSubscription(organizationId, derived);
   }
 
   return res.status(200).json({

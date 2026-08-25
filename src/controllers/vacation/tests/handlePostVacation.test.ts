@@ -64,25 +64,25 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    vacation: {
-      postVacationBulk: mockPostVacationBulk,
-    },
-    vacationEvent: {
-      createVacationEvents: mockCreateVacationEvents,
-    },
-    groupUser: {
-      getGroupUser: mockGetGroupUser,
-    },
-    group: {
-      getGroup: mockGetGroup,
-      getApprovalUsers: mockGetApprovalUsers,
-    },
-    user: {
-      getUserById: mockGetUserById,
-    },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  getGroup: mockGetGroup,
+  getApprovalUsers: mockGetApprovalUsers,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  getGroupUser: mockGetGroupUser,
+}));
+
+vi.mock("../../../services/user/userServices.js", () => ({
+  getUserById: mockGetUserById,
+}));
+
+vi.mock("../../../services/vacation/vacationServices.js", () => ({
+  postVacationBulk: mockPostVacationBulk,
+}));
+
+vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
+  createVacationEvents: mockCreateVacationEvents,
 }));
 
 import { handlePostVacation } from "../handlePostVacation.js";

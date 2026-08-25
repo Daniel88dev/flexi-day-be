@@ -29,13 +29,20 @@ vi.mock("../../../db/db.js", () => ({
   },
 }));
 
-vi.mock("../../../services/DBServices.js", () => ({
-  createDBServices: () => ({
-    group: { createGroup: mockCreateGroup },
-    groupUser: { createGroupUser: mockCreateGroupUser },
-    userYearQuotas: { openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults },
-    organization: { ensureOrganizationForUser: mockEnsureOrganizationForUser },
-  }),
+vi.mock("../../../services/group/groupServices.js", () => ({
+  createGroup: mockCreateGroup,
+}));
+
+vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
+  createGroupUser: mockCreateGroupUser,
+}));
+
+vi.mock("../../../services/organization/organizationServices.js", () => ({
+  ensureOrganizationForUser: mockEnsureOrganizationForUser,
+}));
+
+vi.mock("../../../services/userYearQuotas/userYearQuotasServices.js", () => ({
+  openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults,
 }));
 
 // Billing plan-limit guards are no-ops here; their behavior has its own suite.

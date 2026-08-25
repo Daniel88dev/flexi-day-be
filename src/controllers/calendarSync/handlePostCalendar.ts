@@ -1,12 +1,14 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { createDBServices } from "../../services/DBServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import AppError from "../../utils/appError.js";
 import { validateCreateCalendarSync } from "../../services/calendarSync/types.js";
 import { feedBaseUrl, resolveTeamIds, serializeConfig } from "./utils.js";
-
-const services = createDBServices();
+import {
+  createCalendarSync,
+  generateFeedToken,
+} from "../../services/calendarSync/calendarSyncServices.js";
+import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
 
 /** Creates a calendar-sync config and returns it with a freshly-minted token. */
 export const handlePostCalendar = async (req: Request, res: Response) => {
@@ -14,7 +16,7 @@ export const handlePostCalendar = async (req: Request, res: Response) => {
 
   const data = validateCreateCalendarSync.parse(req.body);
 
-  const userGroups = await services.groupUser.getAllGroupsForUser(auth.userId);
+  const userGroups = await getAllGroupsForUser(auth.userId);
   const userGroupIds = new Set(userGroups.map((g) => g.groupId));
 
   const teamIds = resolveTeamIds(data, userGroupIds);
@@ -26,14 +28,14 @@ export const handlePostCalendar = async (req: Request, res: Response) => {
     });
   }
 
-  const config = await services.calendarSync.createCalendarSync(
+  const config = await createCalendarSync(
     {
       id: generateRandomUUID(),
       userId: auth.userId,
       name: data.name,
       scope: data.scope,
       distinguishMine: data.distinguishMine,
-      token: services.calendarSync.generateFeedToken(),
+      token: generateFeedToken(),
     },
     teamIds,
     data.types.map((t) => ({
