@@ -147,7 +147,10 @@ export const reportRouter = (): Router => {
    *     description: |
    *       Streams a two-sheet `.xlsx`: allowances as they stand today on the
    *       first sheet, every individual booking on the second, both with Excel
-   *       AutoFilter enabled across all columns. Each call writes a
+   *       AutoFilter enabled across all columns. Bank holidays never appear in
+   *       the workbook: a company-wide closure is not leave anyone took, so
+   *       `BANK_HOLIDAY` is rejected as a filter value and its rows are
+   *       excluded even without a filter. Each call writes a
    *       `report_exports` audit row naming the caller, year and filters.
    *     security:
    *       - bearerAuth: []
@@ -178,7 +181,6 @@ export const reportRouter = (): Router => {
    *                     - VACATION
    *                     - HOME_OFFICE
    *                     - SICK
-   *                     - BANK_HOLIDAY
    *                     - NON_PAID_LEAVE
    *                     - PAID_TIME_OFF
    *                     - SICK_DAY
@@ -194,6 +196,8 @@ export const reportRouter = (): Router => {
    *               format: binary
    *       '413':
    *         description: Too many rows for one export — narrow the filters
+   *       '422':
+   *         description: Invalid body — year out of range or a non-exportable type
    */
   app.post(
     "/export",

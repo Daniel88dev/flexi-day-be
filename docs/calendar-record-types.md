@@ -4,7 +4,7 @@ The classification of a vacation row. Code says `CalendarRecordType`; the Postgr
 keep their historical name `vacation_type` ([ADR 0002](adr/0002-calendar-record-type-rename.md)).
 Avoid the aliases _leave type_, _vacation type_ and _vacation kind_.
 
-Two rules cut across all nine types:
+Three rules cut across all nine types:
 
 - **Requestable** — every type except Bank holiday may be created by a member through
   `POST /create-vacation`. Bank holiday is written only by the admin bank-holiday flow: it is a
@@ -13,6 +13,11 @@ Two rules cut across all nine types:
 - **Quota-bearing** — only Vacation and Home office draw down a `user_year_quotas` allowance
   (`QUOTA_BEARING_TYPES` in `src/services/report/buildSummary.ts`). Every other type books without
   metering.
+- **Exportable** — every type except Bank holiday appears in the Excel export
+  (`EXPORTABLE_CALENDAR_RECORD_TYPES` in `src/services/report/types.ts`). The export answers what
+  leave people took, and a company-wide closure is not part of that answer; `POST /export` rejects
+  `BANK_HOLIDAY` as a filter and excludes its rows even without one. The overview endpoint still
+  accepts and returns it, though the frontend no longer offers it as a filter option anywhere.
 
 | Type           | Stored value     | Use when                                                          |
 | -------------- | ---------------- | ----------------------------------------------------------------- |

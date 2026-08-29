@@ -620,6 +620,48 @@ describe("Report API E2E", () => {
         .send({ year: 1999 })
         .expect(422);
     });
+
+    it("rejects bank holiday as a type filter", async () => {
+      const manager = await makeUser("Manager");
+
+      await request(app)
+        .post("/api/reports/export")
+        .set("Cookie", await authCookieFor(manager.id))
+        .send({ year: FUTURE_YEAR, types: [CalendarRecordType.BankHoliday] })
+        .expect(422);
+    });
+
+    it("keeps bank holiday rows out of the workbook even without a type filter", async () => {
+      const manager = await makeUser("Manager");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, manager.id, { viewAccess: true });
+      await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 3, 10));
+      await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 5, 1), {
+        type: CalendarRecordType.BankHoliday,
+      });
+
+      const res = await request(app)
+        .post("/api/reports/export")
+        .set("Cookie", await authCookieFor(manager.id))
+        .send({ year: FUTURE_YEAR })
+        .buffer(true)
+        .parse((response, callback) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(res.body as ArrayBuffer);
+      const types = new Set<string>();
+      workbook.getWorksheet("Detail")?.eachRow((row, index) => {
+        if (index > 1) types.add(String(row.getCell(3).value));
+      });
+
+      expect(types).toContain("Vacation");
+      expect(types).not.toContain("Bank Holiday");
+    });
   });
 
   describe("GET /api/quotas/:groupId/carryover-suggestion", () => {
