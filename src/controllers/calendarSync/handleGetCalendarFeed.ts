@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { buildIcsCalendar, type IcsEvent } from "../../utils/ics.js";
-import { VACATION_TYPE_LABELS } from "./utils.js";
+import { CALENDAR_RECORD_TYPE_LABELS } from "./utils.js";
 import {
   getCalendarSyncByToken,
   getFeedRecords,
@@ -38,7 +38,7 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
   const records = await getFeedRecords(config);
 
   const events: IcsEvent[] = records.map((r) => {
-    const label = VACATION_TYPE_LABELS[r.vacationType];
+    const label = CALENDAR_RECORD_TYPE_LABELS[r.vacationType];
     return {
       uid: `${r.id}@flexiday`,
       startDate: r.requestedDay,

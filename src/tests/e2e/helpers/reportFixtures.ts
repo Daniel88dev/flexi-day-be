@@ -4,7 +4,7 @@ import { db } from "../../../db/db.js";
 import { user } from "../../../db/schema/auth-schema.js";
 import { groups } from "../../../db/schema/group-schema.js";
 import { groupUsers } from "../../../db/schema/group-users-schema.js";
-import { vacation, vacationType } from "../../../db/schema/vacation-schema.js";
+import { vacation, CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import { userYearQuotas } from "../../../db/schema/user-year-quotas-schema.js";
 import { changesSchema, changesType } from "../../../db/schema/changes-schema.js";
 import { reportExports } from "../../../db/schema/report-export-schema.js";
@@ -99,7 +99,7 @@ export async function addQuota(
 }
 
 export type LeaveOptions = {
-  type?: vacationType;
+  type?: CalendarRecordType;
   halfDay?: boolean;
   approved?: boolean;
   rejected?: boolean;
@@ -119,7 +119,7 @@ export async function addLeave(
     userId,
     groupId,
     requestedDay,
-    vacationType: options.type ?? vacationType.Vacation,
+    vacationType: options.type ?? CalendarRecordType.Vacation,
     halfDay: options.halfDay ?? false,
     approvedAt: options.approved === false ? null : new Date(),
     rejectedAt: options.rejected ? new Date() : null,

@@ -2,7 +2,7 @@ import { boolean, index, pgEnum, pgTable, text, timestamp, uniqueIndex } from "d
 import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
-import { vacationEnum } from "./vacation-schema.js";
+import { calendarRecordTypeEnum } from "./vacation-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
 /**
@@ -88,7 +88,7 @@ export const calendarSyncTypes = pgTable(
     calendarSyncId: text("calendar_sync_id")
       .notNull()
       .references(() => calendarSync.id, { onDelete: "cascade" }),
-    vacationType: vacationEnum("vacation_type").notNull(),
+    vacationType: calendarRecordTypeEnum("vacation_type").notNull(),
     // Swatch key from the shared palette (e.g. "violet"), not a raw color.
     color: text("color").notNull(),
     mineColor: text("mine_color"),

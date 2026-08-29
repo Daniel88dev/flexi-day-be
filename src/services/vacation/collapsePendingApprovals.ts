@@ -1,4 +1,4 @@
-import type { vacationType } from "../../db/schema/vacation-schema.js";
+import type { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { PendingApprovalRow } from "./vacationServices.js";
 import { countBusinessDaysInclusive } from "../../utils/dateFunc.js";
 import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
@@ -8,7 +8,7 @@ export type PendingApprovalEntry = {
   user: UserSummary;
   groupId: string;
   groupName: string;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   from: string;
   to: string;
   businessDays: number;

@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { collapseBookings, type BookingRow } from "../collapseBookings.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 
 const row = (overrides: Partial<BookingRow> & { requestedDay: string }): BookingRow => ({
   userId: "u1",
   userName: "Ada Lovelace",
   groupId: "g1",
   groupName: "Engineering",
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   halfDay: false,
   approvedAt: new Date("2026-01-01T00:00:00Z"),
   rejectedAt: null,
@@ -59,10 +59,10 @@ describe("collapseBookings", () => {
     expect(result.map((b) => b.status)).toEqual(["approved", "pending"]);
   });
 
-  it("does not merge across a leave type change", () => {
+  it("does not merge across a record type change", () => {
     const result = collapseBookings([
       row({ requestedDay: "2026-03-12" }),
-      row({ requestedDay: "2026-03-13", vacationType: vacationType.HomeOffice }),
+      row({ requestedDay: "2026-03-13", vacationType: CalendarRecordType.HomeOffice }),
     ]);
 
     expect(result).toHaveLength(2);

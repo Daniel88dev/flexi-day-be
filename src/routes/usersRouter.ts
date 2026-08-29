@@ -58,7 +58,7 @@ export const usersRouter = (): Router => {
    *           type: integer
    *     responses:
    *       '200':
-   *         description: Balance buckets per vacation type
+   *         description: Balance buckets per calendar record type
    */
   app.get("/me/balances", tryCatch(handleGetMyBalances));
 

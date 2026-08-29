@@ -50,7 +50,7 @@ import {
   notifyVacationDecision,
   notifyVacationRequested,
 } from "../vacationNotifier.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 
 const groupId = "group-1";
 
@@ -59,7 +59,7 @@ const row = (overrides: Partial<Record<string, unknown>> = {}) => ({
   userId: "employee-1",
   groupId,
   requestedDay: "2026-08-12",
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   ...overrides,
 });
 

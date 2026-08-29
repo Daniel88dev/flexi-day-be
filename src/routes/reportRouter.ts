@@ -66,7 +66,7 @@ export const reportRouter = (): Router => {
    *       - Reports
    *     summary: Monthly usage series and allowance summary
    *     description: |
-   *       Returns one `monthly` row per (member, group, month, leave type) for
+   *       Returns one `monthly` row per (member, group, month, record type) for
    *       the charts, and one `summary` row per (member, group, quota-bearing
    *       type) for the table. Day counts are weighted: a `halfDay` booking
    *       counts 0.5. Filters outside the caller's scope are silently dropped
@@ -91,7 +91,10 @@ export const reportRouter = (): Router => {
    *           type: string
    *       - name: types
    *         in: query
-   *         description: Repeatable or comma-separated vacation types
+   *         description: |
+   *           Repeatable or comma-separated record types. Accepted values: VACATION,
+   *           HOME_OFFICE, SICK, BANK_HOLIDAY, NON_PAID_LEAVE, PAID_TIME_OFF, SICK_DAY,
+   *           STUDY_LEAVE, OTHER.
    *         schema:
    *           type: string
    *     responses:
@@ -171,6 +174,16 @@ export const reportRouter = (): Router => {
    *                 type: array
    *                 items:
    *                   type: string
+   *                   enum:
+   *                     - VACATION
+   *                     - HOME_OFFICE
+   *                     - SICK
+   *                     - BANK_HOLIDAY
+   *                     - NON_PAID_LEAVE
+   *                     - PAID_TIME_OFF
+   *                     - SICK_DAY
+   *                     - STUDY_LEAVE
+   *                     - OTHER
    *     responses:
    *       '200':
    *         description: The workbook

@@ -1,4 +1,4 @@
-import type { vacationType } from "../../db/schema/vacation-schema.js";
+import type { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { ReportBooking } from "./types.js";
 
 export type BookingRow = {
@@ -6,7 +6,7 @@ export type BookingRow = {
   userName: string;
   groupId: string;
   groupName: string;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   requestedDay: string;
   halfDay: boolean;
   approvedAt: Date | null;

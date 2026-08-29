@@ -31,7 +31,13 @@ export interface PasswordResetData {
   expiresIn: string;
 }
 
-/** `vacation-approval-request`: sent to a group approver. */
+/**
+ * `vacation-approval-request`: sent to a group approver.
+ *
+ * `leaveType` (here and in the templates below) is baked into the deployed
+ * SES templates as a variable name, so it keeps that spelling even though the
+ * code calls the concept `CalendarRecordType`.
+ */
 export interface VacationApprovalRequestData {
   approverName: string;
   employeeName: string;

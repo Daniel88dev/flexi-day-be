@@ -14,19 +14,20 @@ import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
-export enum vacationType {
+export enum CalendarRecordType {
   Vacation = "VACATION",
   HomeOffice = "HOME_OFFICE",
   Sick = "SICK",
   BankHoliday = "BANK_HOLIDAY",
   NonPaidLeave = "NON_PAID_LEAVE",
   PaidTimeOff = "PAID_TIME_OFF",
-  SickLeave = "SICK_LEAVE",
+  SickDay = "SICK_DAY",
   StudyLeave = "STUDY_LEAVE",
   Other = "OTHER",
 }
 
-export const vacationEnum = pgEnum("vacation_type", enumToPgEnum(vacationType));
+// The PG enum keeps its historical name — see docs/adr/0002-calendar-record-type-rename.md.
+export const calendarRecordTypeEnum = pgEnum("vacation_type", enumToPgEnum(CalendarRecordType));
 
 export const vacation = pgTable(
   "vacation",
@@ -41,7 +42,9 @@ export const vacation = pgTable(
     requestedDay: date("requested_day").notNull(),
     startTime: time("start_time"),
     endTime: time("end_time"),
-    vacationType: vacationEnum("vacation_type").notNull().default(vacationType.Vacation),
+    vacationType: calendarRecordTypeEnum("vacation_type")
+      .notNull()
+      .default(CalendarRecordType.Vacation),
     // Authoritative for quota accounting: a half day counts 0.5 against the
     // allowance. `startTime`/`endTime` are presentation only and must never be
     // used to infer this — they are free-form and often set on full days too.

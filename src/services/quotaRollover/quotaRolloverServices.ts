@@ -3,7 +3,7 @@ import { db } from "../../db/db.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
-import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
+import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { changesSchema, changesType } from "../../db/schema/changes-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { logger } from "../../middleware/logger.js";
@@ -54,7 +54,7 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
     .from(vacation)
     .where(
       and(
-        eq(vacation.vacationType, vacationType.Vacation),
+        eq(vacation.vacationType, CalendarRecordType.Vacation),
         isNull(vacation.deletedAt),
         isNull(vacation.rejectedAt),
         sql`${vacation.requestedDay} >= ${previousStart}`,

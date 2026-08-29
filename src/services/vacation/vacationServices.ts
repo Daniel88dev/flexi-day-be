@@ -1,6 +1,6 @@
 import AppError from "../../utils/appError.js";
 import { db, type DbTransaction } from "../../db/db.js";
-import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
+import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import {
   and,
   asc,
@@ -586,7 +586,7 @@ export type PendingApprovalRow = {
   userName: string;
   groupId: string;
   groupName: string;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   requestedDay: string;
   note: string | null;
   submittedAt: Date;
@@ -677,7 +677,7 @@ export const sumCountedDaysForQuota = async (
   userId: string,
   groupId: string,
   year: number,
-  leaveType: vacationType,
+  calendarRecordType: CalendarRecordType,
   excludeVacationIds: string[] = [],
   tx?: DbTransaction
 ): Promise<{ approved: number; pending: number }> => {
@@ -694,7 +694,7 @@ export const sumCountedDaysForQuota = async (
       and(
         eq(vacation.userId, userId),
         eq(vacation.groupId, groupId),
-        eq(vacation.vacationType, leaveType),
+        eq(vacation.vacationType, calendarRecordType),
         isNull(vacation.deletedAt),
         isNull(vacation.rejectedAt),
         gte(vacation.requestedDay, yearStart),
@@ -752,7 +752,7 @@ export const countApprovedVacationsInRange = async (
 };
 
 /**
- * Aggregates user vacation usage per vacation type for the supplied groups
+ * Aggregates user vacation usage per calendar record type for the supplied groups
  * and year. Approved (or non-rejected) usage is split into "used" and
  * "pending" buckets matching the `BalanceWidget` shape.
  */
@@ -760,7 +760,7 @@ export const aggregateUserUsageForYear = async (
   userId: string,
   groupIds: string[],
   year: number
-): Promise<{ type: vacationType; used: number; pending: number }[]> => {
+): Promise<{ type: CalendarRecordType; used: number; pending: number }[]> => {
   if (groupIds.length === 0) return [];
   const yearStart = `${year.toString().padStart(4, "0")}-01-01`;
   const yearEnd = `${(year + 1).toString().padStart(4, "0")}-01-01`;

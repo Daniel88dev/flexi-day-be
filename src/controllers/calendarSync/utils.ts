@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type {
   CalendarSyncFull,
   ValidatedCreateCalendarSync,
@@ -7,17 +7,17 @@ import type {
 import { config } from "../../config.js";
 import AppError from "../../utils/appError.js";
 
-/** Human-readable labels for each leave type, used in feed event summaries. */
-export const VACATION_TYPE_LABELS: Record<vacationType, string> = {
-  [vacationType.Vacation]: "Vacation",
-  [vacationType.HomeOffice]: "Home office",
-  [vacationType.Sick]: "Sick",
-  [vacationType.BankHoliday]: "Bank holiday",
-  [vacationType.NonPaidLeave]: "Non-paid leave",
-  [vacationType.PaidTimeOff]: "Paid time off",
-  [vacationType.SickLeave]: "Sick leave",
-  [vacationType.StudyLeave]: "Study leave",
-  [vacationType.Other]: "Other",
+/** Human-readable labels for each calendar record type, used in feed event summaries. */
+export const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
+  [CalendarRecordType.Vacation]: "Vacation",
+  [CalendarRecordType.HomeOffice]: "Home office",
+  [CalendarRecordType.Sick]: "Sick",
+  [CalendarRecordType.BankHoliday]: "Bank holiday",
+  [CalendarRecordType.NonPaidLeave]: "Non-paid leave",
+  [CalendarRecordType.PaidTimeOff]: "Paid time off",
+  [CalendarRecordType.SickDay]: "Sick day",
+  [CalendarRecordType.StudyLeave]: "Study leave",
+  [CalendarRecordType.Other]: "Other",
 };
 
 /**
@@ -62,7 +62,7 @@ export const serializeConfig = (
   teamIds: config.teamIds,
   types: config.types.map((t) => ({
     type: t.vacationType,
-    label: VACATION_TYPE_LABELS[t.vacationType],
+    label: CALENDAR_RECORD_TYPE_LABELS[t.vacationType],
     color: t.color,
     mineColor: t.mineColor,
   })),

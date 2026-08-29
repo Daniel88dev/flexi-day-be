@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 
 /**
  * Swatch palette keys shared with the front-end builder. Colors are stored as
@@ -35,9 +35,9 @@ export type CalendarSyncRecord = {
   updatedAt: Date;
 };
 
-/** One included leave type with its display color(s). */
+/** One included calendar record type with its display color(s). */
 export type CalendarSyncTypeEntry = {
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   color: string;
   mineColor: string | null;
 };
@@ -62,7 +62,7 @@ export type CalendarFeedRecord = {
   userId: string;
   userName: string;
   groupId: string;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   requestedDay: string;
   startTime: string | null;
   endTime: string | null;
@@ -70,7 +70,7 @@ export type CalendarFeedRecord = {
 };
 
 const typeEntrySchema = z.object({
-  type: z.enum(vacationType),
+  type: z.enum(CalendarRecordType),
   color: z.enum(CALENDAR_SYNC_PALETTE),
   mineColor: z.enum(CALENDAR_SYNC_PALETTE).optional(),
 });

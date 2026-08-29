@@ -1,17 +1,17 @@
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { VacationType } from "./types.js";
 import type { VacationUpdatePatch } from "./vacationServices.js";
 
-const TYPE_LABELS: Record<vacationType, string> = {
-  [vacationType.Vacation]: "Vacation",
-  [vacationType.HomeOffice]: "Home office",
-  [vacationType.Sick]: "Sick",
-  [vacationType.BankHoliday]: "Bank holiday",
-  [vacationType.NonPaidLeave]: "Non-paid leave",
-  [vacationType.PaidTimeOff]: "Paid time off",
-  [vacationType.SickLeave]: "Sick leave",
-  [vacationType.StudyLeave]: "Study leave",
-  [vacationType.Other]: "Other",
+const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
+  [CalendarRecordType.Vacation]: "Vacation",
+  [CalendarRecordType.HomeOffice]: "Home office",
+  [CalendarRecordType.Sick]: "Sick",
+  [CalendarRecordType.BankHoliday]: "Bank holiday",
+  [CalendarRecordType.NonPaidLeave]: "Non-paid leave",
+  [CalendarRecordType.PaidTimeOff]: "Paid time off",
+  [CalendarRecordType.SickDay]: "Sick day",
+  [CalendarRecordType.StudyLeave]: "Study leave",
+  [CalendarRecordType.Other]: "Other",
 };
 
 const orDash = (value: string | null | undefined): string => (value?.length ? value : "—");
@@ -33,7 +33,9 @@ export const describeVacationChanges = (
   const diffs: string[] = [];
 
   if (patch.vacationType !== undefined && patch.vacationType !== previous.vacationType) {
-    diffs.push(`Type: ${TYPE_LABELS[previous.vacationType]} → ${TYPE_LABELS[patch.vacationType]}`);
+    diffs.push(
+      `Type: ${CALENDAR_RECORD_TYPE_LABELS[previous.vacationType]} → ${CALENDAR_RECORD_TYPE_LABELS[patch.vacationType]}`
+    );
   }
   if (patch.halfDay !== undefined && patch.halfDay !== previous.halfDay) {
     diffs.push(`Half day: ${previous.halfDay ? "yes" : "no"} → ${patch.halfDay ? "yes" : "no"}`);

@@ -19,7 +19,7 @@ vi.mock("../vacationServices.js", () => ({
 }));
 
 import { assertEditWithinQuota, assertRequestWithinQuota } from "../quotaGuard.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import type { DbTransaction } from "../../../db/db.js";
 
 const tx = { execute: vi.fn() } as unknown as DbTransaction;
@@ -29,7 +29,7 @@ const editedRow = (overrides: Record<string, unknown> = {}) => ({
   userId: "u-1",
   groupId: "g-1",
   requestedDay: "2026-08-20",
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   halfDay: false,
   ...overrides,
 });
@@ -56,7 +56,7 @@ describe("assertEditWithinQuota", () => {
       "u-1",
       "g-1",
       2026,
-      vacationType.Vacation,
+      CalendarRecordType.Vacation,
       ["v-1"],
       tx
     );
@@ -81,7 +81,7 @@ describe("assertEditWithinQuota", () => {
 
   it("ignores non-quota-bearing types", async () => {
     await expect(
-      assertEditWithinQuota([editedRow({ vacationType: vacationType.Sick })], tx)
+      assertEditWithinQuota([editedRow({ vacationType: CalendarRecordType.Sick })], tx)
     ).resolves.toBeUndefined();
     expect(mockSumCountedDaysForQuota).not.toHaveBeenCalled();
   });
@@ -104,7 +104,7 @@ describe("assertRequestWithinQuota", () => {
       "u-1",
       "g-1",
       2026,
-      vacationType.Vacation,
+      CalendarRecordType.Vacation,
       [],
       tx
     );
