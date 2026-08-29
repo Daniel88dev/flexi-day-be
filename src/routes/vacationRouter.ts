@@ -239,6 +239,15 @@ export const vacationRouter = (): Router => {
    *           format: date
    *         vacationType:
    *           type: string
+   *           enum:
+   *             - VACATION
+   *             - HOME_OFFICE
+   *             - SICK
+   *             - NON_PAID_LEAVE
+   *             - PAID_TIME_OFF
+   *             - SICK_DAY
+   *             - STUDY_LEAVE
+   *             - OTHER
    *         startTime:
    *           type: string
    *           nullable: true
@@ -599,6 +608,15 @@ export const vacationRouter = (): Router => {
    *                   format: uuid
    *               vacationType:
    *                 type: string
+   *                 enum:
+   *                   - VACATION
+   *                   - HOME_OFFICE
+   *                   - SICK
+   *                   - NON_PAID_LEAVE
+   *                   - PAID_TIME_OFF
+   *                   - SICK_DAY
+   *                   - STUDY_LEAVE
+   *                   - OTHER
    *               startTime:
    *                 type: string
    *                 nullable: true
