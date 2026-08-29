@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
+import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { v4 as uuidv4 } from "uuid";
 import { getVacationsForGroup } from "../../services/vacation/vacationServices.js";
 import {
@@ -55,7 +55,7 @@ describe("group mirroring", () => {
       userId,
       groupId,
       requestedDay: day,
-      vacationType: vacationType.Vacation,
+      vacationType: CalendarRecordType.Vacation,
       approvedAt: approved ? new Date() : null,
       approvedBy: approved ? manager.id : null,
     });

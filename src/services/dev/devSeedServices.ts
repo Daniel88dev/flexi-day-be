@@ -9,7 +9,7 @@ import { organizations } from "../../db/schema/organization-schema.js";
 import { subscriptions } from "../../db/schema/subscription-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { supportAccess } from "../../db/schema/support-access-schema.js";
-import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
+import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
@@ -191,7 +191,7 @@ export const addVacation = async (input: {
   groupId: string;
   requestedDay: string;
   state: VacationState;
-  type?: vacationType;
+  type?: CalendarRecordType;
   actorUserId?: string;
   note?: string;
 }): Promise<string | undefined> => {
@@ -205,7 +205,7 @@ export const addVacation = async (input: {
       userId: input.userId,
       groupId: input.groupId,
       requestedDay: input.requestedDay,
-      vacationType: input.type ?? vacationType.Vacation,
+      vacationType: input.type ?? CalendarRecordType.Vacation,
       note: input.note,
       approvedAt: input.state === "approved" ? now : null,
       approvedBy: input.state === "approved" ? (input.actorUserId ?? null) : null,

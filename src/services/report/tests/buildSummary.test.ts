@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildSummaryEntries } from "../buildSummary.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import type { ReportQuotaRow } from "../types.js";
 
 const quota = (overrides: Partial<ReportQuotaRow> = {}): ReportQuotaRow => ({
@@ -15,7 +15,7 @@ const quota = (overrides: Partial<ReportQuotaRow> = {}): ReportQuotaRow => ({
 const usage = (overrides: Partial<Parameters<typeof buildSummaryEntries>[1][number]> = {}) => ({
   userId: "u1",
   groupId: "g1",
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   usedToDate: 5,
   plannedRemaining: 2,
   pending: 1,
@@ -27,7 +27,7 @@ describe("buildSummaryEntries", () => {
     const [vacationEntry] = buildSummaryEntries([quota()], [usage()], []);
 
     expect(vacationEntry).toMatchObject({
-      vacationType: vacationType.Vacation,
+      vacationType: CalendarRecordType.Vacation,
       carriedOverDays: 3,
       yearQuota: 20,
       usedToDate: 5,
@@ -38,7 +38,7 @@ describe("buildSummaryEntries", () => {
 
   it("does not apply carry-over to the home office allowance", () => {
     const entries = buildSummaryEntries([quota()], [], []);
-    const homeOffice = entries.find((e) => e.vacationType === vacationType.HomeOffice);
+    const homeOffice = entries.find((e) => e.vacationType === CalendarRecordType.HomeOffice);
 
     expect(homeOffice).toMatchObject({ carriedOverDays: 0, yearQuota: 10, remaining: 10 });
   });
@@ -52,19 +52,19 @@ describe("buildSummaryEntries", () => {
 
   it("includes members with bookings but no quota row", () => {
     const entries = buildSummaryEntries([], [usage({ userId: "u2" })], []);
-    const vacationEntry = entries.find((e) => e.vacationType === vacationType.Vacation);
+    const vacationEntry = entries.find((e) => e.vacationType === CalendarRecordType.Vacation);
 
     expect(vacationEntry).toMatchObject({ userId: "u2", yearQuota: 0, remaining: -7 });
   });
 
   it("emits only the quota-bearing types present in the type filter", () => {
-    const entries = buildSummaryEntries([quota()], [], [], [vacationType.HomeOffice]);
+    const entries = buildSummaryEntries([quota()], [], [], [CalendarRecordType.HomeOffice]);
 
-    expect(entries.map((e) => e.vacationType)).toEqual([vacationType.HomeOffice]);
+    expect(entries.map((e) => e.vacationType)).toEqual([CalendarRecordType.HomeOffice]);
   });
 
   it("returns nothing when the type filter excludes both quota-bearing types", () => {
-    expect(buildSummaryEntries([quota()], [], [], [vacationType.Sick])).toEqual([]);
+    expect(buildSummaryEntries([quota()], [], [], [CalendarRecordType.Sick])).toEqual([]);
   });
 
   it("keeps a member's groups as separate lines", () => {
@@ -74,7 +74,7 @@ describe("buildSummaryEntries", () => {
       []
     );
 
-    expect(entries.filter((e) => e.vacationType === vacationType.Vacation)).toHaveLength(2);
+    expect(entries.filter((e) => e.vacationType === CalendarRecordType.Vacation)).toHaveLength(2);
   });
 
   it("rounds a half-day remainder to two decimals rather than a float artefact", () => {
@@ -83,7 +83,7 @@ describe("buildSummaryEntries", () => {
       [usage({ usedToDate: 0.1, plannedRemaining: 0.2 })],
       []
     );
-    const vacationEntry = entries.find((e) => e.vacationType === vacationType.Vacation);
+    const vacationEntry = entries.find((e) => e.vacationType === CalendarRecordType.Vacation);
 
     expect(vacationEntry?.remaining).toBe(19.7);
   });

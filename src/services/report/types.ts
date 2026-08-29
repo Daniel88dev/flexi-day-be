@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 
 /**
@@ -30,7 +30,7 @@ export type MonthlyUsageRow = {
   userId: string;
   groupId: string;
   month: number;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   used: number;
   pending: number;
 };
@@ -64,7 +64,7 @@ export type ReportBooking = {
   userName: string;
   groupId: string;
   groupName: string;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   from: string;
   to: string;
   days: number;
@@ -74,7 +74,9 @@ export type ReportBooking = {
   note: string | null;
 };
 
-const vacationKindEnum = z.enum(Object.values(vacationType) as [vacationType, ...vacationType[]]);
+const recordTypeEnum = z.enum(
+  Object.values(CalendarRecordType) as [CalendarRecordType, ...CalendarRecordType[]]
+);
 
 /**
  * Comma-separated repeatable query filters (`?groupIds=a,b&groupIds=c`), which
@@ -103,7 +105,7 @@ export const validateReportQuery = z.object({
   year: yearField,
   groupIds: csvList,
   userIds: csvList,
-  types: csvList.pipe(z.array(vacationKindEnum).optional()),
+  types: csvList.pipe(z.array(recordTypeEnum).optional()),
 });
 
 export type ValidatedReportQuery = z.infer<typeof validateReportQuery>;
@@ -118,7 +120,7 @@ export const validateExportRequest = z.object({
   year: z.number().int().min(2025).max(2100),
   groupIds: z.array(z.string().min(1)).max(200).optional(),
   userIds: z.array(z.string().min(1)).max(2000).optional(),
-  types: z.array(vacationKindEnum).max(20).optional(),
+  types: z.array(recordTypeEnum).max(20).optional(),
 });
 
 export type ValidatedExportRequest = z.infer<typeof validateExportRequest>;

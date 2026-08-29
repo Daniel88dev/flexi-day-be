@@ -89,13 +89,13 @@ import { handlePostVacation } from "../handlePostVacation.js";
 import { generateRandomUUID } from "../../../utils/generateUUID.js";
 import { getAuth } from "../../../middleware/authSession.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 
 const baseBody = (overrides: Record<string, unknown> = {}) => ({
   groupId: "group_123",
   from: new Date("2024-03-15T00:00:00Z"),
   to: new Date("2024-03-15T00:00:00Z"),
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   startTime: "09:00",
   endTime: "17:00",
   note: null,
@@ -163,7 +163,7 @@ describe("handlePostVacation", () => {
           userId: "user_123",
           groupId: "group_123",
           requestedDay: "2024-03-15",
-          vacationType: vacationType.Vacation,
+          vacationType: CalendarRecordType.Vacation,
         }),
       ],
       {}

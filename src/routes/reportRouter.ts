@@ -66,7 +66,7 @@ export const reportRouter = (): Router => {
    *       - Reports
    *     summary: Monthly usage series and allowance summary
    *     description: |
-   *       Returns one `monthly` row per (member, group, month, leave type) for
+   *       Returns one `monthly` row per (member, group, month, record type) for
    *       the charts, and one `summary` row per (member, group, quota-bearing
    *       type) for the table. Day counts are weighted: a `halfDay` booking
    *       counts 0.5. Filters outside the caller's scope are silently dropped
@@ -91,7 +91,7 @@ export const reportRouter = (): Router => {
    *           type: string
    *       - name: types
    *         in: query
-   *         description: Repeatable or comma-separated vacation types
+   *         description: Repeatable or comma-separated record types
    *         schema:
    *           type: string
    *     responses:

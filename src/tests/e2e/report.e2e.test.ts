@@ -7,7 +7,7 @@ import { db } from "../../db/db.js";
 import { reportExports } from "../../db/schema/report-export-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import {
   addChange,
@@ -51,7 +51,7 @@ type Monthly = {
 };
 
 const vacationSummaryFor = (summary: Summary[], userId: string) =>
-  summary.find((row) => row.userId === userId && row.vacationType === vacationType.Vacation);
+  summary.find((row) => row.userId === userId && row.vacationType === CalendarRecordType.Vacation);
 
 describe("Report API E2E", () => {
   let app: Express;
@@ -338,17 +338,17 @@ describe("Report API E2E", () => {
       await addMember(groupId, manager.id);
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 3, 10));
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 3, 11), {
-        type: vacationType.Sick,
+        type: CalendarRecordType.Sick,
       });
 
       const res = await request(app)
         .get("/api/reports/overview")
-        .query({ year: FUTURE_YEAR, types: vacationType.Sick })
+        .query({ year: FUTURE_YEAR, types: CalendarRecordType.Sick })
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
 
       expect((res.body.monthly as Monthly[]).map((r) => r.vacationType)).toEqual([
-        vacationType.Sick,
+        CalendarRecordType.Sick,
       ]);
     });
 
@@ -587,7 +587,7 @@ describe("Report API E2E", () => {
       await request(app)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
-        .send({ year: FUTURE_YEAR, groupIds: [groupId], types: [vacationType.Vacation] })
+        .send({ year: FUTURE_YEAR, groupIds: [groupId], types: [CalendarRecordType.Vacation] })
         .buffer(true)
         .parse((response, callback) => {
           response.on("data", () => undefined);
@@ -607,7 +607,7 @@ describe("Report API E2E", () => {
       expect(audit[0]?.filters).toMatchObject({
         year: FUTURE_YEAR,
         groupIds: [groupId],
-        types: [vacationType.Vacation],
+        types: [CalendarRecordType.Vacation],
       });
     });
 

@@ -62,7 +62,7 @@ vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({
 import { handleUpdateVacation } from "../handleUpdateVacation.js";
 import { getAuth } from "../../../middleware/authSession.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 
 const groupId = "550e8400-e29b-41d4-a716-446655440009";
 
@@ -73,7 +73,7 @@ const baseRow = (overrides: Record<string, unknown> = {}) => ({
   requestedDay: "2026-08-20",
   startTime: "09:00:00",
   endTime: "17:00:00",
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   halfDay: false,
   approvedAt: null,
   rejectedAt: null,
@@ -95,14 +95,14 @@ describe("handleUpdateVacation", () => {
 
   it("updates the rows, writes an UPDATED event with a change summary, and notifies the member", async () => {
     const { req, res } = makeReqRes({
-      body: { ids: ["v-1"], vacationType: vacationType.Sick, halfDay: true },
+      body: { ids: ["v-1"], vacationType: CalendarRecordType.Sick, halfDay: true },
     });
 
     await handleUpdateVacation(req, res);
 
     expect(mockUpdateVacationRows).toHaveBeenCalledWith(
       ["v-1"],
-      { vacationType: vacationType.Sick, halfDay: true },
+      { vacationType: CalendarRecordType.Sick, halfDay: true },
       expect.anything()
     );
     expect(mockCreateVacationEvents).toHaveBeenCalledWith(
@@ -136,13 +136,13 @@ describe("handleUpdateVacation", () => {
 
   it("runs the quota guard at the post-edit weight when the type changes", async () => {
     const { req, res } = makeReqRes({
-      body: { ids: ["v-1"], vacationType: vacationType.HomeOffice },
+      body: { ids: ["v-1"], vacationType: CalendarRecordType.HomeOffice },
     });
 
     await handleUpdateVacation(req, res);
 
     expect(mockAssertEditWithinQuota).toHaveBeenCalledWith(
-      [expect.objectContaining({ id: "v-1", vacationType: vacationType.HomeOffice })],
+      [expect.objectContaining({ id: "v-1", vacationType: CalendarRecordType.HomeOffice })],
       expect.anything()
     );
   });

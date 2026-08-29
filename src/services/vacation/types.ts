@@ -1,6 +1,6 @@
 import type { DateString } from "../../utils/dateFunc.js";
 import { z } from "zod";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 
 export type VacationType = {
@@ -10,7 +10,7 @@ export type VacationType = {
   requestedDay: DateString;
   startTime: string | null;
   endTime: string | null;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   halfDay: boolean;
   approvedAt: Date | null;
   approvedBy: string | null;
@@ -91,11 +91,11 @@ export type ValidatedCancelVacationType = z.infer<typeof validateCancelVacation>
  * the admin `bankHolidayRouter`, costs no allowance, and shows to the whole team
  * unattributed, so nobody may grant themselves one.
  */
-export const REQUESTABLE_VACATION_TYPES = Object.values(vacationType).filter(
-  (kind) => kind !== vacationType.BankHoliday
-) as [vacationType, ...vacationType[]];
+export const REQUESTABLE_CALENDAR_RECORD_TYPES = Object.values(CalendarRecordType).filter(
+  (recordType) => recordType !== CalendarRecordType.BankHoliday
+) as [CalendarRecordType, ...CalendarRecordType[]];
 
-const requestableKindEnum = z.enum(REQUESTABLE_VACATION_TYPES);
+const requestableRecordTypeEnum = z.enum(REQUESTABLE_CALENDAR_RECORD_TYPES);
 
 export const validatePostVacation = z
   .object({
@@ -106,7 +106,7 @@ export const validatePostVacation = z
     userId: z.string().min(1).optional(),
     from: z.coerce.date(),
     to: z.coerce.date(),
-    vacationType: requestableKindEnum.default(vacationType.Vacation),
+    vacationType: requestableRecordTypeEnum.default(CalendarRecordType.Vacation),
     startTime: z.iso.time().nullable().default(null),
     endTime: z.iso.time().nullable().default(null),
     // Drives quota accounting (0.5 vs 1 day). Deliberately explicit — the
@@ -190,7 +190,7 @@ export type ValidatedBulkCancelVacationType = z.infer<typeof validateBulkCancelV
 export const validateUpdateVacation = z
   .object({
     ids,
-    vacationType: requestableKindEnum.optional(),
+    vacationType: requestableRecordTypeEnum.optional(),
     startTime: z.iso.time().nullable().optional(),
     endTime: z.iso.time().nullable().optional(),
     halfDay: z.boolean().optional(),

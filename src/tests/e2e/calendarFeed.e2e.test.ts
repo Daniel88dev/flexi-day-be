@@ -6,7 +6,7 @@ import { db } from "../../db/db.js";
 import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
+import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
@@ -54,7 +54,7 @@ describe("Calendar feed E2E", () => {
       userId: context.user1.id,
       groupId: context.group.id,
       requestedDay: vacationDay,
-      vacationType: vacationType.Vacation,
+      vacationType: CalendarRecordType.Vacation,
       approvedAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),

@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { config } from "../../config.js";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import {
   addMember,
   addVacation,
@@ -89,7 +89,7 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
       user: carol,
       day: workingDayFromToday(1),
       state: "approved" as const,
-      type: vacationType.HomeOffice,
+      type: CalendarRecordType.HomeOffice,
     },
   ];
 

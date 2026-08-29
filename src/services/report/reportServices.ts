@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../../db/db.js";
-import { vacation, vacationType } from "../../db/schema/vacation-schema.js";
+import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -158,7 +158,7 @@ const getAvailableYears = async (
 type UsageFilters = {
   groupIds?: string[];
   userIds?: string[];
-  types?: vacationType[];
+  types?: CalendarRecordType[];
 };
 
 const usageWhere = (
@@ -183,7 +183,7 @@ const usageWhere = (
   return and(...clauses);
 };
 
-/** Per member, group, month and leave type — the series behind the charts and the table. */
+/** Per member, group, month and record type — the series behind the charts and the table. */
 export const aggregateUsageByUserMonth = async (
   scope: ReportScopeEntry[],
   callerId: string,
@@ -229,7 +229,7 @@ export const aggregateUsageSplit = async (
   year: number,
   filters: UsageFilters = {}
 ): Promise<
-  (ReportUsageSplit & { userId: string; groupId: string; vacationType: vacationType })[]
+  (ReportUsageSplit & { userId: string; groupId: string; vacationType: CalendarRecordType })[]
 > => {
   const where = usageWhere(scope, callerId, year, filters);
   if (!where) return [];
@@ -437,7 +437,7 @@ export const getCarryOverSuggestion = async (
       and(
         eq(vacation.userId, userId),
         eq(vacation.groupId, groupId),
-        eq(vacation.vacationType, vacationType.Vacation),
+        eq(vacation.vacationType, CalendarRecordType.Vacation),
         isNull(vacation.deletedAt),
         gte(vacation.requestedDay, start),
         lt(vacation.requestedDay, end)

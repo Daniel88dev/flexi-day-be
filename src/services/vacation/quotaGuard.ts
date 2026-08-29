@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import AppError from "../../utils/appError.js";
 import type { DbTransaction } from "../../db/db.js";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { QUOTA_BEARING_TYPES } from "../report/buildSummary.js";
 import type { VacationType } from "./types.js";
 import { getGroup } from "../group/groupServices.js";
@@ -12,7 +12,7 @@ type QuotaRow = {
   userId: string;
   groupId: string;
   requestedDay: string;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
   halfDay: boolean;
 };
 
@@ -20,13 +20,13 @@ type QuotaCheck = {
   userId: string;
   groupId: string;
   year: number;
-  leaveType: vacationType;
+  calendarRecordType: CalendarRecordType;
   requestedDays: number;
   excludeVacationIds: string[];
 };
 
-const isQuotaBearing = (kind: vacationType): boolean =>
-  (QUOTA_BEARING_TYPES as readonly vacationType[]).includes(kind);
+const isQuotaBearing = (recordType: CalendarRecordType): boolean =>
+  (QUOTA_BEARING_TYPES as readonly CalendarRecordType[]).includes(recordType);
 
 const weightOf = (row: { halfDay: boolean }): number => (row.halfDay ? 0.5 : 1);
 
@@ -37,7 +37,7 @@ const yearOf = (isoDay: string): number => Number(isoDay.slice(0, 4));
  * COMMITTED, concurrent requests all read the pre-insert totals and all pass.
  */
 const lockAllowance = async (check: QuotaCheck, tx: DbTransaction): Promise<void> => {
-  const key = `${check.userId}::${check.groupId}::${check.year.toString()}::${check.leaveType}`;
+  const key = `${check.userId}::${check.groupId}::${check.year.toString()}::${check.calendarRecordType}`;
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 };
 
@@ -51,13 +51,13 @@ const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<numb
   );
 
   if (quota) {
-    return check.leaveType === vacationType.Vacation
+    return check.calendarRecordType === CalendarRecordType.Vacation
       ? quota.vacationDays + quota.carriedOverDays
       : quota.homeOfficeDays;
   }
 
   const group = await getGroup(check.groupId, tx);
-  return check.leaveType === vacationType.Vacation
+  return check.calendarRecordType === CalendarRecordType.Vacation
     ? (group?.defaultVacationDays ?? 0)
     : (group?.defaultHomeOfficeDays ?? 0);
 };
@@ -78,7 +78,7 @@ const assertOne = async (
     check.userId,
     check.groupId,
     check.year,
-    check.leaveType,
+    check.calendarRecordType,
     check.excludeVacationIds,
     tx
   );
@@ -94,7 +94,7 @@ const assertOne = async (
       logging: true,
       context: { ...check, approved, pending, allocated, total },
       publicContext: {
-        vacationType: check.leaveType,
+        vacationType: check.calendarRecordType,
         year: check.year,
         allocated,
         alreadyCounted,
@@ -122,7 +122,7 @@ const assertGrouped = async (
       userId: row.userId,
       groupId: row.groupId,
       year,
-      leaveType: row.vacationType,
+      calendarRecordType: row.vacationType,
       requestedDays: 0,
       excludeVacationIds,
     };

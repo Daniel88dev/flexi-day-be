@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
 import { sumUserQuotasForYear } from "../../services/userYearQuotas/userYearQuotasServices.js";
 import { aggregateUserUsageForYear } from "../../services/vacation/vacationServices.js";
@@ -16,7 +16,7 @@ const queryParams = z.object({
 });
 
 type Bucket = {
-  type: vacationType;
+  type: CalendarRecordType;
   allocated: number;
   used: number;
   pending: number;
@@ -34,8 +34,8 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
     aggregateUserUsageForYear(auth.userId, visibleGroupIds, year),
   ]);
 
-  const buckets = new Map<vacationType, Bucket>();
-  const ensure = (type: vacationType): Bucket => {
+  const buckets = new Map<CalendarRecordType, Bucket>();
+  const ensure = (type: CalendarRecordType): Bucket => {
     let bucket = buckets.get(type);
     if (!bucket) {
       bucket = { type, allocated: 0, used: 0, pending: 0 };
@@ -45,8 +45,9 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
   };
 
   // Carry-over belongs to the vacation allowance only.
-  ensure(vacationType.Vacation).allocated = quotaSums.vacationDays + quotaSums.carriedOverDays;
-  ensure(vacationType.HomeOffice).allocated = quotaSums.homeOfficeDays;
+  ensure(CalendarRecordType.Vacation).allocated =
+    quotaSums.vacationDays + quotaSums.carriedOverDays;
+  ensure(CalendarRecordType.HomeOffice).allocated = quotaSums.homeOfficeDays;
 
   for (const row of usage) {
     const bucket = ensure(row.type);

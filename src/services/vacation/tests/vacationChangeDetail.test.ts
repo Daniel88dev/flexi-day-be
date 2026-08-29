@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { describeVacationChanges } from "../vacationChangeDetail.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 
 const baseRow = {
   startTime: "09:00:00" as string | null,
   endTime: "17:00:00" as string | null,
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   halfDay: false,
   note: null as string | null,
 };
@@ -13,7 +13,7 @@ const baseRow = {
 describe("describeVacationChanges", () => {
   it("names only the fields that actually moved", () => {
     expect(
-      describeVacationChanges(baseRow, { vacationType: vacationType.Sick, halfDay: true })
+      describeVacationChanges(baseRow, { vacationType: CalendarRecordType.Sick, halfDay: true })
     ).toBe("Type: Vacation → Sick; Half day: no → yes");
   });
 

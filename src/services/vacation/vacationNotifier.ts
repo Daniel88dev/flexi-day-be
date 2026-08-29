@@ -4,7 +4,7 @@ import { emailSender } from "../email/index.js";
 import type { TemplatedEmail } from "../email/index.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { VacationType } from "./types.js";
 import type { UserContact } from "../user/userServices.js";
 import { getApprovalUsers } from "../group/groupServices.js";
@@ -16,16 +16,16 @@ import { filterUsersAcceptingEmail } from "../userSettings/userSettingsServices.
 /** SES renders a missing variable as an empty string, so blanks get a dash. */
 const OR_DASH = "—";
 
-const LEAVE_TYPE_LABELS: Record<vacationType, string> = {
-  [vacationType.Vacation]: "Vacation",
-  [vacationType.HomeOffice]: "Home office",
-  [vacationType.Sick]: "Sick",
-  [vacationType.BankHoliday]: "Bank holiday",
-  [vacationType.NonPaidLeave]: "Non-paid leave",
-  [vacationType.PaidTimeOff]: "Paid time off",
-  [vacationType.SickLeave]: "Sick leave",
-  [vacationType.StudyLeave]: "Study leave",
-  [vacationType.Other]: "Other",
+const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
+  [CalendarRecordType.Vacation]: "Vacation",
+  [CalendarRecordType.HomeOffice]: "Home office",
+  [CalendarRecordType.Sick]: "Sick",
+  [CalendarRecordType.BankHoliday]: "Bank holiday",
+  [CalendarRecordType.NonPaidLeave]: "Non-paid leave",
+  [CalendarRecordType.PaidTimeOff]: "Paid time off",
+  [CalendarRecordType.SickDay]: "Sick day",
+  [CalendarRecordType.StudyLeave]: "Study leave",
+  [CalendarRecordType.Other]: "Other",
 };
 
 const formatDay = (isoDay: string): string =>
@@ -67,7 +67,7 @@ type RowSummary = {
   rows: VacationRow[];
   dateRange: string;
   dayCount: string;
-  leaveType: string;
+  calendarRecordTypeLabel: string;
   requestUrl: string;
 };
 
@@ -78,7 +78,7 @@ const summarize = (rows: VacationRow[]): RowSummary | null => {
     rows,
     dateRange: formatDateRange(rows.map((r) => r.requestedDay)),
     dayCount: formatDayCount(rows.length),
-    leaveType: LEAVE_TYPE_LABELS[first.vacationType],
+    calendarRecordTypeLabel: CALENDAR_RECORD_TYPE_LABELS[first.vacationType],
     requestUrl: buildRequestUrl(first.id),
   };
 };
@@ -201,7 +201,7 @@ export const notifyVacationRequested = async (
             approverName: approver.name,
             employeeName: requester.name,
             teamName: group.groupName,
-            leaveType: summary.leaveType,
+            leaveType: summary.calendarRecordTypeLabel,
             dateRange: summary.dateRange,
             dayCount: summary.dayCount,
             note: note?.trim() ? note.trim() : OR_DASH,
@@ -211,7 +211,7 @@ export const notifyVacationRequested = async (
         notification: {
           type: notificationType.ApprovalRequested,
           title: `${requester.name} requested time off`,
-          body: `${summary.leaveType} · ${summary.dateRange} (${summary.dayCount})`,
+          body: `${summary.calendarRecordTypeLabel} · ${summary.dateRange} (${summary.dayCount})`,
           href: summary.requestUrl,
         },
       }))
@@ -244,7 +244,7 @@ export const notifyVacationBookedOnBehalf = async (
         notification: {
           type: notificationType.ApprovalRequested,
           title: `${actor.name} requested time off for you`,
-          body: `${summary.leaveType} · ${summary.dateRange} (${summary.dayCount})`,
+          body: `${summary.calendarRecordTypeLabel} · ${summary.dateRange} (${summary.dayCount})`,
           href: summary.requestUrl,
         },
       },
@@ -272,7 +272,7 @@ export const notifyVacationUpdated = async (
         notification: {
           type: notificationType.ApprovalDecided,
           title: `${actor.name} updated your time off`,
-          body: `${summary.leaveType} · ${summary.dateRange} (${summary.dayCount})`,
+          body: `${summary.calendarRecordTypeLabel} · ${summary.dateRange} (${summary.dayCount})`,
           href: summary.requestUrl,
         },
       },
@@ -312,7 +312,7 @@ export const notifyVacationDecision = async (
         employeeName: employee.name,
         approverName: actor.name,
         teamName: group?.groupName ?? "your team",
-        leaveType: summary.leaveType,
+        leaveType: summary.calendarRecordTypeLabel,
         dateRange: summary.dateRange,
         dayCount: summary.dayCount,
         requestUrl: summary.requestUrl,
@@ -331,7 +331,7 @@ export const notifyVacationDecision = async (
         notification: {
           type: notificationType.ApprovalDecided,
           title: decision === "approved" ? "Time off approved" : "Time off declined",
-          body: `${summary.leaveType} · ${summary.dateRange} (${summary.dayCount})`,
+          body: `${summary.calendarRecordTypeLabel} · ${summary.dateRange} (${summary.dayCount})`,
           href: summary.requestUrl,
         },
       });
@@ -386,7 +386,7 @@ export const notifyVacationComment = async (
             employeeName: employee.name,
             commenterName: actor.name,
             teamName: group.groupName,
-            leaveType: summary.leaveType,
+            leaveType: summary.calendarRecordTypeLabel,
             dateRange: summary.dateRange,
             message: trimmed,
             requestUrl: summary.requestUrl,
@@ -395,7 +395,7 @@ export const notifyVacationComment = async (
         notification: {
           type: notificationType.Comment,
           title: `${actor.name} commented on a request`,
-          body: `${employee.name} · ${summary.leaveType} · ${summary.dateRange}`,
+          body: `${employee.name} · ${summary.calendarRecordTypeLabel} · ${summary.dateRange}`,
           href: summary.requestUrl,
         },
       }))
@@ -445,7 +445,7 @@ export const notifyVacationCancelled = async (
             employeeName: employee.name,
             cancelledByName: actor.name,
             teamName: group.groupName,
-            leaveType: summary.leaveType,
+            leaveType: summary.calendarRecordTypeLabel,
             dateRange: summary.dateRange,
             dayCount: summary.dayCount,
             reason: reason?.trim() ? reason.trim() : OR_DASH,
@@ -455,7 +455,7 @@ export const notifyVacationCancelled = async (
         notification: {
           type: notificationType.ApprovalDecided,
           title: "Approved time off cancelled",
-          body: `${employee.name} · ${summary.leaveType} · ${summary.dateRange}`,
+          body: `${employee.name} · ${summary.calendarRecordTypeLabel} · ${summary.dateRange}`,
           href: summary.requestUrl,
         },
       }))
@@ -521,7 +521,7 @@ export const notifyVacationsCancelled = async (
               employeeName: employee.name,
               cancelledByName: actor.name,
               teamName: group.groupName,
-              leaveType: summary.leaveType,
+              leaveType: summary.calendarRecordTypeLabel,
               dateRange: summary.dateRange,
               dayCount: summary.dayCount,
               reason: reason?.trim() ? reason.trim() : OR_DASH,
@@ -531,7 +531,7 @@ export const notifyVacationsCancelled = async (
           notification: {
             type: notificationType.ApprovalDecided,
             title: "Approved time off cancelled",
-            body: `${employee.name} · ${summary.leaveType} · ${summary.dateRange}`,
+            body: `${employee.name} · ${summary.calendarRecordTypeLabel} · ${summary.dateRange}`,
             href: summary.requestUrl,
           },
         });

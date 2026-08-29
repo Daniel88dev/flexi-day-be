@@ -1,11 +1,14 @@
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { ReportQuotaRow, ReportUsageSplit } from "./types.js";
 
 /**
- * Only these two leave types draw down an allowance, so only they get a
+ * Only these two calendar record types draw down an allowance, so only they get a
  * summary line — the rest are reported on the detail sheet alone.
  */
-export const QUOTA_BEARING_TYPES = [vacationType.Vacation, vacationType.HomeOffice] as const;
+export const QUOTA_BEARING_TYPES = [
+  CalendarRecordType.Vacation,
+  CalendarRecordType.HomeOffice,
+] as const;
 
 export type QuotaBearingType = (typeof QUOTA_BEARING_TYPES)[number];
 
@@ -21,7 +24,7 @@ export type SummaryEntry = ReportUsageSplit & {
 type UsageEntry = ReportUsageSplit & {
   userId: string;
   groupId: string;
-  vacationType: vacationType;
+  vacationType: CalendarRecordType;
 };
 
 const key = (userId: string, groupId: string) => `${userId}::${groupId}`;
@@ -38,7 +41,7 @@ export const buildSummaryEntries = (
   quotas: ReportQuotaRow[],
   usage: UsageEntry[],
   members: { userId: string; groupId: string }[],
-  types?: vacationType[]
+  types?: CalendarRecordType[]
 ): SummaryEntry[] => {
   const wanted = QUOTA_BEARING_TYPES.filter((type) => !types || types.includes(type));
   if (wanted.length === 0) return [];
@@ -62,7 +65,7 @@ export const buildSummaryEntries = (
 
     for (const type of wanted) {
       const used = usageByKey.get(`${pairKey}::${type}`);
-      const isVacation = type === vacationType.Vacation;
+      const isVacation = type === CalendarRecordType.Vacation;
       const carriedOverDays = isVacation ? (quota?.carriedOverDays ?? 0) : 0;
       const yearQuota = isVacation ? (quota?.vacationDays ?? 0) : (quota?.homeOfficeDays ?? 0);
       const usedToDate = used?.usedToDate ?? 0;

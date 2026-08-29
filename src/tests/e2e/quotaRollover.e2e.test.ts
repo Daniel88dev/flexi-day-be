@@ -5,7 +5,7 @@ import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
-import { vacationType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { rolloverQuotasForYear } from "../../services/quotaRollover/quotaRolloverServices.js";
 import {
   addLeave,
@@ -134,9 +134,9 @@ describe("Quota rollover E2E", () => {
     const groupId = await makeGroup("Engineering", manager.id);
     await addMember(groupId, manager.id);
     await addQuota(groupId, manager.id, PREVIOUS, { vacationDays: 10 });
-    await addLeave(groupId, manager.id, dayIn(PREVIOUS, 3, 10), { type: vacationType.Sick });
+    await addLeave(groupId, manager.id, dayIn(PREVIOUS, 3, 10), { type: CalendarRecordType.Sick });
     await addLeave(groupId, manager.id, dayIn(PREVIOUS, 3, 11), {
-      type: vacationType.HomeOffice,
+      type: CalendarRecordType.HomeOffice,
     });
 
     await rolloverQuotasForYear(YEAR);

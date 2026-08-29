@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
 import { buildReportWorkbook, type SummaryRow } from "../excelBuilder.js";
-import { vacationType } from "../../../db/schema/vacation-schema.js";
+import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import type { ReportBooking } from "../types.js";
 
 const summaryRow = (overrides: Partial<SummaryRow> = {}): SummaryRow => ({
   userName: "Ada Lovelace",
   groupName: "Engineering",
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   carriedOverDays: 3,
   yearQuota: 20,
   usedToDate: 5,
@@ -22,7 +22,7 @@ const booking = (overrides: Partial<ReportBooking> = {}): ReportBooking => ({
   userName: "Ada Lovelace",
   groupId: "g1",
   groupName: "Engineering",
-  vacationType: vacationType.Vacation,
+  vacationType: CalendarRecordType.Vacation,
   from: "2026-03-12",
   to: "2026-03-14",
   days: 3,
