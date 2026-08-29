@@ -10,9 +10,9 @@ is an absence from the office, not from work, and a bank holiday is nobody's lea
 The Postgres enum and column keep their historical name `vacation_type`. Renaming a live enum and
 column in production is a migration whose only payoff is aesthetic, and every ORM-level rename is
 one more chance for a deploy to disagree with the schema. The trade is a permanent seam: anyone
-reading raw SQL sees `vacation_type` and must know it is the same concept. The glossary in
-`CONTEXT.md` records the mapping, and this file records that the mismatch is deliberate — do not
-"fix" the code back to the column's name.
+reading raw SQL sees `vacation_type` and must know it is the same concept.
+[`docs/calendar-record-types.md`](../calendar-record-types.md) records the mapping, and this file
+records that the mismatch is deliberate — do not "fix" the code back to the column's name.
 
 ## What would reverse this
 
