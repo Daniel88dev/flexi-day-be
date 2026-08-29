@@ -91,11 +91,9 @@ export type ValidatedCancelVacationType = z.infer<typeof validateCancelVacation>
  * the admin `bankHolidayRouter`, costs no allowance, and shows to the whole team
  * unattributed, so nobody may grant themselves one.
  */
-export const REQUESTABLE_CALENDAR_RECORD_TYPES = Object.values(CalendarRecordType).filter(
-  (recordType) => recordType !== CalendarRecordType.BankHoliday
-) as [CalendarRecordType, ...CalendarRecordType[]];
+const requestableRecordTypeEnum = z.enum(CalendarRecordType).exclude(["BankHoliday"]);
 
-const requestableRecordTypeEnum = z.enum(REQUESTABLE_CALENDAR_RECORD_TYPES);
+export const REQUESTABLE_CALENDAR_RECORD_TYPES = requestableRecordTypeEnum.options;
 
 export const validatePostVacation = z
   .object({

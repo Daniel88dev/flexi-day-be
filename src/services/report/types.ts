@@ -74,9 +74,7 @@ export type ReportBooking = {
   note: string | null;
 };
 
-const recordTypeEnum = z.enum(
-  Object.values(CalendarRecordType) as [CalendarRecordType, ...CalendarRecordType[]]
-);
+const recordTypeEnum = z.enum(CalendarRecordType);
 
 /**
  * Comma-separated repeatable query filters (`?groupIds=a,b&groupIds=c`), which
