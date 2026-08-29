@@ -499,6 +499,83 @@ describe("Vacation API E2E Tests", () => {
     });
   });
 
+  describe("POST /api/vacation/create-vacation — the rarer requestable types", () => {
+    it("should create and persist each newly requestable type", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      const bookings: Array<{ day: string; vacationType: string; note?: string }> = [
+        { day: MON, vacationType: "NON_PAID_LEAVE" },
+        { day: WED, vacationType: "STUDY_LEAVE" },
+        { day: FRI, vacationType: "OTHER", note: "Jury duty" },
+      ];
+      for (const { day, vacationType, note } of bookings) {
+        const response = await request(context.app)
+          .post("/api/vacation/create-vacation")
+          .set("Cookie", cookie)
+          .send({ groupId: context.group.id, from: day, to: day, vacationType, note })
+          .expect(201);
+        expect(response.body[0]).toMatchObject({ requestedDay: day, vacationType });
+      }
+    });
+
+    it("should return 422 for an OTHER request without a note and persist nothing", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: WED, to: WED, vacationType: "OTHER" })
+        .expect(422);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
+      expect(rows).toHaveLength(0);
+    });
+
+    it("should persist a half-day study leave like any other type", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({
+          groupId: context.group.id,
+          from: WED,
+          to: WED,
+          vacationType: "STUDY_LEAVE",
+          halfDay: true,
+        })
+        .expect(201);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
+      expect(rows[0]).toMatchObject({ vacationType: "STUDY_LEAVE", halfDay: true });
+    });
+
+    it("should run the normal approval flow for a non-paid leave request", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      const created = await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: WED, to: WED, vacationType: "NON_PAID_LEAVE" })
+        .expect(201);
+      const id = created.body[0].id as string;
+
+      const approverCookie = await authCookieFor(context.approverUser.id);
+      await request(context.app)
+        .post(`/api/vacation/approve/${id}`)
+        .set("Cookie", approverCookie)
+        .expect(200);
+
+      const rows = await db.select().from(vacation).where(eq(vacation.id, id));
+      expect(rows[0]?.approvedAt).not.toBeNull();
+      expect(rows[0]?.approvedBy).toBe(context.approverUser.id);
+    });
+  });
+
   describe("POST /api/vacation/approve/:id", () => {
     let vacationId: string;
 

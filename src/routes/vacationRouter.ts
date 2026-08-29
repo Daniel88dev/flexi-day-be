@@ -264,6 +264,7 @@ export const vacationRouter = (): Router => {
    *         note:
    *           type: string
    *           nullable: true
+   *           description: Required (non-blank) when `vacationType` is `OTHER`.
    *         autoApprove:
    *           type: boolean
    *           description: Create the rows already approved (on-behalf bookings only).

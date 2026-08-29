@@ -124,6 +124,12 @@ export const validatePostVacation = z
   .refine((data) => !data.autoApprove || data.userId !== undefined, {
     message: "`autoApprove` is only valid when booking on behalf of a member",
     path: ["autoApprove"],
+  })
+  // An OTHER record is meaningless without saying what it is — the approver
+  // would be deciding on a blank. The form enforces the same rule.
+  .refine((data) => data.vacationType !== CalendarRecordType.Other || Boolean(data.note?.trim()), {
+    message: "`note` is required for the OTHER type",
+    path: ["note"],
   });
 
 export type ValidatedPostVacationType = z.infer<typeof validatePostVacation>;
