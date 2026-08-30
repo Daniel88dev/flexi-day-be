@@ -50,7 +50,9 @@ export const validatePutUserQuota = z.object({
   year: z.coerce.number().int().min(2025).max(2100),
   vacationDays: z.number().int().min(0).max(365),
   homeOfficeDays: z.number().int().min(0).max(365),
-  sickDays: z.number().int().min(0).max(365).default(0),
+  // Optional, and omission preserves the stored value: a client predating the
+  // Sick day benefit must not wipe a member's allowance on every save.
+  sickDays: z.number().int().min(0).max(365).optional(),
   carriedOverDays: z.number().int().min(0).max(365).default(0),
 });
 

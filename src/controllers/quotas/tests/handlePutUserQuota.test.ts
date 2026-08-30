@@ -104,6 +104,32 @@ describe("handlePutUserQuota", () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it("preserves the stored sick day allowance when the body omits the field", async () => {
+    // A client predating the Sick day benefit sends no `sickDays`; re-saving
+    // the other values must not wipe what an admin configured.
+    const { sickDays: _omitted, ...legacyBody } = body;
+    const { req, res } = makeReqRes({ params: { groupId }, body: legacyBody });
+
+    mockGetGroupUser
+      .mockResolvedValueOnce({ adminAccess: true })
+      .mockResolvedValueOnce({ userId: memberId });
+    mockGetUserYearGroupQuotas.mockResolvedValue([
+      { id: "q-1", vacationDays: 25, homeOfficeDays: 60, sickDays: 3, carriedOverDays: 0 },
+    ]);
+    mockUpsertUserYearQuota.mockResolvedValue({ id: "q-1", ...legacyBody, sickDays: 3 });
+
+    await handlePutUserQuota(req, res);
+
+    expect(mockUpsertUserYearQuota).toHaveBeenCalledWith(
+      expect.objectContaining({ sickDays: 3 }),
+      expect.anything()
+    );
+    expect(mockPostChanges).toHaveBeenCalledWith(
+      expect.objectContaining({ changeDetail: "Quota for 2026 re-saved with no change" }),
+      expect.anything()
+    );
+  });
+
   it("stores carry-over and names it in the audit entry", async () => {
     const { req, res } = makeReqRes({
       params: { groupId },

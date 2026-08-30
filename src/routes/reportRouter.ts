@@ -167,6 +167,8 @@ export const reportRouter = (): Router => {
    *             properties:
    *               year:
    *                 type: integer
+   *                 minimum: 2025
+   *                 maximum: 2100
    *               groupIds:
    *                 type: array
    *                 items:

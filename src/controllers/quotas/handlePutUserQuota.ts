@@ -49,6 +49,9 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
 
     const [existing] = await getUserYearGroupQuotas(relatedYear, groupId, data.userId, tx);
 
+    // Omitted by clients predating the Sick day benefit; preserve rather than wipe.
+    const sickDays = data.sickDays ?? existing?.sickDays ?? 0;
+
     const quota = await upsertUserYearQuota(
       {
         id: existing?.id ?? generateRandomUUID(),
@@ -57,7 +60,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         relatedYear,
         vacationDays: data.vacationDays,
         homeOfficeDays: data.homeOfficeDays,
-        sickDays: data.sickDays,
+        sickDays,
         carriedOverDays: data.carriedOverDays,
       },
       tx
@@ -79,7 +82,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         groupId,
         changeType: changesType.UserYearQuotas,
         changingUserId: auth.userId,
-        changeDetail: describeQuotaChange(relatedYear, existing, data),
+        changeDetail: describeQuotaChange(relatedYear, existing, { ...data, sickDays }),
       },
       tx
     );

@@ -171,6 +171,23 @@ describe("organization admin over the API", () => {
         .expect(200);
     });
 
+    it("preserves the sick day default when a legacy body omits it", async () => {
+      const withSickDays = await request(app)
+        .put(`/api/group/${groupId}/quotas`)
+        .set("Cookie", delegateCookie)
+        .send({ defaultVacationDays: 25, defaultHomeOfficeDays: 5, defaultSickDays: 4 })
+        .expect(200);
+      expect(withSickDays.body.defaultSickDays).toBe(4);
+
+      // A client predating the Sick day benefit re-saves the other values.
+      const legacySave = await request(app)
+        .put(`/api/group/${groupId}/quotas`)
+        .set("Cookie", delegateCookie)
+        .send({ defaultVacationDays: 26, defaultHomeOfficeDays: 5 })
+        .expect(200);
+      expect(legacySave.body.defaultSickDays).toBe(4);
+    });
+
     it("edits the group's working days", async () => {
       await request(app)
         .put(`/api/group/${groupId}/working-days`)

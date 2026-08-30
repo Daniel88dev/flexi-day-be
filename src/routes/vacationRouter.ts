@@ -658,7 +658,10 @@ export const vacationRouter = (): Router => {
    *       '409':
    *         description: Rejected rows in the batch, or a concurrent change won the race
    *       '422':
-   *         description: Validation error, mixed members/groups, or the edit exceeds the allowance
+   *         description: |
+   *           Validation error, mixed members/groups, the edit exceeds the
+   *           allowance, or a retype to `SICK_DAY` without an active Sick day
+   *           benefit (`errors[].context.reason: "SICK_DAY_BENEFIT_DISABLED"`).
    */
   app.patch("/", bodyValidationMiddleware(validateUpdateVacation), tryCatch(handleUpdateVacation));
 

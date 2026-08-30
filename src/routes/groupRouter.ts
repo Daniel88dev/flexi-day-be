@@ -221,7 +221,7 @@ export const groupRouter = (): Router => {
    *                 type: integer
    *               defaultSickDays:
    *                 type: integer
-   *                 default: 0
+   *                 description: Omitting the field leaves the stored default unchanged.
    *     responses:
    *       '200':
    *         description: The updated group

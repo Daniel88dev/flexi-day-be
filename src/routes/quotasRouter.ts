@@ -106,11 +106,11 @@ export const quotasRouter = (): Router => {
    *                 type: integer
    *               sickDays:
    *                 type: integer
-   *                 default: 0
    *                 description: |
    *                   Sick day benefit allowance. Metered only while the
    *                   organization has the benefit enabled on a paid plan;
-   *                   never carried over between years.
+   *                   never carried over between years. Omitting the field
+   *                   leaves the member's stored value unchanged.
    *               carriedOverDays:
    *                 type: integer
    *                 default: 0

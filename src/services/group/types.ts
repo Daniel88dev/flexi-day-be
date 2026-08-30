@@ -31,9 +31,9 @@ export type GroupInsertType = {
 export const validatePutGroupQuotas = z.object({
   defaultVacationDays: z.number().int().min(0).max(365),
   defaultHomeOfficeDays: z.number().int().min(0).max(365),
-  // Defaulted like `carriedOverDays` on the per-user body, so a client
-  // predating the Sick day benefit still validates.
-  defaultSickDays: z.number().int().min(0).max(365).default(0),
+  // Optional, and omission preserves the stored value: a client predating the
+  // Sick day benefit must not wipe a configured default on every save.
+  defaultSickDays: z.number().int().min(0).max(365).optional(),
 });
 
 export type ValidatedPutGroupQuotasType = z.infer<typeof validatePutGroupQuotas>;
