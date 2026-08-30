@@ -53,7 +53,9 @@ export const validatePutUserQuota = z.object({
   // Optional, and omission preserves the stored value: a client predating the
   // Sick day benefit must not wipe a member's allowance on every save.
   sickDays: z.number().int().min(0).max(365).optional(),
-  carriedOverDays: z.number().int().min(0).max(365).default(0),
+  // Optional for the same reason: the group Quotas tab never sends it, and an
+  // allowance edit there must not reset a member's carry-over to zero.
+  carriedOverDays: z.number().int().min(0).max(365).optional(),
 });
 
 export type ValidatedPutUserQuotaType = z.infer<typeof validatePutUserQuota>;
