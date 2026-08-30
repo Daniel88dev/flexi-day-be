@@ -13,6 +13,7 @@ import {
   listOrganizationAdminCandidates,
   listOrganizationAdmins,
   removeOrganizationAdmin,
+  updateOrganization,
 } from "../../services/organization/organizationServices.js";
 import { resolveOrganizationBadges } from "../../services/organization/organizationBadge.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
@@ -265,6 +266,30 @@ describe("organization admins", () => {
       // The plan drops to Free once grace expires, which is what the badge
       // must show — claiming Pro would promise limits the guards no longer give.
       expect(badge?.plan).toBe("FREE");
+    });
+
+    it("derives sickDayBenefitActive from the toggle and a paid plan", async () => {
+      const badgeFor = async () =>
+        (await resolveOrganizationBadges([organizationId])).get(organizationId);
+
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Active,
+      });
+      expect((await badgeFor())?.sickDayBenefitActive).toBe(false);
+
+      await updateOrganization(organizationId, { sickDayBenefitEnabled: true });
+      expect((await badgeFor())?.sickDayBenefitActive).toBe(true);
+
+      // A lapse makes the benefit dormant without touching the stored toggle.
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.PastDue,
+        graceEndsAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+      expect((await badgeFor())?.sickDayBenefitActive).toBe(false);
+
+      await updateOrganization(organizationId, { sickDayBenefitEnabled: false });
     });
 
     it("resolves several organizations in one pass", async () => {

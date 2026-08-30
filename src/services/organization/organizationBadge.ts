@@ -10,6 +10,12 @@ export type OrganizationBadge = {
   status: subscriptionStatus | null;
   /** False once a lapsed plan's grace has run out — the badge shows the plan as inactive. */
   active: boolean;
+  /**
+   * The Sick day toggle AND a paid plan, the same rule `isSickDayBenefitActive`
+   * enforces on requests — false while the benefit is dormant, so the forms
+   * never offer a type the backend would reject.
+   */
+  sickDayBenefitActive: boolean;
 };
 
 /**
@@ -48,6 +54,7 @@ export const resolveOrganizationBadges = async (
           plan: entitlements.plan,
           status: subscription?.status ?? null,
           active: entitlements.plan !== "FREE" && entitlements.writable,
+          sickDayBenefitActive: organization.sickDayBenefitEnabled && entitlements.plan !== "FREE",
         },
       ];
     })

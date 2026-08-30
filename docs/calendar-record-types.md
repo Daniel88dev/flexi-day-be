@@ -50,6 +50,10 @@ requests without touching the toggle, the allowances or any booked record, and r
 restores the benefit as it was. Editing a record that is already a Sick day keeps working through a
 lapse; retyping another record _to_ Sick day does not.
 
+Members learn whether the benefit is active from the organization badge that rides along with
+`GET /api/group/:groupId` — `organization.sickDayBenefitActive`, the same derived rule — so the
+request form can gate the type without an admin-only call.
+
 The allowance lives beside the other metered types — `user_year_quotas.sick_days` with a
 `groups.default_sick_days` starting value — and is edited through the existing quota endpoints.
 Report summaries and the export's summary sheet show a Sick day line for groups whose organization
