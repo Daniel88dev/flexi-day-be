@@ -164,7 +164,7 @@ export const groupRouter = (): Router => {
    *     description: |
    *       Unlike `GET /api/group` — which is membership-only, because it also
    *       drives the dashboard and the request dialog — this reaches groups the
-   *       caller administers through the organization. `access` reports exactly
+   *       caller manages or administers through the organization. `access` reports exactly
    *       what the mutation endpoints will allow, and `access.viaOrgAdmin`
    *       marks authority that came from the organization rather than a
    *       membership.
@@ -197,7 +197,7 @@ export const groupRouter = (): Router => {
    *     description: |
    *       Sets the vacation / home-office / sick days new members start from.
    *       Existing per-year quotas are not touched. Requires group admin
-   *       access, or admin of the group's organization.
+   *       access, being the group's manager, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -254,7 +254,7 @@ export const groupRouter = (): Router => {
    *       Sets which weekdays the group treats as working days. Vacation
    *       requests are only booked — and only counted against quotas — on these
    *       days. Days are `Date.getUTCDay()` numbers (0=Sunday … 6=Saturday); at
-   *       least one is required. Requires group admin access, or admin of the group's organization.
+   *       least one is required. Requires group admin access, being the group's manager, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -313,7 +313,7 @@ export const groupRouter = (): Router => {
    *       are not counted against quotas and are never exported by calendar
    *       feeds. `null` disables them. Codes are ISO 3166-1 alpha-2 and must
    *       be one of `GET /api/bank-holidays/countries`. Requires group admin
-   *       access, or admin of the group's organization.
+   *       access, being the group's manager, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -450,7 +450,7 @@ export const groupRouter = (): Router => {
    *     description: |
    *       Names the main and optional stand-in approver. Both must already be
    *       members of the group. A group always has a main approver — clearing it
-   *       would leave its requests undecidable. Requires group admin access, or admin of the group's organization.
+   *       would leave its requests undecidable. Requires group admin access, being the group's manager, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:

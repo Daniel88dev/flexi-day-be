@@ -279,6 +279,17 @@ export const filterGroupIdsByOrganization = async (
   return rows.map((row) => row.id);
 };
 
+export const getManagedGroupIdsForUser = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<string[]> => {
+  const rows = await (tx ?? db)
+    .select({ id: groups.id })
+    .from(groups)
+    .where(and(eq(groups.managerUserId, userId), isNull(groups.deletedAt)));
+  return rows.map((row) => row.id);
+};
+
 /** Live group ids across several organizations, for org-admin authorization. */
 export const getLiveGroupIdsForOrganizations = async (
   organizationIds: string[],

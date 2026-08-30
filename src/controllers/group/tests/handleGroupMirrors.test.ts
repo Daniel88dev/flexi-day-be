@@ -50,6 +50,7 @@ vi.mock("../../../services/group/groupServices.js", () => ({
   // With no org-admin groups in play, the organization scope is a pass-through
   // over the caller's membership-derived admin groups.
   filterGroupIdsByOrganization: vi.fn((groupIds: string[]) => Promise.resolve(groupIds)),
+  getManagedGroupIdsForUser: vi.fn().mockResolvedValue([]),
   getAllGroups: mockGetAllGroups,
 }));
 

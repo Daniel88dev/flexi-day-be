@@ -8,8 +8,9 @@ import { getGroup } from "../../services/group/groupServices.js";
 
 /**
  * One group with the caller's effective rights over it. Unlike `GET /api/group`
- * this reaches groups the caller only administers through the organization, so
- * an org admin can open a team's detail screen without being a member of it —
+ * this reaches groups the caller manages or administers through the
+ * organization, so a manager or org admin can open a team's detail screen
+ * without being a member of it —
  * which is also why the group screens read their permissions from here rather
  * than inferring them from the member list.
  */

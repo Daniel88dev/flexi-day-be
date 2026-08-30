@@ -178,7 +178,8 @@ export const vacationRouter = (): Router => {
    *       user already has a vacation for (unique on user + day).
    *
    *       Admins may book on behalf of a member by passing `userId`: the caller
-   *       must hold group admin access or administer the group's organization,
+   *       must hold group admin access, manage the group, or administer the
+   *       group's organization,
    *       and the member must be allowed to book in the group. `createdByUserId`
    *       records who filed the request. With `autoApprove` (valid only
    *       together with `userId`) the rows are created already approved by the
@@ -586,8 +587,9 @@ export const vacationRouter = (): Router => {
    *     summary: Edit per-day fields of one member's vacation rows (admins only)
    *     description: |
    *       In-place edit of existing day rows: `startTime`/`endTime`, `halfDay`,
-   *       `vacationType` and `note`. Requires group admin access, or admin of
-   *       the group's organization. All ids must belong to the same member and
+   *       `vacationType` and `note`. Requires group admin access, being the
+   *       group's manager, or admin of the group's organization. All ids must
+   *       belong to the same member and
    *       group; the detail view passes a whole contiguous run so it is edited
    *       atomically. Dates are deliberately not editable — moving a record to
    *       another day is a cancel + re-create, both audited.
