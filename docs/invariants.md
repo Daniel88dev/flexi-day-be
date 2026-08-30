@@ -128,13 +128,19 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
 
 - **Owner-or-row.** The owner holds no `organization_users` row, exactly as a group's manager
   holds no `group_users` row. Querying the table alone answers half the question — always go
-  through `isOrganizationAdmin`.
+  through `isOrganizationAdmin`, and for group standing through the `groupUser/groupAccess.ts`
+  resolvers, which credit the manager as well as the membership row.
 - **Administration, never approval.** `assertGroupAdmin` / `validateUserGroupAccess` accept org
   admins; `getGroupsWhereUserCanApprove` does not, and two routes actively defend the boundary:
   `handleUpdateGroupUsers` refuses to let any caller raise their **own** permissions (checking
   every record for them, not just the first — the array may repeat a user), and
   `handlePutGroupApprovers` refuses a caller acting `viaOrgAdmin` who names themselves. Without
-  both, a delegate could invite themselves in and self-promote to approver.
+  both, a delegate could invite themselves in and self-promote to approver. The group's manager
+  sits outside this boundary on purpose: they administer their group in their own right
+  (`viaOrgAdmin: false`) and `getGroupsWhereUserCanApprove` already accepts them, so a manager
+  naming themselves approver is allowed — creation even defaults them to main approver. The
+  membership requirement still applies: a manager without a `group_users` row hits the same
+  "approver must be a member" 422 as anyone else.
 
   **One deliberate carve-out — records on behalf of members.** Managing a member's booking is
   administration, so org admins (like group admins) may create a booking for a member via

@@ -98,6 +98,30 @@ describe("handleGetGroup", () => {
     });
   });
 
+  it("lets the group's manager in without a membership row", async () => {
+    vi.mocked(getAuth).mockReturnValue({ ...mockAuthData, userId: "manager_1" });
+    mockGetGroupUser.mockResolvedValue(undefined);
+
+    expect((await call()).access).toEqual({
+      canView: true,
+      canAdmin: true,
+      viaOrgAdmin: false,
+      isMember: false,
+    });
+  });
+
+  it("reports a manager who also holds a plain membership as a member", async () => {
+    vi.mocked(getAuth).mockReturnValue({ ...mockAuthData, userId: "manager_1" });
+    mockGetGroupUser.mockResolvedValue({ viewAccess: false, adminAccess: false });
+
+    expect((await call()).access).toEqual({
+      canView: true,
+      canAdmin: true,
+      viaOrgAdmin: false,
+      isMember: true,
+    });
+  });
+
   it("lets an org admin in without a membership, flagged as org authority", async () => {
     mockGetGroupUser.mockResolvedValue(undefined);
     mockIsOrganizationAdmin.mockResolvedValue(true);

@@ -3,6 +3,7 @@ import {
   filterGroupIdsByOrganization,
   getGroup,
   getLiveGroupIdsForOrganizations,
+  getManagedGroupIdsForUser,
 } from "../group/groupServices.js";
 import {
   getAdminOrganizationsForUser,
@@ -11,24 +12,6 @@ import {
 import type { DbTransaction } from "../../db/db.js";
 import AppError from "../../utils/appError.js";
 
-/**
- * True when the caller administers the organization that owns the group.
- *
- * Org admins are administrators *over* an org's groups without being members
- * of them, so this deliberately grants only administration — never approver
- * rights (deciding someone's leave is a workflow role held through group
- * membership) and never membership itself.
- */
-const isOrganizationAdminForGroup = async (
-  userId: string,
-  groupId: string,
-  tx?: DbTransaction
-): Promise<boolean> => {
-  const group = await getGroup(groupId, tx);
-  if (!group) return false;
-  return isOrganizationAdmin(userId, group.organizationId, tx);
-};
-
 export const validateUserGroupAccess = async (
   userId: string,
   groupId: string,
@@ -36,13 +19,22 @@ export const validateUserGroupAccess = async (
 ): Promise<boolean> => {
   const groupUser = await getGroupUser(userId, groupId, tx);
   if (groupUser?.viewAccess) return true;
-  return isOrganizationAdminForGroup(userId, groupId, tx);
+  const group = await getGroup(groupId, tx);
+  if (!group) return false;
+  if (group.managerUserId === userId) return true;
+  return isOrganizationAdmin(userId, group.organizationId, tx);
 };
 
 /**
  * Whether the caller may administer the group, and whether that authority came
  * from the organization rather than a membership — the UI surfaces the
  * difference so nobody edits another team believing they belong to it.
+ *
+ * The group's manager administers it in their own right (CONTEXT.md: a group
+ * admin is "the manager, or an org admin"), so a manager reports
+ * `viaOrgAdmin: false`. Org admins get only administration through here —
+ * approver rights are a workflow role resolved by `getGroupsWhereUserCanApprove`,
+ * which accepts the manager but never a bare org admin.
  */
 export const resolveGroupAdmin = async (
   userId: string,
@@ -52,7 +44,11 @@ export const resolveGroupAdmin = async (
   const groupUser = await getGroupUser(userId, groupId, tx);
   if (groupUser?.adminAccess) return { canAdmin: true, viaOrgAdmin: false };
 
-  const viaOrg = await isOrganizationAdminForGroup(userId, groupId, tx);
+  const group = await getGroup(groupId, tx);
+  if (!group) return { canAdmin: false, viaOrgAdmin: false };
+  if (group.managerUserId === userId) return { canAdmin: true, viaOrgAdmin: false };
+
+  const viaOrg = await isOrganizationAdmin(userId, group.organizationId, tx);
   return { canAdmin: viaOrg, viaOrgAdmin: viaOrg };
 };
 
@@ -63,12 +59,13 @@ export const resolveGroupAdmin = async (
  */
 export const resolveGroupAccess = async (
   userId: string,
-  group: { id: string; organizationId: string },
+  group: { id: string; organizationId: string; managerUserId: string },
   tx?: DbTransaction
 ): Promise<{ canView: boolean; canAdmin: boolean; viaOrgAdmin: boolean; isMember: boolean }> => {
   const membership = await getGroupUser(userId, group.id, tx);
-  if (membership?.adminAccess) {
-    return { canView: true, canAdmin: true, viaOrgAdmin: false, isMember: true };
+  const isMember = membership !== undefined;
+  if (membership?.adminAccess || group.managerUserId === userId) {
+    return { canView: true, canAdmin: true, viaOrgAdmin: false, isMember };
   }
 
   const viaOrgAdmin = await isOrganizationAdmin(userId, group.organizationId, tx);
@@ -77,13 +74,13 @@ export const resolveGroupAccess = async (
     canView: viaOrgAdmin || (membership?.viewAccess ?? false),
     canAdmin: viaOrgAdmin,
     viaOrgAdmin,
-    isMember: membership !== undefined,
+    isMember,
   };
 };
 
 /**
- * Every group the caller may administer: those their membership grants, plus
- * every live group of an organization they administer.
+ * Every group the caller may administer: those their membership grants, those
+ * they manage, plus every live group of an organization they administer.
  *
  * `organizationId` confines the result to one organization. Mirroring passes
  * it: a user who owns one organization and holds a delegated grant in another
@@ -106,14 +103,16 @@ export const getAdministrableGroupIds = async (
   );
 
   const fromMembership = await getAdminGroupIdsForUser(userId, tx);
-  const membershipScoped = options?.organizationId
-    ? await filterGroupIdsByOrganization(fromMembership, options.organizationId, tx)
-    : fromMembership;
+  const fromManaged = await getManagedGroupIdsForUser(userId, tx);
+  const direct = [...fromMembership, ...fromManaged];
+  const directScoped = options?.organizationId
+    ? await filterGroupIdsByOrganization(direct, options.organizationId, tx)
+    : direct;
 
-  return [...new Set([...membershipScoped, ...fromOrganizations])];
+  return [...new Set([...directScoped, ...fromOrganizations])];
 };
 
-/** Throws 403 unless the caller's membership carries `adminAccess`, or they administer the group's organization. */
+/** Throws 403 unless the caller's membership carries `adminAccess`, they manage the group, or they administer its organization. */
 export const assertGroupAdmin = async (
   userId: string,
   groupId: string,
