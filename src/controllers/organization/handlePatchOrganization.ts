@@ -24,7 +24,10 @@ export const handlePatchOrganization = async (req: Request, res: Response) => {
     assertOrganizationOwner(organization, auth.userId);
   }
 
-  if (data.sickDayBenefitEnabled === true) {
+  // Only an actual switch-on buys anything, so only it needs the paid plan.
+  // A body echoing the current `true` (say, a client re-saving the whole form
+  // on a lapsed plan) must stay idempotent, not 402.
+  if (data.sickDayBenefitEnabled === true && !organization.sickDayBenefitEnabled) {
     await assertCanEnableSickDayBenefit(organization.id);
   }
 

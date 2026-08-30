@@ -1,13 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockSumCountedDaysForQuota, mockGetUserYearGroupQuotas, mockGetGroup } = vi.hoisted(() => ({
+const {
+  mockSumCountedDaysForQuota,
+  mockGetUserYearGroupQuotas,
+  mockGetGroup,
+  mockGetSickDayEnabledGroupIds,
+} = vi.hoisted(() => ({
   mockSumCountedDaysForQuota: vi.fn(),
   mockGetUserYearGroupQuotas: vi.fn(),
   mockGetGroup: vi.fn(),
+  mockGetSickDayEnabledGroupIds: vi.fn(),
 }));
 
 vi.mock("../../group/groupServices.js", () => ({
   getGroup: mockGetGroup,
+}));
+
+vi.mock("../../organization/organizationServices.js", () => ({
+  getSickDayEnabledGroupIds: mockGetSickDayEnabledGroupIds,
 }));
 
 vi.mock("../../userYearQuotas/userYearQuotasServices.js", () => ({
@@ -123,6 +133,7 @@ describe("sick day allowance", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSumCountedDaysForQuota.mockResolvedValue({ approved: 0, pending: 0 });
+    mockGetSickDayEnabledGroupIds.mockResolvedValue(new Set(["g-1"]));
   });
 
   it("draws against the sick day column, without the vacation carry-over", async () => {
@@ -160,5 +171,55 @@ describe("sick day allowance", () => {
     await expect(
       assertRequestWithinQuota([sickDayRow("2026-08-20"), sickDayRow("2026-08-21")], tx)
     ).rejects.toThrow("This would exceed the allowance for that leave type");
+  });
+
+  it("does not meter sick days for a group whose organization has the benefit off", async () => {
+    // Legacy SICK_DAY rows predate the benefit: their organization never
+    // switched it on, the allowance columns read 0, and approving or editing
+    // them must keep working exactly as when the type was unmetered.
+    mockGetSickDayEnabledGroupIds.mockResolvedValue(new Set());
+    mockGetUserYearGroupQuotas.mockResolvedValue([
+      { vacationDays: 0, carriedOverDays: 0, homeOfficeDays: 0, sickDays: 0 },
+    ]);
+
+    await expect(
+      assertEditWithinQuota([sickDayRow("2026-08-20"), sickDayRow("2026-08-21")], tx)
+    ).resolves.toBeUndefined();
+    expect(mockSumCountedDaysForQuota).not.toHaveBeenCalled();
+  });
+
+  it("skips only the unmetered sick day bucket, not the other buckets of a bulk decision", async () => {
+    // One decision spanning two groups: the sick day in the never-enabled
+    // group sails through, while the vacation bucket must still be metered.
+    mockGetSickDayEnabledGroupIds.mockResolvedValue(new Set());
+    mockGetUserYearGroupQuotas.mockResolvedValue([
+      { vacationDays: 0, carriedOverDays: 0, homeOfficeDays: 0, sickDays: 0 },
+    ]);
+
+    await expect(
+      assertRequestWithinQuota(
+        [
+          editedRow({ id: "v-a", groupId: "g-1" }),
+          editedRow({
+            id: "v-b",
+            groupId: "g-2",
+            requestedDay: "2026-08-21",
+            vacationType: CalendarRecordType.SickDay,
+          }),
+        ],
+        tx
+      )
+    ).rejects.toThrow("This would exceed the allowance for that leave type");
+
+    expect(mockGetSickDayEnabledGroupIds).toHaveBeenCalledWith(["g-2"], tx);
+    expect(mockSumCountedDaysForQuota).toHaveBeenCalledTimes(1);
+    expect(mockSumCountedDaysForQuota).toHaveBeenCalledWith(
+      "u-1",
+      "g-1",
+      2026,
+      CalendarRecordType.Vacation,
+      [],
+      tx
+    );
   });
 });

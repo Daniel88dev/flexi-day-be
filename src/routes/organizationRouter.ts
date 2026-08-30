@@ -78,9 +78,9 @@ export const organizationRouter = (): Router => {
    *     description: |
    *       The name and `sickDayBenefitEnabled` are editable by any organization
    *       admin. `billingEmail` is owner-only — it is where subscription grace
-   *       warnings are sent. Enabling the Sick day benefit requires a paid
-   *       plan; disabling is always allowed and preserves every allowance and
-   *       record.
+   *       warnings are sent. Switching the Sick day benefit on requires a paid
+   *       plan; disabling — or re-sending the current value — is always
+   *       allowed, and disabling preserves every allowance and record.
    *     security:
    *       - bearerAuth: []
    *     parameters:

@@ -497,6 +497,28 @@ describe("Vacation API E2E Tests", () => {
       await setBenefit(true, "active");
       await bookSickDay(cookie, FRI).then((res) => expect(res.status).toBe(201));
     });
+
+    it("keeps a pending sick day approvable after the benefit is switched off", async () => {
+      // A SICK_DAY row can predate the benefit (or outlive it, as here). With
+      // the toggle off the type is unmetered again, so the zero allowance must
+      // not strand the pending request in front of the approver.
+      await setBenefit(true, "active");
+      await allowSickDays(1);
+      const cookie = await authCookieFor(member.id);
+
+      const created = await bookSickDay(cookie, WED);
+      expect(created.status).toBe(201);
+      const id = created.body[0].id as string;
+
+      await setBenefit(false, "active");
+      await allowSickDays(0);
+
+      const managerCookie = await authCookieFor(manager.id);
+      await request(context.app)
+        .post(`/api/vacation/approve/${id}`)
+        .set("Cookie", managerCookie)
+        .expect(200);
+    });
   });
 
   describe("POST /api/vacation/create-vacation — the rarer requestable types", () => {

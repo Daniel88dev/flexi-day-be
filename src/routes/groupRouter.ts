@@ -110,6 +110,8 @@ export const groupRouter = (): Router => {
    *                     type: integer
    *                   defaultHomeOfficeDays:
    *                     type: integer
+   *                   defaultSickDays:
+   *                     type: integer
    *                   workingDays:
    *                     type: array
    *                     items:

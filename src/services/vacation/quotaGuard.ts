@@ -5,6 +5,7 @@ import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { QUOTA_BEARING_TYPES } from "../report/buildSummary.js";
 import type { VacationType } from "./types.js";
 import { getGroup } from "../group/groupServices.js";
+import { getSickDayEnabledGroupIds } from "../organization/organizationServices.js";
 import { getUserYearGroupQuotas } from "../userYearQuotas/userYearQuotasServices.js";
 import { sumCountedDaysForQuota } from "./vacationServices.js";
 
@@ -149,7 +150,25 @@ const assertGrouped = async (
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([, bucket]) => bucket);
 
+  // Sick day is metered only where the organization's toggle is on — the same
+  // stored-toggle gate the report summary uses. Rows in organizations that
+  // never enabled the benefit (legacy SICK_DAY data) stay unmetered, so their
+  // approval and edits keep working with a zero allowance.
+  const sickDayGroups = ordered
+    .filter((bucket) => bucket.calendarRecordType === CalendarRecordType.SickDay)
+    .map((bucket) => bucket.groupId);
+  const meteredSickDayGroups =
+    sickDayGroups.length > 0
+      ? await getSickDayEnabledGroupIds(sickDayGroups, tx)
+      : new Set<string>();
+
   for (const bucket of ordered) {
+    if (
+      bucket.calendarRecordType === CalendarRecordType.SickDay &&
+      !meteredSickDayGroups.has(bucket.groupId)
+    ) {
+      continue;
+    }
     await assertOne(bucket, countPending, tx);
   }
 };

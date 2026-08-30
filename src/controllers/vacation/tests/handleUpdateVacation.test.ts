@@ -151,6 +151,41 @@ describe("handleUpdateVacation", () => {
     );
   });
 
+  it("rejects a retype to OTHER when neither the patch nor the row carries a note", async () => {
+    const { req, res } = makeReqRes({
+      body: { ids: ["v-1"], vacationType: CalendarRecordType.Other },
+    });
+    mockGetVacationsByIds.mockResolvedValue([baseRow({ note: null })]);
+
+    await expect(handleUpdateVacation(req, res)).rejects.toThrow(
+      "`note` is required for the OTHER type"
+    );
+    expect(mockUpdateVacationRows).not.toHaveBeenCalled();
+  });
+
+  it("rejects blanking the note on a record that is already OTHER", async () => {
+    const { req, res } = makeReqRes({ body: { ids: ["v-1"], note: "   " } });
+    mockGetVacationsByIds.mockResolvedValue([
+      baseRow({ vacationType: CalendarRecordType.Other, note: "Jury duty" }),
+    ]);
+
+    await expect(handleUpdateVacation(req, res)).rejects.toThrow(
+      "`note` is required for the OTHER type"
+    );
+    expect(mockUpdateVacationRows).not.toHaveBeenCalled();
+  });
+
+  it("accepts a retype to OTHER when the stored note already says what it is", async () => {
+    const { req, res } = makeReqRes({
+      body: { ids: ["v-1"], vacationType: CalendarRecordType.Other },
+    });
+    mockGetVacationsByIds.mockResolvedValue([baseRow({ note: "Jury duty" })]);
+
+    await handleUpdateVacation(req, res);
+
+    expect(mockUpdateVacationRows).toHaveBeenCalled();
+  });
+
   it("passes a retype to Sick day through the benefit gate", async () => {
     const { req, res } = makeReqRes({
       body: { ids: ["v-1"], vacationType: CalendarRecordType.SickDay },

@@ -68,9 +68,10 @@ export const reportRouter = (): Router => {
    *     description: |
    *       Returns one `monthly` row per (member, group, month, record type) for
    *       the charts, and one `summary` row per (member, group, quota-bearing
-   *       type) for the table. Day counts are weighted: a `halfDay` booking
-   *       counts 0.5. Filters outside the caller's scope are silently dropped
-   *       rather than rejected.
+   *       type) for the table — Sick day rows only for groups whose
+   *       organization has the Sick day benefit enabled. Day counts are
+   *       weighted: a `halfDay` booking counts 0.5. Filters outside the
+   *       caller's scope are silently dropped rather than rejected.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -112,9 +113,10 @@ export const reportRouter = (): Router => {
    *     summary: One member's year in detail
    *     description: |
    *       Allowances, monthly usage, every booking and the admin-made quota
-   *       changes recorded against the member for the year. Requires full view
-   *       access on a group the member belongs to; callers may always request
-   *       their own detail.
+   *       changes recorded against the member for the year. Sick day summary
+   *       rows appear only for groups whose organization has the Sick day
+   *       benefit enabled. Requires full view access on a group the member
+   *       belongs to; callers may always request their own detail.
    *     security:
    *       - bearerAuth: []
    *     parameters:

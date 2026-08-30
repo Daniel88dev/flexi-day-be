@@ -8,13 +8,19 @@ vi.mock("../../../services/billing/guards.js", () => ({
   assertGroupsWritable: vi.fn(),
 }));
 
-const { mockGetGroupUser, mockGetUserYearGroupQuotas, mockUpsertUserYearQuota, mockPostChanges } =
-  vi.hoisted(() => ({
-    mockGetGroupUser: vi.fn(),
-    mockGetUserYearGroupQuotas: vi.fn(),
-    mockUpsertUserYearQuota: vi.fn(),
-    mockPostChanges: vi.fn(),
-  }));
+const {
+  mockGetGroupUser,
+  mockGetUserYearGroupQuotas,
+  mockUpsertUserYearQuota,
+  mockPostChanges,
+  mockGetGroup,
+} = vi.hoisted(() => ({
+  mockGetGroupUser: vi.fn(),
+  mockGetUserYearGroupQuotas: vi.fn(),
+  mockUpsertUserYearQuota: vi.fn(),
+  mockPostChanges: vi.fn(),
+  mockGetGroup: vi.fn(),
+}));
 
 // Org-admin access is off here; it has its own suite.
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
@@ -23,7 +29,7 @@ vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
 }));
 
 vi.mock("../../../services/group/groupServices.js", () => ({
-  getGroup: vi.fn().mockResolvedValue({ id: "group", organizationId: "org" }),
+  getGroup: mockGetGroup,
   getLiveGroupIdsForOrganizations: vi.fn().mockResolvedValue([]),
 }));
 
@@ -75,6 +81,7 @@ describe("handlePutUserQuota", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
+    mockGetGroup.mockResolvedValue({ id: "group", organizationId: "org" });
   });
 
   it("upserts the quota and records an audit entry when the caller is an admin", async () => {
@@ -126,6 +133,27 @@ describe("handlePutUserQuota", () => {
     );
     expect(mockPostChanges).toHaveBeenCalledWith(
       expect.objectContaining({ changeDetail: "Quota for 2026 re-saved with no change" }),
+      expect.anything()
+    );
+  });
+
+  it("seeds a new row's omitted sick days from the group default, not zero", async () => {
+    // The quota guard falls back to the group default when no row exists; the
+    // row this PUT creates must not silently shrink that allowance.
+    const { sickDays: _omitted, ...legacyBody } = body;
+    const { req, res } = makeReqRes({ params: { groupId }, body: legacyBody });
+
+    mockGetGroupUser
+      .mockResolvedValueOnce({ adminAccess: true })
+      .mockResolvedValueOnce({ userId: memberId });
+    mockGetUserYearGroupQuotas.mockResolvedValue([]);
+    mockGetGroup.mockResolvedValue({ id: "group", organizationId: "org", defaultSickDays: 4 });
+    mockUpsertUserYearQuota.mockResolvedValue({ id: "q-1", ...legacyBody, sickDays: 4 });
+
+    await handlePutUserQuota(req, res);
+
+    expect(mockUpsertUserYearQuota).toHaveBeenCalledWith(
+      expect.objectContaining({ sickDays: 4 }),
       expect.anything()
     );
   });

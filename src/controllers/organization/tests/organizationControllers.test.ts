@@ -193,6 +193,23 @@ describe("organization controllers", () => {
       expect(mockUpdateOrganization).not.toHaveBeenCalled();
     });
 
+    it("re-saves an already-enabled benefit without consulting the plan", async () => {
+      // A lapsed org keeps its toggle on (dormancy); a body echoing that state
+      // must stay idempotent rather than 402.
+      mockGetAdminOrganizationsForUser.mockResolvedValue([
+        { ...organization, sickDayBenefitEnabled: true },
+      ]);
+      mockUpdateOrganization.mockResolvedValue({ ...organization, sickDayBenefitEnabled: true });
+      const { req, res } = makeReqRes({ body: { sickDayBenefitEnabled: true } });
+
+      await handlePatchOrganization(req, res);
+
+      expect(mockAssertCanEnableSickDayBenefit).not.toHaveBeenCalled();
+      expect(mockUpdateOrganization).toHaveBeenCalledWith("org-1", {
+        sickDayBenefitEnabled: true,
+      });
+    });
+
     it("disables the benefit without consulting the plan", async () => {
       // Switching off must work on any plan — a lapsed organization tidying
       // its settings is not buying anything.
