@@ -113,8 +113,10 @@ export const quotasRouter = (): Router => {
    *                   leaves the member's stored value unchanged.
    *               carriedOverDays:
    *                 type: integer
-   *                 default: 0
-   *                 description: Unused vacation days rolled forward from the previous year.
+   *                 description: |
+   *                   Unused vacation days rolled forward from the previous
+   *                   year. Omitting the field leaves the member's stored
+   *                   value unchanged.
    *     responses:
    *       '200':
    *         description: The stored quota row

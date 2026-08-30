@@ -65,9 +65,9 @@ const groupId = "550e8400-e29b-41d4-a716-446655440000";
 // better-auth user ids are opaque non-UUID strings, not UUIDs.
 const memberId = "aBcD1234eFgH5678iJkL9012mNoP3456";
 
-// Shaped as the validation middleware leaves it, so `sickDays` and
-// `carriedOverDays` are already defaulted by the time the controller sees the
-// body.
+// Shaped as the validation middleware leaves it; `sickDays` and
+// `carriedOverDays` are optional and preserved on omission, so the base body
+// sends both explicitly.
 const body = {
   userId: memberId,
   year: 2026,
@@ -154,6 +154,32 @@ describe("handlePutUserQuota", () => {
 
     expect(mockUpsertUserYearQuota).toHaveBeenCalledWith(
       expect.objectContaining({ sickDays: 4 }),
+      expect.anything()
+    );
+  });
+
+  it("preserves the stored carry-over when the body omits the field", async () => {
+    // The group Quotas tab never sends `carriedOverDays`; editing an
+    // allowance there must not silently reset a member's carry-over.
+    const { carriedOverDays: _omitted, ...tabBody } = body;
+    const { req, res } = makeReqRes({ params: { groupId }, body: tabBody });
+
+    mockGetGroupUser
+      .mockResolvedValueOnce({ adminAccess: true })
+      .mockResolvedValueOnce({ userId: memberId });
+    mockGetUserYearGroupQuotas.mockResolvedValue([
+      { id: "q-1", vacationDays: 25, homeOfficeDays: 60, sickDays: 0, carriedOverDays: 3 },
+    ]);
+    mockUpsertUserYearQuota.mockResolvedValue({ id: "q-1", ...tabBody, carriedOverDays: 3 });
+
+    await handlePutUserQuota(req, res);
+
+    expect(mockUpsertUserYearQuota).toHaveBeenCalledWith(
+      expect.objectContaining({ carriedOverDays: 3 }),
+      expect.anything()
+    );
+    expect(mockPostChanges).toHaveBeenCalledWith(
+      expect.objectContaining({ changeDetail: "Quota for 2026 re-saved with no change" }),
       expect.anything()
     );
   });

@@ -56,6 +56,10 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
     const sickDays =
       data.sickDays ?? existing?.sickDays ?? (await getGroup(groupId, tx))?.defaultSickDays ?? 0;
 
+    // Same preserve-on-omission rule: the group Quotas tab never sends
+    // carry-over, and saving an allowance there must not zero it.
+    const carriedOverDays = data.carriedOverDays ?? existing?.carriedOverDays ?? 0;
+
     const quota = await upsertUserYearQuota(
       {
         id: existing?.id ?? generateRandomUUID(),
@@ -65,7 +69,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         vacationDays: data.vacationDays,
         homeOfficeDays: data.homeOfficeDays,
         sickDays,
-        carriedOverDays: data.carriedOverDays,
+        carriedOverDays,
       },
       tx
     );
@@ -86,7 +90,11 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         groupId,
         changeType: changesType.UserYearQuotas,
         changingUserId: auth.userId,
-        changeDetail: describeQuotaChange(relatedYear, existing, { ...data, sickDays }),
+        changeDetail: describeQuotaChange(relatedYear, existing, {
+          ...data,
+          sickDays,
+          carriedOverDays,
+        }),
       },
       tx
     );
