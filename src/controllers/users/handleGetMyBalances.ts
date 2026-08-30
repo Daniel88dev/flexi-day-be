@@ -48,6 +48,11 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
   ensure(CalendarRecordType.Vacation).allocated =
     quotaSums.vacationDays + quotaSums.carriedOverDays;
   ensure(CalendarRecordType.HomeOffice).allocated = quotaSums.homeOfficeDays;
+  // Only once allocated: members of organizations without the Sick day
+  // benefit must not see an empty sick day bucket.
+  if (quotaSums.sickDays > 0) {
+    ensure(CalendarRecordType.SickDay).allocated = quotaSums.sickDays;
+  }
 
   for (const row of usage) {
     const bucket = ensure(row.type);

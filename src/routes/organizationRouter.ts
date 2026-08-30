@@ -74,10 +74,13 @@ export const organizationRouter = (): Router => {
    *   patch:
    *     tags:
    *       - Organization
-   *     summary: Rename the organization or repoint its billing address
+   *     summary: Rename the organization, repoint billing, or toggle the Sick day benefit
    *     description: |
-   *       The name is editable by any organization admin. `billingEmail` is
-   *       owner-only — it is where subscription grace warnings are sent.
+   *       The name and `sickDayBenefitEnabled` are editable by any organization
+   *       admin. `billingEmail` is owner-only — it is where subscription grace
+   *       warnings are sent. Enabling the Sick day benefit requires a paid
+   *       plan; disabling is always allowed and preserves every allowance and
+   *       record.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -99,6 +102,8 @@ export const organizationRouter = (): Router => {
    *               billingEmail:
    *                 type: string
    *                 format: email
+   *               sickDayBenefitEnabled:
+   *                 type: boolean
    *     responses:
    *       '200':
    *         description: The updated organization
@@ -106,12 +111,16 @@ export const organizationRouter = (): Router => {
    *         description: |
    *           `organizationId` omitted by a delegated admin who owns no
    *           organization and administers several.
+   *       '402':
+   *         description: |
+   *           Enabling the Sick day benefit on the Free plan.
+   *           `errors[].context` carries `{ reason: "PLAN_LIMIT" }`.
    *       '403':
    *         description: Not an admin, or not the owner for `billingEmail`
    *       '404':
    *         description: Organization not found
    *       '422':
-   *         description: Body carried neither `name` nor `billingEmail`
+   *         description: Body carried no editable field
    */
   app.patch(
     "/",

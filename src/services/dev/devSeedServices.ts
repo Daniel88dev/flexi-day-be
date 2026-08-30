@@ -171,6 +171,7 @@ export const setQuota = async (input: {
   year?: string;
   vacationDays?: number;
   homeOfficeDays?: number;
+  sickDays?: number;
   carriedOverDays?: number;
 }): Promise<void> => {
   await upsertUserYearQuota({
@@ -180,6 +181,7 @@ export const setQuota = async (input: {
     relatedYear: input.year ?? String(new Date().getUTCFullYear()),
     vacationDays: input.vacationDays ?? 25,
     homeOfficeDays: input.homeOfficeDays ?? 10,
+    sickDays: input.sickDays ?? 0,
     carriedOverDays: input.carriedOverDays ?? 3,
   });
 };

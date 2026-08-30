@@ -14,6 +14,8 @@ import {
   grantOrganizationAdmin,
   isOrganizationAdmin,
 } from "../../services/organization/organizationServices.js";
+import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
+import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 
 /**
  * The org-admin authority as the HTTP surface actually exposes it. The service
@@ -445,6 +447,66 @@ describe("organization admin over the API", () => {
 
     it("404s for a user with no organization at all", async () => {
       await request(app).get("/api/organization").set("Cookie", outsiderCookie).expect(404);
+    });
+  });
+
+  describe("Sick day benefit toggle", () => {
+    it("defaults to off", async () => {
+      const res = await request(app)
+        .get("/api/organization")
+        .set("Cookie", ownerCookie)
+        .expect(200);
+
+      expect(res.body.organization.sickDayBenefitEnabled).toBe(false);
+    });
+
+    it("refuses enabling on the Free plan with 402 and leaves the toggle off", async () => {
+      await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ sickDayBenefitEnabled: true })
+        .expect(402);
+
+      const res = await request(app)
+        .get("/api/organization")
+        .set("Cookie", ownerCookie)
+        .expect(200);
+      expect(res.body.organization.sickDayBenefitEnabled).toBe(false);
+    });
+
+    it("enables on a paid plan and persists", async () => {
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Active,
+      });
+
+      const patched = await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ sickDayBenefitEnabled: true })
+        .expect(200);
+      expect(patched.body.sickDayBenefitEnabled).toBe(true);
+
+      const res = await request(app)
+        .get("/api/organization")
+        .set("Cookie", ownerCookie)
+        .expect(200);
+      expect(res.body.organization.sickDayBenefitEnabled).toBe(true);
+    });
+
+    it("disables without a plan check, even after the subscription lapsed", async () => {
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Canceled,
+        graceEndsAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+
+      const patched = await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ sickDayBenefitEnabled: false })
+        .expect(200);
+      expect(patched.body.sickDayBenefitEnabled).toBe(false);
     });
   });
 });

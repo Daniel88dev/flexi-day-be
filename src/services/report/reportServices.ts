@@ -276,6 +276,7 @@ export const getQuotasForScope = async (
       groupId: userYearQuotas.groupId,
       vacationDays: userYearQuotas.vacationDays,
       homeOfficeDays: userYearQuotas.homeOfficeDays,
+      sickDays: userYearQuotas.sickDays,
       carriedOverDays: userYearQuotas.carriedOverDays,
     })
     .from(userYearQuotas)

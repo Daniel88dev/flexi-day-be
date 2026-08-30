@@ -24,6 +24,9 @@ export const userYearQuotas = pgTable(
     relatedYear: varchar("related_year", { length: 4 }).notNull(),
     vacationDays: integer("vacation_days").notNull().default(20),
     homeOfficeDays: integer("home_office_days").notNull().default(0),
+    // Metered only while the organization's Sick day benefit is active, and
+    // deliberately outside the rollover job: sick days never carry over.
+    sickDays: integer("sick_days").notNull().default(0),
     // Unused allowance rolled forward from the previous year. Stored rather
     // than derived so a cap or expiry policy stays an explicit admin decision.
     carriedOverDays: integer("carried_over_days").notNull().default(0),

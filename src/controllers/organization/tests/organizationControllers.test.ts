@@ -11,6 +11,7 @@ const {
   mockRemoveOrganizationAdmin,
   mockGetSubscriptionForOrganization,
   mockGetGroupUsageForOrganization,
+  mockAssertCanEnableSickDayBenefit,
 } = vi.hoisted(() => ({
   mockGetOrganizationById: vi.fn(),
   mockGetAdminOrganizationsForUser: vi.fn(),
@@ -22,12 +23,17 @@ const {
   mockRemoveOrganizationAdmin: vi.fn(),
   mockGetSubscriptionForOrganization: vi.fn(),
   mockGetGroupUsageForOrganization: vi.fn(),
+  mockAssertCanEnableSickDayBenefit: vi.fn(),
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
 
 vi.mock("../../../services/billing/subscriptionServices.js", () => ({
   getSubscriptionForOrganization: mockGetSubscriptionForOrganization,
+}));
+
+vi.mock("../../../services/billing/guards.js", () => ({
+  assertCanEnableSickDayBenefit: mockAssertCanEnableSickDayBenefit,
 }));
 
 vi.mock("../../../services/group/groupServices.js", () => ({
@@ -66,6 +72,7 @@ const organization = {
   ownerUserId: OWNER,
   billingEmail: "billing@acme.test",
   paddleCustomerId: null,
+  sickDayBenefitEnabled: false,
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };
@@ -156,6 +163,47 @@ describe("organization controllers", () => {
 
       expect(mockUpdateOrganization).toHaveBeenCalledWith("org-1", {
         billingEmail: "new@acme.test",
+      });
+    });
+
+    it("enables the Sick day benefit only after the plan gate passes", async () => {
+      mockUpdateOrganization.mockResolvedValue({ ...organization, sickDayBenefitEnabled: true });
+      const { req, res } = makeReqRes({ body: { sickDayBenefitEnabled: true } });
+
+      await handlePatchOrganization(req, res);
+
+      expect(mockAssertCanEnableSickDayBenefit).toHaveBeenCalledWith("org-1");
+      expect(mockUpdateOrganization).toHaveBeenCalledWith("org-1", {
+        sickDayBenefitEnabled: true,
+      });
+      expect(vi.mocked(res.json).mock.calls[0]?.[0]).toMatchObject({
+        sickDayBenefitEnabled: true,
+      });
+    });
+
+    it("propagates the 402 when the plan gate refuses", async () => {
+      mockAssertCanEnableSickDayBenefit.mockRejectedValue(
+        new Error("The Sick day benefit requires a paid plan")
+      );
+      const { req, res } = makeReqRes({ body: { sickDayBenefitEnabled: true } });
+
+      await expect(handlePatchOrganization(req, res)).rejects.toThrow(
+        "The Sick day benefit requires a paid plan"
+      );
+      expect(mockUpdateOrganization).not.toHaveBeenCalled();
+    });
+
+    it("disables the benefit without consulting the plan", async () => {
+      // Switching off must work on any plan — a lapsed organization tidying
+      // its settings is not buying anything.
+      mockUpdateOrganization.mockResolvedValue(organization);
+      const { req, res } = makeReqRes({ body: { sickDayBenefitEnabled: false } });
+
+      await handlePatchOrganization(req, res);
+
+      expect(mockAssertCanEnableSickDayBenefit).not.toHaveBeenCalled();
+      expect(mockUpdateOrganization).toHaveBeenCalledWith("org-1", {
+        sickDayBenefitEnabled: false,
       });
     });
   });

@@ -8,7 +8,8 @@ import type { ValidatedUpdateVacationType } from "../../services/vacation/types.
 import type { VacationUpdatePatch } from "../../services/vacation/vacationServices.js";
 import { describeVacationChanges } from "../../services/vacation/vacationChangeDetail.js";
 import { assertEditWithinQuota } from "../../services/vacation/quotaGuard.js";
-import { assertGroupWritable } from "../../services/billing/guards.js";
+import { assertGroupWritable, assertSickDayRequestable } from "../../services/billing/guards.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { notifyVacationUpdated } from "../../services/vacation/vacationNotifier.js";
 import { getVacationsByIds, updateVacationRows } from "../../services/vacation/vacationServices.js";
@@ -108,6 +109,16 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
     }
 
     await assertGroupWritable(first.groupId, tx);
+
+    // Retyping an existing record to Sick day is the same grant as creating
+    // one, so it passes the same gate; edits to records already stored as
+    // Sick day stay possible even while the benefit is dormant.
+    if (
+      patch.vacationType === CalendarRecordType.SickDay &&
+      rows.some((row) => row.vacationType !== CalendarRecordType.SickDay)
+    ) {
+      await assertSickDayRequestable(first.groupId, tx);
+    }
 
     const weightChanged = rows.some(
       (row) =>

@@ -10,7 +10,7 @@ import {
 } from "../group/groupServices.js";
 import { countActiveMembersInGroup } from "../groupUser/groupUserServices.js";
 import { countOpenInvitesForGroup } from "../groupUser/inviteLinkServices.js";
-import { lockOrganization } from "../organization/organizationServices.js";
+import { getOrganizationById, lockOrganization } from "../organization/organizationServices.js";
 
 const planLimitError = (params: {
   message: string;
@@ -151,6 +151,70 @@ export const assertGroupWritable = async (groupId: string, tx?: DbTransaction): 
       limit: entitlements.maxMembersPerGroup,
       current: members,
       context: { groupId, organizationId: group.organizationId },
+    });
+  }
+};
+
+/**
+ * Throws 402 unless the organization is on a paid plan right now (grace still
+ * counts as paid). Guards switching the Sick day benefit on; switching it off
+ * is always allowed.
+ */
+export const assertCanEnableSickDayBenefit = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  const entitlements = await entitlementsForOrganization(organizationId, tx);
+  if (entitlements.plan === "FREE") {
+    throw new AppError({
+      message: "The Sick day benefit requires a paid plan",
+      logging: true,
+      code: 402,
+      context: { organizationId },
+      publicContext: { reason: "PLAN_LIMIT" },
+    });
+  }
+};
+
+/**
+ * The benefit is active only while the stored toggle is on AND the plan is
+ * paid. Derived at read time like every entitlement: a lapse makes this false
+ * without touching the toggle or any data, and re-subscribing makes it true
+ * again — that is the whole dormancy mechanism.
+ */
+export const isSickDayBenefitActive = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const organization = await getOrganizationById(organizationId, tx);
+  if (!organization?.sickDayBenefitEnabled) return false;
+
+  const entitlements = await entitlementsForOrganization(organizationId, tx);
+  return entitlements.plan !== "FREE";
+};
+
+/** Throws 422 when the group's organization does not have an active Sick day benefit. */
+export const assertSickDayRequestable = async (
+  groupId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  const group = await getGroup(groupId, tx);
+  if (!group) {
+    throw new AppError({
+      message: "Group not found",
+      logging: true,
+      code: 404,
+      context: { groupId },
+    });
+  }
+
+  if (!(await isSickDayBenefitActive(group.organizationId, tx))) {
+    throw new AppError({
+      message: "The Sick day benefit is not enabled for this organization",
+      logging: true,
+      code: 422,
+      context: { groupId, organizationId: group.organizationId },
+      publicContext: { reason: "SICK_DAY_BENEFIT_DISABLED" },
     });
   }
 };

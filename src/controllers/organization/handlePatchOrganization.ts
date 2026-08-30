@@ -3,12 +3,14 @@ import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import type { ValidatedPatchOrganizationType } from "../../services/organization/types.js";
 import { assertOrganizationOwner, resolveAdministeredOrganization } from "./utils.js";
+import { assertCanEnableSickDayBenefit } from "../../services/billing/guards.js";
 import { updateOrganization } from "../../services/organization/organizationServices.js";
 
 /**
- * Renames the organization, or repoints the billing address. The name is
- * editable by any org admin; `billingEmail` is owner-only — it is where the
- * subscription grace warnings go.
+ * Renames the organization, repoints the billing address, or toggles the Sick
+ * day benefit. The name and the benefit are editable by any org admin;
+ * `billingEmail` is owner-only — it is where the subscription grace warnings
+ * go. Enabling the benefit requires a paid plan; disabling never does.
  */
 export const handlePatchOrganization = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -22,9 +24,16 @@ export const handlePatchOrganization = async (req: Request, res: Response) => {
     assertOrganizationOwner(organization, auth.userId);
   }
 
+  if (data.sickDayBenefitEnabled === true) {
+    await assertCanEnableSickDayBenefit(organization.id);
+  }
+
   const updated = await updateOrganization(organization.id, {
     ...(data.name !== undefined ? { name: data.name } : {}),
     ...(data.billingEmail !== undefined ? { billingEmail: data.billingEmail } : {}),
+    ...(data.sickDayBenefitEnabled !== undefined
+      ? { sickDayBenefitEnabled: data.sickDayBenefitEnabled }
+      : {}),
   });
 
   if (!updated) {
@@ -43,5 +52,6 @@ export const handlePatchOrganization = async (req: Request, res: Response) => {
     name: updated.name,
     isOwner,
     billingEmail: isOwner ? updated.billingEmail : null,
+    sickDayBenefitEnabled: updated.sickDayBenefitEnabled,
   });
 };

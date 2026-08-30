@@ -33,6 +33,7 @@ export const openQuotaFromGroupDefaults = async (
     relatedYear: string;
     vacationDays: number;
     homeOfficeDays: number;
+    sickDays: number;
   },
   tx?: DbTransaction
 ): Promise<UserYearQuotasType | undefined> => {
@@ -81,14 +82,20 @@ export const sumUserQuotasForYear = async (
   userId: string,
   groupIds: string[],
   relatedYear: string
-): Promise<{ vacationDays: number; homeOfficeDays: number; carriedOverDays: number }> => {
+): Promise<{
+  vacationDays: number;
+  homeOfficeDays: number;
+  sickDays: number;
+  carriedOverDays: number;
+}> => {
   if (groupIds.length === 0) {
-    return { vacationDays: 0, homeOfficeDays: 0, carriedOverDays: 0 };
+    return { vacationDays: 0, homeOfficeDays: 0, sickDays: 0, carriedOverDays: 0 };
   }
   const [row] = await db
     .select({
       vacationDays: sql<number>`COALESCE(SUM(${userYearQuotas.vacationDays}), 0)`,
       homeOfficeDays: sql<number>`COALESCE(SUM(${userYearQuotas.homeOfficeDays}), 0)`,
+      sickDays: sql<number>`COALESCE(SUM(${userYearQuotas.sickDays}), 0)`,
       carriedOverDays: sql<number>`COALESCE(SUM(${userYearQuotas.carriedOverDays}), 0)`,
     })
     .from(userYearQuotas)
@@ -102,6 +109,7 @@ export const sumUserQuotasForYear = async (
   return {
     vacationDays: Number(row?.vacationDays ?? 0),
     homeOfficeDays: Number(row?.homeOfficeDays ?? 0),
+    sickDays: Number(row?.sickDays ?? 0),
     carriedOverDays: Number(row?.carriedOverDays ?? 0),
   };
 };
@@ -125,6 +133,7 @@ export const upsertUserYearQuota = async (
       set: {
         vacationDays: data.vacationDays,
         homeOfficeDays: data.homeOfficeDays,
+        sickDays: data.sickDays,
         carriedOverDays: data.carriedOverDays,
       },
     })

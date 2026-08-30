@@ -13,6 +13,7 @@ export const groups = pgTable(
     groupName: text("group_name").notNull(),
     defaultVacationDays: integer("default_vacation_days").notNull().default(20),
     defaultHomeOfficeDays: integer("default_home_office_days").notNull().default(0),
+    defaultSickDays: integer("default_sick_days").notNull().default(0),
     // JS `Date.getUTCDay()` numbers (0=Sun … 6=Sat); default Mon–Fri.
     workingDays: integer("working_days").array().notNull().default([1, 2, 3, 4, 5]),
     // ISO 3166-1 alpha-2; null disables public holidays for the group.

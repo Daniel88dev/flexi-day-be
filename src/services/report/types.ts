@@ -40,6 +40,7 @@ export type ReportQuotaRow = {
   groupId: string;
   vacationDays: number;
   homeOfficeDays: number;
+  sickDays: number;
   carriedOverDays: number;
 };
 

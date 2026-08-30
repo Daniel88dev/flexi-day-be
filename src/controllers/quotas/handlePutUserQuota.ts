@@ -57,6 +57,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         relatedYear,
         vacationDays: data.vacationDays,
         homeOfficeDays: data.homeOfficeDays,
+        sickDays: data.sickDays,
         carriedOverDays: data.carriedOverDays,
       },
       tx

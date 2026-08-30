@@ -147,7 +147,9 @@ export const reportRouter = (): Router => {
    *     description: |
    *       Streams a two-sheet `.xlsx`: allowances as they stand today on the
    *       first sheet, every individual booking on the second, both with Excel
-   *       AutoFilter enabled across all columns. Bank holidays never appear in
+   *       AutoFilter enabled across all columns. The summary sheet carries one
+   *       line per member and metered type — Vacation, Home office, and Sick
+   *       day for groups whose organization has the Sick day benefit enabled. Bank holidays never appear in
    *       the workbook: a company-wide closure is not leave anyone took, so
    *       `BANK_HOLIDAY` is rejected as a filter value and its rows are
    *       excluded even without a filter. Each call writes a

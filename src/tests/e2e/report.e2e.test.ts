@@ -16,6 +16,7 @@ import {
   addMember,
   addQuota,
   dayIn,
+  enableSickDayBenefit,
   makeGroup,
   makeUser,
   removeMember,
@@ -537,6 +538,86 @@ describe("Report API E2E", () => {
       );
       // Every xlsx is a zip archive, so the body must start with the PK magic.
       expect((res.body as Buffer).subarray(0, 2).toString()).toBe("PK");
+    });
+
+    it("adds a Sick day summary line for a benefit-enabled organization", async () => {
+      const manager = await makeUser("Manager");
+      const member = await makeUser("Sana Sick");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await enableSickDayBenefit(manager.id);
+      await addMember(groupId, manager.id, { viewAccess: true });
+      await addMember(groupId, member.id);
+      await addQuota(groupId, member.id, FUTURE_YEAR, { vacationDays: 20, sickDays: 3 });
+      await addLeave(groupId, member.id, dayIn(FUTURE_YEAR, 4, 14), {
+        type: CalendarRecordType.SickDay,
+      });
+
+      const res = await request(app)
+        .post("/api/reports/export")
+        .set("Cookie", await authCookieFor(manager.id))
+        .send({ year: FUTURE_YEAR })
+        .buffer(true)
+        .parse((response, callback) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(res.body as ArrayBuffer);
+      let sickDayRow: { quota: number; planned: number; remaining: number } | undefined;
+      workbook.getWorksheet(`Summary ${FUTURE_YEAR.toString()}`)?.eachRow((row, index) => {
+        if (index > 1 && String(row.getCell(3).value) === "Sick Day") {
+          sickDayRow = {
+            quota: Number(row.getCell(5).value),
+            planned: Number(row.getCell(7).value),
+            remaining: Number(row.getCell(9).value),
+          };
+        }
+      });
+
+      // The whole booking sits in the future, so it counts as planned; no
+      // carry-over ever applies to sick days, so 3 - 1 remain.
+      expect(sickDayRow).toEqual({ quota: 3, planned: 1, remaining: 2 });
+    });
+
+    it("keeps Sick day off the summary sheet while the benefit is off", async () => {
+      const manager = await makeUser("Manager");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, manager.id, { viewAccess: true });
+      await addQuota(groupId, manager.id, FUTURE_YEAR, { vacationDays: 20, sickDays: 3 });
+      await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 4, 14), {
+        type: CalendarRecordType.SickDay,
+      });
+
+      const res = await request(app)
+        .post("/api/reports/export")
+        .set("Cookie", await authCookieFor(manager.id))
+        .send({ year: FUTURE_YEAR })
+        .buffer(true)
+        .parse((response, callback) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(res.body as ArrayBuffer);
+      const summaryTypes = new Set<string>();
+      workbook.getWorksheet(`Summary ${FUTURE_YEAR.toString()}`)?.eachRow((row, index) => {
+        if (index > 1) summaryTypes.add(String(row.getCell(3).value));
+      });
+      const detailTypes = new Set<string>();
+      workbook.getWorksheet("Detail")?.eachRow((row, index) => {
+        if (index > 1) detailTypes.add(String(row.getCell(3).value));
+      });
+
+      // The booking itself still exports — only the metered summary line is
+      // tied to the benefit.
+      expect(summaryTypes).not.toContain("Sick Day");
+      expect(detailTypes).toContain("Sick Day");
     });
 
     it("names a member who has since left the group on the summary sheet", async () => {

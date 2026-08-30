@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Billing plan-limit guards are no-ops here; their behavior has its own suite.
+// The Sick day gate keeps a handle so the wiring below can be asserted.
 vi.mock("../../../services/billing/guards.js", () => ({
   assertCanCreateGroup: vi.fn(),
   assertCanAddMember: vi.fn(),
   assertGroupWritable: vi.fn(),
   assertGroupsWritable: vi.fn(),
+  assertSickDayRequestable: mockAssertSickDayRequestable,
 }));
 
 const {
@@ -15,6 +17,7 @@ const {
   mockResolveGroupAdmin,
   mockAssertEditWithinQuota,
   mockNotifyVacationUpdated,
+  mockAssertSickDayRequestable,
 } = vi.hoisted(() => ({
   mockGetVacationsByIds: vi.fn(),
   mockUpdateVacationRows: vi.fn(),
@@ -22,6 +25,7 @@ const {
   mockResolveGroupAdmin: vi.fn(),
   mockAssertEditWithinQuota: vi.fn(),
   mockNotifyVacationUpdated: vi.fn(),
+  mockAssertSickDayRequestable: vi.fn(),
 }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
@@ -145,6 +149,32 @@ describe("handleUpdateVacation", () => {
       [expect.objectContaining({ id: "v-1", vacationType: CalendarRecordType.HomeOffice })],
       expect.anything()
     );
+  });
+
+  it("passes a retype to Sick day through the benefit gate", async () => {
+    const { req, res } = makeReqRes({
+      body: { ids: ["v-1"], vacationType: CalendarRecordType.SickDay },
+    });
+
+    await handleUpdateVacation(req, res);
+
+    expect(mockAssertSickDayRequestable).toHaveBeenCalledWith(groupId, expect.anything());
+  });
+
+  it("leaves records already stored as Sick day editable without the gate", async () => {
+    // Dormancy withdraws new grants only; adjusting an existing sick day
+    // record (here its half-day weight) must keep working after a lapse.
+    const { req, res } = makeReqRes({
+      body: { ids: ["v-1"], vacationType: CalendarRecordType.SickDay, halfDay: true },
+    });
+    mockGetVacationsByIds.mockResolvedValue([
+      baseRow({ vacationType: CalendarRecordType.SickDay }),
+    ]);
+
+    await handleUpdateVacation(req, res);
+
+    expect(mockAssertSickDayRequestable).not.toHaveBeenCalled();
+    expect(mockUpdateVacationRows).toHaveBeenCalled();
   });
 
   it("does not notify when the admin edits their own record", async () => {

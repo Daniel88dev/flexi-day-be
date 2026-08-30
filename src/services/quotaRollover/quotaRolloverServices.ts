@@ -70,10 +70,12 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
       groupId: groupUsers.groupId,
       previousVacationDays: previousQuota.vacationDays,
       previousHomeOfficeDays: previousQuota.homeOfficeDays,
+      previousSickDays: previousQuota.sickDays,
       previousCarriedOverDays: previousQuota.carriedOverDays,
       previousUsedDays: previousUsage.usedDays,
       groupDefaultVacationDays: groups.defaultVacationDays,
       groupDefaultHomeOfficeDays: groups.defaultHomeOfficeDays,
+      groupDefaultSickDays: groups.defaultSickDays,
     })
     .from(groupUsers)
     .innerJoin(groups, eq(groupUsers.groupId, groups.id))
@@ -109,10 +111,12 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
     groupId: row.groupId,
     previousVacationDays: row.previousVacationDays,
     previousHomeOfficeDays: row.previousHomeOfficeDays,
+    previousSickDays: row.previousSickDays,
     previousCarriedOverDays: row.previousCarriedOverDays,
     previousUsedDays: Number(row.previousUsedDays ?? 0),
     groupDefaultVacationDays: row.groupDefaultVacationDays,
     groupDefaultHomeOfficeDays: row.groupDefaultHomeOfficeDays,
+    groupDefaultSickDays: row.groupDefaultSickDays,
   }));
 };
 
@@ -162,6 +166,7 @@ export const rolloverQuotasForYear = async (year: number): Promise<RolloverResul
             relatedYear: year.toString(),
             vacationDays: row.vacationDays,
             homeOfficeDays: row.homeOfficeDays,
+            sickDays: row.sickDays,
             carriedOverDays: row.carriedOverDays,
           }))
         )

@@ -4,9 +4,18 @@ import {
   setupTestEnvironment,
   cleanupTestData,
   createTestGroup,
+  createTestUser,
   createTestVacation,
   type TestContext,
+  type TestGroup,
+  type TestUser,
 } from "./helpers/testSetup.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import { organizations } from "../../db/schema/organization-schema.js";
+import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
+import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
+import { upsertUserYearQuota } from "../../services/userYearQuotas/userYearQuotasServices.js";
 import { setMirrorsIntoGroupForUser } from "../../services/groupMirror/groupMirrorServices.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { authCookieFor } from "./helpers/authHelper.js";
@@ -380,6 +389,113 @@ describe("Vacation API E2E Tests", () => {
       const rows = await db.select().from(vacation).where(eq(vacation.id, rejectedId));
       expect(rows[0]?.rejectedAt).not.toBeNull();
       expect(rows[0]?.approvedAt).toBeNull();
+    });
+  });
+
+  describe("POST /api/vacation/create-vacation — Sick day benefit", () => {
+    let manager: TestUser;
+    let member: TestUser;
+    let benefitGroup: TestGroup;
+    let organizationId: string;
+
+    const YEAR = MONDAY_OF_WEEK.getUTCFullYear();
+
+    beforeAll(async () => {
+      manager = await createTestUser("sickday-manager@test.com", "Sick Day Manager", "password123");
+      member = await createTestUser("sickday-member@test.com", "Sick Day Member", "password123");
+      benefitGroup = await createTestGroup("Sick Day Group", manager.id);
+      organizationId = (await ensureOrganizationForUser(manager.id)).id;
+    });
+
+    // The outer beforeEach clears memberships, so each test re-joins.
+    beforeEach(async () => {
+      await addToGroup(member.id, benefitGroup.id);
+    });
+
+    /** Pins the toggle and the subscription so no test inherits another's state. */
+    const setBenefit = async (enabled: boolean, plan: "active" | "lapsed") => {
+      await db
+        .update(organizations)
+        .set({ sickDayBenefitEnabled: enabled })
+        .where(eq(organizations.id, organizationId));
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: plan === "active" ? subscriptionStatus.Active : subscriptionStatus.Canceled,
+        graceEndsAt: plan === "active" ? null : new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+    };
+
+    const allowSickDays = async (days: number) => {
+      await upsertUserYearQuota({
+        id: uuidv4(),
+        userId: member.id,
+        groupId: benefitGroup.id,
+        relatedYear: YEAR.toString(),
+        vacationDays: 20,
+        homeOfficeDays: 0,
+        sickDays: days,
+        carriedOverDays: 0,
+      });
+    };
+
+    const bookSickDay = async (cookie: string, day: string, halfDay = false) =>
+      request(context.app).post("/api/vacation/create-vacation").set("Cookie", cookie).send({
+        groupId: benefitGroup.id,
+        from: day,
+        to: day,
+        vacationType: CalendarRecordType.SickDay,
+        halfDay,
+      });
+
+    it("rejects a sick day while the benefit is off, even on a paid plan", async () => {
+      await setBenefit(false, "active");
+      await allowSickDays(5);
+      const cookie = await authCookieFor(member.id);
+
+      const res = await bookSickDay(cookie, WED);
+
+      expect(res.status).toBe(422);
+      expect(res.body.errors[0].context.reason).toBe("SICK_DAY_BENEFIT_DISABLED");
+    });
+
+    it("meters half days against the allowance once the benefit is on", async () => {
+      await setBenefit(true, "active");
+      await allowSickDays(1);
+      const cookie = await authCookieFor(member.id);
+
+      // Two half days consume the whole allowance of 1; anything more exceeds.
+      await bookSickDay(cookie, WED, true).then((res) => expect(res.status).toBe(201));
+      await bookSickDay(cookie, FRI, true).then((res) => expect(res.status).toBe(201));
+
+      const overdrawn = await bookSickDay(cookie, MON, true);
+      expect(overdrawn.status).toBe(422);
+      expect(overdrawn.body.errors[0].message).toBe(
+        "This would exceed the allowance for that leave type"
+      );
+    });
+
+    it("goes dormant on lapse, preserves the data, and revives on re-subscribe", async () => {
+      await setBenefit(true, "active");
+      await allowSickDays(5);
+      const cookie = await authCookieFor(member.id);
+
+      await bookSickDay(cookie, WED).then((res) => expect(res.status).toBe(201));
+
+      await setBenefit(true, "lapsed");
+      const dormant = await bookSickDay(cookie, FRI);
+      expect(dormant.status).toBe(422);
+      expect(dormant.body.errors[0].context.reason).toBe("SICK_DAY_BENEFIT_DISABLED");
+
+      // Nothing was deleted or altered by the lapse.
+      const stored = await db.select().from(vacation).where(eq(vacation.userId, member.id));
+      expect(stored).toHaveLength(1);
+      expect(stored[0]).toMatchObject({
+        requestedDay: WED,
+        vacationType: CalendarRecordType.SickDay,
+      });
+
+      await setBenefit(true, "active");
+      await bookSickDay(cookie, FRI).then((res) => expect(res.status).toBe(201));
     });
   });
 

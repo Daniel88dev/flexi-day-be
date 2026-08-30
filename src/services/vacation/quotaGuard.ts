@@ -37,7 +37,9 @@ const yearOf = (isoDay: string): number => Number(isoDay.slice(0, 4));
  * COMMITTED, concurrent requests all read the pre-insert totals and all pass.
  */
 const lockAllowance = async (check: QuotaCheck, tx: DbTransaction): Promise<void> => {
-  const key = `${check.userId}::${check.groupId}::${check.year.toString()}::${check.calendarRecordType}`;
+  const key = `${check.userId}::${check.groupId}::${check.year.toString()}::${
+    check.calendarRecordType
+  }`;
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 };
 
@@ -50,16 +52,28 @@ const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<numb
     tx
   );
 
+  // Carry-over belongs to the vacation allowance alone; sick days never roll
+  // over by design.
   if (quota) {
-    return check.calendarRecordType === CalendarRecordType.Vacation
-      ? quota.vacationDays + quota.carriedOverDays
-      : quota.homeOfficeDays;
+    switch (check.calendarRecordType) {
+      case CalendarRecordType.Vacation:
+        return quota.vacationDays + quota.carriedOverDays;
+      case CalendarRecordType.SickDay:
+        return quota.sickDays;
+      default:
+        return quota.homeOfficeDays;
+    }
   }
 
   const group = await getGroup(check.groupId, tx);
-  return check.calendarRecordType === CalendarRecordType.Vacation
-    ? (group?.defaultVacationDays ?? 0)
-    : (group?.defaultHomeOfficeDays ?? 0);
+  switch (check.calendarRecordType) {
+    case CalendarRecordType.Vacation:
+      return group?.defaultVacationDays ?? 0;
+    case CalendarRecordType.SickDay:
+      return group?.defaultSickDays ?? 0;
+    default:
+      return group?.defaultHomeOfficeDays ?? 0;
+  }
 };
 
 /**

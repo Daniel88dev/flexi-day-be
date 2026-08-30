@@ -110,3 +110,55 @@ describe("assertRequestWithinQuota", () => {
     );
   });
 });
+
+describe("sick day allowance", () => {
+  const sickDayRow = (day: string, halfDay = false) =>
+    editedRow({
+      id: `v-${day}`,
+      requestedDay: day,
+      vacationType: CalendarRecordType.SickDay,
+      halfDay,
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSumCountedDaysForQuota.mockResolvedValue({ approved: 0, pending: 0 });
+  });
+
+  it("draws against the sick day column, without the vacation carry-over", async () => {
+    // Generous vacation numbers prove the guard reads `sickDays` alone: with
+    // carry-over included the second row would fit.
+    mockGetUserYearGroupQuotas.mockResolvedValue([
+      { vacationDays: 20, carriedOverDays: 10, homeOfficeDays: 0, sickDays: 1 },
+    ]);
+
+    await expect(assertRequestWithinQuota([sickDayRow("2026-08-20")], tx)).resolves.toBeUndefined();
+    await expect(
+      assertRequestWithinQuota([sickDayRow("2026-08-20"), sickDayRow("2026-08-21")], tx)
+    ).rejects.toThrow("This would exceed the allowance for that leave type");
+  });
+
+  it("weights a half day at 0.5, like every metered type", async () => {
+    mockGetUserYearGroupQuotas.mockResolvedValue([
+      { vacationDays: 0, carriedOverDays: 0, homeOfficeDays: 0, sickDays: 1 },
+    ]);
+
+    await expect(
+      assertRequestWithinQuota([sickDayRow("2026-08-20", true), sickDayRow("2026-08-21", true)], tx)
+    ).resolves.toBeUndefined();
+  });
+
+  it("falls back to the group's sick day default when no quota row exists", async () => {
+    mockGetUserYearGroupQuotas.mockResolvedValue([]);
+    mockGetGroup.mockResolvedValue({
+      defaultVacationDays: 20,
+      defaultHomeOfficeDays: 0,
+      defaultSickDays: 1,
+    });
+
+    await expect(assertRequestWithinQuota([sickDayRow("2026-08-20")], tx)).resolves.toBeUndefined();
+    await expect(
+      assertRequestWithinQuota([sickDayRow("2026-08-20"), sickDayRow("2026-08-21")], tx)
+    ).rejects.toThrow("This would exceed the allowance for that leave type");
+  });
+});

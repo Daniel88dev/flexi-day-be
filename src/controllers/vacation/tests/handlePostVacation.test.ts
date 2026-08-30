@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Billing plan-limit guards are no-ops here; their behavior has its own suite.
+// The Sick day gate keeps a handle so the wiring below can be asserted.
 vi.mock("../../../services/billing/guards.js", () => ({
   assertCanCreateGroup: vi.fn(),
   assertCanAddMember: vi.fn(),
   assertGroupWritable: vi.fn(),
   assertGroupsWritable: vi.fn(),
+  assertSickDayRequestable: mockAssertSickDayRequestable,
 }));
 
 const {
@@ -21,6 +23,7 @@ const {
   mockAssertRequestWithinQuota,
   mockAssertGroupAdmin,
   mockGetUserById,
+  mockAssertSickDayRequestable,
 } = vi.hoisted(() => ({
   mockPostVacationBulk: vi.fn(),
   mockGetGroupUser: vi.fn(),
@@ -34,6 +37,7 @@ const {
   mockAssertRequestWithinQuota: vi.fn(),
   mockAssertGroupAdmin: vi.fn(),
   mockGetUserById: vi.fn(),
+  mockAssertSickDayRequestable: vi.fn(),
 }));
 
 vi.mock("../../../services/groupUser/groupAccess.js", () => ({
@@ -480,6 +484,46 @@ describe("handlePostVacation", () => {
       expect(mockPostVacationBulk).not.toHaveBeenCalled();
       expect(mockGetGroupUser).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("consults the Sick day gate inside the transaction when booking a sick day", async () => {
+    const { req, res } = makeReqRes({
+      body: baseBody({ vacationType: CalendarRecordType.SickDay }),
+    });
+    mockGetGroupUser.mockResolvedValue({ controlledUser: true });
+    mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1", userId: "user_123" }]);
+    mockGetApprovalUsers.mockResolvedValue(null);
+
+    await handlePostVacation(req, res);
+
+    expect(mockAssertSickDayRequestable).toHaveBeenCalledWith("group_123", {});
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it("rejects a sick day booking when the benefit gate refuses", async () => {
+    const { req, res } = makeReqRes({
+      body: baseBody({ vacationType: CalendarRecordType.SickDay }),
+    });
+    mockGetGroupUser.mockResolvedValue({ controlledUser: true });
+    mockAssertSickDayRequestable.mockRejectedValue(
+      new Error("The Sick day benefit is not enabled for this organization")
+    );
+
+    await expect(handlePostVacation(req, res)).rejects.toThrow(
+      "The Sick day benefit is not enabled for this organization"
+    );
+    expect(mockPostVacationBulk).not.toHaveBeenCalled();
+  });
+
+  it("does not consult the Sick day gate for other types", async () => {
+    const { req, res } = makeReqRes({ body: baseBody() });
+    mockGetGroupUser.mockResolvedValue({ controlledUser: true });
+    mockPostVacationBulk.mockResolvedValue([{ id: "uuid_1", userId: "user_123" }]);
+    mockGetApprovalUsers.mockResolvedValue(null);
+
+    await handlePostVacation(req, res);
+
+    expect(mockAssertSickDayRequestable).not.toHaveBeenCalled();
   });
 
   it("throws 404 when the group no longer exists", async () => {
