@@ -40,6 +40,7 @@ export type ReportQuotaRow = {
   groupId: string;
   vacationDays: number;
   homeOfficeDays: number;
+  sickDays: number;
   carriedOverDays: number;
 };
 
@@ -75,6 +76,15 @@ export type ReportBooking = {
 };
 
 const recordTypeEnum = z.enum(CalendarRecordType);
+
+/**
+ * `BANK_HOLIDAY` is deliberately absent: the export answers what leave people
+ * took, and a company-wide closure is not part of that answer. The overview
+ * (`validateReportQuery`) still accepts it.
+ */
+const exportableRecordTypeEnum = recordTypeEnum.exclude(["BankHoliday"]);
+
+export const EXPORTABLE_CALENDAR_RECORD_TYPES = exportableRecordTypeEnum.options;
 
 /**
  * Comma-separated repeatable query filters (`?groupIds=a,b&groupIds=c`), which
@@ -118,7 +128,7 @@ export const validateExportRequest = z.object({
   year: z.number().int().min(2025).max(2100),
   groupIds: z.array(z.string().min(1)).max(200).optional(),
   userIds: z.array(z.string().min(1)).max(2000).optional(),
-  types: z.array(recordTypeEnum).max(20).optional(),
+  types: z.array(exportableRecordTypeEnum).max(20).optional(),
 });
 
 export type ValidatedExportRequest = z.infer<typeof validateExportRequest>;

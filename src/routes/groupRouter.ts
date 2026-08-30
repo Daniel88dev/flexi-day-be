@@ -110,6 +110,8 @@ export const groupRouter = (): Router => {
    *                     type: integer
    *                   defaultHomeOfficeDays:
    *                     type: integer
+   *                   defaultSickDays:
+   *                     type: integer
    *                   workingDays:
    *                     type: array
    *                     items:
@@ -193,8 +195,9 @@ export const groupRouter = (): Router => {
    *       - Groups
    *     summary: Update the group's default allowances
    *     description: |
-   *       Sets the vacation / home-office days new members start from. Existing
-   *       per-year quotas are not touched. Requires group admin access, or admin of the group's organization.
+   *       Sets the vacation / home-office / sick days new members start from.
+   *       Existing per-year quotas are not touched. Requires group admin
+   *       access, or admin of the group's organization.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -218,6 +221,9 @@ export const groupRouter = (): Router => {
    *                 type: integer
    *               defaultHomeOfficeDays:
    *                 type: integer
+   *               defaultSickDays:
+   *                 type: integer
+   *                 description: Omitting the field leaves the stored default unchanged.
    *     responses:
    *       '200':
    *         description: The updated group

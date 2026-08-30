@@ -10,6 +10,7 @@ import { changesType } from "../../db/schema/changes-schema.js";
 import { describeQuotaChange } from "../../services/userYearQuotas/quotaChangeDetail.js";
 import { assertGroupWritable } from "../../services/billing/guards.js";
 import { postChanges } from "../../services/changes/changesServices.js";
+import { getGroup } from "../../services/group/groupServices.js";
 import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
 import {
   getUserYearGroupQuotas,
@@ -49,6 +50,12 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
 
     const [existing] = await getUserYearGroupQuotas(relatedYear, groupId, data.userId, tx);
 
+    // Omitted by clients predating the Sick day benefit; preserve rather than
+    // wipe — and when this PUT creates the row, start from the group default,
+    // the same fallback the quota guard uses for members with no row at all.
+    const sickDays =
+      data.sickDays ?? existing?.sickDays ?? (await getGroup(groupId, tx))?.defaultSickDays ?? 0;
+
     const quota = await upsertUserYearQuota(
       {
         id: existing?.id ?? generateRandomUUID(),
@@ -57,6 +64,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         relatedYear,
         vacationDays: data.vacationDays,
         homeOfficeDays: data.homeOfficeDays,
+        sickDays,
         carriedOverDays: data.carriedOverDays,
       },
       tx
@@ -78,7 +86,7 @@ export const handlePutUserQuota = async (req: Request, res: Response) => {
         groupId,
         changeType: changesType.UserYearQuotas,
         changingUserId: auth.userId,
-        changeDetail: describeQuotaChange(relatedYear, existing, data),
+        changeDetail: describeQuotaChange(relatedYear, existing, { ...data, sickDays }),
       },
       tx
     );

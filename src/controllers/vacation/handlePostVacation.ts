@@ -16,7 +16,8 @@ import {
   notifyVacationRequested,
 } from "../../services/vacation/vacationNotifier.js";
 import { assertRequestWithinQuota } from "../../services/vacation/quotaGuard.js";
-import { assertGroupWritable } from "../../services/billing/guards.js";
+import { assertGroupWritable, assertSickDayRequestable } from "../../services/billing/guards.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { getGroup } from "../../services/group/groupServices.js";
 import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
@@ -165,6 +166,12 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     // between the check and the insert would otherwise let this request write
     // into a group that has just become read-only.
     await assertGroupWritable(data.groupId, tx);
+
+    // Same timing for the Sick day benefit: dormancy is derived from the live
+    // subscription, so it too is asserted on the tx snapshot.
+    if (data.vacationType === CalendarRecordType.SickDay) {
+      await assertSickDayRequestable(data.groupId, tx);
+    }
 
     if (onBehalf) {
       // Same reasoning for delegated authority: the pre-transaction checks

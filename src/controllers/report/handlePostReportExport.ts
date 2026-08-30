@@ -1,7 +1,11 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import type { ValidatedExportRequest } from "../../services/report/types.js";
+import {
+  EXPORTABLE_CALENDAR_RECORD_TYPES,
+  type ValidatedExportRequest,
+} from "../../services/report/types.js";
 import { buildSummaryEntries } from "../../services/report/buildSummary.js";
+import { getSickDayEnabledGroupIds } from "../../services/organization/organizationServices.js";
 import { buildReportWorkbook, type SummaryRow } from "../../services/report/excelBuilder.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -31,9 +35,13 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   const data: ValidatedExportRequest = req.body;
 
   const scope = await getScopeEntries(auth.userId);
-  const filters = { groupIds: data.groupIds, userIds: data.userIds, types: data.types };
+  // An unfiltered export still narrows to the exportable types, so bank
+  // holiday rows never reach the workbook — the validator already rejects
+  // them as an explicit filter.
+  const types = data.types ?? EXPORTABLE_CALENDAR_RECORD_TYPES;
+  const filters = { groupIds: data.groupIds, userIds: data.userIds, types };
 
-  const [bookings, usage, quotas, allMembers] = await Promise.all([
+  const [bookings, usage, quotas, allMembers, sickDayGroupIds] = await Promise.all([
     getBookingsForScope(scope, auth.userId, data.year, filters, MAX_EXPORT_BOOKINGS + 1),
     aggregateUsageSplit(scope, auth.userId, data.year, filters),
     getQuotasForScope(scope, auth.userId, data.year, {
@@ -41,6 +49,7 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
       userIds: data.userIds,
     }),
     getScopeMembers(scope, auth.userId),
+    getSickDayEnabledGroupIds(scope.map((entry) => entry.groupId)),
   ]);
 
   if (bookings.length > MAX_EXPORT_BOOKINGS) {
@@ -65,7 +74,8 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
     quotas,
     usage,
     members.map((member) => ({ userId: member.id, groupId: member.groupId })),
-    data.types
+    sickDayGroupIds,
+    types
   );
 
   // Quota and usage rows outlive a membership, so someone who has left the

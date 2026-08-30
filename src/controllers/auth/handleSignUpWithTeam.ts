@@ -184,6 +184,7 @@ const createTeamForUser = async (userId: string, teamName: string) =>
         relatedYear: currentYear().toString(),
         vacationDays: newGroup.defaultVacationDays,
         homeOfficeDays: newGroup.defaultHomeOfficeDays,
+        sickDays: newGroup.defaultSickDays,
       },
       tx
     );

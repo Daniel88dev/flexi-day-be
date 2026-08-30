@@ -5,6 +5,7 @@ import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { QUOTA_BEARING_TYPES } from "../report/buildSummary.js";
 import type { VacationType } from "./types.js";
 import { getGroup } from "../group/groupServices.js";
+import { getSickDayEnabledGroupIds } from "../organization/organizationServices.js";
 import { getUserYearGroupQuotas } from "../userYearQuotas/userYearQuotasServices.js";
 import { sumCountedDaysForQuota } from "./vacationServices.js";
 
@@ -37,7 +38,9 @@ const yearOf = (isoDay: string): number => Number(isoDay.slice(0, 4));
  * COMMITTED, concurrent requests all read the pre-insert totals and all pass.
  */
 const lockAllowance = async (check: QuotaCheck, tx: DbTransaction): Promise<void> => {
-  const key = `${check.userId}::${check.groupId}::${check.year.toString()}::${check.calendarRecordType}`;
+  const key = `${check.userId}::${check.groupId}::${check.year.toString()}::${
+    check.calendarRecordType
+  }`;
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 };
 
@@ -50,16 +53,28 @@ const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<numb
     tx
   );
 
+  // Carry-over belongs to the vacation allowance alone; sick days never roll
+  // over by design.
   if (quota) {
-    return check.calendarRecordType === CalendarRecordType.Vacation
-      ? quota.vacationDays + quota.carriedOverDays
-      : quota.homeOfficeDays;
+    switch (check.calendarRecordType) {
+      case CalendarRecordType.Vacation:
+        return quota.vacationDays + quota.carriedOverDays;
+      case CalendarRecordType.SickDay:
+        return quota.sickDays;
+      default:
+        return quota.homeOfficeDays;
+    }
   }
 
   const group = await getGroup(check.groupId, tx);
-  return check.calendarRecordType === CalendarRecordType.Vacation
-    ? (group?.defaultVacationDays ?? 0)
-    : (group?.defaultHomeOfficeDays ?? 0);
+  switch (check.calendarRecordType) {
+    case CalendarRecordType.Vacation:
+      return group?.defaultVacationDays ?? 0;
+    case CalendarRecordType.SickDay:
+      return group?.defaultSickDays ?? 0;
+    default:
+      return group?.defaultHomeOfficeDays ?? 0;
+  }
 };
 
 /**
@@ -135,7 +150,25 @@ const assertGrouped = async (
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([, bucket]) => bucket);
 
+  // Sick day is metered only where the organization's toggle is on — the same
+  // stored-toggle gate the report summary uses. Rows in organizations that
+  // never enabled the benefit (legacy SICK_DAY data) stay unmetered, so their
+  // approval and edits keep working with a zero allowance.
+  const sickDayGroups = ordered
+    .filter((bucket) => bucket.calendarRecordType === CalendarRecordType.SickDay)
+    .map((bucket) => bucket.groupId);
+  const meteredSickDayGroups =
+    sickDayGroups.length > 0
+      ? await getSickDayEnabledGroupIds(sickDayGroups, tx)
+      : new Set<string>();
+
   for (const bucket of ordered) {
+    if (
+      bucket.calendarRecordType === CalendarRecordType.SickDay &&
+      !meteredSickDayGroups.has(bucket.groupId)
+    ) {
+      continue;
+    }
     await assertOne(bucket, countPending, tx);
   }
 };

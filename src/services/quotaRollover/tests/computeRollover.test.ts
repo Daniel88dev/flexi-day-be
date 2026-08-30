@@ -10,10 +10,12 @@ const candidate = (over: Partial<RolloverCandidate> = {}): RolloverCandidate => 
   groupId: "g1",
   previousVacationDays: 20,
   previousHomeOfficeDays: 5,
+  previousSickDays: 2,
   previousCarriedOverDays: 0,
   previousUsedDays: 12,
   groupDefaultVacationDays: 25,
   groupDefaultHomeOfficeDays: 10,
+  groupDefaultSickDays: 3,
   ...over,
 });
 
@@ -21,7 +23,16 @@ describe("computeRolloverRow", () => {
   it("carries the member's own allowance forward, not the group default", () => {
     const row = computeRolloverRow(candidate());
 
-    expect(row).toMatchObject({ vacationDays: 20, homeOfficeDays: 5 });
+    expect(row).toMatchObject({ vacationDays: 20, homeOfficeDays: 5, sickDays: 2 });
+  });
+
+  it("carries the sick day allocation forward without any unused balance", () => {
+    // "No carry-over" means the unused sick days expire — the configured
+    // allocation itself must survive the year boundary like the others.
+    const row = computeRolloverRow(candidate({ previousSickDays: 4 }));
+
+    expect(row.sickDays).toBe(4);
+    expect(row.carriedOverDays).toBe(8);
   });
 
   it("rolls unused days into the carry-over", () => {
@@ -39,12 +50,18 @@ describe("computeRolloverRow", () => {
       candidate({
         previousVacationDays: null,
         previousHomeOfficeDays: null,
+        previousSickDays: null,
         previousCarriedOverDays: null,
         previousUsedDays: 0,
       })
     );
 
-    expect(row).toMatchObject({ vacationDays: 25, homeOfficeDays: 10, carriedOverDays: 25 });
+    expect(row).toMatchObject({
+      vacationDays: 25,
+      homeOfficeDays: 10,
+      sickDays: 3,
+      carriedOverDays: 25,
+    });
   });
 
   it("never carries a negative balance into the new year", () => {
@@ -85,11 +102,13 @@ describe("describeRollover", () => {
       groupId: "g1",
       vacationDays: 20,
       homeOfficeDays: 5,
+      sickDays: 2,
       carriedOverDays: 8,
     });
 
     expect(detail).toBe(
-      "Quota for 2027 opened automatically: 20 vacation / 5 home office days, 8 carried over from 2026"
+      "Quota for 2027 opened automatically: 20 vacation / 5 home office / 2 sick days, " +
+        "8 carried over from 2026"
     );
   });
 });

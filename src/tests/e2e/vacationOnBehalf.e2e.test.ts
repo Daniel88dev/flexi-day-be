@@ -123,6 +123,46 @@ describe("Admin on-behalf vacation management E2E", () => {
       expect(eventTypes).toEqual(expect.arrayContaining(["CREATED", "APPROVED"]));
     });
 
+    it("books an auto-approved study leave — the rarer types ride the same flow", async () => {
+      await addToGroup(context.user1.id, context.group.id, { adminAccess: true });
+      await addToGroup(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      const response = await createOnBehalf(cookie, {
+        vacationType: "STUDY_LEAVE",
+        autoApprove: true,
+      }).expect(201);
+
+      expect(response.body[0]).toMatchObject({
+        userId: context.user2.id,
+        vacationType: "STUDY_LEAVE",
+        createdByUserId: context.user1.id,
+        approvedBy: context.user1.id,
+      });
+      expect(response.body[0].approvedAt).not.toBeNull();
+    });
+
+    it("holds an OTHER booking to the note rule, then books it auto-approved", async () => {
+      await addToGroup(context.user1.id, context.group.id, { adminAccess: true });
+      await addToGroup(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      await createOnBehalf(cookie, { vacationType: "OTHER", autoApprove: true }).expect(422);
+
+      const response = await createOnBehalf(cookie, {
+        vacationType: "OTHER",
+        note: "Jury duty",
+        autoApprove: true,
+      }).expect(201);
+
+      expect(response.body[0]).toMatchObject({
+        userId: context.user2.id,
+        vacationType: "OTHER",
+        note: "Jury duty",
+        approvedBy: context.user1.id,
+      });
+    });
+
     it("leaves the record pending when autoApprove is off", async () => {
       await addToGroup(context.user1.id, context.group.id, { adminAccess: true });
       await addToGroup(context.user2.id, context.group.id);

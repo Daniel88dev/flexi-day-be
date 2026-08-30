@@ -50,7 +50,11 @@ describe("Quota rollover E2E", () => {
     const groupId = await makeGroup("Engineering", manager.id);
     await addMember(groupId, manager.id);
     await addMember(groupId, member.id);
-    await addQuota(groupId, manager.id, PREVIOUS, { vacationDays: 20, homeOfficeDays: 5 });
+    await addQuota(groupId, manager.id, PREVIOUS, {
+      vacationDays: 20,
+      homeOfficeDays: 5,
+      sickDays: 3,
+    });
     await addQuota(groupId, member.id, PREVIOUS, { vacationDays: 25, homeOfficeDays: 0 });
     await addLeaveRange(groupId, manager.id, [
       dayIn(PREVIOUS, 3, 10),
@@ -61,9 +65,11 @@ describe("Quota rollover E2E", () => {
     const result = await rolloverQuotasForYear(YEAR);
 
     expect(result).toMatchObject({ year: YEAR, created: 2, skipped: false });
+    // The sick day allocation rides along; only its unused balance expires.
     expect(await quotaFor(manager.id, groupId, YEAR)).toMatchObject({
       vacationDays: 20,
       homeOfficeDays: 5,
+      sickDays: 3,
       carriedOverDays: 17,
     });
     expect(await quotaFor(member.id, groupId, YEAR)).toMatchObject({
@@ -158,8 +164,8 @@ describe("Quota rollover E2E", () => {
     expect(audit).toHaveLength(1);
     expect(audit[0]?.changingUserId).toBeNull();
     expect(audit[0]?.changeDetail).toBe(
-      `Quota for ${YEAR.toString()} opened automatically: 20 vacation / 0 home office days, ` +
-        `19 carried over from ${PREVIOUS.toString()}`
+      `Quota for ${YEAR.toString()} opened automatically: 20 vacation / 0 home office / ` +
+        `0 sick days, 19 carried over from ${PREVIOUS.toString()}`
     );
   });
 

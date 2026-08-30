@@ -141,6 +141,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         relatedYear: currentYear().toString(),
         vacationDays: group?.defaultVacationDays ?? 0,
         homeOfficeDays: group?.defaultHomeOfficeDays ?? 0,
+        sickDays: group?.defaultSickDays ?? 0,
       },
       tx
     );

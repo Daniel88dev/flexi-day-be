@@ -100,6 +100,7 @@ export const handlePostGroup = async (req: Request, res: Response) => {
         relatedYear: currentYear().toString(),
         vacationDays: record.defaultVacationDays,
         homeOfficeDays: record.defaultHomeOfficeDays,
+        sickDays: record.defaultSickDays,
       },
       tx
     );

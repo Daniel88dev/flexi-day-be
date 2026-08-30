@@ -53,6 +53,7 @@ export type SupportQuotaRow = {
   relatedYear: string;
   vacationDays: number;
   homeOfficeDays: number;
+  sickDays: number;
   carriedOverDays: number;
 };
 

@@ -30,6 +30,7 @@ export const handleGetOrganization = async (req: Request, res: Response) => {
       name: organization.name,
       isOwner,
       billingEmail: isOwner ? organization.billingEmail : null,
+      sickDayBenefitEnabled: organization.sickDayBenefitEnabled,
       createdAt: organization.createdAt,
     },
     plan: {

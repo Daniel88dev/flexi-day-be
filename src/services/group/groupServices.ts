@@ -134,13 +134,15 @@ export const updateGroupHolidayCountry = async (
 export const updateGroupQuotas = async (
   groupId: string,
   newVacation: number,
-  newHomeOffice: number
+  newHomeOffice: number,
+  newSickDays: number | undefined
 ): Promise<GroupType | undefined> => {
   const [row] = await db
     .update(groups)
     .set({
       defaultVacationDays: newVacation,
       defaultHomeOfficeDays: newHomeOffice,
+      ...(newSickDays !== undefined ? { defaultSickDays: newSickDays } : {}),
     })
     .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .returning();

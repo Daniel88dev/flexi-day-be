@@ -14,6 +14,8 @@ import {
   grantOrganizationAdmin,
   isOrganizationAdmin,
 } from "../../services/organization/organizationServices.js";
+import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
+import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 
 /**
  * The org-admin authority as the HTTP surface actually exposes it. The service
@@ -167,6 +169,23 @@ describe("organization admin over the API", () => {
         .set("Cookie", delegateCookie)
         .send({ defaultVacationDays: 25, defaultHomeOfficeDays: 5 })
         .expect(200);
+    });
+
+    it("preserves the sick day default when a legacy body omits it", async () => {
+      const withSickDays = await request(app)
+        .put(`/api/group/${groupId}/quotas`)
+        .set("Cookie", delegateCookie)
+        .send({ defaultVacationDays: 25, defaultHomeOfficeDays: 5, defaultSickDays: 4 })
+        .expect(200);
+      expect(withSickDays.body.defaultSickDays).toBe(4);
+
+      // A client predating the Sick day benefit re-saves the other values.
+      const legacySave = await request(app)
+        .put(`/api/group/${groupId}/quotas`)
+        .set("Cookie", delegateCookie)
+        .send({ defaultVacationDays: 26, defaultHomeOfficeDays: 5 })
+        .expect(200);
+      expect(legacySave.body.defaultSickDays).toBe(4);
     });
 
     it("edits the group's working days", async () => {
@@ -445,6 +464,66 @@ describe("organization admin over the API", () => {
 
     it("404s for a user with no organization at all", async () => {
       await request(app).get("/api/organization").set("Cookie", outsiderCookie).expect(404);
+    });
+  });
+
+  describe("Sick day benefit toggle", () => {
+    it("defaults to off", async () => {
+      const res = await request(app)
+        .get("/api/organization")
+        .set("Cookie", ownerCookie)
+        .expect(200);
+
+      expect(res.body.organization.sickDayBenefitEnabled).toBe(false);
+    });
+
+    it("refuses enabling on the Free plan with 402 and leaves the toggle off", async () => {
+      await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ sickDayBenefitEnabled: true })
+        .expect(402);
+
+      const res = await request(app)
+        .get("/api/organization")
+        .set("Cookie", ownerCookie)
+        .expect(200);
+      expect(res.body.organization.sickDayBenefitEnabled).toBe(false);
+    });
+
+    it("enables on a paid plan and persists", async () => {
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Active,
+      });
+
+      const patched = await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ sickDayBenefitEnabled: true })
+        .expect(200);
+      expect(patched.body.sickDayBenefitEnabled).toBe(true);
+
+      const res = await request(app)
+        .get("/api/organization")
+        .set("Cookie", ownerCookie)
+        .expect(200);
+      expect(res.body.organization.sickDayBenefitEnabled).toBe(true);
+    });
+
+    it("disables without a plan check, even after the subscription lapsed", async () => {
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Canceled,
+        graceEndsAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
+
+      const patched = await request(app)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({ sickDayBenefitEnabled: false })
+        .expect(200);
+      expect(patched.body.sickDayBenefitEnabled).toBe(false);
     });
   });
 });

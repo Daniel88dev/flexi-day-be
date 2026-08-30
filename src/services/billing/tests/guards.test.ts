@@ -9,6 +9,7 @@ const {
   mockCountMembers,
   mockCountInvites,
   mockLockOrganization,
+  mockGetOrganizationById,
 } = vi.hoisted(() => ({
   mockGetSubscription: vi.fn(),
   mockGetGroup: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockCountMembers: vi.fn(),
   mockCountInvites: vi.fn(),
   mockLockOrganization: vi.fn(),
+  mockGetOrganizationById: vi.fn(),
 }));
 
 vi.mock("../subscriptionServices.js", () => ({
@@ -41,13 +43,16 @@ vi.mock("../../groupUser/inviteLinkServices.js", () => ({
 
 vi.mock("../../organization/organizationServices.js", () => ({
   lockOrganization: mockLockOrganization,
+  getOrganizationById: mockGetOrganizationById,
 }));
 
 import {
   assertCanAddMember,
   assertCanCreateGroup,
+  assertCanEnableSickDayBenefit,
   assertGroupsWritable,
   assertGroupWritable,
+  assertSickDayRequestable,
 } from "../guards.js";
 import { subscriptionPlan, subscriptionStatus } from "../../../db/schema/subscription-schema.js";
 
@@ -249,5 +254,84 @@ describe("assertGroupsWritable", () => {
   it("returns immediately for an empty batch", async () => {
     await assertGroupsWritable([]);
     expect(mockGetAllGroups).not.toHaveBeenCalled();
+  });
+});
+
+describe("assertCanEnableSickDayBenefit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("402s on the Free plan", async () => {
+    mockGetSubscription.mockResolvedValue(undefined);
+
+    await expect(assertCanEnableSickDayBenefit("org-1")).rejects.toMatchObject({
+      code: 402,
+      errors: [expect.objectContaining({ publicContext: { reason: "PLAN_LIMIT" } })],
+    });
+  });
+
+  it("allows an active paid subscription", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      status: subscriptionStatus.Active,
+      graceEndsAt: null,
+    });
+
+    await expect(assertCanEnableSickDayBenefit("org-1")).resolves.toBeUndefined();
+  });
+
+  it("402s once a lapsed subscription's grace has expired", async () => {
+    mockGetSubscription.mockResolvedValue(lapsedProSub);
+
+    await expect(assertCanEnableSickDayBenefit("org-1")).rejects.toMatchObject({ code: 402 });
+  });
+});
+
+describe("assertSickDayRequestable", () => {
+  const enabledOrg = { id: "org-1", sickDayBenefitEnabled: true };
+  const activeProSub = { ...lapsedProSub, status: subscriptionStatus.Active, graceEndsAt: null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetGroup.mockResolvedValue(GROUP);
+  });
+
+  it("404s when the group does not exist", async () => {
+    mockGetGroup.mockResolvedValue(undefined);
+    await expect(assertSickDayRequestable("nope")).rejects.toMatchObject({ code: 404 });
+  });
+
+  it("422s when the organization has the benefit switched off", async () => {
+    mockGetOrganizationById.mockResolvedValue({ id: "org-1", sickDayBenefitEnabled: false });
+    mockGetSubscription.mockResolvedValue(activeProSub);
+
+    await expect(assertSickDayRequestable("group-1")).rejects.toMatchObject({ code: 422 });
+  });
+
+  it("allows a member of an enabled organization on an active paid plan", async () => {
+    mockGetOrganizationById.mockResolvedValue(enabledOrg);
+    mockGetSubscription.mockResolvedValue(activeProSub);
+
+    await expect(assertSickDayRequestable("group-1")).resolves.toBeUndefined();
+  });
+
+  it("stays available through the grace window", async () => {
+    mockGetOrganizationById.mockResolvedValue(enabledOrg);
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      graceEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await expect(assertSickDayRequestable("group-1")).resolves.toBeUndefined();
+  });
+
+  it("goes dormant once the lapsed subscription's grace has expired", async () => {
+    // The toggle survives the lapse — only requestability is withdrawn, so
+    // re-subscribing restores the benefit without touching any data.
+    mockGetOrganizationById.mockResolvedValue(enabledOrg);
+    mockGetSubscription.mockResolvedValue(lapsedProSub);
+
+    await expect(assertSickDayRequestable("group-1")).rejects.toMatchObject({ code: 422 });
   });
 });

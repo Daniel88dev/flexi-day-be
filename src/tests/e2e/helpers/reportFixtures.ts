@@ -71,6 +71,18 @@ export async function addMember(
   });
 }
 
+/**
+ * Switches on the Sick day benefit for the manager's organization. Reporting
+ * keys on the stored toggle alone, so no subscription row is needed here.
+ */
+export async function enableSickDayBenefit(managerUserId: string): Promise<void> {
+  const organization = await ensureOrganizationForUser(managerUserId);
+  await db
+    .update(organizations)
+    .set({ sickDayBenefitEnabled: true })
+    .where(eq(organizations.id, organization.id));
+}
+
 /** Soft-deletes a membership, as leaving a group does. */
 export async function removeMember(groupId: string, userId: string): Promise<void> {
   await db
@@ -83,7 +95,12 @@ export async function addQuota(
   groupId: string,
   userId: string,
   year: number,
-  values: { vacationDays?: number; homeOfficeDays?: number; carriedOverDays?: number } = {}
+  values: {
+    vacationDays?: number;
+    homeOfficeDays?: number;
+    sickDays?: number;
+    carriedOverDays?: number;
+  } = {}
 ): Promise<void> {
   await db.insert(userYearQuotas).values({
     id: uuidv4(),
@@ -92,6 +109,7 @@ export async function addQuota(
     relatedYear: year.toString(),
     vacationDays: values.vacationDays ?? 20,
     homeOfficeDays: values.homeOfficeDays ?? 0,
+    sickDays: values.sickDays ?? 0,
     carriedOverDays: values.carriedOverDays ?? 0,
     createdAt: new Date(),
     updatedAt: new Date(),

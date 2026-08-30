@@ -221,6 +221,7 @@ export const getGroupDetailForSupport = async (
       relatedYear: userYearQuotas.relatedYear,
       vacationDays: userYearQuotas.vacationDays,
       homeOfficeDays: userYearQuotas.homeOfficeDays,
+      sickDays: userYearQuotas.sickDays,
       carriedOverDays: userYearQuotas.carriedOverDays,
     })
     .from(userYearQuotas)

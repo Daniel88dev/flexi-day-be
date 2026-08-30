@@ -29,4 +29,36 @@ describe("validatePostVacation", () => {
   it("defaults autoApprove to false", () => {
     expect(validatePostVacation.parse(base).autoApprove).toBe(false);
   });
+
+  it("rejects an OTHER request without a note", () => {
+    const result = validatePostVacation.safeParse({ ...base, vacationType: "OTHER" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.path.join("."))).toContain("note");
+  });
+
+  it("rejects an OTHER request whose note is only whitespace", () => {
+    const result = validatePostVacation.safeParse({
+      ...base,
+      vacationType: "OTHER",
+      note: "   ",
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.path.join("."))).toContain("note");
+  });
+
+  it("accepts an OTHER request that carries a note", () => {
+    const parsed = validatePostVacation.parse({
+      ...base,
+      vacationType: "OTHER",
+      note: "Jury duty",
+    });
+    expect(parsed.vacationType).toBe("OTHER");
+    expect(parsed.note).toBe("Jury duty");
+  });
+
+  it("keeps the note optional for every other type", () => {
+    for (const vacationType of ["VACATION", "STUDY_LEAVE", "NON_PAID_LEAVE"]) {
+      expect(validatePostVacation.safeParse({ ...base, vacationType }).success).toBe(true);
+    }
+  });
 });

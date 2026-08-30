@@ -185,6 +185,10 @@ export const vacationRouter = (): Router => {
    *       caller and the timeline gets both a CREATED and an APPROVED event;
    *       without it the request enters the normal approval flow and the member
    *       is notified it was filed for them.
+   *
+   *       `SICK_DAY` is requestable only while the group's organization has
+   *       the Sick day benefit enabled on a paid plan; otherwise the request
+   *       is rejected with 422.
    *     operationId: handlePostVacation
    *     security:
    *       - bearerAuth: []
@@ -213,7 +217,10 @@ export const vacationRouter = (): Router => {
    *       '403':
    *         description: No access for related group
    *       '422':
-   *         description: Validation error
+   *         description: |
+   *           Validation error, the allowance would be exceeded, or `SICK_DAY`
+   *           was requested without an active Sick day benefit
+   *           (`errors[].context.reason: "SICK_DAY_BENEFIT_DISABLED"`).
    *       '500':
    *         description: Failed to create vacation
    * components:
@@ -257,6 +264,7 @@ export const vacationRouter = (): Router => {
    *         note:
    *           type: string
    *           nullable: true
+   *           description: Required (non-blank) when `vacationType` is `OTHER`.
    *         autoApprove:
    *           type: boolean
    *           description: Create the rows already approved (on-behalf bookings only).
@@ -586,10 +594,11 @@ export const vacationRouter = (): Router => {
    *
    *       Rejected rows cannot be edited (their decision is final) and
    *       cancelled rows are reported as not found. Type and half-day changes
-   *       re-run the quota check at the rows' post-edit weight. Every row gets
-   *       an UPDATED timeline event whose `reason` summarizes what changed, and
-   *       the member gets an in-app notice when someone else edited their
-   *       record.
+   *       re-run the quota check at the rows' post-edit weight, and retyping a
+   *       row to `SICK_DAY` passes the same Sick day benefit gate as creating
+   *       one. Every row gets an UPDATED timeline event whose `reason`
+   *       summarizes what changed, and the member gets an in-app notice when
+   *       someone else edited their record.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -650,7 +659,10 @@ export const vacationRouter = (): Router => {
    *       '409':
    *         description: Rejected rows in the batch, or a concurrent change won the race
    *       '422':
-   *         description: Validation error, mixed members/groups, or the edit exceeds the allowance
+   *         description: |
+   *           Validation error, mixed members/groups, the edit exceeds the
+   *           allowance, or a retype to `SICK_DAY` without an active Sick day
+   *           benefit (`errors[].context.reason: "SICK_DAY_BENEFIT_DISABLED"`).
    */
   app.patch("/", bodyValidationMiddleware(validateUpdateVacation), tryCatch(handleUpdateVacation));
 

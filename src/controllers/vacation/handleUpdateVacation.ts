@@ -8,7 +8,8 @@ import type { ValidatedUpdateVacationType } from "../../services/vacation/types.
 import type { VacationUpdatePatch } from "../../services/vacation/vacationServices.js";
 import { describeVacationChanges } from "../../services/vacation/vacationChangeDetail.js";
 import { assertEditWithinQuota } from "../../services/vacation/quotaGuard.js";
-import { assertGroupWritable } from "../../services/billing/guards.js";
+import { assertGroupWritable, assertSickDayRequestable } from "../../services/billing/guards.js";
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { notifyVacationUpdated } from "../../services/vacation/vacationNotifier.js";
 import { getVacationsByIds, updateVacationRows } from "../../services/vacation/vacationServices.js";
@@ -107,7 +108,34 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
       }
     }
 
+    // The create validator refuses a note-less OTHER, and an edit must not
+    // mint one either. The schema only sees the patch, so the post-edit state
+    // is assembled here from the stored rows, like the time check above.
+    const mintsBlankOther = rows.some((row) => {
+      const type = patch.vacationType ?? row.vacationType;
+      const note = patch.note !== undefined ? patch.note : row.note;
+      return type === CalendarRecordType.Other && !note?.trim();
+    });
+    if (mintsBlankOther) {
+      throw new AppError({
+        code: 422,
+        message: "`note` is required for the OTHER type",
+        logging: true,
+        context: { auth, ids: uniqueIds },
+      });
+    }
+
     await assertGroupWritable(first.groupId, tx);
+
+    // Retyping an existing record to Sick day is the same grant as creating
+    // one, so it passes the same gate; edits to records already stored as
+    // Sick day stay possible even while the benefit is dormant.
+    if (
+      patch.vacationType === CalendarRecordType.SickDay &&
+      rows.some((row) => row.vacationType !== CalendarRecordType.SickDay)
+    ) {
+      await assertSickDayRequestable(first.groupId, tx);
+    }
 
     const weightChanged = rows.some(
       (row) =>

@@ -30,7 +30,8 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
   const updated = await updateGroupQuotas(
     groupId,
     data.defaultVacationDays,
-    data.defaultHomeOfficeDays
+    data.defaultHomeOfficeDays,
+    data.defaultSickDays
   );
 
   if (!updated) {
@@ -42,13 +43,16 @@ export const handlePutGroupQuotas = async (req: Request, res: Response) => {
     });
   }
 
+  const sickDaysPart =
+    data.defaultSickDays !== undefined ? ` / ${data.defaultSickDays.toString()} sick` : "";
+
   await postChanges({
     id: generateRandomUUID(),
     userId: auth.userId,
     groupId,
     changeType: changesType.Group,
     changingUserId: auth.userId,
-    changeDetail: `Group defaults set to ${data.defaultVacationDays.toString()} vacation / ${data.defaultHomeOfficeDays.toString()} home office days`,
+    changeDetail: `Group defaults set to ${data.defaultVacationDays.toString()} vacation / ${data.defaultHomeOfficeDays.toString()} home office${sickDaysPart} days`,
   });
 
   return res.status(200).json(updated);

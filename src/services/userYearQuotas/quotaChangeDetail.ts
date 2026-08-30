@@ -1,12 +1,14 @@
 type QuotaValues = {
   vacationDays: number;
   homeOfficeDays: number;
+  sickDays: number;
   carriedOverDays: number;
 };
 
 const FIELDS: { label: string; read: (values: QuotaValues) => number }[] = [
   { label: "vacation", read: (v) => v.vacationDays },
   { label: "home office", read: (v) => v.homeOfficeDays },
+  { label: "sick day", read: (v) => v.sickDays },
   { label: "carried over", read: (v) => v.carriedOverDays },
 ];
 
@@ -23,7 +25,8 @@ export const describeQuotaChange = (
   if (!previous) {
     return (
       `Quota for ${relatedYear} set to ${next.vacationDays.toString()} vacation / ` +
-      `${next.homeOfficeDays.toString()} home office days, ` +
+      `${next.homeOfficeDays.toString()} home office / ` +
+      `${next.sickDays.toString()} sick days, ` +
       `${next.carriedOverDays.toString()} carried over from the previous year`
     );
   }

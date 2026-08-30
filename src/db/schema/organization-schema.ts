@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 
 /**
@@ -21,6 +21,10 @@ export const organizations = pgTable(
       .references(() => user.id),
     billingEmail: text("billing_email").notNull(),
     paddleCustomerId: text("paddle_customer_id"),
+    // The stored toggle alone does not make Sick day requestable: the benefit
+    // is active only while the plan is paid, and it goes dormant — flag kept,
+    // data kept — when the subscription lapses. See `isSickDayBenefitActive`.
+    sickDayBenefitEnabled: boolean("sick_day_benefit_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()

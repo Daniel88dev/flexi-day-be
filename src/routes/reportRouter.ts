@@ -68,9 +68,10 @@ export const reportRouter = (): Router => {
    *     description: |
    *       Returns one `monthly` row per (member, group, month, record type) for
    *       the charts, and one `summary` row per (member, group, quota-bearing
-   *       type) for the table. Day counts are weighted: a `halfDay` booking
-   *       counts 0.5. Filters outside the caller's scope are silently dropped
-   *       rather than rejected.
+   *       type) for the table — Sick day rows only for groups whose
+   *       organization has the Sick day benefit enabled. Day counts are
+   *       weighted: a `halfDay` booking counts 0.5. Filters outside the
+   *       caller's scope are silently dropped rather than rejected.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -112,9 +113,10 @@ export const reportRouter = (): Router => {
    *     summary: One member's year in detail
    *     description: |
    *       Allowances, monthly usage, every booking and the admin-made quota
-   *       changes recorded against the member for the year. Requires full view
-   *       access on a group the member belongs to; callers may always request
-   *       their own detail.
+   *       changes recorded against the member for the year. Sick day summary
+   *       rows appear only for groups whose organization has the Sick day
+   *       benefit enabled. Requires full view access on a group the member
+   *       belongs to; callers may always request their own detail.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -147,7 +149,12 @@ export const reportRouter = (): Router => {
    *     description: |
    *       Streams a two-sheet `.xlsx`: allowances as they stand today on the
    *       first sheet, every individual booking on the second, both with Excel
-   *       AutoFilter enabled across all columns. Each call writes a
+   *       AutoFilter enabled across all columns. The summary sheet carries one
+   *       line per member and metered type — Vacation, Home office, and Sick
+   *       day for groups whose organization has the Sick day benefit enabled. Bank holidays never appear in
+   *       the workbook: a company-wide closure is not leave anyone took, so
+   *       `BANK_HOLIDAY` is rejected as a filter value and its rows are
+   *       excluded even without a filter. Each call writes a
    *       `report_exports` audit row naming the caller, year and filters.
    *     security:
    *       - bearerAuth: []
@@ -162,6 +169,8 @@ export const reportRouter = (): Router => {
    *             properties:
    *               year:
    *                 type: integer
+   *                 minimum: 2025
+   *                 maximum: 2100
    *               groupIds:
    *                 type: array
    *                 items:
@@ -178,7 +187,6 @@ export const reportRouter = (): Router => {
    *                     - VACATION
    *                     - HOME_OFFICE
    *                     - SICK
-   *                     - BANK_HOLIDAY
    *                     - NON_PAID_LEAVE
    *                     - PAID_TIME_OFF
    *                     - SICK_DAY
@@ -194,6 +202,8 @@ export const reportRouter = (): Router => {
    *               format: binary
    *       '413':
    *         description: Too many rows for one export — narrow the filters
+   *       '422':
+   *         description: Invalid body — year out of range or a non-exportable type
    */
   app.post(
     "/export",
