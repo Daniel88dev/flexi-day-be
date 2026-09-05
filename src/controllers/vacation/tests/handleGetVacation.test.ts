@@ -131,11 +131,22 @@ describe("handleGetVacation", () => {
     expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ canAttach: false }));
 
     mockIsAttachmentUploadAvailable.mockResolvedValue(true);
-    mockListAttachmentsForRequest.mockResolvedValue(
-      Array.from({ length: 5 }, (_, i) => ({ id: `a-${i.toString()}`, status: "UPLOADING" }))
-    );
+    const uploading = Array.from({ length: 5 }, (_, i) => ({
+      id: `a-${i.toString()}`,
+      status: "UPLOADING",
+      deletedAt: null,
+    }));
+    mockListAttachmentsForRequest.mockResolvedValue(uploading);
     await handleGetVacation(req, res);
     expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ canAttach: false }));
+
+    // A deleted row is listed for the timeline but no longer holds a slot.
+    mockListAttachmentsForRequest.mockResolvedValue([
+      ...uploading.slice(0, 4),
+      { ...uploading[4], deletedAt: new Date("2026-08-01T00:00:00Z") },
+    ]);
+    await handleGetVacation(req, res);
+    expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ canAttach: true }));
   });
 
   it("leaves both attachment fields out for a view-only member", async () => {

@@ -87,6 +87,12 @@ A croner job (`src/jobs/`) rolls unused quota into the new year. `QUOTA_ROLLOVER
 `QUOTA_ROLLOVER_TIMEZONE` the zone it runs in (default `Europe/Prague`). Rows it writes to `changes`
 carry a null `changing_user_id`, which is how an automated rollover is told apart from a person.
 
+The same tick then runs the attachment retention sweep (`src/services/attachment/attachmentRetention.ts`):
+attachments go twelve months after the Request's last day, as soon as the Request has no live day
+left (every day cancelled or rejected), and `UPLOADING` rows older than ten minutes are cleared.
+Each case removes the object and the row; a user's own delete only soft-deletes, keeping the row as
+the history entry until one of the sweep cases catches the Request.
+
 ## Undeliverable recipients
 
 `emailSender` is wrapped by `src/services/email/suppressUndeliverable.ts` so recipients at reserved

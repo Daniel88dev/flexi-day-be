@@ -22,7 +22,9 @@ import type { VacationPermissions } from "../../services/vacation/vacationPermis
  */
 const attachmentsFor = async (detail: VacationDetail, permissions: VacationPermissions) => {
   const attachments = await listAttachmentsForRequest(detail.requestId);
-  const slotsUsed = attachments.filter((a) => holdsAttachmentSlot(a.status)).length;
+  const slotsUsed = attachments.filter(
+    (a) => a.deletedAt === null && holdsAttachmentSlot(a.status)
+  ).length;
   const group = permissions.canAttach ? await getGroup(detail.groupId) : undefined;
   const uploadsAvailable = group ? await isAttachmentUploadAvailable(group.organizationId) : false;
   return {

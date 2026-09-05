@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { v4 as uuidv4 } from "uuid";
+import { eq } from "drizzle-orm";
 import {
   setupTestEnvironment,
   cleanupTestData,
@@ -27,6 +28,8 @@ import {
   sniffContentType,
 } from "../../services/attachment/processor.js";
 import { MAX_ATTACHMENT_BYTES, type UploadTarget } from "../../services/attachment/types.js";
+import { attachmentStore } from "../../services/attachment/attachmentStore.js";
+import { sweepAttachments } from "../../services/attachment/attachmentRetention.js";
 
 const fixturesDir = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -35,6 +38,8 @@ const fixturesDir = path.join(
 const fixture = (name: string) => readFileSync(path.join(fixturesDir, name));
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
+// Next year, so a seeded Request is never past retention on the wall clock.
+const REQUEST_YEAR = new Date().getFullYear() + 1;
 
 describe("Attachments E2E", () => {
   let context: TestContext;
@@ -70,7 +75,7 @@ describe("Attachments E2E", () => {
         userId,
         groupId,
         requestId,
-        requestedDay: `2026-03-0${(index + 2).toString()}`,
+        requestedDay: `${REQUEST_YEAR.toString()}-03-0${(index + 2).toString()}`,
         createdByUserId: userId,
       }))
     );
@@ -118,6 +123,28 @@ describe("Attachments E2E", () => {
 
   const detail = (cookie: string, vacationId: string) =>
     request(context.app).get(`/api/vacation/${vacationId}`).set("Cookie", cookie);
+
+  const remove = (cookie: string, attachmentId: string) =>
+    request(context.app).delete(`/api/attachments/${attachmentId}`).set("Cookie", cookie);
+
+  const rowFor = async (attachmentId: string) => {
+    const [row] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
+    return row;
+  };
+
+  /** The stored bytes, looked up by key so the check works after the row is gone. */
+  const stored = (storageKey: string) => attachmentStore.getObject(storageKey);
+
+  const uploadedByOwner = async (requestId: string) => {
+    const { attachmentId } = await createAndUpload(
+      await authCookieFor(context.user2.id),
+      pngBody(requestId),
+      fixture("small.png")
+    );
+    const row = await rowFor(attachmentId);
+    expect(await stored(row!.storageKey)).toBeDefined();
+    return { attachmentId, storageKey: row!.storageKey };
+  };
 
   const setPaid = () =>
     upsertSubscription(organizationId, {
@@ -564,6 +591,217 @@ describe("Attachments E2E", () => {
 
       await upsertSubscription(organizationId, { graceEndsAt: new Date(Date.now() - DAY_IN_MS) });
       expect(await flag()).toBe(false);
+    });
+  });
+
+  describe("DELETE /api/attachments/:id", () => {
+    it("lets the uploader delete their own file, keeping the row as history", async () => {
+      const { requestId, vacationId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const { attachmentId, storageKey } = await uploadedByOwner(requestId);
+
+      const response = await remove(cookie, attachmentId).expect(200);
+
+      expect(response.body.attachment).toMatchObject({
+        id: attachmentId,
+        deletedByUserId: context.user2.id,
+      });
+      expect(typeof response.body.attachment.deletedAt).toBe("string");
+      expect(await stored(storageKey)).toBeUndefined();
+      expect(await rowFor(attachmentId)).toMatchObject({
+        deletedByUserId: context.user2.id,
+        deletedAt: expect.any(Date) as Date,
+      });
+
+      const shown = await detail(cookie, vacationId).expect(200);
+      expect(shown.body.attachments).toHaveLength(1);
+      expect(shown.body.attachments[0]).toMatchObject({
+        id: attachmentId,
+        status: AttachmentStatus.Ready,
+        deletedByUserId: context.user2.id,
+      });
+      expect(typeof shown.body.attachments[0].deletedAt).toBe("string");
+
+      await request(context.app)
+        .get(`/api/attachments/${attachmentId}/download-url`)
+        .set("Cookie", cookie)
+        .expect(404);
+      await remove(cookie, attachmentId).expect(404);
+    });
+
+    it("lets a group admin and an org admin delete a member's file", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const first = await uploadedByOwner(requestId);
+      const second = await uploadedByOwner(requestId);
+
+      const byGroupAdmin = await remove(
+        await authCookieFor(context.user1.id),
+        first.attachmentId
+      ).expect(200);
+      expect(byGroupAdmin.body.attachment.deletedByUserId).toBe(context.user1.id);
+      expect(await stored(first.storageKey)).toBeUndefined();
+
+      const byOrgAdmin = await remove(await authCookieFor(orgAdmin.id), second.attachmentId).expect(
+        200
+      );
+      expect(byOrgAdmin.body.attachment.deletedByUserId).toBe(orgAdmin.id);
+      expect(await stored(second.storageKey)).toBeUndefined();
+    });
+
+    it("answers 403 for an approver and a view-only member, leaving the file in place", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const { attachmentId, storageKey } = await uploadedByOwner(requestId);
+
+      await remove(await authCookieFor(context.approverUser.id), attachmentId).expect(403);
+      await remove(await authCookieFor(viewer.id), attachmentId).expect(403);
+
+      expect(await stored(storageKey)).toBeDefined();
+      expect((await rowFor(attachmentId))?.deletedAt).toBeNull();
+    });
+
+    it("answers 404 for an attachment that does not exist", async () => {
+      await remove(await authCookieFor(context.user2.id), uuidv4()).expect(404);
+    });
+
+    it("lets the uploader clear an upload that never finished", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const created = await create(cookie, pngBody(requestId)).expect(201);
+      const attachmentId = created.body.attachment.id as string;
+
+      const response = await remove(cookie, attachmentId).expect(200);
+
+      expect(response.body.attachment).toMatchObject({
+        id: attachmentId,
+        status: AttachmentStatus.Uploading,
+        deletedByUserId: context.user2.id,
+      });
+      await upload(created.body.upload as UploadTarget, fixture("small.png")).expect(404);
+    });
+
+    it("frees the slot the deleted file held", async () => {
+      const { requestId, vacationId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const { attachmentId } = await uploadedByOwner(requestId);
+      for (let i = 0; i < 4; i++) await create(cookie, pngBody(requestId)).expect(201);
+      expect((await detail(cookie, vacationId).expect(200)).body.canAttach).toBe(false);
+
+      await remove(cookie, attachmentId).expect(200);
+
+      expect((await detail(cookie, vacationId).expect(200)).body.canAttach).toBe(true);
+      await create(cookie, pngBody(requestId)).expect(201);
+    });
+  });
+
+  describe("retention sweep", () => {
+    // seedRequest books 2 and 3 March, so twelve months after the last day is 3 March a year on.
+    const dayBeforeExpiry = new Date(Date.UTC(REQUEST_YEAR + 1, 2, 2, 2));
+    const expiryDay = new Date(Date.UTC(REQUEST_YEAR + 1, 2, 3, 2));
+
+    it("removes every attachment twelve months after the Request's last day, deleted ones included", async () => {
+      const { requestId, vacationId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const kept = await uploadedByOwner(requestId);
+      const deleted = await uploadedByOwner(requestId);
+      await remove(cookie, deleted.attachmentId).expect(200);
+
+      expect(await sweepAttachments(dayBeforeExpiry)).toEqual({
+        expired: 0,
+        noLiveDay: 0,
+        stale: 0,
+      });
+      expect(await stored(kept.storageKey)).toBeDefined();
+      expect(await rowFor(deleted.attachmentId)).toBeDefined();
+
+      expect(await sweepAttachments(expiryDay)).toEqual({ expired: 2, noLiveDay: 0, stale: 0 });
+      expect(await stored(kept.storageKey)).toBeUndefined();
+      expect(await rowFor(kept.attachmentId)).toBeUndefined();
+      expect(await rowFor(deleted.attachmentId)).toBeUndefined();
+      expect((await detail(cookie, vacationId).expect(200)).body.attachments).toEqual([]);
+    });
+
+    it("removes attachments once every day is cancelled, and keeps them while one day lives", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const { attachmentId, storageKey } = await uploadedByOwner(requestId);
+      const days = await db.select().from(vacation).where(eq(vacation.requestId, requestId));
+
+      await request(context.app)
+        .delete(`/api/vacation/${days[0]!.id}`)
+        .set("Cookie", cookie)
+        .expect(200);
+      expect(await sweepAttachments(dayBeforeExpiry)).toEqual({
+        expired: 0,
+        noLiveDay: 0,
+        stale: 0,
+      });
+      expect(await stored(storageKey)).toBeDefined();
+
+      await request(context.app)
+        .delete(`/api/vacation/${days[1]!.id}`)
+        .set("Cookie", cookie)
+        .expect(200);
+      expect(await sweepAttachments(dayBeforeExpiry)).toEqual({
+        expired: 0,
+        noLiveDay: 1,
+        stale: 0,
+      });
+      expect(await stored(storageKey)).toBeUndefined();
+      expect(await rowFor(attachmentId)).toBeUndefined();
+    });
+
+    it("removes attachments once every day is rejected", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const approver = await authCookieFor(context.approverUser.id);
+      const { attachmentId, storageKey } = await uploadedByOwner(requestId);
+      const days = await db.select().from(vacation).where(eq(vacation.requestId, requestId));
+
+      await request(context.app)
+        .post(`/api/vacation/reject/${days[0]!.id}`)
+        .set("Cookie", approver)
+        .expect(200);
+      expect(await sweepAttachments(dayBeforeExpiry)).toEqual({
+        expired: 0,
+        noLiveDay: 0,
+        stale: 0,
+      });
+
+      await request(context.app)
+        .post(`/api/vacation/reject/${days[1]!.id}`)
+        .set("Cookie", approver)
+        .expect(200);
+      expect(await sweepAttachments(dayBeforeExpiry)).toEqual({
+        expired: 0,
+        noLiveDay: 1,
+        stale: 0,
+      });
+      expect(await stored(storageKey)).toBeUndefined();
+      expect(await rowFor(attachmentId)).toBeUndefined();
+    });
+
+    it("clears an upload still pending after ten minutes and keeps a fresh one", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const ready = await uploadedByOwner(requestId);
+      const pending = await create(cookie, pngBody(requestId)).expect(201);
+      const pendingId = pending.body.attachment.id as string;
+      const startedAt = (await rowFor(pendingId))!.createdAt.getTime();
+
+      expect(await sweepAttachments(new Date(startedAt + 9 * 60 * 1000))).toEqual({
+        expired: 0,
+        noLiveDay: 0,
+        stale: 0,
+      });
+      expect(await rowFor(pendingId)).toMatchObject({ status: AttachmentStatus.Uploading });
+
+      expect(await sweepAttachments(new Date(startedAt + 11 * 60 * 1000))).toEqual({
+        expired: 0,
+        noLiveDay: 0,
+        stale: 1,
+      });
+      expect(await rowFor(pendingId)).toBeUndefined();
+      expect(await rowFor(ready.attachmentId)).toBeDefined();
+      expect(await stored(ready.storageKey)).toBeDefined();
     });
   });
 });

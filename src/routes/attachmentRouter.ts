@@ -4,6 +4,7 @@ import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js"
 import { validatePostAttachment } from "../services/attachment/types.js";
 import { handlePostAttachment } from "../controllers/attachment/handlePostAttachment.js";
 import { handleGetAttachmentDownloadUrl } from "../controllers/attachment/handleGetAttachmentDownloadUrl.js";
+import { handleDeleteAttachment } from "../controllers/attachment/handleDeleteAttachment.js";
 
 export const attachmentRouter = (): Router => {
   const app = Router();
@@ -114,6 +115,15 @@ export const attachmentRouter = (): Router => {
    *         createdAt:
    *           type: string
    *           format: date-time
+   *         deletedAt:
+   *           type: string
+   *           format: date-time
+   *           nullable: true
+   *           description: When the file was deleted. The row stays as a history entry; no download URL can be issued for it.
+   *         deletedByUserId:
+   *           type: string
+   *           nullable: true
+   *           description: Who deleted it; the uploader or a group or organization admin.
    *     UploadTarget:
    *       type: object
    *       description: |
@@ -198,6 +208,51 @@ export const attachmentRouter = (): Router => {
    *         description: The attachment is not `READY` (`status` and `rejectionReason` say why)
    */
   app.get("/:id/download-url", tryCatch(handleGetAttachmentDownloadUrl));
+
+  /**
+   * @openapi
+   * /api/attachments/{id}:
+   *   delete:
+   *     tags:
+   *       - Attachments
+   *     summary: Delete an attachment
+   *     description: |
+   *       Removes the stored file at once and keeps the row with `deletedAt`
+   *       and `deletedByUserId` set, so the record detail can still show that
+   *       a file was there and who removed it. Allowed for whoever uploaded
+   *       the file and for the group's admins (group and organization);
+   *       approvers and view-only members are refused. Works in any status,
+   *       so a stuck `UPLOADING` row can be cleared by the same people.
+   *     operationId: handleDeleteAttachment
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: The attachment as it now stands, deletion stamps included
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 attachment:
+   *                   $ref: '#/components/schemas/Attachment'
+   *       '401':
+   *         description: Unauthorized
+   *       '403':
+   *         description: Neither the uploader nor a group admin
+   *       '404':
+   *         description: Attachment not found or already deleted
+   *       '409':
+   *         description: A concurrent delete won the race
+   */
+  app.delete("/:id", tryCatch(handleDeleteAttachment));
 
   return app;
 };

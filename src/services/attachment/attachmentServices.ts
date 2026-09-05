@@ -22,6 +22,8 @@ export const toAttachmentView = (row: AttachmentType): AttachmentView => ({
   rejectionReason: row.rejectionReason,
   uploadedByUserId: row.uploadedByUserId,
   createdAt: row.createdAt,
+  deletedAt: row.deletedAt,
+  deletedByUserId: row.deletedByUserId,
 });
 
 export const getAttachmentById = async (
@@ -35,6 +37,7 @@ export const getAttachmentById = async (
   return row;
 };
 
+/** Deleted rows included: the detail lists them so the timeline can explain a file that went away. */
 export const listAttachmentsForRequest = async (
   requestId: string,
   tx?: DbTransaction
@@ -42,7 +45,7 @@ export const listAttachmentsForRequest = async (
   const rows = await (tx ?? db)
     .select()
     .from(attachments)
-    .where(and(eq(attachments.requestId, requestId), live))
+    .where(eq(attachments.requestId, requestId))
     .orderBy(attachments.createdAt);
   return rows.map(toAttachmentView);
 };
@@ -142,6 +145,26 @@ export const completeUpload = async (
       tx
     );
   });
+
+/**
+ * Soft-deletes the row, then removes the bytes. The row is stamped first so an
+ * upload settling at the same moment cannot store bytes after this call has
+ * removed them: it waits on the row, finds it no longer live, and stops.
+ * Undefined when the row was already deleted.
+ */
+export const deleteAttachment = async (
+  attachmentId: string,
+  deletedByUserId: string
+): Promise<AttachmentType | undefined> => {
+  const [row] = await db
+    .update(attachments)
+    .set({ deletedAt: new Date(), deletedByUserId })
+    .where(and(eq(attachments.id, attachmentId), live))
+    .returning();
+  if (!row) return undefined;
+  await attachmentStore.deleteObject(row.storageKey);
+  return row;
+};
 
 /** The original name, with the extension corrected for images the processor rewrote to JPEG. */
 export const downloadFileName = (attachment: Pick<AttachmentType, "fileName" | "contentType">) => {

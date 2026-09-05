@@ -149,7 +149,8 @@ export const vacationRouter = (): Router => {
    *
    *       For the record owner, the group's approvers and its group and
    *       organization admins the payload also carries `attachments` (every
-   *       live attachment of the Request, any status) and `canAttach`, which is
+   *       attachment of the Request, any status, deleted ones included with
+   *       `deletedAt` and `deletedByUserId` set) and `canAttach`, which is
    *       true only when the caller may add one, the plan allows uploads and
    *       the Request has a free slot. A member with view access only gets
    *       neither field.

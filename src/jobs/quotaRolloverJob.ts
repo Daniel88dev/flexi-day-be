@@ -2,6 +2,7 @@ import { Cron } from "croner";
 import { config } from "../config.js";
 import { logger } from "../middleware/logger.js";
 import { rolloverQuotasForYear } from "../services/quotaRollover/quotaRolloverServices.js";
+import { runAttachmentSweep } from "./attachmentSweepJob.js";
 
 let job: Cron | null = null;
 
@@ -35,9 +36,15 @@ export const runQuotaRollover = async (year = new Date().getFullYear()): Promise
   }
 };
 
+/** One nightly tick: the rollover, then the attachment retention sweep. Each swallows its own failure. */
+const runNightly = async (): Promise<void> => {
+  await runQuotaRollover();
+  await runAttachmentSweep();
+};
+
 /**
- * Schedules the rollover. Runs once at startup as well as on the cron, so a
- * deployment that happens to land after a missed trigger catches up
+ * Schedules the nightly tick. Runs once at startup as well as on the cron, so
+ * a deployment that happens to land after a missed trigger catches up
  * immediately rather than waiting for the next window.
  */
 export const startQuotaRolloverJob = (): Cron | null => {
@@ -57,7 +64,7 @@ export const startQuotaRolloverJob = (): Cron | null => {
       protect: true,
       name: "quota-rollover",
     },
-    () => runQuotaRollover()
+    () => runNightly()
   );
 
   logger.info("Quota rollover job scheduled", {
@@ -66,7 +73,7 @@ export const startQuotaRolloverJob = (): Cron | null => {
     nextRun: job.nextRun()?.toISOString(),
   });
 
-  void runQuotaRollover();
+  void runNightly();
 
   return job;
 };

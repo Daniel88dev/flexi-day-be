@@ -3,6 +3,10 @@ import type { AttachmentStatus } from "../../db/schema/attachment-schema.js";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_ATTACHMENTS_PER_REQUEST = 5;
+/** Attachments outlive the Request's last day by this much, then the nightly sweep removes them. */
+export const ATTACHMENT_RETENTION_MONTHS = 12;
+/** An `UPLOADING` row this old never got its bytes; the sweep clears it. */
+export const STALE_UPLOAD_MS = 10 * 60 * 1000;
 
 export type AttachmentType = {
   id: string;
@@ -47,6 +51,8 @@ export type AttachmentView = Pick<
   | "rejectionReason"
   | "uploadedByUserId"
   | "createdAt"
+  | "deletedAt"
+  | "deletedByUserId"
 >;
 
 /** Where the browser sends the bytes: a presigned S3 request, or the disk store's own route. */
