@@ -47,8 +47,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "attachments" {
 
 # The API's nightly sweep is what deletes attachments (CONTEXT.md, Quota
 # rollover). These rules are the backstop: an upload the Lambda never got to
-# leaves incoming/ within a day, and nothing outlives the twelve-month
-# retention by more than two months even if the sweep stops running.
+# leaves incoming/ within a day, and nothing outlives the sweep's latest
+# possible date (a booking on 31 December of next year, then twelve months of
+# retention: just under three years) by more than three months even if the
+# sweep stops running.
 resource "aws_s3_bucket_lifecycle_configuration" "attachments" {
   bucket = aws_s3_bucket.attachments.id
 
@@ -76,7 +78,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "attachments" {
     filter {}
 
     expiration {
-      days = 425
+      days = 1190
     }
   }
 }
@@ -140,10 +142,14 @@ resource "aws_iam_role" "attachment_processor" {
   }
 }
 
-# Read and delete what the browser uploaded, write the checked result, read
-# the callback secret, and log. Final keys have no fixed prefix (they start
-# with the organization id), so PutObject covers the bucket minus incoming/,
-# which only the browser's presigned POST may write.
+# Read what the browser uploaded, write the checked result, delete either
+# (the incoming object once handled, the final one when the API reports the
+# row gone), read the callback secret, and log. Final keys have no fixed
+# prefix (they start with the organization id), so PutObject covers the
+# bucket minus incoming/, which only the browser's presigned POST may write.
+# ListBucket is what makes S3 answer a GetObject on a missing key with
+# NoSuchKey rather than AccessDenied, so a redelivered event finds the object
+# gone and stops.
 resource "aws_iam_role_policy" "attachment_processor" {
   name = local.attachment_processor_name
   role = aws_iam_role.attachment_processor.id
@@ -153,12 +159,17 @@ resource "aws_iam_role_policy" "attachment_processor" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:DeleteObject"]
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.attachments.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
         Resource = "${aws_s3_bucket.attachments.arn}/incoming/*"
       },
       {
         Effect   = "Allow"
-        Action   = ["s3:PutObject"]
+        Action   = ["s3:PutObject", "s3:DeleteObject"]
         Resource = "${aws_s3_bucket.attachments.arn}/*"
       },
       {
@@ -242,7 +253,8 @@ resource "aws_s3_bucket_notification" "attachments" {
 # --- CD ------------------------------------------------------------------------
 
 # The CD role predates Terraform, so only the policy is managed here. GetFunction
-# is what `aws lambda wait function-updated` polls.
+# is what `aws lambda wait function-updated-v2` polls; the v1 waiter polls
+# GetFunctionConfiguration instead, which this policy does not grant.
 resource "aws_iam_role_policy" "github_actions_attachment_processor" {
   count = var.github_actions_role_name != "" ? 1 : 0
   name  = "${local.attachment_processor_name}-deploy"

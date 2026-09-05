@@ -1,5 +1,5 @@
-import { and, eq, isNull, lt, notExists, sql, type SQL } from "drizzle-orm";
-import { db } from "../../db/db.js";
+import { and, eq, isNull, lt, max, notExists, sql, type SQL } from "drizzle-orm";
+import { db, type DbTransaction } from "../../db/db.js";
 import { logger } from "../../middleware/logger.js";
 import { attachments, AttachmentStatus } from "../../db/schema/attachment-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
@@ -19,6 +19,23 @@ const retentionCutoffDay = (now: Date): string => {
   const cutoff = new Date(now);
   cutoff.setUTCMonth(cutoff.getUTCMonth() - ATTACHMENT_RETENTION_MONTHS);
   return cutoff.toISOString().slice(0, 10);
+};
+
+/**
+ * True once the Request's last day is twelve months gone: the sweep removes
+ * its attachments, so nothing may be added to it any more. An unknown
+ * Request counts as past retention.
+ */
+export const isRequestPastRetention = async (
+  requestId: string,
+  now = new Date(),
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const [row] = await (tx ?? db)
+    .select({ lastDay: max(vacation.requestedDay) })
+    .from(vacation)
+    .where(eq(vacation.requestId, requestId));
+  return !row?.lastDay || row.lastDay <= retentionCutoffDay(now);
 };
 
 // Deleted rows qualify too: once the Request is past retention, or gone, its

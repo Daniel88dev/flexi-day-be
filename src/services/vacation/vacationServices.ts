@@ -256,6 +256,19 @@ export const getVacationsByRequestId = async (
     .orderBy(asc(vacation.requestedDay));
 
 /**
+ * The row a Request-level decision is made against: a live day if one is
+ * left, else the earliest. Cancel is per day, so the first row alone would
+ * call a Request dead while later days still stand.
+ */
+export const getRequestAnchorRow = async (
+  requestId: string,
+  tx?: DbTransaction
+): Promise<VacationType | undefined> => {
+  const rows = await getVacationsByRequestId(requestId, tx);
+  return rows.find((row) => row.deletedAt === null && row.rejectedAt === null) ?? rows[0];
+};
+
+/**
  * The workflow's state machine. Cancellation deliberately does NOT use it:
  * plans change, and an approved request must stay cancellable.
  */

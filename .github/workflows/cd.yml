@@ -178,5 +178,5 @@ jobs:
             --function-name "${FUNCTION_NAME}" \
             --zip-file fileb://lambda/attachment-processor/attachment-processor.zip \
             --no-cli-pager >/dev/null
-          aws lambda wait function-updated --function-name "${FUNCTION_NAME}"
+          aws lambda wait function-updated-v2 --function-name "${FUNCTION_NAME}"
           echo "Deployed ${GITHUB_SHA::7} to ${FUNCTION_NAME}"

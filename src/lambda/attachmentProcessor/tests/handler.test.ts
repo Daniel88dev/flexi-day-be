@@ -31,8 +31,10 @@ const fakeStore = (objects: Record<string, IncomingObject>) => {
   const store: ObjectStore = {
     get: (key) => Promise.resolve(bucket.get(key)),
     put: (key, bytes, contentType) => {
+      // Like S3 under IfNoneMatch: the first write of a key wins.
+      if (written.some((w) => w.key === key)) return Promise.resolve(false);
       written.push({ key, bytes, contentType });
-      return Promise.resolve();
+      return Promise.resolve(true);
     },
     delete: (key) => {
       bucket.delete(key);
@@ -52,9 +54,9 @@ const upload = (name: string, contentType: string): IncomingObject => ({
 const run = async (
   objects: Record<string, IncomingObject>,
   key?: string,
-  result: NotifyResult = "settled"
+  result: NotifyResult = "applied",
+  bucket = fakeStore(objects)
 ) => {
-  const bucket = fakeStore(objects);
   const reports: AttachmentProcessedPayload[] = [];
   const notify = vi.fn((payload: AttachmentProcessedPayload) => {
     reports.push(payload);
@@ -154,6 +156,28 @@ describe("attachment-processor handler", () => {
 
     expect(written[0]!.key).toBe(`${storageKey}.jpg`);
     expect(deleted).toEqual([`${storageKey}.jpg`, incoming]);
+  });
+
+  it("drops a fresh write the API would not take, a second post onto a settled row", async () => {
+    const { written, deleted } = await run(
+      { [incoming]: upload("small.png", "image/png") },
+      undefined,
+      "already"
+    );
+
+    expect(written[0]!.key).toBe(`${storageKey}.jpg`);
+    expect(deleted).toEqual([`${storageKey}.jpg`, incoming]);
+  });
+
+  it("keeps the first object when a retry's write was a no-op and the row is settled", async () => {
+    const bucket = fakeStore({ [incoming]: upload("small.png", "image/png") });
+    await bucket.store.put(`${storageKey}.jpg`, Buffer.from("first"), "image/jpeg");
+
+    const { written, deleted } = await run({}, undefined, "already", bucket);
+
+    expect(written).toHaveLength(1);
+    expect(written[0]!.bytes.toString()).toBe("first");
+    expect(deleted).toEqual([incoming]);
   });
 
   it("leaves the incoming object in place when the report does not land, so a retry repeats the step", async () => {

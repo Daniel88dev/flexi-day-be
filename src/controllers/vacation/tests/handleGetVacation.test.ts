@@ -9,6 +9,7 @@ const {
   mockGetGroup,
   mockListAttachmentsForRequest,
   mockIsAttachmentUploadAvailable,
+  mockIsRequestPastRetention,
 } = vi.hoisted(() => ({
   mockGetVacationDetailById: vi.fn(),
   mockGetVacationEvents: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockGetGroup: vi.fn(),
   mockListAttachmentsForRequest: vi.fn(),
   mockIsAttachmentUploadAvailable: vi.fn(),
+  mockIsRequestPastRetention: vi.fn(),
 }));
 
 vi.mock("../../../services/groupUser/groupAccess.js", () => ({
@@ -40,6 +42,10 @@ vi.mock("../../../services/attachment/attachmentServices.js", () => ({
 
 vi.mock("../../../services/billing/guards.js", () => ({
   isAttachmentUploadAvailable: mockIsAttachmentUploadAvailable,
+}));
+
+vi.mock("../../../services/attachment/attachmentRetention.js", () => ({
+  isRequestPastRetention: mockIsRequestPastRetention,
 }));
 
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
@@ -81,6 +87,7 @@ describe("handleGetVacation", () => {
     mockGetGroup.mockResolvedValue({ id: groupId, organizationId: "org-1" });
     mockListAttachmentsForRequest.mockResolvedValue([]);
     mockIsAttachmentUploadAvailable.mockResolvedValue(true);
+    mockIsRequestPastRetention.mockResolvedValue(false);
   });
 
   it("returns the detail with history and the owner's permissions", async () => {
@@ -116,8 +123,43 @@ describe("handleGetVacation", () => {
     await handleGetVacation(req, res);
 
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ attachments: [{ id: "a-1", status: "READY" }], canAttach: true })
+      expect.objectContaining({
+        attachments: [{ id: "a-1", status: "READY" }],
+        canAttach: true,
+        canDeleteAnyAttachment: false,
+      })
     );
+  });
+
+  it("lets an admin delete any attachment, even on a cancelled request", async () => {
+    const { req, res } = makeReqRes({ params: { id: vacationId } });
+
+    mockGetVacationDetailById.mockResolvedValue({
+      ...detail,
+      userId: "someone_else",
+      deletedAt: new Date("2026-08-01T00:00:00Z"),
+    });
+    mockGetGroupUser.mockResolvedValue({ viewAccess: true, adminAccess: false });
+    mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: true, viaOrgAdmin: false });
+
+    await handleGetVacation(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ canAttach: false, canDeleteAnyAttachment: true })
+    );
+  });
+
+  it("turns canAttach off once the Request is past retention", async () => {
+    const { req, res } = makeReqRes({ params: { id: vacationId } });
+    mockGetVacationDetailById.mockResolvedValue(detail);
+    mockGetGroupUser.mockResolvedValue({ viewAccess: true, adminAccess: false });
+    mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
+    mockIsRequestPastRetention.mockResolvedValue(true);
+
+    await handleGetVacation(req, res);
+
+    expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ canAttach: false }));
   });
 
   it("turns canAttach off when the plan does not allow uploads or the slots are full", async () => {
@@ -165,6 +207,7 @@ describe("handleGetVacation", () => {
     >;
     expect(payload).not.toHaveProperty("attachments");
     expect(payload).not.toHaveProperty("canAttach");
+    expect(payload).not.toHaveProperty("canDeleteAnyAttachment");
     expect(mockListAttachmentsForRequest).not.toHaveBeenCalled();
   });
 

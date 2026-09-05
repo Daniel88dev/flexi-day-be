@@ -10,7 +10,7 @@ import {
 import { attachmentStore } from "../../services/attachment/attachmentStore.js";
 import { validateDownloadDisposition } from "../../services/attachment/types.js";
 import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
-import { getVacationsByRequestId } from "../../services/vacation/vacationServices.js";
+import { getRequestAnchorRow } from "../../services/vacation/vacationServices.js";
 
 /** A short-lived URL for the bytes; the same callers the record detail refuses are refused here. */
 export const handleGetAttachmentDownloadUrl = async (req: Request, res: Response) => {
@@ -20,7 +20,7 @@ export const handleGetAttachmentDownloadUrl = async (req: Request, res: Response
   const disposition = validateDownloadDisposition.parse(req.query.disposition);
 
   const attachment = await getAttachmentById(attachmentId);
-  const [record] = attachment ? await getVacationsByRequestId(attachment.requestId) : [];
+  const record = attachment ? await getRequestAnchorRow(attachment.requestId) : undefined;
   if (!attachment || !record) {
     throw new AppError({
       message: "Attachment not found",

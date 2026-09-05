@@ -17,4 +17,7 @@ WHERE v."user_id" = r."user_id"
   AND v."group_id" = r."group_id"
   AND v."created_at" = r."created_at";--> statement-breakpoint
 ALTER TABLE "vacation" ALTER COLUMN "request_id" SET NOT NULL;--> statement-breakpoint
+-- The default keeps an image that predates the column inserting while the
+-- migration is already applied. The API always supplies its own id.
+ALTER TABLE "vacation" ALTER COLUMN "request_id" SET DEFAULT gen_random_uuid()::text;--> statement-breakpoint
 CREATE INDEX "vacation_request_id_idx" ON "vacation" USING btree ("request_id");

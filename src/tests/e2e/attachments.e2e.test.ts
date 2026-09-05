@@ -72,7 +72,7 @@ describe("Attachments E2E", () => {
   };
 
   /** A two-day Request inserted directly; creation itself is covered by the vacation suite. */
-  const seedRequest = async (userId: string, groupId: string) => {
+  const seedRequest = async (userId: string, groupId: string, year = REQUEST_YEAR) => {
     const requestId = uuidv4();
     const ids = [uuidv4(), uuidv4()];
     await db.insert(vacation).values(
@@ -81,7 +81,7 @@ describe("Attachments E2E", () => {
         userId,
         groupId,
         requestId,
-        requestedDay: `${REQUEST_YEAR.toString()}-03-0${(index + 2).toString()}`,
+        requestedDay: `${year.toString()}-03-0${(index + 2).toString()}`,
         createdByUserId: userId,
       }))
     );
@@ -238,6 +238,38 @@ describe("Attachments E2E", () => {
       expect(row?.ownerUserId).toBe(context.user2.id);
     });
 
+    it("keeps accepting files while one day of the Request lives, and stops once none does", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const days = await db.select().from(vacation).where(eq(vacation.requestId, requestId));
+
+      await request(context.app)
+        .delete(`/api/vacation/${days[0]!.id}`)
+        .set("Cookie", cookie)
+        .expect(200);
+      await create(cookie, pngBody(requestId)).expect(201);
+      expect((await detail(cookie, days[1]!.id).expect(200)).body.canAttach).toBe(true);
+
+      await request(context.app)
+        .delete(`/api/vacation/${days[1]!.id}`)
+        .set("Cookie", cookie)
+        .expect(200);
+      await create(cookie, pngBody(requestId)).expect(403);
+    });
+
+    it("refuses a Request whose last day is over twelve months gone, and the detail agrees", async () => {
+      const { requestId, vacationId } = await seedRequest(
+        context.user2.id,
+        context.group.id,
+        new Date().getFullYear() - 2
+      );
+      const cookie = await authCookieFor(context.user2.id);
+
+      const refused = await create(cookie, pngBody(requestId)).expect(403);
+      expect(refused.body.errors[0].context).toEqual({ reason: "RETENTION_EXPIRED" });
+      expect((await detail(cookie, vacationId).expect(200)).body.canAttach).toBe(false);
+    });
+
     it("answers 404 for a request that does not exist", async () => {
       await create(await authCookieFor(context.user2.id), pngBody(uuidv4())).expect(404);
     });
@@ -343,6 +375,8 @@ describe("Attachments E2E", () => {
       expect(bytes.headers["content-disposition"]).toBe(
         `inline; filename="note.jpg"; filename*=UTF-8''note.jpg`
       );
+      // The frontend embeds the bytes in an <img> from another origin.
+      expect(bytes.headers["cross-origin-resource-policy"]).toBe("cross-origin");
       expect(sniffContentType(bytes.body as Buffer)).toBe("image/jpeg");
     });
 
@@ -510,21 +544,22 @@ describe("Attachments E2E", () => {
         fixture("small.png")
       );
 
-      const expectations: [TestUser, boolean][] = [
-        [context.user2, true],
-        [context.approverUser, false],
-        [context.user1, true],
-        [orgAdmin, true],
+      const expectations: [TestUser, { canAttach: boolean; canDeleteAnyAttachment: boolean }][] = [
+        [context.user2, { canAttach: true, canDeleteAnyAttachment: false }],
+        [context.approverUser, { canAttach: false, canDeleteAnyAttachment: false }],
+        [context.user1, { canAttach: true, canDeleteAnyAttachment: true }],
+        [orgAdmin, { canAttach: true, canDeleteAnyAttachment: true }],
       ];
-      for (const [who, canAttach] of expectations) {
+      for (const [who, flags] of expectations) {
         const shown = await detail(await authCookieFor(who.id), vacationId).expect(200);
         expect(shown.body.attachments, who.name).toHaveLength(1);
-        expect(shown.body.canAttach, who.name).toBe(canAttach);
+        expect(shown.body, who.name).toMatchObject(flags);
       }
 
       const viewOnly = await detail(await authCookieFor(viewer.id), vacationId).expect(200);
       expect(viewOnly.body).not.toHaveProperty("attachments");
       expect(viewOnly.body).not.toHaveProperty("canAttach");
+      expect(viewOnly.body).not.toHaveProperty("canDeleteAnyAttachment");
     });
 
     it("turns canAttach off for the owner once the plan lapses or the slots are used up", async () => {
@@ -670,11 +705,39 @@ describe("Attachments E2E", () => {
       await remove(await authCookieFor(context.user2.id), uuidv4()).expect(404);
     });
 
+    it("refuses an uploader who has since lost their standing in the organization", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(orgAdmin.id);
+      const { attachmentId } = await createAndUpload(
+        cookie,
+        pngBody(requestId),
+        fixture("small.png")
+      );
+
+      await db.delete(organizationUsers).where(eq(organizationUsers.userId, orgAdmin.id));
+      try {
+        await remove(cookie, attachmentId).expect(403);
+        expect((await rowFor(attachmentId))?.deletedAt).toBeNull();
+      } finally {
+        await db.insert(organizationUsers).values({
+          id: uuidv4(),
+          organizationId,
+          userId: orgAdmin.id,
+          grantedByUserId: context.user1.id,
+        });
+      }
+    });
+
     it("lets the uploader clear an upload that never finished", async () => {
       const { requestId } = await seedRequest(context.user2.id, context.group.id);
       const cookie = await authCookieFor(context.user2.id);
       const created = await create(cookie, pngBody(requestId)).expect(201);
       const attachmentId = created.body.attachment.id as string;
+
+      // As if the Lambda had stored the result before its report landed.
+      const row = (await rowFor(attachmentId))!;
+      const finalKey = finalStorageKey(row.storageKey, "image/jpeg");
+      await attachmentStore.putObject(finalKey, fixture("small.png"));
 
       const response = await remove(cookie, attachmentId).expect(200);
 
@@ -683,6 +746,7 @@ describe("Attachments E2E", () => {
         status: AttachmentStatus.Uploading,
         deletedByUserId: context.user2.id,
       });
+      expect(await stored(finalKey)).toBeUndefined();
       await upload(created.body.upload as UploadTarget, fixture("small.png")).expect(404);
     });
 
@@ -803,7 +867,8 @@ describe("Attachments E2E", () => {
 
     it("answers 404 for an unknown or deleted row, 409 for a settled one and 422 for a malformed report", async () => {
       const ready = { status: "READY", contentType: "image/jpeg", size: 1 };
-      await signed({ attachmentId: uuidv4(), ...ready }).expect(404);
+      const unknown = await signed({ attachmentId: uuidv4(), ...ready }).expect(404);
+      expect(unknown.body.errors[0].context).toEqual({ reason: "ATTACHMENT_GONE" });
 
       const { attachmentId, requestId } = await pendingUpload();
       await signed({ attachmentId, status: "DONE" }).expect(422);

@@ -74,7 +74,12 @@ export const attachmentRouter = (): Router => {
    *       '402':
    *         description: The organization is not on a paid plan (`reason` is `PLAN_LIMIT`)
    *       '403':
-   *         description: Not the record owner and not allowed to edit the record
+   *         description: |
+   *           Not the record owner and not allowed to edit the record, the
+   *           Request has no live day left (every day cancelled or rejected),
+   *           or its last day is over twelve months gone (`reason` is
+   *           `RETENTION_EXPIRED`), when the nightly sweep would remove the
+   *           file anyway
    *       '404':
    *         description: Request not found
    *       '422':
@@ -181,8 +186,8 @@ export const attachmentRouter = (): Router => {
    *     description: |
    *       Allowed for the record owner, the group's approvers and its group and
    *       organization admins, the same callers the record detail shows
-   *       attachments to. The URL carries no session and expires after a few
-   *       minutes; `fileName` is the original name, with the extension changed
+   *       attachments to. The URL carries no session and expires after one
+   *       minute; `fileName` is the original name, with the extension changed
    *       to `.jpg` for images the processor rewrote.
    *     operationId: handleGetAttachmentDownloadUrl
    *     security:
@@ -244,8 +249,9 @@ export const attachmentRouter = (): Router => {
    *       Removes the stored file at once and keeps the row with `deletedAt`
    *       and `deletedByUserId` set, so the record detail can still show that
    *       a file was there and who removed it. Allowed for whoever uploaded
-   *       the file and for the group's admins (group and organization);
-   *       approvers and view-only members are refused. Works in any status,
+   *       the file, as long as they may still see the record, and for the
+   *       group's admins (group and organization); approvers and view-only
+   *       members are refused. Works in any status,
    *       so a stuck `UPLOADING` row can be cleared by the same people.
    *     operationId: handleDeleteAttachment
    *     security:

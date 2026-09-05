@@ -81,13 +81,17 @@ only needs its own `Name` tag.
 `attachments.tf` holds the upload pipeline of ADR 0003. The bucket is private: public access
 blocked, ACLs disabled through `BucketOwnerEnforced`, SSE-S3 by default. Terraform sets nothing on
 versioning, so it stays at S3's default, off. The lifecycle rules back up the API's nightly sweep
-rather than replace it. Objects under `incoming/` expire after a day. Everything else expires
-fourteen months after upload, which lands past the sweep's twelve months from the Request's last day
-for any Request booked less than two months ahead. CORS allows GET and POST from `trusted_origins`,
-because both presigned requests run in the browser.
+rather than replace it. Objects under `incoming/` expire after a day. Everything else expires 1190
+days after upload, which lands past the sweep's twelve months from the Request's last day even for
+a Request booked on the last bookable day, 31 December of next year; the sweep, not the rule, is
+what normally removes a file. CORS allows GET and POST from `trusted_origins`, because both
+presigned requests run in the browser.
 
-The `attachment-processor` Lambda has a role of its own: get and delete under `incoming/`, put
-anywhere except `incoming/`, read the callback secret, write its log group. The S3 notification on
+The `attachment-processor` Lambda has a role of its own: list the bucket, get under `incoming/`,
+put anywhere except `incoming/`, delete anywhere (the incoming object once handled, and a final
+object it wrote for a row the API reports gone), read the callback secret, write its log group.
+The list right is there so S3 reports a missing incoming object as `NoSuchKey`, which the handler
+treats as already processed, instead of `AccessDenied`, which it would retry. The S3 notification on
 `incoming/` invokes it, and `aws_lambda_permission` lets the bucket do so. The App Runner instance
 role gets `apprunner_attachments`, a policy of its own as the IAM section above asks: put under
 `incoming/` for the presigned upload, get and delete on the whole bucket for downloads and removals.

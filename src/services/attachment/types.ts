@@ -9,6 +9,8 @@ export const ATTACHMENT_RETENTION_MONTHS = 12;
 /** An `UPLOADING` row this old never got its bytes; the sweep clears it. */
 export const STALE_UPLOAD_MS = 10 * 60 * 1000;
 export const UPLOAD_URL_TTL_MS = 5 * 60 * 1000;
+/** The callback's 404 carries this, so the Lambda can tell a deleted row from an unknown route. */
+export const ATTACHMENT_GONE_REASON = "ATTACHMENT_GONE";
 export const DOWNLOAD_URL_TTL_MS = 60 * 1000;
 
 export type AttachmentType = {

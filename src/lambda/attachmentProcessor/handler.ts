@@ -24,12 +24,17 @@ export type IncomingObject = {
 /** The handler's view of the bucket, so a test can stand in for S3. */
 export type ObjectStore = {
   get(key: string): Promise<IncomingObject | undefined>;
-  put(key: string, bytes: Buffer, contentType: string): Promise<void>;
+  /** Writes only when the key is new; false means an earlier write is kept. */
+  put(key: string, bytes: Buffer, contentType: string): Promise<boolean>;
   delete(key: string): Promise<void>;
 };
 
-/** `gone` when the API no longer has the row: it was deleted while the bytes were in flight. */
-export type NotifyResult = "settled" | "gone";
+/**
+ * `applied` when the row moved on this report, `already` when an earlier
+ * one moved it, `gone` when the API no longer has the row: it was deleted
+ * while the bytes were in flight.
+ */
+export type NotifyResult = "applied" | "already" | "gone";
 
 export type ProcessorDeps = {
   store: ObjectStore;
@@ -52,20 +57,32 @@ export const createHandler = ({ store, notify, log = console.log }: ProcessorDep
   const check = async (
     object: IncomingObject,
     storageKey: string
-  ): Promise<AttachmentProcessedOutcome> => {
+  ): Promise<{ outcome: AttachmentProcessedOutcome; written: boolean }> => {
     const claimed = object.contentType ?? "";
     if (!isAttachmentContentType(claimed)) {
-      return { status: "REJECTED", rejectionReason: AttachmentRejectionReason.TypeMismatch };
+      return {
+        outcome: { status: "REJECTED", rejectionReason: AttachmentRejectionReason.TypeMismatch },
+        written: false,
+      };
     }
     const processed = await processAttachment(object.bytes, claimed);
-    if (!processed.ok) return { status: "REJECTED", rejectionReason: processed.reason };
+    if (!processed.ok) {
+      return { outcome: { status: "REJECTED", rejectionReason: processed.reason }, written: false };
+    }
 
-    await store.put(
+    const written = await store.put(
       finalStorageKey(storageKey, processed.contentType),
       processed.bytes,
       processed.contentType
     );
-    return { status: "READY", contentType: processed.contentType, size: processed.bytes.length };
+    return {
+      outcome: {
+        status: "READY",
+        contentType: processed.contentType,
+        size: processed.bytes.length,
+      },
+      written,
+    };
   };
 
   const processObject = async (key: string): Promise<void> => {
@@ -81,9 +98,12 @@ export const createHandler = ({ store, notify, log = console.log }: ProcessorDep
       return;
     }
 
-    const outcome = await check(object, storageKey);
+    const { outcome, written } = await check(object, storageKey);
     const result = await notify({ attachmentId, ...outcome });
-    if (result === "gone" && outcome.status === "READY") {
+    // A row that is gone must not keep bytes; neither may a row that settled
+    // on an earlier delivery keep bytes only this one wrote (a second post to
+    // the same form). A retry's no-op write leaves the first object alone.
+    if (outcome.status === "READY" && (result === "gone" || (result === "already" && written))) {
       await store.delete(finalStorageKey(storageKey, outcome.contentType));
     }
     await store.delete(key);

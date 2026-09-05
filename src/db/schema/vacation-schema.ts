@@ -40,7 +40,11 @@ export const vacation = pgTable(
       .notNull()
       .references(() => groups.id, { onDelete: "cascade" }),
     // Shared by every day row of one submission — the Request in CONTEXT.md.
-    requestId: text("request_id").notNull(),
+    // The database default only serves an API image older than the column;
+    // the API always stamps its own id across the whole submission.
+    requestId: text("request_id")
+      .notNull()
+      .default(sql`gen_random_uuid()::text`),
     requestedDay: date("requested_day").notNull(),
     startTime: time("start_time"),
     endTime: time("end_time"),

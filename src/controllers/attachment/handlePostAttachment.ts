@@ -15,6 +15,7 @@ import {
   toAttachmentView,
 } from "../../services/attachment/attachmentServices.js";
 import { attachmentStore } from "../../services/attachment/attachmentStore.js";
+import { isRequestPastRetention } from "../../services/attachment/attachmentRetention.js";
 import {
   ATTACHMENT_CONTENT_TYPES,
   isAttachmentContentType,
@@ -22,7 +23,7 @@ import {
 import { assertAttachmentUploadAvailable } from "../../services/billing/guards.js";
 import { getGroup } from "../../services/group/groupServices.js";
 import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
-import { getVacationsByRequestId } from "../../services/vacation/vacationServices.js";
+import { getRequestAnchorRow } from "../../services/vacation/vacationServices.js";
 
 /**
  * Registers an attachment on a Request and returns where to send its bytes.
@@ -34,7 +35,7 @@ export const handlePostAttachment = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedPostAttachmentType = req.body;
 
-  const [record] = await getVacationsByRequestId(data.requestId);
+  const record = await getRequestAnchorRow(data.requestId);
   if (!record) {
     throw new AppError({
       message: "Request not found",
@@ -51,6 +52,16 @@ export const handlePostAttachment = async (req: Request, res: Response) => {
       logging: true,
       code: 403,
       context: { userId: auth.userId, requestId: data.requestId },
+    });
+  }
+
+  if (await isRequestPastRetention(data.requestId)) {
+    throw new AppError({
+      message: "This request is past the attachment retention period",
+      logging: true,
+      code: 403,
+      context: { userId: auth.userId, requestId: data.requestId },
+      publicContext: { reason: "RETENTION_EXPIRED" },
     });
   }
 

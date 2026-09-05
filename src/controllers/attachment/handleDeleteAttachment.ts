@@ -8,7 +8,7 @@ import {
   toAttachmentView,
 } from "../../services/attachment/attachmentServices.js";
 import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
-import { getVacationsByRequestId } from "../../services/vacation/vacationServices.js";
+import { getRequestAnchorRow } from "../../services/vacation/vacationServices.js";
 
 /** The uploader or a group admin removes the file; the row stays as the history entry. */
 export const handleDeleteAttachment = async (req: Request, res: Response) => {
@@ -17,7 +17,7 @@ export const handleDeleteAttachment = async (req: Request, res: Response) => {
   const attachmentId = z.uuid().parse(req.params.id);
 
   const attachment = await getAttachmentById(attachmentId);
-  const [record] = attachment ? await getVacationsByRequestId(attachment.requestId) : [];
+  const record = attachment ? await getRequestAnchorRow(attachment.requestId) : undefined;
   if (!attachment || !record) {
     throw new AppError({
       message: "Attachment not found",
@@ -27,9 +27,13 @@ export const handleDeleteAttachment = async (req: Request, res: Response) => {
     });
   }
 
+  // Whoever uploaded it may take it back, as long as they still stand where
+  // they could see it; standing lost since then is standing lost.
   const permissions = await resolveVacationPermissions(auth.userId, record);
   const isUploader = attachment.uploadedByUserId === auth.userId;
-  if (!isUploader && !permissions.canDeleteAnyAttachment) {
+  const allowed =
+    permissions.canViewAttachments && (isUploader || permissions.canDeleteAnyAttachment);
+  if (!allowed) {
     throw new AppError({
       message: "You are not allowed to delete this attachment",
       logging: true,

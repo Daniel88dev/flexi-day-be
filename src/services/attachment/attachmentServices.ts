@@ -15,6 +15,7 @@ import {
   processAttachment,
 } from "./processor.js";
 import { finalStorageKey, incomingKey } from "./s3Layout.js";
+import { STORED_CONTENT_TYPES } from "./processor.js";
 import AppError from "../../utils/appError.js";
 
 const live = isNull(attachments.deletedAt);
@@ -201,7 +202,8 @@ export const markAttachmentProcessed = async (
 /**
  * Whatever the row has in the store: the checked object under its key, and,
  * while it is still `UPLOADING`, whatever the browser may have posted to the
- * incoming prefix. Both deletes are no-ops for a key that holds nothing.
+ * incoming prefix and whatever the Lambda may have written under a final key
+ * before its report landed. A delete on an empty key is a no-op.
  */
 export const deleteStoredBytes = async (
   attachment: Pick<AttachmentType, "id" | "storageKey" | "status">
@@ -209,6 +211,9 @@ export const deleteStoredBytes = async (
   await attachmentStore.deleteObject(attachment.storageKey);
   if (attachment.status === AttachmentStatus.Uploading) {
     await attachmentStore.deleteObject(incomingKey(attachment.id));
+    for (const contentType of STORED_CONTENT_TYPES) {
+      await attachmentStore.deleteObject(finalStorageKey(attachment.storageKey, contentType));
+    }
   }
 };
 

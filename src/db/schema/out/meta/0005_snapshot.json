@@ -3000,7 +3000,8 @@
           "name": "request_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "gen_random_uuid()::text"
         },
         "requested_day": {
           "name": "requested_day",

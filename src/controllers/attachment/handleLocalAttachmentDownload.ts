@@ -33,5 +33,8 @@ export const handleLocalAttachmentDownload = async (req: Request, res: Response)
     contentDisposition(disposition, downloadFileName(attachment))
   );
   res.setHeader("Cache-Control", "private, no-store");
+  // Helmet's same-origin CORP would stop the frontend embedding the image in
+  // an <img>; S3 sends no such header, so the stand-in must not either.
+  res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   return res.status(200).send(bytes);
 };

@@ -9,6 +9,7 @@ import {
   holdsAttachmentSlot,
   listAttachmentsForRequest,
 } from "../../services/attachment/attachmentServices.js";
+import { isRequestPastRetention } from "../../services/attachment/attachmentRetention.js";
 import { MAX_ATTACHMENTS_PER_REQUEST } from "../../services/attachment/types.js";
 import { isAttachmentUploadAvailable } from "../../services/billing/guards.js";
 import { getGroup } from "../../services/group/groupServices.js";
@@ -17,8 +18,8 @@ import type { VacationPermissions } from "../../services/vacation/vacationPermis
 
 /**
  * The Request's attachments and whether this caller may add one right now:
- * standing, plan and the per-request cap together, so the client never offers
- * an upload the create endpoint would refuse.
+ * standing, plan, the per-request cap and retention together, so the client
+ * never offers an upload the create endpoint would refuse.
  */
 const attachmentsFor = async (detail: VacationDetail, permissions: VacationPermissions) => {
   const attachments = await listAttachmentsForRequest(detail.requestId);
@@ -27,9 +28,15 @@ const attachmentsFor = async (detail: VacationDetail, permissions: VacationPermi
   ).length;
   const group = permissions.canAttach ? await getGroup(detail.groupId) : undefined;
   const uploadsAvailable = group ? await isAttachmentUploadAvailable(group.organizationId) : false;
+  const open =
+    permissions.canAttach &&
+    uploadsAvailable &&
+    slotsUsed < MAX_ATTACHMENTS_PER_REQUEST &&
+    !(await isRequestPastRetention(detail.requestId));
   return {
     attachments,
-    canAttach: permissions.canAttach && uploadsAvailable && slotsUsed < MAX_ATTACHMENTS_PER_REQUEST,
+    canAttach: open,
+    canDeleteAnyAttachment: permissions.canDeleteAnyAttachment,
   };
 };
 

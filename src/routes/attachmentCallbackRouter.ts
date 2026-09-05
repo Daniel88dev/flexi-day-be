@@ -83,7 +83,7 @@ export const attachmentCallbackRouter = (): Router => {
    *       '401':
    *         description: Missing or wrong signature
    *       '404':
-   *         description: Attachment not found or deleted
+   *         description: Attachment not found or deleted (`reason` is `ATTACHMENT_GONE`)
    *       '409':
    *         description: The attachment was already processed
    *       '422':

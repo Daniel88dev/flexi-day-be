@@ -6,7 +6,10 @@ import {
   verifyAttachmentCallback,
 } from "../../services/attachment/callbackSignature.js";
 import { markAttachmentProcessed } from "../../services/attachment/attachmentServices.js";
-import { validateAttachmentProcessed } from "../../services/attachment/types.js";
+import {
+  ATTACHMENT_GONE_REASON,
+  validateAttachmentProcessed,
+} from "../../services/attachment/types.js";
 
 /** The `attachment-processor` Lambda's report; the HMAC over the raw body is the only credential. */
 export const handleAttachmentProcessed = async (req: Request, res: Response) => {
@@ -34,11 +37,14 @@ export const handleAttachmentProcessed = async (req: Request, res: Response) => 
 
   const result = await markAttachmentProcessed(payload);
   if (!result) {
+    // The reason is what the Lambda checks before it drops the bytes: a bare
+    // 404 could also be a wrong API_URL, which must not cost the upload.
     throw new AppError({
       message: "Attachment not found",
       logging: true,
       code: 404,
       context: { attachmentId: payload.attachmentId },
+      publicContext: { reason: ATTACHMENT_GONE_REASON },
     });
   }
   if (!result.changed) {

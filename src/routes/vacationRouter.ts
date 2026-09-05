@@ -150,10 +150,11 @@ export const vacationRouter = (): Router => {
    *       For the record owner, the group's approvers and its group and
    *       organization admins the payload also carries `attachments` (every
    *       attachment of the Request, any status, deleted ones included with
-   *       `deletedAt` and `deletedByUserId` set) and `canAttach`, which is
+   *       `deletedAt` and `deletedByUserId` set), `canAttach`, which is
    *       true only when the caller may add one, the plan allows uploads and
-   *       the Request has a free slot. A member with view access only gets
-   *       neither field.
+   *       the Request has a free slot, and `canDeleteAnyAttachment`, true for
+   *       group and organization admins, who may delete files they did not
+   *       upload. A member with view access only gets none of the three.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -179,6 +180,9 @@ export const vacationRouter = (): Router => {
    *                 canAttach:
    *                   type: boolean
    *                   description: Present only for the owner, approvers and admins.
+   *                 canDeleteAnyAttachment:
+   *                   type: boolean
+   *                   description: Present only for the owner, approvers and admins; true for group and organization admins.
    *       '403':
    *         description: Not allowed to view this vacation
    *       '404':
