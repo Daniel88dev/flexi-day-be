@@ -1,6 +1,5 @@
 import dotenv from "dotenv";
 import { randomBytes } from "node:crypto";
-import os from "node:os";
 import path from "node:path";
 dotenv.config();
 
@@ -269,8 +268,9 @@ const parseAttachments = (): AttachmentsConfig => {
   return {
     bucket,
     region: awsRegion,
-    localDir:
-      process.env.ATTACHMENTS_DIR || path.join(os.tmpdir(), "flexi-day-attachments", environment),
+    // Under the checkout, not the OS temp dir: that one is shared with every
+    // other user of the machine.
+    localDir: process.env.ATTACHMENTS_DIR || path.resolve(".attachments", environment),
     callbackSecret,
   };
 };

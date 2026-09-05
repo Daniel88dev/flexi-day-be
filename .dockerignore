@@ -134,3 +134,6 @@ npm-debug.log
 
 # Lambda packaging is not part of the API image
 lambda
+
+# the disk attachment store's files
+.attachments
