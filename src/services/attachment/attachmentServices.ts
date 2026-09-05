@@ -146,6 +146,6 @@ export const completeUpload = async (
 /** The original name, with the extension corrected for images the processor rewrote to JPEG. */
 export const downloadFileName = (attachment: Pick<AttachmentType, "fileName" | "contentType">) => {
   if (attachment.contentType !== "image/jpeg") return attachment.fileName;
-  const base = attachment.fileName.replace(/\.(png|webp|jpeg|jpg)$/i, "");
+  const base = attachment.fileName.replace(/\.(png|webp|jpe?g|heic|heif)$/i, "");
   return `${base}.jpg`;
 };

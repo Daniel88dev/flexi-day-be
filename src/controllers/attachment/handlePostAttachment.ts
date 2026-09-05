@@ -68,7 +68,7 @@ export const handlePostAttachment = async (req: Request, res: Response) => {
 
   if (!isAttachmentContentType(data.contentType)) {
     throw new AppError({
-      message: "Only PNG, JPEG, WebP and PDF files can be attached",
+      message: "Only PNG, JPEG, WebP, HEIC and PDF files can be attached",
       logging: true,
       code: 422,
       context: { contentType: data.contentType },

@@ -48,7 +48,7 @@ export const attachmentRouter = (): Router => {
    *                 description: The original file name, kept for download.
    *               contentType:
    *                 type: string
-   *                 enum: [image/png, image/jpeg, image/webp, application/pdf]
+   *                 enum: [image/png, image/jpeg, image/webp, image/heic, application/pdf]
    *               size:
    *                 type: integer
    *                 minimum: 1

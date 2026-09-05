@@ -1,9 +1,11 @@
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
+import { decodeHeic } from "./heic.js";
 
 export const ATTACHMENT_CONTENT_TYPES = [
   "image/png",
   "image/jpeg",
   "image/webp",
+  "image/heic",
   "application/pdf",
 ] as const;
 
@@ -43,11 +45,19 @@ const startsWith = (bytes: Buffer, magic: number[] | string, offset = 0): boolea
   );
 };
 
+// Major brands that promise HEVC inside the ISO container; iPhones write
+// `heic`. The generic `mif1` is left out: it may wrap AVIF, which this
+// decoder cannot read, and the verdict for that should stay TYPE_MISMATCH.
+const HEIC_BRANDS = ["heic", "heix", "hevc", "hevx"];
+
 /** The type the bytes actually are, from their magic numbers; undefined for anything else. */
 export const sniffContentType = (bytes: Buffer): AttachmentContentType | undefined => {
   if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
   if (startsWith(bytes, [0xff, 0xd8, 0xff])) return "image/jpeg";
   if (startsWith(bytes, "RIFF") && startsWith(bytes, "WEBP", 8)) return "image/webp";
+  if (startsWith(bytes, "ftyp", 4) && HEIC_BRANDS.some((brand) => startsWith(bytes, brand, 8))) {
+    return "image/heic";
+  }
   if (startsWith(bytes, "%PDF-")) return "application/pdf";
   return undefined;
 };
@@ -69,11 +79,11 @@ const processPdf = (bytes: Buffer): ProcessedAttachment => {
   return { ok: true, bytes, contentType: "application/pdf", width: null, height: null };
 };
 
-const processImage = async (bytes: Buffer): Promise<ProcessedAttachment> => {
+const toJpeg = async (input: Sharp): Promise<ProcessedAttachment> => {
   try {
     // `rotate()` bakes the EXIF orientation in before the metadata is dropped;
     // sharp strips EXIF, ICC and XMP unless asked to keep them.
-    const { data, info } = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS })
+    const { data, info } = await input
       .rotate()
       .resize({
         width: MAX_IMAGE_EDGE_PX,
@@ -95,6 +105,18 @@ const processImage = async (bytes: Buffer): Promise<ProcessedAttachment> => {
   }
 };
 
+const processImage = (bytes: Buffer) =>
+  toJpeg(sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }));
+
+// libheif applies the file's rotation and mirroring itself, so the bitmap
+// arrives upright and carries no metadata for sharp to strip.
+const processHeic = async (bytes: Buffer): Promise<ProcessedAttachment> => {
+  const decoded = await decodeHeic(bytes, MAX_INPUT_PIXELS).catch(() => undefined);
+  if (!decoded) return { ok: false, reason: AttachmentRejectionReason.ImageUnreadable };
+  const { data, width, height } = decoded;
+  return toJpeg(sharp(data, { raw: { width, height, channels: 4 } }));
+};
+
 /**
  * Bytes and a claimed type in, bytes and a verdict out. Shared by the disk
  * store and the `attachment-processor` Lambda (docs/adr/0003), so it touches
@@ -107,5 +129,6 @@ export const processAttachment = async (
   if (sniffContentType(bytes) !== claimedType) {
     return { ok: false, reason: AttachmentRejectionReason.TypeMismatch };
   }
-  return claimedType === "application/pdf" ? processPdf(bytes) : processImage(bytes);
+  if (claimedType === "application/pdf") return processPdf(bytes);
+  return claimedType === "image/heic" ? processHeic(bytes) : processImage(bytes);
 };

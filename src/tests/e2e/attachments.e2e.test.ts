@@ -102,6 +102,20 @@ describe("Attachments E2E", () => {
     return { attachmentId: created.body.attachment.id as string, settled: uploaded.body };
   };
 
+  /** Fetches a signed download link's bytes, session-less like the browser would. */
+  const downloadBytes = (link: string) => {
+    const url = new URL(link);
+    return request(context.app)
+      .get(url.pathname + url.search)
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+  };
+
   const detail = (cookie: string, vacationId: string) =>
     request(context.app).get(`/api/vacation/${vacationId}`).set("Cookie", cookie);
 
@@ -290,21 +304,64 @@ describe("Attachments E2E", () => {
         contentType: "image/jpeg",
       });
 
-      const url = new URL(link.body.url as string);
-      const bytes = await request(context.app)
-        .get(url.pathname + url.search)
-        .buffer(true)
-        .parse((res, done) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () => done(null, Buffer.concat(chunks)));
-        })
-        .expect(200);
+      const bytes = await downloadBytes(link.body.url as string);
       expect(bytes.headers["content-type"]).toBe("image/jpeg");
       expect(bytes.headers["content-disposition"]).toBe(
         `inline; filename="note.jpg"; filename*=UTF-8''note.jpg`
       );
       expect(sniffContentType(bytes.body as Buffer)).toBe("image/jpeg");
+    });
+
+    it("turns a HEIC into a READY JPEG whose download name ends in .jpg", async () => {
+      const { requestId, vacationId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const heic = fixture("oversized-exif.heic");
+
+      const { attachmentId, settled } = await createAndUpload(
+        cookie,
+        { requestId, fileName: "IMG_0001.HEIC", contentType: "image/heic", size: heic.length },
+        heic
+      );
+      expect(settled).toEqual({
+        id: attachmentId,
+        status: AttachmentStatus.Ready,
+        rejectionReason: null,
+      });
+
+      const shown = await detail(cookie, vacationId).expect(200);
+      expect(shown.body.attachments[0]).toMatchObject({
+        id: attachmentId,
+        fileName: "IMG_0001.HEIC",
+        contentType: "image/jpeg",
+        status: AttachmentStatus.Ready,
+      });
+
+      const link = await request(context.app)
+        .get(`/api/attachments/${attachmentId}/download-url`)
+        .set("Cookie", cookie)
+        .expect(200);
+      expect(link.body).toMatchObject({ fileName: "IMG_0001.jpg", contentType: "image/jpeg" });
+
+      const bytes = await downloadBytes(link.body.url as string);
+      expect(bytes.headers["content-type"]).toBe("image/jpeg");
+      expect(sniffContentType(bytes.body as Buffer)).toBe("image/jpeg");
+      expect((bytes.body as Buffer).length).toBeLessThan(heic.length * 4);
+    });
+
+    it("rejects a HEIC that will not decode as unreadable", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user2.id);
+      const heic = fixture("oversized-exif.heic").subarray(0, 4096);
+
+      const { settled } = await createAndUpload(
+        cookie,
+        { requestId, fileName: "IMG_0002.heic", contentType: "image/heic", size: heic.length },
+        heic
+      );
+      expect(settled).toMatchObject({
+        status: AttachmentStatus.Rejected,
+        rejectionReason: AttachmentRejectionReason.ImageUnreadable,
+      });
     });
 
     it("honours the attachment disposition on the download URL", async () => {

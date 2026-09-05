@@ -65,6 +65,7 @@ export const localAttachmentRouter = (): Router => {
    *         image/png: {}
    *         image/jpeg: {}
    *         image/webp: {}
+   *         image/heic: {}
    *         application/pdf: {}
    *     responses:
    *       '200':
