@@ -2,8 +2,9 @@
 
 `terraform/` defines everything Flexi Day runs on in AWS: the App Runner service, RDS Postgres, the
 VPC around it, the Route 53 records for `api.flexi-day.com`, the Secrets Manager entries App Runner
-injects, and the IAM roles tying them together. Nothing here was clicked together in the console, so
-an infrastructure change that skips these files never reaches production.
+injects, the attachments bucket with the Lambda that checks uploads, and the IAM roles tying them
+together. Nothing here was clicked together in the console, so an infrastructure change that skips
+these files never reaches production.
 
 State is a local file, `terraform/terraform.tfstate`, gitignored, with no S3 backend. It lives on one
 machine and plans only run from that checkout.
@@ -77,11 +78,23 @@ only needs its own `Name` tag.
 
 ## Attachments: bucket, Lambda and CD
 
-`attachments.tf` holds the upload pipeline of ADR 0003: the private bucket, the
-`attachment-processor` Lambda with its role, the S3 notification on `incoming/`, and the policy
-that lets the CD role update the Lambda's code. The callback secret sits in `secrets.tf` beside the
-others and reaches App Runner as `ATTACHMENTS_CALLBACK_SECRET` and the Lambda as an ARN it reads at
-cold start.
+`attachments.tf` holds the upload pipeline of ADR 0003. The bucket is private: public access
+blocked, ACLs disabled through `BucketOwnerEnforced`, SSE-S3 by default. Terraform sets nothing on
+versioning, so it stays at S3's default, off. The lifecycle rules back up the API's nightly sweep
+rather than replace it. Objects under `incoming/` expire after a day. Everything else expires
+fourteen months after upload, which lands past the sweep's twelve months from the Request's last day
+for any Request booked less than two months ahead. CORS allows GET and POST from `trusted_origins`,
+because both presigned requests run in the browser.
+
+The `attachment-processor` Lambda has a role of its own: get and delete under `incoming/`, put
+anywhere except `incoming/`, read the callback secret, write its log group. The S3 notification on
+`incoming/` invokes it, and `aws_lambda_permission` lets the bucket do so. The App Runner instance
+role gets `apprunner_attachments`, a policy of its own as the IAM section above asks: put under
+`incoming/` for the presigned upload, get and delete on the whole bucket for downloads and removals.
+The callback secret sits in `secrets.tf` beside the others. App Runner receives it as
+`ATTACHMENTS_CALLBACK_SECRET`; the Lambda receives its ARN and reads the value once per container.
+`apprunner.tf` also carries `ATTACHMENTS_BUCKET`, which `config.ts` requires in production and uses
+to select the S3 store.
 
 Terraform creates the function with a placeholder zip and ignores its code from then on. The code
 ships from `cd.yml`: `npm run lambda:build` bundles `src/lambda/attachmentProcessor` with the shared
