@@ -244,6 +244,17 @@ export const postVacationBulk = async (
   return inserted;
 };
 
+/** Every day row of one Request, cancelled ones included, oldest day first. */
+export const getVacationsByRequestId = async (
+  requestId: string,
+  tx?: DbTransaction
+): Promise<VacationType[]> =>
+  (tx ?? db)
+    .select()
+    .from(vacation)
+    .where(eq(vacation.requestId, requestId))
+    .orderBy(asc(vacation.requestedDay));
+
 /**
  * The workflow's state machine. Cancellation deliberately does NOT use it:
  * plans change, and an approved request must stay cancellable.

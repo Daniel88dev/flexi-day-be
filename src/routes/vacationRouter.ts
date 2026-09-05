@@ -146,6 +146,13 @@ export const vacationRouter = (): Router => {
    *       rejected, cancelled, updated), and the actions this caller may take
    *       (`canApprove`, `canCancel`, `canEdit`). Cancelled requests remain
    *       retrievable so the timeline can explain what happened to them.
+   *
+   *       For the record owner, the group's approvers and its group and
+   *       organization admins the payload also carries `attachments` (every
+   *       live attachment of the Request, any status) and `canAttach`, which is
+   *       true only when the caller may add one, the plan allows uploads and
+   *       the Request has a free slot. A member with view access only gets
+   *       neither field.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -158,6 +165,19 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: The vacation, its history and the caller's permissions
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 attachments:
+   *                   type: array
+   *                   description: Present only for the owner, approvers and admins.
+   *                   items:
+   *                     $ref: '#/components/schemas/Attachment'
+   *                 canAttach:
+   *                   type: boolean
+   *                   description: Present only for the owner, approvers and admins.
    *       '403':
    *         description: Not allowed to view this vacation
    *       '404':

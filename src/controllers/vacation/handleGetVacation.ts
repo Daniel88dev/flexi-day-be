@@ -5,6 +5,31 @@ import AppError from "../../utils/appError.js";
 import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
 import { getVacationDetailById } from "../../services/vacation/vacationServices.js";
 import { getVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
+import {
+  holdsAttachmentSlot,
+  listAttachmentsForRequest,
+} from "../../services/attachment/attachmentServices.js";
+import { MAX_ATTACHMENTS_PER_REQUEST } from "../../services/attachment/types.js";
+import { isAttachmentUploadAvailable } from "../../services/billing/guards.js";
+import { getGroup } from "../../services/group/groupServices.js";
+import type { VacationDetail } from "../../services/vacation/types.js";
+import type { VacationPermissions } from "../../services/vacation/vacationPermissions.js";
+
+/**
+ * The Request's attachments and whether this caller may add one right now:
+ * standing, plan and the per-request cap together, so the client never offers
+ * an upload the create endpoint would refuse.
+ */
+const attachmentsFor = async (detail: VacationDetail, permissions: VacationPermissions) => {
+  const attachments = await listAttachmentsForRequest(detail.requestId);
+  const slotsUsed = attachments.filter((a) => holdsAttachmentSlot(a.status)).length;
+  const group = permissions.canAttach ? await getGroup(detail.groupId) : undefined;
+  const uploadsAvailable = group ? await isAttachmentUploadAvailable(group.organizationId) : false;
+  return {
+    attachments,
+    canAttach: permissions.canAttach && uploadsAvailable && slotsUsed < MAX_ATTACHMENTS_PER_REQUEST,
+  };
+};
 
 /**
  * One request with its full audit trail — who asked, who decided, who
@@ -38,11 +63,17 @@ export const handleGetVacation = async (req: Request, res: Response) => {
 
   const history = await getVacationEvents(vacationId);
 
+  // Absent, not empty, for a view-only member: they may see the day, not the file.
+  const attachmentFields = permissions.canViewAttachments
+    ? await attachmentsFor(detail, permissions)
+    : {};
+
   return res.status(200).json({
     ...detail,
     canApprove: permissions.canApprove,
     canCancel: permissions.canCancel,
     canEdit: permissions.canEdit,
     history,
+    ...attachmentFields,
   });
 };

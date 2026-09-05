@@ -12,6 +12,7 @@ import { organizations } from "../../../db/schema/organization-schema.js";
 import { subscriptions } from "../../../db/schema/subscription-schema.js";
 import { paddleEvents } from "../../../db/schema/paddle-event-schema.js";
 import { supportAccess } from "../../../db/schema/support-access-schema.js";
+import { attachments } from "../../../db/schema/attachment-schema.js";
 import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 export interface TestUser {
@@ -128,6 +129,7 @@ export async function setupTestEnvironment(): Promise<TestContext> {
 export async function cleanupTestData() {
   try {
     // Delete in correct order due to foreign key constraints
+    await db.delete(attachments);
     await db.delete(vacation);
     await db.delete(groupUsers);
     await db.delete(session);

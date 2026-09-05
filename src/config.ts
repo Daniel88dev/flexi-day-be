@@ -1,4 +1,6 @@
 import dotenv from "dotenv";
+import os from "node:os";
+import path from "node:path";
 dotenv.config();
 
 type APIConfig = { port: number; env: "production" | "dev" | "test" };
@@ -61,6 +63,12 @@ type SupportConfig = {
   userIds: string[];
 };
 
+type AttachmentsConfig = {
+  /** S3 bucket for attachment bytes. Unset means the disk store serves them from `localDir`. */
+  bucket?: string;
+  localDir: string;
+};
+
 type DevToolsConfig = {
   /** Shared secret every `/api/dev/*` request must present as `x-dev-token`. */
   token: string;
@@ -80,6 +88,7 @@ type Config = {
   dev?: DevToolsConfig;
   /** Platform-support read surface. `undefined` means the routes do not exist. */
   support?: SupportConfig;
+  attachments: AttachmentsConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -230,6 +239,23 @@ const parseSupport = (): SupportConfig | undefined => {
   return { userIds };
 };
 
+/**
+ * The disk store is a development stand-in: per-instance, ephemeral, and it
+ * mounts session-less upload and download routes. Production must name a
+ * bucket, so a deploy without one fails at boot rather than losing files.
+ */
+const parseAttachments = (): AttachmentsConfig => {
+  const bucket = process.env.ATTACHMENTS_BUCKET || undefined;
+  if (environment === "production" && !bucket) {
+    throw new Error("ATTACHMENTS_BUCKET is required when NODE_ENV=production");
+  }
+  return {
+    bucket,
+    localDir:
+      process.env.ATTACHMENTS_DIR || path.join(os.tmpdir(), "flexi-day-attachments", environment),
+  };
+};
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -280,6 +306,7 @@ export const config: Config = {
   paddle: parsePaddle(),
   dev: parseDevTools(),
   support: parseSupport(),
+  attachments: parseAttachments(),
 };
 
 export type { PaddleConfig };

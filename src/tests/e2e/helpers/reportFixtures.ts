@@ -13,6 +13,7 @@ import { notifications } from "../../../db/schema/notification-schema.js";
 import { session } from "../../../db/schema/auth-schema.js";
 import { organizations } from "../../../db/schema/organization-schema.js";
 import { subscriptions } from "../../../db/schema/subscription-schema.js";
+import { attachments } from "../../../db/schema/attachment-schema.js";
 import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 /**
@@ -187,6 +188,7 @@ export async function addChange(
  */
 export async function resetReportData(): Promise<void> {
   await db.delete(reportExports);
+  await db.delete(attachments);
   await db.delete(changesSchema);
   await db.delete(vacationEvents);
   await db.delete(vacation);

@@ -82,6 +82,49 @@ describe("vacationPermissions", () => {
     });
   });
 
+  describe("attachment permissions", () => {
+    it("lets the owner see and add attachments while the record is live and undecided against", async () => {
+      const live = await resolveVacationPermissions(userId, liveRow);
+      const cancelled = await resolveVacationPermissions(userId, {
+        ...liveRow,
+        deletedAt: new Date("2026-08-01T00:00:00Z"),
+      });
+
+      expect(live).toMatchObject({ canViewAttachments: true, canAttach: true });
+      expect(cancelled).toMatchObject({ canViewAttachments: true, canAttach: false });
+    });
+
+    it("lets an approver see attachments but not add them", async () => {
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue([groupId]);
+
+      const permissions = await resolveVacationPermissions("someone_else", liveRow);
+
+      expect(permissions).toMatchObject({ canViewAttachments: true, canAttach: false });
+    });
+
+    it("lets an admin see and add attachments while the record is editable", async () => {
+      mockResolveGroupAdmin.mockResolvedValue({ canAdmin: true, viaOrgAdmin: false });
+
+      const live = await resolveVacationPermissions("someone_else", liveRow);
+      const rejected = await resolveVacationPermissions("someone_else", {
+        ...liveRow,
+        rejectedAt: new Date("2026-08-01T00:00:00Z"),
+      });
+
+      expect(live).toMatchObject({ canViewAttachments: true, canAttach: true });
+      expect(rejected).toMatchObject({ canViewAttachments: true, canAttach: false });
+    });
+
+    it("keeps a view-only member away from attachments", async () => {
+      mockGetGroupUser.mockResolvedValue({ viewAccess: true, adminAccess: false });
+
+      const permissions = await resolveVacationPermissions("someone_else", liveRow);
+
+      expect(permissions.canView).toBe(true);
+      expect(permissions).toMatchObject({ canViewAttachments: false, canAttach: false });
+    });
+  });
+
   describe("resolveCanApproveForList", () => {
     it("reads an absent soft-delete stamp as live", async () => {
       mockGetGroupsWhereUserCanApprove.mockResolvedValue([groupId]);

@@ -70,6 +70,8 @@ describe("support surface data invariants", () => {
     const row = detail!.vacations[0] as unknown as Record<string, unknown>;
     expect(row).not.toHaveProperty("note");
     expect(row).not.toHaveProperty("rejectionReason");
+    expect(row).not.toHaveProperty("attachments");
+    expect(row).not.toHaveProperty("canAttach");
     // The state timestamps themselves must survive — they are the point.
     expect(row.rejectedAt).toBeTruthy();
   });

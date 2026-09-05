@@ -36,6 +36,9 @@ import { billingRouter } from "./routes/billingRouter.js";
 import { organizationRouter } from "./routes/organizationRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
 import { supportRouter } from "./routes/supportRouter.js";
+import { attachmentRouter } from "./routes/attachmentRouter.js";
+import { localAttachmentRouter } from "./routes/localAttachmentRouter.js";
+import { isDiskAttachmentStore } from "./services/attachment/attachmentStore.js";
 
 export const createServer = () => {
   const app = express();
@@ -87,6 +90,13 @@ export const createServer = () => {
     app.use("/api/dev", devRouter());
   }
 
+  // The disk store's upload and download routes stand in for S3's presigned
+  // URLs, so like those they are authorized by signature, not session. With a
+  // bucket configured they do not exist.
+  if (isDiskAttachmentStore) {
+    app.use("/api/attachments/local", localAttachmentRouter());
+  }
+
   // Everything below is the authenticated API; `/api/auth` and `/api/dev` are
   // already handled above, so this never double-counts them. The order is the
   // point: a cheap per-IP bound on rejected requests, then session validation,
@@ -105,6 +115,7 @@ export const createServer = () => {
   app.use("/api/reports", reportRouter());
   app.use("/api/billing", billingRouter());
   app.use("/api/organization", organizationRouter());
+  app.use("/api/attachments", attachmentRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
   // deploy explicitly carries an allowlist, so for everyone else these routes

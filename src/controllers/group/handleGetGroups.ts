@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { resolveOrganizationBadges } from "../../services/organization/organizationBadge.js";
+import { isAttachmentUploadAvailable } from "../../services/billing/guards.js";
 import { getAllGroups } from "../../services/group/groupServices.js";
 import {
   countMembersByGroup,
@@ -23,10 +24,15 @@ export const handleGetGroups = async (req: Request, res: Response) => {
 
   const result = await getAllGroups(groupIds);
 
-  const [badges, memberCounts] = await Promise.all([
-    resolveOrganizationBadges(result.map((group) => group.organizationId)),
+  const organizationIds = [...new Set(result.map((group) => group.organizationId))];
+  const [badges, memberCounts, uploads] = await Promise.all([
+    resolveOrganizationBadges(organizationIds),
     countMembersByGroup(groupIds),
+    Promise.all(
+      organizationIds.map(async (id) => [id, await isAttachmentUploadAvailable(id)] as const)
+    ),
   ]);
+  const uploadsByOrganization = new Map(uploads);
 
   return res.status(200).json(
     result.map((group) => {
@@ -35,6 +41,7 @@ export const handleGetGroups = async (req: Request, res: Response) => {
         ...group,
         organization: badges.get(group.organizationId) ?? null,
         memberCount: memberCounts.get(group.id) ?? 0,
+        uploadsAvailable: uploadsByOrganization.get(group.organizationId) ?? false,
         membership: {
           adminAccess: membership?.adminAccess ?? false,
           approverAccess: membership?.approverAccess ?? false,

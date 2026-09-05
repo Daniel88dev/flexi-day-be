@@ -14,6 +14,10 @@ export type VacationPermissions = {
   canCancel: boolean;
   /** May edit its per-day fields — group or organization admins only. */
   canEdit: boolean;
+  /** May see and fetch the Request's attachments — owner, approvers and admins, not view-only members. */
+  canViewAttachments: boolean;
+  /** May add an attachment to the Request — the owner or an admin, while it is neither cancelled nor rejected. Plan and count apply on top. */
+  canAttach: boolean;
 };
 
 /**
@@ -44,11 +48,15 @@ export const resolveVacationPermissions = async (
   const ownAllowed =
     isOwner && isApprover ? await mayDecideOwn(userId, vacationRow.groupId, tx) : false;
 
+  const canEdit = canAdmin && !isCancelled && vacationRow.rejectedAt === null;
+
   return {
     canView: isOwner || isApprover || canAdmin || (membership?.viewAccess ?? false),
     canApprove: isApprover && isDecidable && (!isOwner || ownAllowed),
     canCancel: !isCancelled && (isOwner || canAdmin || isApprover),
-    canEdit: canAdmin && !isCancelled && vacationRow.rejectedAt === null,
+    canEdit,
+    canViewAttachments: isOwner || isApprover || canAdmin,
+    canAttach: (isOwner && !isCancelled && vacationRow.rejectedAt === null) || canEdit,
   };
 };
 
