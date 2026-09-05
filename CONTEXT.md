@@ -20,6 +20,8 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Sick day benefit**     | Paid-plan organization toggle that makes Sick day a requestable, metered type — see [`docs/calendar-record-types.md`](docs/calendar-record-types.md).                                                   |
 | **Mirror**               | A read-side projection of a user's records from one group into another.                                                                                                                                 |
 | **Invite link**          | Single-use code binding one email address to one group.                                                                                                                                                 |
+| **Request**              | The set of Vacation rows created by one submission, sharing a `request_id`. Attachments and retention hang off it, not the day.                                                                         |
+| **Attachment**           | An image or PDF bound to one Request. Seen by the record owner, the group's approvers and group admins; nobody else.                                                                                    |
 | **Live row**             | A vacation row a reader returned under `deleted_at IS NULL`. `LiveVacationType` is its type.                                                                                                            |
 
 ## Vacation workflow

@@ -222,6 +222,40 @@ describe("handlePostVacation", () => {
     expect(mockPostVacationBulk).not.toHaveBeenCalled();
   });
 
+  it("stamps every row of a request with one request id, fresh per request", async () => {
+    let counter = 0;
+    vi.mocked(generateRandomUUID).mockImplementation(() => `uuid_${(++counter).toString()}`);
+    mockGetGroupUser.mockResolvedValue({
+      userId: "user_123",
+      groupId: "group_123",
+      controlledUser: true,
+    });
+    mockPostVacationBulk.mockImplementation(async (records: unknown[]) => records);
+    mockGetApprovalUsers.mockResolvedValue(null);
+
+    const range = { from: new Date("2024-03-14T00:00:00Z"), to: new Date("2024-03-16T00:00:00Z") };
+    const first = makeReqRes({ body: baseBody(range) });
+    await handlePostVacation(first.req, first.res);
+    const second = makeReqRes({ body: baseBody(range) });
+    await handlePostVacation(second.req, second.res);
+
+    type Stamped = { id: string; requestId: string }[];
+    const [firstRows] = mockPostVacationBulk.mock.calls[0] as [Stamped, unknown];
+    const [secondRows] = mockPostVacationBulk.mock.calls[1] as [Stamped, unknown];
+
+    expect(firstRows).toHaveLength(3);
+    const firstIds = new Set(firstRows.map((r) => r.requestId));
+    expect(firstIds.size).toBe(1);
+    const [firstRequestId] = firstIds;
+    expect(firstRequestId).toMatch(/^uuid_\d+$/);
+    // The request id is its own id, not borrowed from one of the day rows.
+    expect(firstRows.map((r) => r.id)).not.toContain(firstRequestId);
+
+    const secondIds = new Set(secondRows.map((r) => r.requestId));
+    expect(secondIds.size).toBe(1);
+    expect(secondIds).not.toEqual(firstIds);
+  });
+
   it("should propagate conflict errors from postVacationBulk", async () => {
     const { req, res } = makeReqRes({ body: baseBody() });
 

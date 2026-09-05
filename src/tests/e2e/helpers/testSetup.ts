@@ -157,6 +157,7 @@ export async function createTestVacation(userId: string, groupId: string, reques
     id: vacationId,
     userId,
     groupId,
+    requestId: uuidv4(),
     requestedDay,
     createdAt: new Date(),
     updatedAt: new Date(),

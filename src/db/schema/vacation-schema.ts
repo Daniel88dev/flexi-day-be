@@ -39,6 +39,8 @@ export const vacation = pgTable(
     groupId: text("group_id")
       .notNull()
       .references(() => groups.id, { onDelete: "cascade" }),
+    // Shared by every day row of one submission — the Request in CONTEXT.md.
+    requestId: text("request_id").notNull(),
     requestedDay: date("requested_day").notNull(),
     startTime: time("start_time"),
     endTime: time("end_time"),
@@ -77,6 +79,7 @@ export const vacation = pgTable(
   },
   (table) => [
     index("requested_day_idx").on(table.requestedDay),
+    index("vacation_request_id_idx").on(table.requestId),
     // Partial on purpose: only a live row reserves the day. Cancelled
     // (`deletedAt`) and rejected rows stay for history and must not stop the
     // user from booking that day again. Every ON CONFLICT against this index

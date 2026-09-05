@@ -53,6 +53,7 @@ describe("Calendar feed E2E", () => {
       id: uuidv4(),
       userId: context.user1.id,
       groupId: context.group.id,
+      requestId: uuidv4(),
       requestedDay: vacationDay,
       vacationType: CalendarRecordType.Vacation,
       approvedAt: new Date(),

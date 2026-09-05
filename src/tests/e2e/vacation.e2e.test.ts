@@ -598,6 +598,74 @@ describe("Vacation API E2E Tests", () => {
     });
   });
 
+  describe("Request id", () => {
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    const expectAllStamped = (rows: { requestId: string }[], requestId: string) => {
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row.requestId).toBe(requestId);
+    };
+
+    it("stamps every day of a range with one request id and exposes it on list and detail", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      const response = await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: MON, to: FRI })
+        .expect(201);
+
+      expect(response.body).toHaveLength(5);
+      const requestId: string = response.body[0].requestId;
+      expect(requestId).toMatch(UUID);
+      expectAllStamped(response.body, requestId);
+      for (const row of response.body as { id: string }[]) expect(row.id).not.toBe(requestId);
+
+      const [year, month] = MON.split("-").map(Number);
+      const list = await request(context.app)
+        .get("/api/vacation")
+        .set("Cookie", cookie)
+        .query({ year, month })
+        .expect(200);
+      expect(list.body).toHaveLength(5);
+      expectAllStamped(list.body, requestId);
+
+      const groupList = await request(context.app)
+        .get("/api/vacation")
+        .set("Cookie", cookie)
+        .query({ year, month, groupId: context.group.id })
+        .expect(200);
+      expect(groupList.body).toHaveLength(5);
+      expectAllStamped(groupList.body, requestId);
+
+      const detail = await request(context.app)
+        .get(`/api/vacation/${response.body[2].id as string}`)
+        .set("Cookie", cookie)
+        .expect(200);
+      expect(detail.body.requestId).toBe(requestId);
+    });
+
+    it("gives two separate submissions different request ids", async () => {
+      await addToGroup(context.user1.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      const first = await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: WED, to: WED })
+        .expect(201);
+      const second = await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: FRI, to: FRI })
+        .expect(201);
+
+      expect(first.body[0].requestId).toMatch(UUID);
+      expect(second.body[0].requestId).toMatch(UUID);
+      expect(second.body[0].requestId).not.toBe(first.body[0].requestId);
+    });
+  });
+
   describe("POST /api/vacation/approve/:id", () => {
     let vacationId: string;
 

@@ -136,6 +136,7 @@ export async function addLeave(
     id,
     userId,
     groupId,
+    requestId: uuidv4(),
     requestedDay,
     vacationType: options.type ?? CalendarRecordType.Vacation,
     halfDay: options.halfDay ?? false,

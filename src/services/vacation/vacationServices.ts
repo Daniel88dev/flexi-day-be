@@ -53,6 +53,7 @@ const baseVacationSelection = {
   id: vacation.id,
   userId: vacation.userId,
   groupId: vacation.groupId,
+  requestId: vacation.requestId,
   requestedDay: vacation.requestedDay,
   startTime: vacation.startTime,
   endTime: vacation.endTime,

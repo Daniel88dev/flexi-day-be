@@ -147,10 +147,13 @@ export const handlePostVacation = async (req: Request, res: Response) => {
 
   const approvalStamp = data.autoApprove ? { approvedAt: new Date(), approvedBy: auth.userId } : {};
 
+  const requestId = generateRandomUUID();
+
   const records = workingDays.map((day) => ({
     id: generateRandomUUID(),
     userId: targetUserId,
     groupId: data.groupId,
+    requestId,
     requestedDay: day,
     startTime: data.startTime,
     endTime: data.endTime,

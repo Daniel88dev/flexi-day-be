@@ -281,6 +281,12 @@ export const vacationRouter = (): Router => {
    *         groupId:
    *           type: string
    *           format: uuid
+   *         requestId:
+   *           type: string
+   *           format: uuid
+   *           description: |
+   *             Shared by every day row created in the same submission, so a
+   *             client can group a range back into one request.
    *         requestedDay:
    *           type: string
    *           format: date

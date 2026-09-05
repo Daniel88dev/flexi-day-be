@@ -196,6 +196,7 @@ export const addVacation = async (input: {
   type?: CalendarRecordType;
   actorUserId?: string;
   note?: string;
+  requestId?: string;
 }): Promise<string | undefined> => {
   const id = generateRandomUUID();
   const now = new Date();
@@ -206,6 +207,7 @@ export const addVacation = async (input: {
       id,
       userId: input.userId,
       groupId: input.groupId,
+      requestId: input.requestId ?? generateRandomUUID(),
       requestedDay: input.requestedDay,
       vacationType: input.type ?? CalendarRecordType.Vacation,
       note: input.note,

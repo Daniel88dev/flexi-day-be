@@ -54,6 +54,7 @@ describe("group mirroring", () => {
       id: uuidv4(),
       userId,
       groupId,
+      requestId: uuidv4(),
       requestedDay: day,
       vacationType: CalendarRecordType.Vacation,
       approvedAt: approved ? new Date() : null,

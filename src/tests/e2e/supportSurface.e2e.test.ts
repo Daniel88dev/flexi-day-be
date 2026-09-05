@@ -50,6 +50,7 @@ describe("support surface data invariants", () => {
       id: uuidv4(),
       userId: ownerId,
       groupId,
+      requestId: uuidv4(),
       requestedDay: "2026-08-03",
       note: "medical appointment",
       rejectedAt: new Date(),
