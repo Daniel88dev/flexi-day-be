@@ -187,9 +187,9 @@ resource "aws_secretsmanager_secret_version" "paddle_webhook_secret" {
 # read it from Secrets Manager. Rotate with
 # `terraform taint random_password.attachments_callback_secret` and an apply,
 # then `aws apprunner start-deployment`: App Runner resolves a secret at
-# deployment time and keeps the old value until then, while the Lambda picks
-# the new one up on its next cold start. Callbacks in between answer 401 and
-# are retried.
+# deployment time and keeps the old value until then. The Lambda re-reads the
+# secret whenever the API refuses a callback (401), so warm containers follow
+# on their next report; callbacks refused in between are retried.
 resource "random_password" "attachments_callback_secret" {
   length  = 64
   special = false

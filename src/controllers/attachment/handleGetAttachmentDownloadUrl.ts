@@ -59,6 +59,8 @@ export const handleGetAttachmentDownloadUrl = async (req: Request, res: Response
     disposition,
   });
 
+  // The URL is a bearer capability for a minute; nothing may keep a copy.
+  res.setHeader("Cache-Control", "no-store");
   return res.status(200).json({
     url,
     expiresAt,

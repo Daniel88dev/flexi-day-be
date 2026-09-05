@@ -364,6 +364,7 @@ describe("Attachments E2E", () => {
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", cookie)
         .expect(200);
+      expect(link.headers["cache-control"]).toBe("no-store");
       expect(link.body).toMatchObject({
         disposition: "inline",
         fileName: "note.jpg",
@@ -840,8 +841,12 @@ describe("Attachments E2E", () => {
       const downloaded = await downloadBytes(link.body.url as string);
       expect((downloaded.body as Buffer).equals(bytes)).toBe(true);
 
-      // A repeat delivery finds the row settled.
-      await signed(payload).expect(409);
+      // A repeat delivery finds the row settled, and learns how.
+      const repeat = await signed(payload).expect(409);
+      expect(repeat.body.errors[0].context).toEqual({
+        status: "READY",
+        contentType: "application/pdf",
+      });
     });
 
     it("moves the row to REJECTED with the reason, which the detail then shows", async () => {

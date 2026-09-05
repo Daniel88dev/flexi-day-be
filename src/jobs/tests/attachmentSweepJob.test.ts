@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const sweepMock = vi.fn();
+const { sweepMock } = vi.hoisted(() => ({ sweepMock: vi.fn() }));
 
 vi.mock("../../services/attachment/attachmentRetention.js", () => ({
   sweepAttachments: (now: Date) => sweepMock(now),

@@ -29,12 +29,17 @@ export type ObjectStore = {
   delete(key: string): Promise<void>;
 };
 
+/** How the API settled the row when a report finds it already settled. */
+export type SettledRow = { status: "READY" | "REJECTED"; contentType: string | null };
+
 /**
  * `applied` when the row moved on this report, `already` when an earlier
- * one moved it, `gone` when the API no longer has the row: it was deleted
- * while the bytes were in flight.
+ * one moved it (`row` says how; undefined when the reply did not say),
+ * `gone` when the API no longer has the row: it was deleted while the
+ * bytes were in flight.
  */
-export type NotifyResult = "applied" | "already" | "gone";
+export type NotifyResult =
+  { result: "applied" } | { result: "already"; row: SettledRow | undefined } | { result: "gone" };
 
 export type ProcessorDeps = {
   store: ObjectStore;
@@ -45,6 +50,21 @@ export type ProcessorDeps = {
 
 // S3 writes keys into events URL-encoded, with spaces as `+`.
 const decodeKey = (key: string): string => decodeURIComponent(key.replace(/\+/g, " "));
+
+/**
+ * Whether the final object must go. A row that is gone keeps no bytes. A row
+ * another delivery settled keeps bytes this one wrote only when it serves
+ * them: READY under the same type. The key had no earlier write, so that
+ * row can only have been settled on this object (a second post to the same
+ * form, processed in parallel). REJECTED, or READY under the other type,
+ * leaves the write an orphan. A write that was a no-op left the first object
+ * alone, and a reply that does not say how the row settled keeps it too.
+ */
+const orphaned = (reply: NotifyResult, contentType: string, written: boolean): boolean => {
+  if (reply.result === "gone") return true;
+  if (reply.result !== "already" || !written || !reply.row) return false;
+  return !(reply.row.status === "READY" && reply.row.contentType === contentType);
+};
 
 /**
  * What the disk store does in-process (`completeUpload`), split across the
@@ -99,15 +119,12 @@ export const createHandler = ({ store, notify, log = console.log }: ProcessorDep
     }
 
     const { outcome, written } = await check(object, storageKey);
-    const result = await notify({ attachmentId, ...outcome });
-    // A row that is gone must not keep bytes; neither may a row that settled
-    // on an earlier delivery keep bytes only this one wrote (a second post to
-    // the same form). A retry's no-op write leaves the first object alone.
-    if (outcome.status === "READY" && (result === "gone" || (result === "already" && written))) {
+    const reply = await notify({ attachmentId, ...outcome });
+    if (outcome.status === "READY" && orphaned(reply, outcome.contentType, written)) {
       await store.delete(finalStorageKey(storageKey, outcome.contentType));
     }
     await store.delete(key);
-    log("Attachment processed", { attachmentId, status: outcome.status, result });
+    log("Attachment processed", { attachmentId, status: outcome.status, result: reply.result });
   };
 
   return async (event: S3ObjectCreatedEvent): Promise<void> => {

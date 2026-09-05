@@ -11,6 +11,7 @@ import {
 import {
   countAttachmentSlotsUsed,
   createAttachment,
+  discardAttachment,
   lockRequestForAttachments,
   toAttachmentView,
 } from "../../services/attachment/attachmentServices.js";
@@ -133,12 +134,19 @@ export const handlePostAttachment = async (req: Request, res: Response) => {
     );
   });
 
-  const upload = await attachmentStore.createUploadTarget({
-    attachmentId: created.id,
-    contentType: created.contentType,
-    size: created.size,
-    storageKey: created.storageKey,
-  });
+  const upload = await attachmentStore
+    .createUploadTarget({
+      attachmentId: created.id,
+      contentType: created.contentType,
+      size: created.size,
+      storageKey: created.storageKey,
+    })
+    .catch(async (error: unknown) => {
+      // The row is committed but nobody can send it bytes; left alone it
+      // would hold a slot until the stale sweep.
+      await discardAttachment(created.id);
+      throw error;
+    });
 
   return res.status(201).json({ attachment: toAttachmentView(created), upload });
 };

@@ -133,10 +133,27 @@ describe("processAttachment", () => {
 
   it.each([
     ["javascript.pdf", AttachmentRejectionReason.PdfJavaScript],
+    ["javascript-escaped.pdf", AttachmentRejectionReason.PdfJavaScript],
     ["launch.pdf", AttachmentRejectionReason.PdfLaunchAction],
     ["encrypted.pdf", AttachmentRejectionReason.PdfEncrypted],
   ])("rejects %s with %s", async (name, reason) => {
     const result = await processAttachment(fixture(name), "application/pdf");
+
+    expect(result).toEqual({ ok: false, reason });
+  });
+
+  it.each([
+    ["/J#61vaScript", AttachmentRejectionReason.PdfJavaScript],
+    ["/J#53", AttachmentRejectionReason.PdfJavaScript],
+    ["/L#61unch", AttachmentRejectionReason.PdfLaunchAction],
+    ["/Encr#79pt", AttachmentRejectionReason.PdfEncrypted],
+  ])("sees through a name spelled with #hh escapes: %s", async (name, reason) => {
+    const text = fixture("clean.pdf")
+      .toString("latin1")
+      .replace("/Type /Catalog", `/Type /Catalog /OpenAction << /S ${name} >>`);
+    expect(text).toContain(name);
+
+    const result = await processAttachment(Buffer.from(text, "latin1"), "application/pdf");
 
     expect(result).toEqual({ ok: false, reason });
   });

@@ -48,11 +48,15 @@ export const handleAttachmentProcessed = async (req: Request, res: Response) => 
     });
   }
   if (!result.changed) {
+    // How it settled is what the Lambda checks before it drops bytes it
+    // wrote: a parallel delivery may have settled the row on exactly those.
+    const { status, contentType } = result.attachment;
     throw new AppError({
       message: "Attachment has already been processed",
       logging: true,
       code: 409,
-      context: { attachmentId: payload.attachmentId, status: result.attachment.status },
+      context: { attachmentId: payload.attachmentId, status },
+      publicContext: { status, contentType },
     });
   }
 

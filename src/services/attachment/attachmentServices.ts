@@ -101,6 +101,15 @@ export const createAttachment = async (
   return row;
 };
 
+/** Drops a row that never got an upload target, so its slot is free again; only an UPLOADING row can go. */
+export const discardAttachment = async (attachmentId: string): Promise<void> => {
+  await db
+    .delete(attachments)
+    .where(
+      and(eq(attachments.id, attachmentId), eq(attachments.status, AttachmentStatus.Uploading))
+    );
+};
+
 /**
  * Locks the live row for the rest of the transaction, so a second delivery of
  * the same bytes, from the disk route or the Lambda, waits here, finds the row

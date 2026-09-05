@@ -85,7 +85,10 @@ export const attachmentCallbackRouter = (): Router => {
    *       '404':
    *         description: Attachment not found or deleted (`reason` is `ATTACHMENT_GONE`)
    *       '409':
-   *         description: The attachment was already processed
+   *         description: |
+   *           The attachment was already processed; `context` carries its
+   *           `status` and `contentType`, so the sender can tell whether the
+   *           bytes it wrote are the ones the row serves.
    *       '422':
    *         description: The body is not a valid report
    */

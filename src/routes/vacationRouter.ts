@@ -170,19 +170,84 @@ export const vacationRouter = (): Router => {
    *         content:
    *           application/json:
    *             schema:
-   *               type: object
-   *               properties:
-   *                 attachments:
-   *                   type: array
-   *                   description: Present only for the owner, approvers and admins.
-   *                   items:
-   *                     $ref: '#/components/schemas/Attachment'
-   *                 canAttach:
-   *                   type: boolean
-   *                   description: Present only for the owner, approvers and admins.
-   *                 canDeleteAnyAttachment:
-   *                   type: boolean
-   *                   description: Present only for the owner, approvers and admins; true for group and organization admins.
+   *               allOf:
+   *                 - $ref: '#/components/schemas/VacationListItem'
+   *                 - type: object
+   *                   properties:
+   *                     groupName:
+   *                       type: string
+   *                     approvedByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                     rejectedByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                     createdByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                       description: An admin when the request was booked on the member's behalf.
+   *                     deletedByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                     rangeStart:
+   *                       type: string
+   *                       format: date
+   *                       description: First day of the contiguous same-type run this row belongs to.
+   *                     rangeEnd:
+   *                       type: string
+   *                       format: date
+   *                     vacationIds:
+   *                       type: array
+   *                       description: Every day row of that run, this one included.
+   *                       items:
+   *                         type: string
+   *                         format: uuid
+   *                     canCancel:
+   *                       type: boolean
+   *                     canEdit:
+   *                       type: boolean
+   *                     history:
+   *                       type: array
+   *                       description: The append-only event timeline, oldest first.
+   *                       items:
+   *                         type: object
+   *                         properties:
+   *                           id:
+   *                             type: string
+   *                             format: uuid
+   *                           vacationId:
+   *                             type: string
+   *                             format: uuid
+   *                           eventType:
+   *                             type: string
+   *                             enum: [CREATED, APPROVED, REJECTED, CANCELLED, COMMENT, UPDATED]
+   *                           actorUserId:
+   *                             type: string
+   *                             nullable: true
+   *                           actorName:
+   *                             type: string
+   *                             nullable: true
+   *                           reason:
+   *                             type: string
+   *                             nullable: true
+   *                           createdAt:
+   *                             type: string
+   *                             format: date-time
+   *                     attachments:
+   *                       type: array
+   *                       description: Present only for the owner, approvers and admins.
+   *                       items:
+   *                         $ref: '#/components/schemas/Attachment'
+   *                     canAttach:
+   *                       type: boolean
+   *                       description: Present only for the owner, approvers and admins.
+   *                     canDeleteAnyAttachment:
+   *                       type: boolean
+   *                       description: Present only for the owner, approvers and admins; true for group and organization admins.
    *       '403':
    *         description: Not allowed to view this vacation
    *       '404':

@@ -76,8 +76,13 @@ const PDF_REJECTIONS: [RegExp, AttachmentRejectionReason][] = [
   [pdfMarker("Encrypt"), AttachmentRejectionReason.PdfEncrypted],
 ];
 
+// A name may spell any byte as `#hh` (`/J#61vaScript`) and readers honour
+// it, so the markers are matched against the decoded text.
+const decodePdfNames = (text: string): string =>
+  text.replace(/#([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+
 const processPdf = (bytes: Buffer): ProcessedAttachment => {
-  const text = bytes.toString("latin1");
+  const text = decodePdfNames(bytes.toString("latin1"));
   for (const [marker, reason] of PDF_REJECTIONS) {
     if (marker.test(text)) return { ok: false, reason };
   }

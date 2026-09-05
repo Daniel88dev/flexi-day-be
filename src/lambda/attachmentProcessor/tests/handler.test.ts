@@ -54,7 +54,7 @@ const upload = (name: string, contentType: string): IncomingObject => ({
 const run = async (
   objects: Record<string, IncomingObject>,
   key?: string,
-  result: NotifyResult = "applied",
+  result: NotifyResult = { result: "applied" },
   bucket = fakeStore(objects)
 ) => {
   const reports: AttachmentProcessedPayload[] = [];
@@ -151,29 +151,69 @@ describe("attachment-processor handler", () => {
     const { written, deleted } = await run(
       { [incoming]: upload("small.png", "image/png") },
       undefined,
-      "gone"
+      { result: "gone" }
     );
 
     expect(written[0]!.key).toBe(`${storageKey}.jpg`);
     expect(deleted).toEqual([`${storageKey}.jpg`, incoming]);
   });
 
-  it("drops a fresh write the API would not take, a second post onto a settled row", async () => {
+  const settledOn = (status: "READY" | "REJECTED", contentType: string | null): NotifyResult => ({
+    result: "already",
+    row: { status, contentType },
+  });
+
+  it("drops a fresh write onto a row settled REJECTED, a second post onto the same form", async () => {
     const { written, deleted } = await run(
       { [incoming]: upload("small.png", "image/png") },
       undefined,
-      "already"
+      settledOn("REJECTED", null)
     );
 
     expect(written[0]!.key).toBe(`${storageKey}.jpg`);
     expect(deleted).toEqual([`${storageKey}.jpg`, incoming]);
+  });
+
+  it("drops a fresh write under the other type when the row is READY under the first", async () => {
+    const { written, deleted } = await run(
+      { [incoming]: upload("small.png", "image/png") },
+      undefined,
+      settledOn("READY", "application/pdf")
+    );
+
+    expect(written[0]!.key).toBe(`${storageKey}.jpg`);
+    expect(deleted).toEqual([`${storageKey}.jpg`, incoming]);
+  });
+
+  it("keeps a fresh write that a parallel delivery settled the row READY on", async () => {
+    // Two posts to one form, processed side by side: the other delivery
+    // found this write in place, reported it, and won the row.
+    const { written, deleted } = await run(
+      { [incoming]: upload("small.png", "image/png") },
+      undefined,
+      settledOn("READY", "image/jpeg")
+    );
+
+    expect(written[0]!.key).toBe(`${storageKey}.jpg`);
+    expect(deleted).toEqual([incoming]);
+  });
+
+  it("keeps a fresh write when the 409 does not say how the row settled", async () => {
+    const { written, deleted } = await run(
+      { [incoming]: upload("small.png", "image/png") },
+      undefined,
+      { result: "already", row: undefined }
+    );
+
+    expect(written).toHaveLength(1);
+    expect(deleted).toEqual([incoming]);
   });
 
   it("keeps the first object when a retry's write was a no-op and the row is settled", async () => {
     const bucket = fakeStore({ [incoming]: upload("small.png", "image/png") });
     await bucket.store.put(`${storageKey}.jpg`, Buffer.from("first"), "image/jpeg");
 
-    const { written, deleted } = await run({}, undefined, "already", bucket);
+    const { written, deleted } = await run({}, undefined, settledOn("REJECTED", null), bucket);
 
     expect(written).toHaveLength(1);
     expect(written[0]!.bytes.toString()).toBe("first");
