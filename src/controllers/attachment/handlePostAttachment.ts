@@ -116,15 +116,17 @@ export const handlePostAttachment = async (req: Request, res: Response) => {
         fileName: data.fileName,
         contentType: data.contentType,
         size: data.size,
-        storageKey: `${group.organizationId}/${data.requestId}/${attachmentId}`,
+        storageKey: `${group.organizationId}/${record.userId}/${attachmentId}`,
       },
       tx
     );
   });
 
-  const upload = attachmentStore.createUploadTarget({
+  const upload = await attachmentStore.createUploadTarget({
     attachmentId: created.id,
     contentType: created.contentType,
+    size: created.size,
+    storageKey: created.storageKey,
   });
 
   return res.status(201).json({ attachment: toAttachmentView(created), upload });

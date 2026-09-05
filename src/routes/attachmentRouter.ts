@@ -23,7 +23,9 @@ export const attachmentRouter = (): Router => {
    *       land they are checked and the row becomes `READY` (images are
    *       rewritten to JPEG, at most 2048 px on the long edge, metadata
    *       stripped) or `REJECTED` with a `rejectionReason`. Poll the record
-   *       detail to see the outcome.
+   *       detail to see the outcome. In production the upload is accepted by
+   *       S3 and checked shortly after; locally the check happens before the
+   *       upload request returns.
    *
    *       Allowed for the record owner and anyone who may edit the record
    *       (group and organization admins). Requires a paid plan, grace
@@ -125,25 +127,47 @@ export const attachmentRouter = (): Router => {
    *           nullable: true
    *           description: Who deleted it; the uploader or a group or organization admin.
    *     UploadTarget:
-   *       type: object
    *       description: |
-   *         Send the file bytes here with the given method and headers and no
-   *         session. Locally this is the API's own route; in production it is a
-   *         presigned S3 request.
-   *       properties:
-   *         url:
-   *           type: string
-   *           format: uri
-   *         method:
-   *           type: string
-   *           enum: [PUT]
-   *         headers:
-   *           type: object
-   *           additionalProperties:
-   *             type: string
-   *         expiresAt:
-   *           type: string
-   *           format: date-time
+   *         Where to send the file bytes, with no session. In production it is
+   *         a presigned S3 POST: build a multipart form with every entry of
+   *         `fields` first and the file last, under the name `file`, and post
+   *         it to `url`; S3 answers 204. Locally it is the API's own route: PUT
+   *         the raw bytes to `url` with `headers`. Either way the target
+   *         expires at `expiresAt`, five minutes after it was issued.
+   *       oneOf:
+   *         - type: object
+   *           required: [url, method, fields, expiresAt]
+   *           properties:
+   *             url:
+   *               type: string
+   *               format: uri
+   *             method:
+   *               type: string
+   *               enum: [POST]
+   *             fields:
+   *               type: object
+   *               additionalProperties:
+   *                 type: string
+   *               description: Form fields the policy signs; send them all, unchanged, before the file.
+   *             expiresAt:
+   *               type: string
+   *               format: date-time
+   *         - type: object
+   *           required: [url, method, headers, expiresAt]
+   *           properties:
+   *             url:
+   *               type: string
+   *               format: uri
+   *             method:
+   *               type: string
+   *               enum: [PUT]
+   *             headers:
+   *               type: object
+   *               additionalProperties:
+   *                 type: string
+   *             expiresAt:
+   *               type: string
+   *               format: date-time
    */
   app.post("/", bodyValidationMiddleware(validatePostAttachment), tryCatch(handlePostAttachment));
 

@@ -30,6 +30,12 @@ import {
 import { MAX_ATTACHMENT_BYTES, type UploadTarget } from "../../services/attachment/types.js";
 import { attachmentStore } from "../../services/attachment/attachmentStore.js";
 import { sweepAttachments } from "../../services/attachment/attachmentRetention.js";
+import {
+  ATTACHMENT_SIGNATURE_HEADER,
+  signAttachmentCallback,
+} from "../../services/attachment/callbackSignature.js";
+import { finalStorageKey } from "../../services/attachment/s3Layout.js";
+import { config } from "../../config.js";
 
 const fixturesDir = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -94,6 +100,7 @@ describe("Attachments E2E", () => {
 
   /** Sends bytes to the target the create endpoint handed back, session-less like the browser would. */
   const upload = (target: UploadTarget, bytes: Buffer) => {
+    if (target.method !== "PUT") throw new Error("The disk store hands out PUT targets");
     const url = new URL(target.url);
     return request(context.app)
       .put(url.pathname + url.search)
@@ -690,6 +697,126 @@ describe("Attachments E2E", () => {
 
       expect((await detail(cookie, vacationId).expect(200)).body.canAttach).toBe(true);
       await create(cookie, pngBody(requestId)).expect(201);
+    });
+  });
+
+  describe("POST /api/attachments/processed", () => {
+    const secret = config.attachments.callbackSecret!;
+
+    const report = (payload: unknown, signature?: string) => {
+      const pending = request(context.app)
+        .post("/api/attachments/processed")
+        .set("Content-Type", "application/json");
+      if (signature !== undefined) pending.set(ATTACHMENT_SIGNATURE_HEADER, signature);
+      return pending.send(JSON.stringify(payload));
+    };
+
+    const signed = (payload: unknown) =>
+      report(payload, signAttachmentCallback(secret, JSON.stringify(payload)));
+
+    /** A row waiting for bytes, as the Lambda would find it. */
+    const pendingUpload = async (file?: Omit<ReturnType<typeof pngBody>, "requestId">) => {
+      const { requestId, vacationId } = await seedRequest(context.user2.id, context.group.id);
+      const created = await create(await authCookieFor(context.user2.id), {
+        ...pngBody(requestId),
+        ...file,
+      }).expect(201);
+      const attachmentId = created.body.attachment.id as string;
+      return { attachmentId, requestId, vacationId, row: (await rowFor(attachmentId))! };
+    };
+
+    it("refuses a missing or wrong signature and leaves the row waiting", async () => {
+      const { attachmentId } = await pendingUpload();
+      const payload = { attachmentId, status: "READY", contentType: "image/jpeg", size: 10 };
+      const body = JSON.stringify(payload);
+
+      await report(payload).expect(401);
+      await report(payload, signAttachmentCallback("another-secret", body)).expect(401);
+      // A signature over different bytes does not carry over either.
+      await report({ ...payload, size: 11 }, signAttachmentCallback(secret, body)).expect(401);
+
+      expect((await rowFor(attachmentId))!.status).toBe(AttachmentStatus.Uploading);
+    });
+
+    it("moves the row to READY under the final key, as the local path does, and the bytes then download", async () => {
+      const bytes = fixture("clean.pdf");
+      const { attachmentId, row } = await pendingUpload({
+        fileName: "note.pdf",
+        contentType: "application/pdf",
+        size: bytes.length,
+      });
+      const storageKey = finalStorageKey(row.storageKey, "application/pdf");
+      await attachmentStore.putObject(storageKey, bytes);
+      const payload = {
+        attachmentId,
+        status: "READY",
+        contentType: "application/pdf",
+        size: bytes.length,
+      };
+
+      const response = await signed(payload).expect(200);
+
+      expect(response.body).toEqual({
+        id: attachmentId,
+        status: AttachmentStatus.Ready,
+        rejectionReason: null,
+      });
+      expect(await rowFor(attachmentId)).toMatchObject({
+        status: AttachmentStatus.Ready,
+        contentType: "application/pdf",
+        size: bytes.length,
+        storageKey,
+      });
+
+      const link = await request(context.app)
+        .get(`/api/attachments/${attachmentId}/download-url`)
+        .set("Cookie", await authCookieFor(context.user2.id))
+        .expect(200);
+      expect(link.body.fileName).toBe("note.pdf");
+      const downloaded = await downloadBytes(link.body.url as string);
+      expect((downloaded.body as Buffer).equals(bytes)).toBe(true);
+
+      // A repeat delivery finds the row settled.
+      await signed(payload).expect(409);
+    });
+
+    it("moves the row to REJECTED with the reason, which the detail then shows", async () => {
+      const { attachmentId, vacationId } = await pendingUpload();
+
+      await signed({
+        attachmentId,
+        status: "REJECTED",
+        rejectionReason: AttachmentRejectionReason.PdfJavaScript,
+      }).expect(200);
+
+      expect(await rowFor(attachmentId)).toMatchObject({
+        status: AttachmentStatus.Rejected,
+        rejectionReason: AttachmentRejectionReason.PdfJavaScript,
+      });
+      const shown = await detail(await authCookieFor(context.user2.id), vacationId).expect(200);
+      expect(shown.body.attachments[0]).toMatchObject({
+        id: attachmentId,
+        status: AttachmentStatus.Rejected,
+        rejectionReason: AttachmentRejectionReason.PdfJavaScript,
+      });
+    });
+
+    it("answers 404 for an unknown or deleted row, 409 for a settled one and 422 for a malformed report", async () => {
+      const ready = { status: "READY", contentType: "image/jpeg", size: 1 };
+      await signed({ attachmentId: uuidv4(), ...ready }).expect(404);
+
+      const { attachmentId, requestId } = await pendingUpload();
+      await signed({ attachmentId, status: "DONE" }).expect(422);
+      await signed({ attachmentId, ...ready, contentType: "image/gif" }).expect(422);
+      await remove(await authCookieFor(context.user2.id), attachmentId).expect(200);
+      await signed({ attachmentId, ...ready }).expect(404);
+
+      const settled = await uploadedByOwner(requestId);
+      await signed({
+        attachmentId: settled.attachmentId,
+        status: "REJECTED",
+        rejectionReason: AttachmentRejectionReason.TypeMismatch,
+      }).expect(409);
     });
   });
 

@@ -3,7 +3,7 @@ import { db } from "../../db/db.js";
 import { logger } from "../../middleware/logger.js";
 import { attachments, AttachmentStatus } from "../../db/schema/attachment-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
-import { attachmentStore } from "./attachmentStore.js";
+import { deleteStoredBytes } from "./attachmentServices.js";
 import { ATTACHMENT_RETENTION_MONTHS, STALE_UPLOAD_MS } from "./types.js";
 
 export type AttachmentSweepResult = {
@@ -56,12 +56,16 @@ const stale = (now: Date): SQL =>
 const remove = async (attachmentId: string, qualifies: SQL): Promise<boolean> =>
   db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ id: attachments.id, storageKey: attachments.storageKey })
+      .select({
+        id: attachments.id,
+        storageKey: attachments.storageKey,
+        status: attachments.status,
+      })
       .from(attachments)
       .where(and(eq(attachments.id, attachmentId), qualifies))
       .for("update", { skipLocked: true });
     if (!row) return false;
-    await attachmentStore.deleteObject(row.storageKey);
+    await deleteStoredBytes(row);
     await tx.delete(attachments).where(eq(attachments.id, row.id));
     return true;
   });

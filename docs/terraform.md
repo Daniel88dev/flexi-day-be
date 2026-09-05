@@ -75,6 +75,30 @@ One file per area, listed in the header comment of `main.tf`. Add a file only fo
 area and update that list when you do. Tags come from `default_tags` in `provider.tf`, so a resource
 only needs its own `Name` tag.
 
+## Attachments: bucket, Lambda and CD
+
+`attachments.tf` holds the upload pipeline of ADR 0003: the private bucket, the
+`attachment-processor` Lambda with its role, the S3 notification on `incoming/`, and the policy
+that lets the CD role update the Lambda's code. The callback secret sits in `secrets.tf` beside the
+others and reaches App Runner as `ATTACHMENTS_CALLBACK_SECRET` and the Lambda as an ARN it reads at
+cold start.
+
+Terraform creates the function with a placeholder zip and ignores its code from then on. The code
+ships from `cd.yml`: `npm run lambda:build` bundles `src/lambda/attachmentProcessor` with the shared
+processor into `lambda/attachment-processor/attachment-processor.zip` (sharp and libheif-js
+installed for linux/x64 from that directory's own lockfile), and the `deploy-attachment-processor`
+job uploads it with `aws lambda update-function-code`. The job is skipped until the
+`ATTACHMENT_PROCESSOR_FUNCTION_NAME` repository variable exists, so the first rollout is: apply, run
+the `attachment_processor_cd_variable_command` output, then push or re-run the workflow.
+
+The CD role (`GitHubActionsECRPushRole`, behind the `AWS_ROLE_ARN` repository variable) predates
+Terraform. `github_actions_role_name` names it so the deploy policy can attach; Terraform never
+manages the role itself.
+
+Lambda runtimes are validated by the AWS provider against a fixed list, which is why the provider
+constraint is `~> 6.0`: `nodejs24.x` does not exist in 5.x. Bumping the constraint means
+`terraform init -upgrade` before the next plan.
+
 ## Before you plan
 
 - Applies belong to the user. Run `terraform fmt`, `terraform validate` and `terraform plan`, show

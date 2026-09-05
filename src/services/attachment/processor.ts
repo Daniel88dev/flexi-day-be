@@ -11,6 +11,11 @@ export const ATTACHMENT_CONTENT_TYPES = [
 
 export type AttachmentContentType = (typeof ATTACHMENT_CONTENT_TYPES)[number];
 
+/** What the store ends up holding: every image becomes a JPEG, a PDF stays a PDF. */
+export const STORED_CONTENT_TYPES = ["image/jpeg", "application/pdf"] as const;
+
+export type StoredContentType = (typeof STORED_CONTENT_TYPES)[number];
+
 export const MAX_IMAGE_EDGE_PX = 2048;
 
 // A decompression bomb is the one thing sharp will not refuse on its own.
@@ -28,7 +33,7 @@ export type ProcessedAttachment =
   | {
       ok: true;
       bytes: Buffer;
-      contentType: "image/jpeg" | "application/pdf";
+      contentType: StoredContentType;
       width: number | null;
       height: number | null;
     }

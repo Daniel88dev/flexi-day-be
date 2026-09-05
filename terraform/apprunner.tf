@@ -57,6 +57,11 @@ resource "aws_apprunner_service" "main" {
             EMAIL_FROM            = var.email_from
             EMAIL_TEMPLATE_STAGE  = var.environment == "production" ? "prod" : "dev"
             SES_CONFIGURATION_SET = var.environment == "production" ? "flexi-day-emails-production" : "flexi-day-emails-dev"
+
+            # Attachments (docs/adr/0003). The bucket selects the S3 store;
+            # the callback secret is injected below. Both are required, so
+            # the backend refuses to boot on a half-configured deploy.
+            ATTACHMENTS_BUCKET = aws_s3_bucket.attachments.bucket
           },
           # Google OAuth client id is public; only set when Google sign-in is
           # enabled. The matching client secret is injected below via Secrets
@@ -92,8 +97,9 @@ resource "aws_apprunner_service" "main" {
         # receives the referenced secret's full string value.
         runtime_environment_secrets = merge(
           {
-            DATABASE           = aws_secretsmanager_secret.database_url.arn
-            BETTER_AUTH_SECRET = aws_secretsmanager_secret.better_auth_secret.arn
+            DATABASE                    = aws_secretsmanager_secret.database_url.arn
+            BETTER_AUTH_SECRET          = aws_secretsmanager_secret.better_auth_secret.arn
+            ATTACHMENTS_CALLBACK_SECRET = aws_secretsmanager_secret.attachments_callback_secret.arn
           },
           var.google_client_id != "" ? {
             GOOGLE_CLIENT_SECRET = aws_secretsmanager_secret.google_client_secret[0].arn
@@ -136,6 +142,7 @@ resource "aws_apprunner_service" "main" {
     aws_secretsmanager_secret_version.microsoft_client_secret,
     aws_secretsmanager_secret_version.paddle_api_key,
     aws_secretsmanager_secret_version.paddle_webhook_secret,
+    aws_secretsmanager_secret_version.attachments_callback_secret,
     aws_iam_role_policy.apprunner_secrets,
     aws_db_instance.main
   ]

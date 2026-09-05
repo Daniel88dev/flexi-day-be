@@ -2,26 +2,13 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../../config.js";
-import type { AttachmentDisposition, UploadTarget } from "./types.js";
-
-/**
- * The store port. Production will hand bytes to S3 through presigned requests
- * (docs/adr/0003); until that adapter exists, every environment runs the disk
- * adapter below, which serves the same two URLs itself.
- */
-export type AttachmentStore = {
-  createUploadTarget(input: { attachmentId: string; contentType: string }): UploadTarget;
-  createDownloadUrl(input: { attachmentId: string; disposition: AttachmentDisposition }): {
-    url: string;
-    expiresAt: string;
-  };
-  putObject(key: string, bytes: Buffer): Promise<void>;
-  getObject(key: string): Promise<Buffer | undefined>;
-  deleteObject(key: string): Promise<void>;
-};
-
-export const UPLOAD_URL_TTL_MS = 15 * 60 * 1000;
-export const DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000;
+import { createS3AttachmentStore } from "./s3AttachmentStore.js";
+import {
+  DOWNLOAD_URL_TTL_MS,
+  UPLOAD_URL_TTL_MS,
+  type AttachmentDisposition,
+  type AttachmentStore,
+} from "./types.js";
 
 export type SignedLocalUrl = {
   attachmentId: string;
@@ -67,22 +54,23 @@ const keyToPath = (root: string, key: string): string => {
   return resolved;
 };
 
+/** The development stand-in: bytes on local disk, served by the API's own signed routes. */
 export const createDiskAttachmentStore = (root: string): AttachmentStore => ({
   createUploadTarget: ({ attachmentId, contentType }) => {
     const expires = Date.now() + UPLOAD_URL_TTL_MS;
-    return {
+    return Promise.resolve({
       url: localUrl({ purpose: "upload", attachmentId, expires }),
       method: "PUT",
       headers: { "Content-Type": contentType },
       expiresAt: new Date(expires).toISOString(),
-    };
+    });
   },
   createDownloadUrl: ({ attachmentId, disposition }) => {
     const expires = Date.now() + DOWNLOAD_URL_TTL_MS;
-    return {
+    return Promise.resolve({
       url: localUrl({ purpose: "download", attachmentId, expires, disposition }),
       expiresAt: new Date(expires).toISOString(),
-    };
+    });
   },
   putObject: async (key, bytes) => {
     const file = keyToPath(root, key);
@@ -102,12 +90,12 @@ export const createDiskAttachmentStore = (root: string): AttachmentStore => ({
   },
 });
 
-/** Disk unless a bucket is configured; the S3 adapter is a later ticket. */
+/** Disk unless a bucket is configured; the local routes exist only in that mode. */
 export const isDiskAttachmentStore = config.attachments.bucket === undefined;
 
-export const attachmentStore: AttachmentStore = (() => {
-  if (!isDiskAttachmentStore) {
-    throw new Error("ATTACHMENTS_BUCKET is set but the S3 attachment store is not implemented yet");
-  }
-  return createDiskAttachmentStore(config.attachments.localDir);
-})();
+export const attachmentStore: AttachmentStore = config.attachments.bucket
+  ? createS3AttachmentStore({
+      bucket: config.attachments.bucket,
+      region: config.attachments.region,
+    })
+  : createDiskAttachmentStore(config.attachments.localDir);

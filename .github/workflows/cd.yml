@@ -45,8 +45,10 @@ jobs:
       - name: Set image metadata
         id: meta
         run: |
-          echo "ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_OUTPUT
-          echo "IMAGE_TAG_SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          {
+            echo "ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}"
+            echo "IMAGE_TAG_SHA=${GITHUB_SHA::7}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Ensure ECR repository exists
         shell: bash
@@ -89,9 +91,11 @@ jobs:
              --metadata-file /tmp/build-metadata.json \
              --push .
 
-          echo "IMAGE_NAME=${IMAGE_URI}" >> $GITHUB_OUTPUT
-          echo "SHA_IMAGE_URI=${SHA_IMAGE_FULL_URI}" >> $GITHUB_OUTPUT
-          echo "IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' /tmp/build-metadata.json)" >> $GITHUB_OUTPUT
+          {
+            echo "IMAGE_NAME=${IMAGE_URI}"
+            echo "SHA_IMAGE_URI=${SHA_IMAGE_FULL_URI}"
+            echo "IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' /tmp/build-metadata.json)"
+          } >> "$GITHUB_OUTPUT"
 
       # Deliberately BEFORE the moving tag is promoted. `main`/`latest` is what
       # App Runner auto-deploys, so promoting first would let a failed attestation
@@ -128,3 +132,51 @@ jobs:
           docker buildx imagetools create \
              --tag "${MOVING_IMAGE_FULL_URI}" \
              "${SHA_IMAGE_FULL_URI}"
+
+  # Ships the attachment-processor Lambda (docs/adr/0003). Terraform created
+  # the function with a placeholder and ignores its code from then on, so this
+  # job is the only path new handler code takes. Skipped until the repository
+  # variable names the function, which happens after the first apply
+  # (see the attachment_processor_cd_variable_command Terraform output).
+  deploy-attachment-processor:
+    runs-on: ubuntu-latest
+    if: vars.ATTACHMENT_PROCESSOR_FUNCTION_NAME != ''
+    concurrency:
+      group: attachment-processor-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      FUNCTION_NAME: ${{ vars.ATTACHMENT_PROCESSOR_FUNCTION_NAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the Lambda zip
+        run: npm run lambda:build
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update function code
+        run: |
+          set -euo pipefail
+          aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --zip-file fileb://lambda/attachment-processor/attachment-processor.zip \
+            --no-cli-pager >/dev/null
+          aws lambda wait function-updated --function-name "${FUNCTION_NAME}"
+          echo "Deployed ${GITHUB_SHA::7} to ${FUNCTION_NAME}"

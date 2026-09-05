@@ -50,13 +50,20 @@ export const handleGetAttachmentDownloadUrl = async (req: Request, res: Response
     });
   }
 
-  const { url, expiresAt } = attachmentStore.createDownloadUrl({ attachmentId, disposition });
+  const fileName = downloadFileName(attachment);
+  const { url, expiresAt } = await attachmentStore.createDownloadUrl({
+    attachmentId,
+    storageKey: attachment.storageKey,
+    fileName,
+    contentType: attachment.contentType,
+    disposition,
+  });
 
   return res.status(200).json({
     url,
     expiresAt,
     disposition,
-    fileName: downloadFileName(attachment),
+    fileName,
     contentType: attachment.contentType,
   });
 };

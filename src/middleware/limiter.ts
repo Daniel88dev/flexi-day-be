@@ -167,17 +167,17 @@ export const calendarFeedLimiter = rateLimit({
 });
 
 /**
- * The Paddle webhook is unauthenticated by design — the HMAC signature is the
- * real gate — so this is only a backstop against a garbage-blast doing
- * signature work at flood volume.
+ * Signed webhooks (Paddle, the attachment processor's callback) carry no
+ * session by design — the HMAC signature is the real gate — so this is only
+ * a backstop against a garbage-blast doing signature work at flood volume.
  *
- * Deliberately far above any plausible legitimate burst: Paddle delivers from
- * a small fixed IP range, so every customer's events share one bucket. A
+ * Deliberately far above any plausible legitimate burst. Paddle delivers from
+ * a small fixed IP range, so every customer's events share one bucket; a
  * dunning run or a backlog replay must not hit it, because a 429 is a non-2xx
  * — Paddle retries, and sustained failures pause the notification destination
  * entirely, which would silently stop all subscription syncing.
  */
-export const paddleWebhookLimiter = rateLimit({
+export const signedWebhookLimiter = rateLimit({
   ...shared,
   windowMs: FIVE_MINUTES,
   limit: 5000,
