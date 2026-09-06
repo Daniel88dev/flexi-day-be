@@ -534,6 +534,39 @@ describe("Attachments E2E", () => {
 
       expect(response.body.errors[0].context.reason).toBe("FILE_TOO_LARGE");
     });
+
+    it("stores only a byte body: an empty one and a JSON array are refused and the row keeps waiting", async () => {
+      const { requestId } = await seedRequest(context.user2.id, context.group.id);
+      const created = await create(
+        await authCookieFor(context.user2.id),
+        pngBody(requestId)
+      ).expect(201);
+      const attachmentId = created.body.attachment.id as string;
+      const target = created.body.upload as UploadTarget;
+
+      await upload(target, Buffer.alloc(0)).expect(422);
+
+      // The app's JSON parser runs first, so this reaches the handler as a
+      // real array rather than as bytes; the Buffer check is what refuses it.
+      const url = new URL(target.url);
+      await request(context.app)
+        .put(url.pathname + url.search)
+        .set("Content-Type", "application/json")
+        .send([1, 2, 3])
+        .expect(422);
+
+      expect((await rowFor(attachmentId))?.status).toBe(AttachmentStatus.Uploading);
+      await upload(target, fixture("small.png")).expect(200);
+    });
+
+    it("keeps every disk write under the store root", async () => {
+      await expect(attachmentStore.putObject("../escape", Buffer.from("x"))).rejects.toThrow(
+        "escapes the store root"
+      );
+      await expect(attachmentStore.getObject("../../etc/passwd")).rejects.toThrow(
+        "escapes the store root"
+      );
+    });
   });
 
   describe("who sees attachments", () => {
