@@ -5,6 +5,7 @@ import AppError from "../../utils/appError.js";
 import { resolveGroupAccess } from "../../services/groupUser/groupAccess.js";
 import { resolveOrganizationBadges } from "../../services/organization/organizationBadge.js";
 import { getGroup } from "../../services/group/groupServices.js";
+import { isAttachmentUploadAvailable } from "../../services/billing/guards.js";
 
 /**
  * One group with the caller's effective rights over it. Unlike `GET /api/group`
@@ -44,10 +45,12 @@ export const handleGetGroup = async (req: Request, res: Response) => {
   }
 
   const badges = await resolveOrganizationBadges([group.organizationId]);
+  const uploadsAvailable = await isAttachmentUploadAvailable(group.organizationId);
 
   return res.status(200).json({
     ...group,
     organization: badges.get(group.organizationId) ?? null,
     access,
+    uploadsAvailable,
   });
 };

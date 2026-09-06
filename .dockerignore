@@ -131,3 +131,9 @@ dist
 npm-debug.log
 .vscode
 .DS_Store
+
+# Lambda packaging is not part of the API image
+lambda
+
+# the disk attachment store's files
+.attachments

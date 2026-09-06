@@ -71,7 +71,8 @@ resource "aws_iam_role_policy" "apprunner_secrets" {
         Resource = concat(
           [
             aws_secretsmanager_secret.database_url.arn,
-            aws_secretsmanager_secret.better_auth_secret.arn
+            aws_secretsmanager_secret.better_auth_secret.arn,
+            aws_secretsmanager_secret.attachments_callback_secret.arn
           ],
           aws_secretsmanager_secret.google_client_secret[*].arn,
           aws_secretsmanager_secret.microsoft_client_secret[*].arn,
@@ -115,6 +116,31 @@ resource "aws_iam_role_policy" "apprunner_ses" {
             "ses:FromAddress" = var.email_from
           }
         }
+      }
+    ]
+  })
+}
+
+# Attachments (docs/adr/0003). Presigning is local arithmetic, but the browser's
+# presigned POST and GET run as this role, and the API deletes objects itself
+# when a user removes an attachment or the nightly sweep expires one. Uploads
+# may only land under incoming/; the Lambda alone writes final keys.
+resource "aws_iam_role_policy" "apprunner_attachments" {
+  name = "${var.project_name}-${var.environment}-apprunner-attachments"
+  role = aws_iam_role.apprunner_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "${aws_s3_bucket.attachments.arn}/incoming/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.attachments.arn}/*"
       }
     ]
   })

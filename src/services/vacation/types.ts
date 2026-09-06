@@ -7,6 +7,7 @@ export type VacationType = {
   id: string;
   userId: string;
   groupId: string;
+  requestId: string;
   requestedDay: DateString;
   startTime: string | null;
   endTime: string | null;
@@ -33,6 +34,7 @@ export type VacationInsertType = Pick<
   | "id"
   | "userId"
   | "groupId"
+  | "requestId"
   | "requestedDay"
   | "startTime"
   | "endTime"

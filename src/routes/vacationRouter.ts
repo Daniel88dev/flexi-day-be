@@ -146,6 +146,15 @@ export const vacationRouter = (): Router => {
    *       rejected, cancelled, updated), and the actions this caller may take
    *       (`canApprove`, `canCancel`, `canEdit`). Cancelled requests remain
    *       retrievable so the timeline can explain what happened to them.
+   *
+   *       For the record owner, the group's approvers and its group and
+   *       organization admins the payload also carries `attachments` (every
+   *       attachment of the Request, any status, deleted ones included with
+   *       `deletedAt` and `deletedByUserId` set), `canAttach`, which is
+   *       true only when the caller may add one, the plan allows uploads and
+   *       the Request has a free slot, and `canDeleteAnyAttachment`, true for
+   *       group and organization admins, who may delete files they did not
+   *       upload. A member with view access only gets none of the three.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -158,6 +167,87 @@ export const vacationRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: The vacation, its history and the caller's permissions
+   *         content:
+   *           application/json:
+   *             schema:
+   *               allOf:
+   *                 - $ref: '#/components/schemas/VacationListItem'
+   *                 - type: object
+   *                   properties:
+   *                     groupName:
+   *                       type: string
+   *                     approvedByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                     rejectedByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                     createdByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                       description: An admin when the request was booked on the member's behalf.
+   *                     deletedByUser:
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/UserSummary'
+   *                       nullable: true
+   *                     rangeStart:
+   *                       type: string
+   *                       format: date
+   *                       description: First day of the contiguous same-type run this row belongs to.
+   *                     rangeEnd:
+   *                       type: string
+   *                       format: date
+   *                     vacationIds:
+   *                       type: array
+   *                       description: Every day row of that run, this one included.
+   *                       items:
+   *                         type: string
+   *                         format: uuid
+   *                     canCancel:
+   *                       type: boolean
+   *                     canEdit:
+   *                       type: boolean
+   *                     history:
+   *                       type: array
+   *                       description: The append-only event timeline, oldest first.
+   *                       items:
+   *                         type: object
+   *                         properties:
+   *                           id:
+   *                             type: string
+   *                             format: uuid
+   *                           vacationId:
+   *                             type: string
+   *                             format: uuid
+   *                           eventType:
+   *                             type: string
+   *                             enum: [CREATED, APPROVED, REJECTED, CANCELLED, COMMENT, UPDATED]
+   *                           actorUserId:
+   *                             type: string
+   *                             nullable: true
+   *                           actorName:
+   *                             type: string
+   *                             nullable: true
+   *                           reason:
+   *                             type: string
+   *                             nullable: true
+   *                           createdAt:
+   *                             type: string
+   *                             format: date-time
+   *                     attachments:
+   *                       type: array
+   *                       description: Present only for the owner, approvers and admins.
+   *                       items:
+   *                         $ref: '#/components/schemas/Attachment'
+   *                     canAttach:
+   *                       type: boolean
+   *                       description: Present only for the owner, approvers and admins.
+   *                     canDeleteAnyAttachment:
+   *                       type: boolean
+   *                       description: Present only for the owner, approvers and admins; true for group and organization admins.
    *       '403':
    *         description: Not allowed to view this vacation
    *       '404':
@@ -281,6 +371,12 @@ export const vacationRouter = (): Router => {
    *         groupId:
    *           type: string
    *           format: uuid
+   *         requestId:
+   *           type: string
+   *           format: uuid
+   *           description: |
+   *             Shared by every day row created in the same submission, so a
+   *             client can group a range back into one request.
    *         requestedDay:
    *           type: string
    *           format: date

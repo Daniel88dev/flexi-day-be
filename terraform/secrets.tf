@@ -181,3 +181,31 @@ resource "aws_secretsmanager_secret_version" "paddle_webhook_secret" {
   secret_id     = aws_secretsmanager_secret.paddle_webhook_secret[0].id
   secret_string = var.paddle_webhook_secret
 }
+
+# HMAC key the attachment-processor Lambda signs its callback with and App
+# Runner verifies (docs/adr/0003). Generated here, never typed in; both sides
+# read it from Secrets Manager. Rotate with
+# `terraform taint random_password.attachments_callback_secret` and an apply,
+# then `aws apprunner start-deployment`: App Runner resolves a secret at
+# deployment time and keeps the old value until then. The Lambda re-reads the
+# secret whenever the API refuses a callback (401), so warm containers follow
+# on their next report; callbacks refused in between are retried.
+resource "random_password" "attachments_callback_secret" {
+  length  = 64
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "attachments_callback_secret" {
+  name                    = "${var.project_name}-${var.environment}-attachments-callback-secret"
+  description             = "HMAC key for the attachment-processor callback of ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-attachments-callback-secret"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "attachments_callback_secret" {
+  secret_id     = aws_secretsmanager_secret.attachments_callback_secret.id
+  secret_string = random_password.attachments_callback_secret.result
+}

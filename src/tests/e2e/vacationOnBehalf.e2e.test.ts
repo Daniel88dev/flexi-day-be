@@ -123,6 +123,20 @@ describe("Admin on-behalf vacation management E2E", () => {
       expect(eventTypes).toEqual(expect.arrayContaining(["CREATED", "APPROVED"]));
     });
 
+    it("stamps an on-behalf range with one shared request id", async () => {
+      await addToGroup(context.user1.id, context.group.id, { adminAccess: true });
+      await addToGroup(context.user2.id, context.group.id);
+      const cookie = await authCookieFor(context.user1.id);
+
+      const response = await createOnBehalf(cookie, { from: MON, to: WED }).expect(201);
+
+      expect(response.body).toHaveLength(3);
+      const rows = response.body as { requestId: string; createdByUserId: string }[];
+      expect(new Set(rows.map((r) => r.requestId)).size).toBe(1);
+      expect(rows[0]?.requestId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(rows.every((r) => r.createdByUserId === context.user1.id)).toBe(true);
+    });
+
     it("books an auto-approved study leave — the rarer types ride the same flow", async () => {
       await addToGroup(context.user1.id, context.group.id, { adminAccess: true });
       await addToGroup(context.user2.id, context.group.id);

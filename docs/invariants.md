@@ -86,16 +86,16 @@ read-only) to debug customer reports.
 Several limiters, not one, because a single per-IP bucket both throttles real users and
 under-protects the endpoints that matter:
 
-| Limiter                | Mounted on                                      | Key                            | Budget                   |
-| ---------------------- | ----------------------------------------------- | ------------------------------ | ------------------------ |
-| `floodLimiter`         | everything                                      | IP                             | 5000 / 5 min             |
-| `apiFailureLimiter`    | `/api` (before session validation)              | IP                             | 100 **failures** / 5 min |
-| `apiLimiter`           | `/api` (after the auth and dev routes)          | validated user id, IP fallback | 1000 / 5 min             |
-| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor | IP                             | 20 **failures** / 15 min |
-| `passwordResetLimiter` | `request-password-reset`                        | IP                             | 5 / 15 min               |
-| `otpSendLimiter`       | `two-factor/send-otp`                           | IP                             | 10 / 15 min              |
-| `calendarFeedLimiter`  | `/calendars/:token.ics`                         | feed token                     | 120 / hour               |
-| `paddleWebhookLimiter` | `/api/webhooks/paddle`                          | IP                             | 5000 / 5 min             |
+| Limiter                | Mounted on                                           | Key                            | Budget                   |
+| ---------------------- | ---------------------------------------------------- | ------------------------------ | ------------------------ |
+| `floodLimiter`         | everything                                           | IP                             | 5000 / 5 min             |
+| `apiFailureLimiter`    | `/api` (before session validation)                   | IP                             | 100 **failures** / 5 min |
+| `apiLimiter`           | `/api` (after the auth and dev routes)               | validated user id, IP fallback | 1000 / 5 min             |
+| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor      | IP                             | 20 **failures** / 15 min |
+| `passwordResetLimiter` | `request-password-reset`                             | IP                             | 5 / 15 min               |
+| `otpSendLimiter`       | `two-factor/send-otp`                                | IP                             | 10 / 15 min              |
+| `calendarFeedLimiter`  | `/calendars/:token.ics`                              | feed token                     | 120 / hour               |
+| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed` | IP                             | 5000 / 5 min             |
 
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs

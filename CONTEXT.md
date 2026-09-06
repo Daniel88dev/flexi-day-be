@@ -20,6 +20,8 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Sick day benefit**     | Paid-plan organization toggle that makes Sick day a requestable, metered type — see [`docs/calendar-record-types.md`](docs/calendar-record-types.md).                                                   |
 | **Mirror**               | A read-side projection of a user's records from one group into another.                                                                                                                                 |
 | **Invite link**          | Single-use code binding one email address to one group.                                                                                                                                                 |
+| **Request**              | The set of Vacation rows created by one submission, sharing a `request_id`. Attachments and retention hang off it, not the day.                                                                         |
+| **Attachment**           | An image or PDF bound to one Request. Seen by the record owner, the group's approvers and group admins; nobody else. Bytes live in S3, or on disk without a bucket (`docs/adr/0003`).                   |
 | **Live row**             | A vacation row a reader returned under `deleted_at IS NULL`. `LiveVacationType` is its type.                                                                                                            |
 
 ## Vacation workflow
@@ -84,6 +86,12 @@ A croner job (`src/jobs/`) rolls unused quota into the new year. `QUOTA_ROLLOVER
 (on outside `test`), `QUOTA_ROLLOVER_CRON` sets the schedule (default `0 2 * * *`) and
 `QUOTA_ROLLOVER_TIMEZONE` the zone it runs in (default `Europe/Prague`). Rows it writes to `changes`
 carry a null `changing_user_id`, which is how an automated rollover is told apart from a person.
+
+The same tick then runs the attachment retention sweep (`src/services/attachment/attachmentRetention.ts`):
+attachments go twelve months after the Request's last day, as soon as the Request has no live day
+left (every day cancelled or rejected), and `UPLOADING` rows older than ten minutes are cleared.
+Each case removes the object and the row; a user's own delete only soft-deletes, keeping the row as
+the history entry until one of the sweep cases catches the Request.
 
 ## Undeliverable recipients
 

@@ -2,8 +2,9 @@
 
 `terraform/` defines everything Flexi Day runs on in AWS: the App Runner service, RDS Postgres, the
 VPC around it, the Route 53 records for `api.flexi-day.com`, the Secrets Manager entries App Runner
-injects, and the IAM roles tying them together. Nothing here was clicked together in the console, so
-an infrastructure change that skips these files never reaches production.
+injects, the attachments bucket with the Lambda that checks uploads, and the IAM roles tying them
+together. Nothing here was clicked together in the console, so an infrastructure change that skips
+these files never reaches production.
 
 State is a local file, `terraform/terraform.tfstate`, gitignored, with no S3 backend. It lives on one
 machine and plans only run from that checkout.
@@ -74,6 +75,46 @@ comment above that policy records what broke last time it was tightened. Read it
 One file per area, listed in the header comment of `main.tf`. Add a file only for a genuinely new
 area and update that list when you do. Tags come from `default_tags` in `provider.tf`, so a resource
 only needs its own `Name` tag.
+
+## Attachments: bucket, Lambda and CD
+
+`attachments.tf` holds the upload pipeline of ADR 0003. The bucket is private: public access
+blocked, ACLs disabled through `BucketOwnerEnforced`, SSE-S3 by default. Terraform sets nothing on
+versioning, so it stays at S3's default, off. The lifecycle rules back up the API's nightly sweep
+rather than replace it. Objects under `incoming/` expire after a day. Everything else expires 1190
+days after upload, which lands past the sweep's twelve months from the Request's last day even for
+a Request booked on the last bookable day, 31 December of next year; the sweep, not the rule, is
+what normally removes a file. CORS allows GET and POST from `trusted_origins`, because both
+presigned requests run in the browser.
+
+The `attachment-processor` Lambda has a role of its own: list the bucket, get under `incoming/`,
+put anywhere except `incoming/`, delete anywhere (the incoming object once handled, and a final
+object it wrote for a row the API reports gone), read the callback secret, write its log group.
+The list right is there so S3 reports a missing incoming object as `NoSuchKey`, which the handler
+treats as already processed, instead of `AccessDenied`, which it would retry. The S3 notification on
+`incoming/` invokes it, and `aws_lambda_permission` lets the bucket do so. The App Runner instance
+role gets `apprunner_attachments`, a policy of its own as the IAM section above asks: put under
+`incoming/` for the presigned upload, get and delete on the whole bucket for downloads and removals.
+The callback secret sits in `secrets.tf` beside the others. App Runner receives it as
+`ATTACHMENTS_CALLBACK_SECRET`; the Lambda receives its ARN and reads the value once per container.
+`apprunner.tf` also carries `ATTACHMENTS_BUCKET`, which `config.ts` requires in production and uses
+to select the S3 store.
+
+Terraform creates the function with a placeholder zip and ignores its code from then on. The code
+ships from `cd.yml`: `npm run lambda:build` bundles `src/lambda/attachmentProcessor` with the shared
+processor into `lambda/attachment-processor/attachment-processor.zip` (sharp and libheif-js
+installed for linux/x64 from that directory's own lockfile), and the `deploy-attachment-processor`
+job uploads it with `aws lambda update-function-code`. The job is skipped until the
+`ATTACHMENT_PROCESSOR_FUNCTION_NAME` repository variable exists, so the first rollout is: apply, run
+the `attachment_processor_cd_variable_command` output, then push or re-run the workflow.
+
+The CD role (`GitHubActionsECRPushRole`, behind the `AWS_ROLE_ARN` repository variable) predates
+Terraform. `github_actions_role_name` names it so the deploy policy can attach; Terraform never
+manages the role itself.
+
+Lambda runtimes are validated by the AWS provider against a fixed list, which is why the provider
+constraint is `~> 6.0`: `nodejs24.x` does not exist in 5.x. Bumping the constraint means
+`terraform init -upgrade` before the next plan.
 
 ## Before you plan
 

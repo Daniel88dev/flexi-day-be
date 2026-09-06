@@ -50,6 +50,7 @@ describe("support surface data invariants", () => {
       id: uuidv4(),
       userId: ownerId,
       groupId,
+      requestId: uuidv4(),
       requestedDay: "2026-08-03",
       note: "medical appointment",
       rejectedAt: new Date(),
@@ -69,6 +70,8 @@ describe("support surface data invariants", () => {
     const row = detail!.vacations[0] as unknown as Record<string, unknown>;
     expect(row).not.toHaveProperty("note");
     expect(row).not.toHaveProperty("rejectionReason");
+    expect(row).not.toHaveProperty("attachments");
+    expect(row).not.toHaveProperty("canAttach");
     // The state timestamps themselves must survive — they are the point.
     expect(row.rejectedAt).toBeTruthy();
   });

@@ -143,6 +143,9 @@ export const groupRouter = (): Router => {
    *                   memberCount:
    *                     type: integer
    *                     description: Active members of the group
+   *                   uploadsAvailable:
+   *                     type: boolean
+   *                     description: Whether attachments can be uploaded in this group's organization right now (paid plan, grace included).
    *                   membership:
    *                     type: object
    *                     description: The caller's own membership row flags
@@ -167,7 +170,9 @@ export const groupRouter = (): Router => {
    *       caller manages or administers through the organization. `access` reports exactly
    *       what the mutation endpoints will allow, and `access.viaOrgAdmin`
    *       marks authority that came from the organization rather than a
-   *       membership.
+   *       membership. `uploadsAvailable` says whether members may attach files
+   *       to their requests right now: a paid plan, grace included, the same
+   *       rule as the Sick day benefit.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -179,7 +184,15 @@ export const groupRouter = (): Router => {
    *           format: uuid
    *     responses:
    *       '200':
-   *         description: The group, its organization badge and the caller's access
+   *         description: The group, its organization badge, the caller's access and `uploadsAvailable`
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 uploadsAvailable:
+   *                   type: boolean
+   *                   description: Whether attachments can be uploaded in this group's organization right now.
    *       '403':
    *         description: No access for related group
    *       '404':

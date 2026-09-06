@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { config } from "../../config.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import {
   addMember,
@@ -74,13 +75,14 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
 
   const [alice, bob, carol] = members as [SeededUser, SeededUser, SeededUser];
 
+  const aliceRange = generateRandomUUID();
   const bookings = [
     { user: owner, day: workingDayFromToday(-21), state: "approved" as const },
     { user: owner, day: workingDayFromToday(-14), state: "approved" as const },
     { user: owner, day: workingDayFromToday(7), state: "pending" as const },
     { user: alice, day: workingDayFromToday(-7), state: "approved" as const },
-    { user: alice, day: workingDayFromToday(3), state: "pending" as const },
-    { user: alice, day: workingDayFromToday(4), state: "pending" as const },
+    { user: alice, day: workingDayFromToday(3), state: "pending" as const, requestId: aliceRange },
+    { user: alice, day: workingDayFromToday(4), state: "pending" as const, requestId: aliceRange },
     { user: bob, day: workingDayFromToday(0), state: "approved" as const },
     { user: bob, day: workingDayFromToday(10), state: "pending" as const },
     { user: bob, day: workingDayFromToday(-3), state: "rejected" as const },
@@ -102,6 +104,7 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
       state: booking.state,
       type: booking.type,
       actorUserId: owner.id,
+      requestId: booking.requestId,
     });
     if (id) created += 1;
   }

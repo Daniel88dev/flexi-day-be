@@ -177,6 +177,35 @@ export const assertCanEnableSickDayBenefit = async (
 };
 
 /**
+ * Whether members may attach files right now: paid plan, grace included, the
+ * same rule that keeps the Sick day benefit alive. Derived at read time, so a
+ * lapse hides the upload without touching stored attachments.
+ */
+export const isAttachmentUploadAvailable = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const entitlements = await entitlementsForOrganization(organizationId, tx);
+  return entitlements.plan !== "FREE";
+};
+
+/** Throws 402 unless {@link isAttachmentUploadAvailable}. */
+export const assertAttachmentUploadAvailable = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  if (!(await isAttachmentUploadAvailable(organizationId, tx))) {
+    throw new AppError({
+      message: "Attachments require a paid plan",
+      logging: true,
+      code: 402,
+      context: { organizationId },
+      publicContext: { reason: "PLAN_LIMIT" },
+    });
+  }
+};
+
+/**
  * The benefit is active only while the stored toggle is on AND the plan is
  * paid. Derived at read time like every entitlement: a lapse makes this false
  * without touching the toggle or any data, and re-subscribing makes it true

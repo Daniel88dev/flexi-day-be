@@ -96,3 +96,18 @@ paddle_prices = {
   extra_group_monthly = ""
   extra_group_yearly  = ""
 }
+
+# Attachments (docs/adr/0003). The bucket, the attachment-processor Lambda and
+# the callback secret are always created; nothing here is optional because the
+# backend refuses to boot in production without a bucket.
+#
+# Bucket names are global across AWS; leave empty for
+# <project_name>-<environment>-attachments and override only on a collision.
+attachments_bucket_name = ""
+
+# The IAM role behind the AWS_ROLE_ARN repository variable in GitHub
+# (`gh variable get AWS_ROLE_ARN -R Daniel88dev/flexi-day-be`, name after
+# "role/"). It was created by hand before Terraform existed; this attaches the
+# policy that lets cd.yml update the Lambda's code. Empty attaches nothing and
+# the deploy job fails on AccessDenied.
+github_actions_role_name = "GitHubActionsECRPushRole"

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "node node_modules/@typescript/native/bin/tsc",
+    "lambda:build": "node lambda/attachment-processor/build.mjs",
     "start": "node --import ./dist/instrument.js dist/index.js",
     "dev": "npm run build && node --import ./dist/instrument.js dist/index.js",
     "test": "vitest --run",
@@ -43,7 +44,10 @@
   },
   "homepage": "https://github.com/Daniel88dev/flexi-day-be#readme",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
     "@aws-sdk/client-sesv2": "^3.1121.0",
+    "@aws-sdk/s3-presigned-post": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@paddle/paddle-node-sdk": "^3.10.0",
     "@sentry/node": "^10.72.0",
     "@sentry/profiling-node": "^10.72.0",
@@ -57,13 +61,16 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.1.0",
+    "libheif-js": "^1.19.8",
     "pg": "^8.23.0",
+    "sharp": "^0.35.4",
     "uuid": "^14.0.2",
     "winston": "^3.18.3",
     "winston-transport": "^4.9.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.1127.0",
     "@eslint/js": "^10.0.1",
     "@types/cors": "^2.8.19",
     "@types/eslint-plugin-security": "^3.0.0",
@@ -76,6 +83,7 @@
     "@vitest/ui": "^4.1.10",
     "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.5",
+    "esbuild": "^0.25.4",
     "eslint": "^10.9.1",
     "eslint-plugin-security": "^4.0.1",
     "globals": "^17.11.0",

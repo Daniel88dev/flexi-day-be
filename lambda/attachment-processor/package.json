@@ -1,0 +1,14 @@
+{
+  "name": "flexi-day-attachment-processor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runtime dependencies of the attachment-processor Lambda zip. The handler lives in ../../src/lambda/attachmentProcessor and build.mjs bundles it with the shared processor; only the native and wasm modules ship unbundled from here.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "libheif-js": "^1.19.8",
+    "sharp": "^0.35.4"
+  }
+}

@@ -9,9 +9,9 @@ import {
   CREDENTIAL_GUESSING_PATHS,
   credentialsLimiter,
   floodLimiter,
-  paddleWebhookLimiter,
   otpSendLimiter,
   passwordResetLimiter,
+  signedWebhookLimiter,
 } from "./middleware/limiter.js";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./utils/auth.js";
@@ -36,6 +36,10 @@ import { billingRouter } from "./routes/billingRouter.js";
 import { organizationRouter } from "./routes/organizationRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
 import { supportRouter } from "./routes/supportRouter.js";
+import { attachmentRouter } from "./routes/attachmentRouter.js";
+import { localAttachmentRouter } from "./routes/localAttachmentRouter.js";
+import { attachmentCallbackRouter } from "./routes/attachmentCallbackRouter.js";
+import { isDiskAttachmentStore } from "./services/attachment/attachmentStore.js";
 
 export const createServer = () => {
   const app = express();
@@ -74,9 +78,15 @@ export const createServer = () => {
   app.post(
     "/api/webhooks/paddle",
     express.raw({ type: "application/json" }),
-    paddleWebhookLimiter,
+    signedWebhookLimiter,
     tryCatch(handlePaddleWebhook)
   );
+
+  // The attachment processor's callback: same shape as the Paddle webhook,
+  // signed with its own secret. Without one the route does not exist.
+  if (config.attachments.callbackSecret) {
+    app.use("/api/attachments/processed", attachmentCallbackRouter());
+  }
 
   app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());
 
@@ -85,6 +95,13 @@ export const createServer = () => {
   // environment this branch never runs and the routes simply do not exist.
   if (config.dev) {
     app.use("/api/dev", devRouter());
+  }
+
+  // The disk store's upload and download routes stand in for S3's presigned
+  // URLs, so like those they are authorized by signature, not session. With a
+  // bucket configured they do not exist.
+  if (isDiskAttachmentStore) {
+    app.use("/api/attachments/local", localAttachmentRouter());
   }
 
   // Everything below is the authenticated API; `/api/auth` and `/api/dev` are
@@ -105,6 +122,7 @@ export const createServer = () => {
   app.use("/api/reports", reportRouter());
   app.use("/api/billing", billingRouter());
   app.use("/api/organization", organizationRouter());
+  app.use("/api/attachments", attachmentRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
   // deploy explicitly carries an allowlist, so for everyone else these routes

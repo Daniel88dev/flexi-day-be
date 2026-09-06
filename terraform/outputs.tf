@@ -81,3 +81,21 @@ output "psql_command" {
   description = "psql connection command for the production database (fetches the password from Secrets Manager)"
   value       = "psql \"$(aws secretsmanager get-secret-value --secret-id ${aws_secretsmanager_secret.database_url.name} --region ${var.aws_region} --query SecretString --output text)?sslmode=verify-full&sslrootcert=$HOME/.cache/flexi-day/rds-global-bundle.pem\""
 }
+
+# Attachments (docs/adr/0003)
+output "attachments_bucket_name" {
+  description = "Bucket holding attachment bytes; App Runner reads it as ATTACHMENTS_BUCKET"
+  value       = aws_s3_bucket.attachments.bucket
+}
+
+output "attachment_processor_function_name" {
+  description = "The attachment-processor Lambda; CD updates its code on every push to main"
+  value       = aws_lambda_function.attachment_processor.function_name
+}
+
+# cd.yml skips the Lambda deploy until this repository variable exists, so the
+# workflow stays green before the first apply.
+output "attachment_processor_cd_variable_command" {
+  description = "Run once after the first apply so CD starts shipping the Lambda code"
+  value       = "gh variable set ATTACHMENT_PROCESSOR_FUNCTION_NAME --body ${aws_lambda_function.attachment_processor.function_name} -R Daniel88dev/flexi-day-be"
+}

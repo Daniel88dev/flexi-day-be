@@ -160,3 +160,10 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# the disk attachment store's files (ATTACHMENTS_DIR default)
+.attachments/
+
+# attachment-processor Lambda build output (npm run lambda:build)
+lambda/attachment-processor/dist/
+lambda/attachment-processor/*.zip

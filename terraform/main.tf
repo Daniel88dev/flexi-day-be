@@ -8,6 +8,7 @@
 # - secrets.tf: Secrets Manager (DATABASE url, BETTER_AUTH_SECRET)
 # - rds.tf: RDS PostgreSQL instance (public endpoint, manual migrations)
 # - apprunner.tf: App Runner service (default egress), autoscaling
+# - attachments.tf: attachments S3 bucket, attachment-processor Lambda, S3 notification, CD deploy policy
 # - dns.tf: Route 53 records + custom domain association (api.flexi-day.com)
 # - outputs.tf: Output values
 

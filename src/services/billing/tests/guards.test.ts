@@ -47,9 +47,11 @@ vi.mock("../../organization/organizationServices.js", () => ({
 }));
 
 import {
+  assertAttachmentUploadAvailable,
   assertCanAddMember,
   assertCanCreateGroup,
   assertCanEnableSickDayBenefit,
+  isAttachmentUploadAvailable,
   assertGroupsWritable,
   assertGroupWritable,
   assertSickDayRequestable,
@@ -285,6 +287,44 @@ describe("assertCanEnableSickDayBenefit", () => {
     mockGetSubscription.mockResolvedValue(lapsedProSub);
 
     await expect(assertCanEnableSickDayBenefit("org-1")).rejects.toMatchObject({ code: 402 });
+  });
+});
+
+describe("attachment uploads", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("are unavailable on the Free plan, with a 402 PLAN_LIMIT on assert", async () => {
+    mockGetSubscription.mockResolvedValue(undefined);
+
+    await expect(isAttachmentUploadAvailable("org-1")).resolves.toBe(false);
+    await expect(assertAttachmentUploadAvailable("org-1")).rejects.toMatchObject({
+      code: 402,
+      errors: [expect.objectContaining({ publicContext: { reason: "PLAN_LIMIT" } })],
+    });
+  });
+
+  it("are available on an active paid subscription", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      status: subscriptionStatus.Active,
+      graceEndsAt: null,
+    });
+
+    await expect(isAttachmentUploadAvailable("org-1")).resolves.toBe(true);
+    await expect(assertAttachmentUploadAvailable("org-1")).resolves.toBeUndefined();
+  });
+
+  it("stay available while a lapsed subscription is in grace, and stop after it", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      graceEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+    await expect(isAttachmentUploadAvailable("org-1")).resolves.toBe(true);
+
+    mockGetSubscription.mockResolvedValue(lapsedProSub);
+    await expect(isAttachmentUploadAvailable("org-1")).resolves.toBe(false);
   });
 });
 

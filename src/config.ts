@@ -1,4 +1,6 @@
 import dotenv from "dotenv";
+import { randomBytes } from "node:crypto";
+import path from "node:path";
 dotenv.config();
 
 type APIConfig = { port: number; env: "production" | "dev" | "test" };
@@ -61,6 +63,18 @@ type SupportConfig = {
   userIds: string[];
 };
 
+type AttachmentsConfig = {
+  /** S3 bucket for attachment bytes. Unset means the disk store serves them from `localDir`. */
+  bucket?: string;
+  region: string;
+  localDir: string;
+  /**
+   * HMAC key the `attachment-processor` Lambda signs its callback with. Unset
+   * means the callback route does not exist; required alongside the bucket.
+   */
+  callbackSecret?: string;
+};
+
 type DevToolsConfig = {
   /** Shared secret every `/api/dev/*` request must present as `x-dev-token`. */
   token: string;
@@ -80,6 +94,7 @@ type Config = {
   dev?: DevToolsConfig;
   /** Platform-support read surface. `undefined` means the routes do not exist. */
   support?: SupportConfig;
+  attachments: AttachmentsConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -113,6 +128,8 @@ const parseTemplateStage = (): "dev" | "prod" => {
 };
 
 const databaseUrl = envOrThrow("DATABASE");
+
+const awsRegion = process.env.AWS_REGION ?? "eu-central-1";
 
 const LOCAL_DB_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -230,6 +247,34 @@ const parseSupport = (): SupportConfig | undefined => {
   return { userIds };
 };
 
+/**
+ * The disk store is a development stand-in: per-instance, ephemeral, and it
+ * mounts session-less upload and download routes. Production must name a
+ * bucket, so a deploy without one fails at boot rather than losing files.
+ */
+const parseAttachments = (): AttachmentsConfig => {
+  const bucket = process.env.ATTACHMENTS_BUCKET || undefined;
+  if (environment === "production" && !bucket) {
+    throw new Error("ATTACHMENTS_BUCKET is required when NODE_ENV=production");
+  }
+  // The e2e suite drives the callback route itself and reads the key from
+  // here, so under test a per-process key stands in for a configured one.
+  const callbackSecret =
+    process.env.ATTACHMENTS_CALLBACK_SECRET ||
+    (environment === "test" ? randomBytes(32).toString("hex") : undefined);
+  if (bucket && !callbackSecret) {
+    throw new Error("ATTACHMENTS_CALLBACK_SECRET is required when ATTACHMENTS_BUCKET is set");
+  }
+  return {
+    bucket,
+    region: awsRegion,
+    // Under the checkout, not the OS temp dir: that one is shared with every
+    // other user of the machine.
+    localDir: process.env.ATTACHMENTS_DIR || path.resolve(".attachments", environment),
+    callbackSecret,
+  };
+};
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -259,7 +304,7 @@ export const config: Config = {
   email: {
     from: process.env.EMAIL_FROM ?? "no-reply@flexi-day.com",
     templateStage: parseTemplateStage(),
-    region: process.env.AWS_REGION ?? "eu-central-1",
+    region: awsRegion,
     configurationSet: process.env.SES_CONFIGURATION_SET,
     appUrl:
       process.env.APP_URL ??
@@ -280,6 +325,7 @@ export const config: Config = {
   paddle: parsePaddle(),
   dev: parseDevTools(),
   support: parseSupport(),
+  attachments: parseAttachments(),
 };
 
 export type { PaddleConfig };
