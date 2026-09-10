@@ -43,6 +43,13 @@
       "when": 1788603016050,
       "tag": "0005_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789064856515,
+      "tag": "0006_account_issuer_nullable",
+      "breakpoints": true
     }
   ]
 }
