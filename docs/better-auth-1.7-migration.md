@@ -1,200 +1,158 @@
-# better-auth 1.7 migration runbook
+# better-auth 1.7 account key runbook
 
-One-off. Delete this file once production is on 1.7.
+One-off, in two parts. Part one is the record of what production already ran.
+Part two is the revert, which is the work still outstanding. Delete the file
+once part two is done and `account_issuer_migration_dropped` is gone.
 
-better-auth 1.7 stops keying an account by `providerId` and keys it by
-`(issuer, accountId)` instead. That adds a `NOT NULL` column to a table the auth
-code reads on every sign-in, which is why this upgrade needs a window rather
-than an ordinary deploy. Upstream guide:
-<https://better-auth.com/docs/guides/1-7-upgrade-guide>.
+## Part one: what production ran
 
-## Why a window is unavoidable
+better-auth 1.7.0 stopped keying an account by `providerId` and keyed it by
+`(issuer, accountId)` instead. `0001_account_issuer.sql` moved production onto
+that key in one window, and it did two separate things:
 
-CD promotes the moving tag on every push to `main` and App Runner pulls it
-automatically, while `db:migrate:prod` is run by hand from a terminal. Neither
-order is safe on its own:
+1. Added the `issuer` column, backfilled it per provider, then set `NOT NULL`
+   and created `idx_account_issuer_account_id`.
+2. Re-keyed Microsoft `account_id` from the pairwise `sub` to the directory
+   `oid`, decoded out of the `id_token` better-auth had already stored.
 
-- **Code first.** The drizzle adapter selects an explicit column list that now
-  contains `issuer`. Against an un-migrated database every account read is
-  `column account.issuer does not exist` — email sign-in, the social callback,
-  list-accounts and password reset all 500.
-- **Migration first.** The still-running 1.6 image writes account rows without
-  `issuer`, so every sign-up and every `/link-social` fails on a not-null
-  violation.
-
-Sessions already issued keep working throughout — `customSession` does not read
-the account table. What is down is the entry surface: signing in, signing up,
-linking, and password reset.
-
-**This deploy is one-way.** Once `issuer` is `NOT NULL`, rolling the image back
-to 1.6 breaks every account write, because 1.6 does not know to populate it. The
-snapshot from step 3 is the only rollback.
-
-## Sequence
-
-App Runner is the trap here. `terraform/apprunner.tf` sets `min_size = 1` and the
-service floor is one instance, so there is no scaling to zero; and while
-`auto_deployments_enabled = true`, **a paused service does not pick up images
-pushed while it was paused** — resuming redeploys the version from before the
-pause. CD only pushes to ECR (`.github/workflows/cd.yml` has no
-`start-deployment`), so the 1.7 image needs an explicit push after resuming.
-Follow the order below exactly.
-
-1. Announce the window. Ten minutes; the table is small but step 4 is manual.
-2. Get a psql on prod. `db:status:prod` only prints the ledger and
-   `scripts/db-migrate.sh` never prints the connection string, so assemble it
-   from Secrets Manager yourself — RDS is `publicly_accessible` — and export
-   `PGHOST/PGUSER/PGPASSWORD/PGDATABASE` rather than passing a URL that `ps`
-   would leak.
-3. Run the pre-flight in the next section. Fix what it reports **before**
-   pausing anything; every one of its failures aborts the migration.
-4. `aws apprunner pause-service`. Take an RDS snapshot once it is paused — step
-   6 rewrites keys and deletes rows, and this snapshot is the only rollback.
-5. Merge the backend PR so CD builds and pushes the 1.7 image to ECR. It will
-   not deploy while paused; that is expected.
-6. `npm run db:status:prod`. If the ledger still holds the pre-squash entries —
-   ten rows ending 2026-06-14 rather than one row for `0000_init` — run
-   `npm run db:baseline:prod` first. The squash rewrote `0000_init` into a
-   baseline standing for all ten, and drizzle only compares the newest ledger
-   row, so it would otherwise replay the whole baseline over the live schema and
-   die on `CREATE TYPE ... already exists`. `--baseline` records the baseline as
-   applied; it writes no DDL and touches no data. Then `npm run db:migrate:prod`.
-7. `aws apprunner resume-service`, then **`aws apprunner start-deployment`** —
-   resume alone brings back 1.6, which would fail every account write against
-   the new `NOT NULL` column.
-8. Verify before reopening: `/health`, one real email sign-in, one
-   `list-accounts` on an account that had a Google link, and — this is the one
-   that proves the re-key — a returning **Microsoft** sign-in on an account the
-   migration re-keyed. Google and credential rows only gained a column; the
-   Microsoft rows had both halves of their key rewritten, so they are the only
-   ones where a wrong value shows up as `account not linked` rather than as
-   nothing at all. Pick an address from
-   `SELECT u.email FROM account a JOIN "user" u ON u.id = a.user_id
-WHERE a.provider_id = 'microsoft'` before step 4.
-9. Merge the frontend PR. It only speaks the 1.7 shapes, so it goes after the
-   backend is confirmed, never before.
-10. Send the emails from the next section, then drop
-    `account_issuer_migration_dropped`.
-
-## Pre-flight
-
-Read-only, run before the window. Each query maps to a way the migration aborts
-or loses data.
-
-```sql
--- 0. The ledger. One row for 0000_init means it is reconciled; the pre-squash
---    entries mean `npm run db:baseline:prod` is needed before step 6.
---    (`npm run db:status:prod` prints this.)
-SELECT id, left(hash, 12), to_timestamp(created_at / 1000) FROM drizzle.__drizzle_migrations
-ORDER BY created_at;
-
--- 1. Every provider needs a rule. Anything outside credential/google/microsoft
---    stops the migration at "no mapping for provider_id".
-SELECT provider_id, count(*) FROM account GROUP BY provider_id;
-
--- 2. Duplicates on the POST-backfill key, which is what guard 2 checks. Two
---    Microsoft rows with different `sub` can share an `oid`, and two credential
---    rows for one user collapse onto the same key once account_id is realigned,
---    so grouping on the current (provider_id, account_id) would miss both.
---    This mirrors the migration's own decode, including its error handling, so
---    the two cannot disagree. Prints nothing when there is nothing to fix.
-DO $$
-DECLARE r record; payload jsonb; segment text; k_iss text; k_acc text; found int := 0;
-BEGIN
-  CREATE TEMP TABLE preflight_keys (dup_issuer text, dup_account_id text) ON COMMIT DROP;
-  FOR r IN SELECT provider_id, account_id, user_id, id_token FROM account LOOP
-    IF r.provider_id = 'credential' THEN
-      k_iss := 'local:credential'; k_acc := r.user_id;
-    ELSIF r.provider_id = 'google' THEN
-      k_iss := 'https://accounts.google.com'; k_acc := r.account_id;
-    ELSE
-      payload := NULL;
-      segment := translate(split_part(coalesce(r.id_token, ''), '.', 2), '-_', '+/');
-      IF length(segment) > 0 THEN
-        BEGIN
-          payload := convert_from(
-            decode(rpad(segment, (length(segment) + 3) / 4 * 4, '='), 'base64'), 'UTF8')::jsonb;
-        EXCEPTION WHEN others THEN payload := NULL;
-        END;
-      END IF;
-      k_iss := payload ->> 'iss'; k_acc := payload ->> 'oid';
-    END IF;
-    IF k_iss IS NOT NULL AND k_acc IS NOT NULL THEN
-      INSERT INTO preflight_keys VALUES (k_iss, k_acc);
-    END IF;
-  END LOOP;
-
-  FOR r IN SELECT dup_issuer, dup_account_id, count(*) AS n FROM preflight_keys
-           GROUP BY 1, 2 HAVING count(*) > 1 LOOP
-    found := found + 1;
-    RAISE NOTICE 'DUPLICATE KEY: % / % appears % times', r.dup_issuer, r.dup_account_id, r.n;
-  END LOOP;
-  IF found = 0 THEN RAISE NOTICE 'no duplicate keys - guard 2 will pass'; END IF;
-END $$;
-
--- 3. Credential rows the migration will realign. Informational, but a non-zero
---    count means query 2 above is the one that matters.
-SELECT count(*) FROM account WHERE provider_id = 'credential' AND account_id <> user_id;
-```
-
-Resolve any row query 2 returns by hand before the window. Add an `UPDATE` to
-`0001_account_issuer.sql` for any provider query 1 turns up — do not improvise
-in psql during the outage.
-
-## What the backfill does to each provider
-
-| `provider_id` | `issuer`                      | `account_id`                | outcome                       |
+| `provider_id` | `issuer` written              | `account_id`                | outcome                       |
 | ------------- | ----------------------------- | --------------------------- | ----------------------------- |
 | `credential`  | `local:credential`            | realigned to the user id    | preserved                     |
-| `google`      | `https://accounts.google.com` | unchanged — still `sub`     | preserved                     |
+| `google`      | `https://accounts.google.com` | unchanged, still `sub`      | preserved                     |
 | `microsoft`   | `iss` claim from `id_token`   | `oid` claim from `id_token` | preserved, re-keyed           |
-| `microsoft`   | — (no decodable `id_token`)   | —                           | **row deleted**, must re-link |
+| `microsoft`   | none decodable                | none                        | **row deleted**, must re-link |
 
-Microsoft moves both halves of its key: 1.6 stored `account_id` as the pairwise
-`sub`, and 1.7 looks the account up by the directory `oid` under the tenant's own
-`iss`. Both claims are in the `id_token` better-auth already stored verbatim —
-only access and refresh tokens are passed through `setTokenUtil`, and this app
-sets no `advanced.encryptOAuthTokens` — and 1.6's Microsoft provider refused to
-create an account without one, so in practice every row can be re-keyed.
+Rows in that last case went into `account_issuer_migration_dropped` before they
+were deleted, because `drizzle-kit migrate` installs no notice listener and a
+`RAISE NOTICE` would have gone nowhere. That table is outside the drizzle schema
+on purpose, and it is read and dropped by hand. See the loose end below.
 
-A row whose token is missing or undecodable has no recoverable key, and is
-deleted rather than left behind: a stale row strands the user on
-`account not linked`, because the lookup misses and `disableImplicitLinking`
-refuses the implicit re-link at sign-in. Deleting makes the settings card say
-"Not connected", which is true.
+## Part two: the revert to 1.7.4
 
-**Recovery for anyone in that last row is password reset, not re-linking.**
-Re-linking goes through `/link-social`, which needs a session they cannot get.
-Password reset works even for a user who never had a password: the request does
-not require a credential account, and completing it creates one. Tell affected
-users that, and do not tell them to "just reconnect".
+better-auth 1.7.3 ([better-auth#11153](https://github.com/better-auth/better-auth/pull/11153))
+restored the 1.6 key. An account is identified by `(providerId, accountId)`
+again, `issuer` is gone from the core account schema, and
+`createLocalAccountIssuer` / `createOAuthAccountIssuer` no longer exist. The
+lockfile is what held this repo at 1.7.2 to stay compiling; `package.json`
+carried a caret, which already permits 1.7.4. The column production ran has to
+come back out.
 
-The migration writes every dropped link to `account_issuer_migration_dropped`
-before deleting it, so the list is exact and survives the window — a
-`RAISE NOTICE` would not, since `drizzle-kit migrate` installs no notice
-listener on the pg client. After step 8:
+**Upstream reverted only the first half of `0001`.** `@better-auth/core` 1.7.4
+still declares `accountSubject: ({ profile }) => profile.oid` for Microsoft and
+`profile.sub` for Google, byte for byte what 1.7.2 declared, and the credential
+path in `dist/api/routes/sign-in.mjs` dropped its `account.issuer` clause while
+keeping `account.accountId === user.id`. So every `account_id` value `0001`
+wrote is what 1.7.4 looks up. **Keep the Microsoft `oid` re-key. Undoing it is
+the one change that would break sign-in.** Drop only the column and its unique
+index. No row's data changes, so there is no backfill.
+
+### Why the column cannot just stay
+
+1.7.3 and later run a schema check at init that throws rather than warns
+(`@better-auth/core/dist/db/schema-check.mjs`:
+`if (findings.length) throw new SchemaMismatchError(findings, source)`). A
+required column better-auth never writes raises `unexpected-required-column`,
+and the hint names this exact case: every insert into `account` would fail. The
+check reads the Drizzle schema as well as the database, so both sides move.
+
+### Why there is no window this time
+
+`schema-diff.mjs` skips any column that is nullable or has a default:
+
+```js
+if (written.has(column.name) || column.nullable || column.hasDefault) continue;
+```
+
+A **nullable** `issuer` offends neither image. 1.7.2 carries on writing it and
+1.7.4 ignores it, so that one state is an overlap wide enough to deploy
+through, which is what `0001` never had. Postgres treats NULLs as distinct in a
+unique index, so rows 1.7.4 writes with `issuer IS NULL` do not collide under
+the old index either.
+
+This is an ordinary deploy. No `apprunner pause-service`, no
+`start-deployment`, no announced window.
+
+### Sequence
+
+The split into two migration files is the zero-downtime property, so they get
+applied at two different moments rather than in one run. `drizzle-kit generate`
+would have emitted a single drop, which is why both are hand-written the way
+`0001` was.
+
+`db:migrate:prod` applies everything the journal lists and has no flag to stop
+at one file, so **what separates the two steps is which commit you run it
+from.** The branch carries two commits for exactly that reason:
+
+| Commit     | Journal ends at | better-auth | `account.issuer` |
+| ---------- | --------------- | ----------- | ---------------- |
+| `8fe3d6f`  | `0006`          | 1.7.2       | nullable         |
+| branch tip | `0007`          | 1.7.4       | dropped          |
+
+Before anything, run `npm run db:status:prod`. If the ledger still holds the
+pre-squash entries rather than one row for `0000_init`, `npm run db:baseline:prod`
+has to come first, or drizzle replays the whole baseline over the live schema.
+
+1. **Migration A, before the deploy.** Check out the first commit and migrate.
+   Its journal ends at `0006`, so that is all that runs:
+
+   ```bash
+   git checkout 8fe3d6f
+   npm run db:migrate:prod
+   ```
+
+   No `npm ci` first. The migrate script only uses `drizzle-orm` and `pg`, so
+   whichever better-auth is installed does not matter. Come back with
+   `git checkout feat/better-auth-1-7-4`.
+
+   The column is nullable now and 1.7.2 carries on writing it. Nothing is down.
+
+2. **Merge the PR and let CD deploy.** Ordinary deploy, no pause, no
+   `start-deployment`. If it has to be rolled back, 1.7.2 still runs against a
+   nullable column.
+
+3. **Migration B, once the deploy is confirmed.** From `main`:
+
+   ```bash
+   npm run db:migrate:prod
+   ```
+
+   The newest ledger row is `0006`, so only `0007` runs.
+
+   `0007` checks for itself that no two rows share `(provider_id, account_id)`
+   before it drops anything, because that pair carries uniqueness alone
+   afterwards. Two Microsoft rows in different tenants sharing an `oid` are the
+   only way it collides, which is vanishingly unlikely for a GUID. If it does,
+   the migration aborts naming the offending row and commits nothing, since
+   drizzle wraps the whole run in one transaction.
+
+4. **Verify.** `/health`, one email sign-in, one `list-accounts` on an account
+   with a Google link, and a returning **Microsoft** sign-in. Microsoft is the
+   one that proves the `oid` key survived; the others would look fine either
+   way.
+
+### Loose end
+
+`account_issuer_migration_dropped` still exists. Nothing above needs it, and
+none of the steps above need a psql session, so this is the one piece that
+does. It does not block the migration and can wait. If the table holds rows,
+those users lost a Microsoft link during the 1.7.0 migration and were never
+told:
 
 ```sql
 SELECT email, legacy_account_id, reason FROM account_issuer_migration_dropped
 ORDER BY email;
 ```
 
-`reason` distinguishes the four cases the migration cannot recover from: no
-`id_token` stored, a payload that did not decode, a payload without `iss` or
-`oid`, and claims that are not shaped like Entra's (the migration will not key
-an account on an issuer that is not `https://<host>/<tenant guid>/v2.0` or an
-`oid` that is not a GUID, since that column is mutable and the value becomes
-half of an identity). Drop the table once the emails are out.
+**Recovery for anyone on that list is password reset, not re-linking.**
+`/link-social` needs a session they cannot get. Password reset works even for a
+user who never had a password: the request does not require a credential
+account, and completing it creates one. Drop the table once the emails are out.
 
-If that list is ever long enough that mass password resets are not acceptable,
-the upstream guide's alternative is to source the missing `oid` values from a
-trusted Microsoft Entra directory export and load them before step 6, instead of
-letting the migration delete those rows. Nothing here needed that, but the
-option is real and this is where it would go.
+### What still guards the key
 
-## Afterwards
-
-`src/tests/db/accountIssuer.test.ts` pins both halves of every provider's key —
-the issuer literals in the SQL and the subject claim each provider resolves — to
-better-auth's own declarations, so a later upgrade that changes either one fails
-a test instead of quietly stranding accounts.
+`src/tests/db/accountSubject.test.ts` replaces the old `accountIssuer` test. The
+issuer literals it pinned no longer exist upstream, but the Microsoft `oid`
+re-key is now the load-bearing half of `0001` on its own, so the test pins
+`socialProviders.microsoft(...).accountSubject` against the claim `0001` wrote.
+A future release that moves the subject back fails that test instead of quietly
+locking every Microsoft user out.

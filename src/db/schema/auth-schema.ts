@@ -43,9 +43,6 @@ export const account = pgTable(
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
-    // Nullable for one deploy only. better-auth 1.7.2 still writes it and
-    // 1.7.4 ignores it, which is the overlap 0007 drops the column through.
-    issuer: text("issuer"),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -62,7 +59,7 @@ export const account = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("idx_account_issuer_account_id").on(table.issuer, table.accountId),
+    uniqueIndex("idx_account_provider_id_account_id").on(table.providerId, table.accountId),
     index("idx_account_user_id").on(table.userId),
   ]
 );
