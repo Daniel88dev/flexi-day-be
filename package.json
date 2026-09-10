@@ -54,7 +54,7 @@
     "better-auth": "^1.7.4",
     "cors": "^2.8.5",
     "croner": "^10.0.1",
-    "date-holidays": "^3.36.0",
+    "date-holidays": "^3.36.1",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
