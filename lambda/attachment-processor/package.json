@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "dependencies": {
-    "libheif-js": "^1.19.8",
+    "libheif-js": "^1.23.2",
     "sharp": "^0.35.4"
   }
 }
