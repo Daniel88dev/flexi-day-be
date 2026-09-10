@@ -2,7 +2,6 @@ import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
-import { createLocalAccountIssuer } from "better-auth/db";
 import { account, user, verification } from "../../db/schema/auth-schema.js";
 import { auth } from "../../utils/auth.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
@@ -34,34 +33,28 @@ describe("password reset settles the account", () => {
     return id;
   };
 
-  // Rows shaped the way better-auth 1.7 actually writes them. A synthetic
-  // `local:oauth:<provider>` issuer would be a value that cannot occur for
-  // either configured provider, so any future test that resolves an account by
-  // its key would be built on data production never produces.
-  const identity = (userId: string, providerId: string) => {
+  // Rows shaped the way better-auth actually writes them. Microsoft's
+  // `account_id` is the directory `oid`, not the pairwise `sub` — the half of
+  // the 0001 re-key that survives the issuer revert.
+  const accountIdFor = (userId: string, providerId: string) => {
     switch (providerId) {
       case "credential":
-        return { issuer: createLocalAccountIssuer(providerId), accountId: userId };
+        return userId;
       case "google":
-        return { issuer: "https://accounts.google.com", accountId: `google-sub-${userId}` };
+        return `google-sub-${userId}`;
       case "microsoft":
-        return {
-          issuer: `https://login.microsoftonline.com/${MS_TENANT_ID}/v2.0`,
-          accountId: `9f3ab2c1-77de-4f0a-bb31-${userId.replace(/\D/g, "").padStart(12, "0").slice(-12)}`,
-        };
+        return `9f3ab2c1-77de-4f0a-bb31-${userId.replace(/\D/g, "").padStart(12, "0").slice(-12)}`;
       default:
-        throw new Error(`no issuer mapping for provider ${providerId}`);
+        throw new Error(`no account id mapping for provider ${providerId}`);
     }
   };
-
-  const MS_TENANT_ID = "72f988bf-1234-41af-91ab-2d7cd011db47";
 
   const addAccount = async (userId: string, providerId: string) => {
     await db.insert(account).values({
       id: uuidv4(),
       userId,
       providerId,
-      ...identity(userId, providerId),
+      accountId: accountIdFor(userId, providerId),
       createdAt: new Date(),
       updatedAt: new Date(),
     });

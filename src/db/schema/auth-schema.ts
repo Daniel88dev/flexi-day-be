@@ -43,10 +43,6 @@ export const account = pgTable(
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
-    // better-auth 1.7 keys an account by (issuer, accountId), not by provider.
-    // An OIDC provider supplies its own issuer; the rest get a synthetic one
-    // from `createLocalAccountIssuer` / `createOAuthAccountIssuer`.
-    issuer: text("issuer").notNull(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -63,7 +59,7 @@ export const account = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("idx_account_issuer_account_id").on(table.issuer, table.accountId),
+    uniqueIndex("idx_account_provider_id_account_id").on(table.providerId, table.accountId),
     index("idx_account_user_id").on(table.userId),
   ]
 );

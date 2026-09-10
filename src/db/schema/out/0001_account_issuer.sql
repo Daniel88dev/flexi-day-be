@@ -16,8 +16,7 @@ UPDATE "account" SET "account_id" = "user_id"
 WHERE "provider_id" = 'credential' AND "account_id" <> "user_id";--> statement-breakpoint
 
 -- Google's subject is still the `sub` claim in 1.7, so only the issuer is new
--- and these rows survive intact. The literal is Google's OIDC issuer, pinned to
--- better-auth's own provider declaration by accountIssuer.test.ts.
+-- and these rows survive intact. The literal is Google's OIDC issuer.
 UPDATE "account" SET "issuer" = 'https://accounts.google.com' WHERE "provider_id" = 'google';--> statement-breakpoint
 
 -- A dropped link is a person who has to be told, so the migration records them
