@@ -89,7 +89,7 @@ describe("processAttachment", () => {
     expect(result.bytes.includes("Exif")).toBe(false);
   });
 
-  it("decodes two HEICs at once without mixing them up", async () => {
+  it("decodes two HEICs at once and still refuses a truncated one", async () => {
     const input = fixture("oversized-exif.heic");
 
     const results = await Promise.all([
@@ -105,7 +105,7 @@ describe("processAttachment", () => {
     }
   });
 
-  it("rejects a HEIC whose container parses but whose picture data is cut off", async () => {
+  it("rejects a HEIC whose container declares more bytes than arrived", async () => {
     const whole = fixture("oversized-exif.heic");
     const corrupt = whole.subarray(0, Math.floor(whole.length / 2));
 
