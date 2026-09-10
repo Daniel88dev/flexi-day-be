@@ -2,7 +2,8 @@ version: 2
 
 updates:
   # npm. Minor and patch land as one grouped PR per week so routine bumps do not
-  # become a dozen separate reviews; majors stay individual because they need one.
+  # become a dozen separate reviews; majors stay individual because they need one,
+  # unless a family cannot install apart — see vitest-major below.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -13,6 +14,17 @@ updates:
         update-types:
           - minor
           - patch
+      # The one major that cannot land alone. vitest, @vitest/ui and
+      # @vitest/coverage-istanbul peer-depend on each other by exact version, so
+      # three separate major PRs are three ERESOLVE failures — each one is the
+      # new major arguing with the two still on the old one. Only minor and
+      # patch are safe apart, and those already ride the group above.
+      vitest-major:
+        patterns:
+          - vitest
+          - "@vitest/*"
+        update-types:
+          - major
 
   # Actions are pinned to commit SHAs, which pins the supply chain but also means
   # nothing updates them by hand. This is what keeps those pins current.
