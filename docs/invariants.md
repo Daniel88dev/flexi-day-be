@@ -157,12 +157,19 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
 - **The grant is scoped to membership.** `handleDeleteGroupUser` revokes it when the user leaves
   the organization's last group, under a `lockOrganization` — the count spans the org, so a group
   lock alone lets two concurrent removals each see the other's membership as live.
-- **Billing writes stay owner-only.** `billingEmail`, granting and revoking admins all go through
-  `assertOrganizationOwner`; checkout, change-plan, slots and the portal resolve the org with
-  `getOrganizationForOwner`, so a delegate never reaches them. Only the read widened:
-  `GET /api/billing/subscription` resolves the organization the caller _administers_
-  (`getAdminOrganizationsForUser`, owned first), because a delegate shown Free was locked out of
-  every paid feature they administer.
+- **A billing write never reaches the organization the caller merely administers.** `billingEmail`,
+  granting and revoking admins all go through `assertOrganizationOwner`. Change-plan, slots and the
+  portal resolve the org with `getOrganizationForOwner`, which finds nothing for a delegate.
+  Checkout is the one that does not refuse them — `ensureOrganizationForUser` gives every caller an
+  organization they **own**, creating it if needed, and that id is what rides in Paddle's
+  `customData`. So a delegate who checks out buys a plan for an organization of their own, never
+  for the one they administer. Resolving checkout against the administered org would be the
+  escalation; refusing delegates outright would only stop someone starting their own paid org.
+  Only the read widened: `GET /api/billing/subscription` resolves the organization the caller
+  _administers_ (`getAdminOrganizationsForUser`, owned first), because a delegate shown Free was
+  locked out of every paid feature they administer. The client is told which case it is by
+  `organization.isOwner`, so it stops offering a delegate a "Subscribe" that would quietly put a
+  plan on a new organization of theirs.
 - **Delegates are picked from the organization's own people.** `listOrganizationAdminCandidates`
   is deliberately not a lookup by email, which would let an owner probe whether an address has an
   account.

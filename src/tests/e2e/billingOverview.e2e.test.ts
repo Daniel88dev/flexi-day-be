@@ -208,12 +208,26 @@ describe("billing overview over the API", () => {
     expect(res.body.usage).toEqual({ groupsUsed: 0, groups: [] });
   });
 
-  it("keeps billing writes owner-only", async () => {
-    // Checkout, change-plan, slots and the portal all resolve their
-    // organization with `getOrganizationForOwner`, and those routes stop at
-    // `requirePaddle` in this environment. Asserting the resolver is what pins
-    // the split: the delegate reads the Pro plan but owns nothing to charge.
-    expect(await getOrganizationForOwner(delegate.id)).toBeUndefined();
-    expect((await getOrganizationForOwner(owner.id))?.id).toBe(proOrganizationId);
+  // Runs last: the checkout case below creates the delegate's own organization,
+  // which would otherwise change what the reads above resolve.
+  describe("no billing write reaches the administered organization", () => {
+    it("leaves change-plan, slots and the portal with nothing to charge", async () => {
+      // All three resolve with `getOrganizationForOwner`, and the routes stop
+      // at `requirePaddle` in this environment — so the resolver is where the
+      // split is worth asserting.
+      expect(await getOrganizationForOwner(delegate.id)).toBeUndefined();
+      expect((await getOrganizationForOwner(owner.id))?.id).toBe(proOrganizationId);
+    });
+
+    it("bills a delegate's checkout to an organization of their own", async () => {
+      // Checkout is the one write that does not refuse a delegate: it resolves
+      // with `ensureOrganizationForUser`, whose result is always owned by the
+      // caller. Resolving it against the administered org instead would be the
+      // escalation, so pin the ownership rather than the refusal.
+      const billed = await ensureOrganizationForUser(delegate.id);
+
+      expect(billed.ownerUserId).toBe(delegate.id);
+      expect(billed.id).not.toBe(proOrganizationId);
+    });
   });
 });
