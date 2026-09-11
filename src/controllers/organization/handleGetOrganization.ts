@@ -11,8 +11,8 @@ import { listOrganizationAdmins } from "../../services/organization/organization
  * groups and its administrators.
  *
  * Delegated admins see the plan but not the money — `billingEmail` and the
- * Paddle linkage stay owner-only, and subscription detail beyond plan/status
- * lives on `/api/billing/subscription`, which resolves by ownership.
+ * Paddle linkage stay owner-only. Subscription detail beyond plan/status lives
+ * on `/api/billing/subscription`, which applies the same split.
  */
 export const handleGetOrganization = async (req: Request, res: Response) => {
   const auth = getAuth(req);

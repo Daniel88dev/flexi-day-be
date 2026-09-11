@@ -157,8 +157,12 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
 - **The grant is scoped to membership.** `handleDeleteGroupUser` revokes it when the user leaves
   the organization's last group, under a `lockOrganization` — the count spans the org, so a group
   lock alone lets two concurrent removals each see the other's membership as live.
-- **Billing stays owner-only.** `billingEmail`, granting and revoking admins all go through
-  `assertOrganizationOwner`, and `/api/billing/*` resolves the org by ownership.
+- **Billing writes stay owner-only.** `billingEmail`, granting and revoking admins all go through
+  `assertOrganizationOwner`; checkout, change-plan, slots and the portal resolve the org with
+  `getOrganizationForOwner`, so a delegate never reaches them. Only the read widened:
+  `GET /api/billing/subscription` resolves the organization the caller _administers_
+  (`getAdminOrganizationsForUser`, owned first), because a delegate shown Free was locked out of
+  every paid feature they administer.
 - **Delegates are picked from the organization's own people.** `listOrganizationAdminCandidates`
   is deliberately not a lookup by email, which would let an owner probe whether an address has an
   account.
