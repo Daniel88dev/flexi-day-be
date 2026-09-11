@@ -23,16 +23,23 @@ export const billingRouter = (): Router => {
    *       - Billing
    *     summary: Current subscription, entitlements and usage
    *     description: |
-   *       Returns the caller's organization (owner-resolved from the session,
-   *       never from the request), its subscription row if any, the resolved
-   *       entitlements (plan, group/member limits, writability, grace end) and
-   *       usage meters. Callers who own no organization yet get Free
-   *       entitlements with empty usage.
+   *       Returns the organization the caller administers — the one they own,
+   *       else the one they hold a delegated admin row in — resolved from the
+   *       session, never from the request. With it come its subscription row
+   *       if any, the resolved entitlements (plan, group/member limits,
+   *       writability, grace end) and usage meters. Callers who administer no
+   *       organization get Free entitlements with empty usage. Reading is
+   *       wider than writing: checkout, slots and the portal stay owner-only,
+   *       which `organization.isOwner` tells the client. A delegate's payload
+   *       carries a null `billingEmail` and `hasPaddleCustomer: false` — the
+   *       plan, never the money.
    *     security:
    *       - bearerAuth: []
    *     responses:
    *       '200':
-   *         description: Subscription state, entitlements, usage counts
+   *         description: |
+   *           `organization` (id, name, isOwner, billingEmail, hasPaddleCustomer),
+   *           `subscription`, `entitlements`, `usage` and `planLimits`.
    */
   app.get("/subscription", tryCatch(handleGetSubscription));
 
