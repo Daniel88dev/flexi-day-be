@@ -32,7 +32,8 @@ export const billingRouter = (): Router => {
    *       wider than writing: checkout, slots and the portal stay owner-only,
    *       which `organization.isOwner` tells the client. A delegate's payload
    *       carries a null `billingEmail` and `hasPaddleCustomer: false` — the
-   *       plan, never the money.
+   *       plan, never the money. `usage.activeEmployments` is the
+   *       organization's headcount; no plan caps it.
    *     security:
    *       - bearerAuth: []
    *     responses:

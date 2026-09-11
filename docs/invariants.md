@@ -174,6 +174,26 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
   is deliberately not a lookup by email, which would let an owner probe whether an address has an
   account.
 
+## Employment roster (`employments`, `src/services/employment/`)
+
+- **The roster is written by the link, never by a screen.** `syncEmployment` hangs off the service
+  functions that change the four links of ADR 0004 — `ensureOrganizationForUser`,
+  `grantOrganizationAdmin`, `removeOrganizationAdmin`, `createGroup`, `updateGroupManager`,
+  `deleteGroup`, `createGroupUser`, `deleteGroupUser` — not off the controllers that call them. A
+  new join path therefore keeps the roster in step without knowing the roster exists, which is the
+  whole risk the ADR names.
+- **It recomputes, never applies a delta.** `syncEmployment` asks `hasOrganizationLink` what is
+  left and writes the answer, so two link removals in one request end the Employment exactly once
+  whichever order they land in — `handleDeleteGroupUser` drops the last membership and revokes the
+  admin grant, and only the second of those finds nothing left. A delta would double-end it or
+  miss it depending on the order.
+- **It runs in the caller's transaction.** The row that decides the answer is usually one the
+  caller has just written and not committed; passing `tx` is what lets the sync see it.
+- **Reading an Employment is wider than belonging to one.** `attendanceAccess.ts` is the only
+  statement of who may read and correct one, and it deliberately leaves a manager's own Employment
+  — and anyone else's who belongs to no group — to org admins alone, because no group admin's
+  scope contains someone with no `group_users` row.
+
 ## Billing config is opt-in (`src/config.ts`)
 
 With `PADDLE_API_KEY` unset, `config.paddle` is `undefined` and `/api/billing/*` returns 503. Once

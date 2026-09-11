@@ -10,6 +10,7 @@ import type {
 } from "./types.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
+import { syncEmploymentForGroup } from "../employment/employmentServices.js";
 
 export const getGroupUser = async (
   userId: string,
@@ -36,6 +37,10 @@ export const createGroupUser = async (
   tx?: DbTransaction
 ): Promise<GroupUser | undefined> => {
   const [row] = await (tx ?? db).insert(groupUsers).values(data).onConflictDoNothing().returning();
+
+  // Nothing inserted means they already belong to the group, and therefore
+  // already hold an Employment.
+  if (row) await syncEmploymentForGroup(row.groupId, row.userId, tx);
 
   return row;
 };
@@ -72,6 +77,10 @@ export const deleteGroupUser = async (
     })
     .where(and(eq(groupUsers.id, id), isNull(groupUsers.deletedAt)))
     .returning();
+
+  // Their Employment survives this whenever another link does — a second
+  // group, an admin grant, a group they manage.
+  if (row) await syncEmploymentForGroup(row.groupId, row.userId, tx);
 
   return row;
 };
@@ -143,6 +152,43 @@ export const countActiveMembershipsInOrganization = async (
     );
 
   return Number(row?.value ?? 0);
+};
+
+/** The organization's live groups this user actively belongs to. */
+export const getActiveGroupIdsInOrganization = async (
+  userId: string,
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<string[]> => {
+  const rows = await (tx ?? db)
+    .select({ groupId: groupUsers.groupId })
+    .from(groupUsers)
+    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
+    .where(
+      and(
+        eq(groupUsers.userId, userId),
+        eq(groups.organizationId, organizationId),
+        isNull(groupUsers.deletedAt),
+        isNull(groups.deletedAt)
+      )
+    );
+
+  return rows.map((row) => row.groupId);
+};
+
+/** The distinct people actively belonging to any of these groups. */
+export const getActiveMemberIdsForGroups = async (
+  groupIds: string[],
+  tx?: DbTransaction
+): Promise<string[]> => {
+  if (groupIds.length === 0) return [];
+
+  const rows = await (tx ?? db)
+    .selectDistinct({ userId: groupUsers.userId })
+    .from(groupUsers)
+    .where(and(inArray(groupUsers.groupId, groupIds), isNull(groupUsers.deletedAt)));
+
+  return rows.map((row) => row.userId);
 };
 
 /** Active (user, group) membership pairs, for cross-referencing many at once. */

@@ -5,6 +5,10 @@ import { and, asc, count, eq, inArray, isNull, or } from "drizzle-orm";
 import { user } from "../../db/schema/auth-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { alias } from "drizzle-orm/pg-core";
+import {
+  syncEmployment,
+  syncEmploymentsForDeletedGroup,
+} from "../employment/employmentServices.js";
 
 export const getGroup = async (
   groupId: string,
@@ -53,20 +57,38 @@ export const createGroup = async (
   tx?: DbTransaction
 ): Promise<GroupType | undefined> => {
   const [row] = await (tx ?? db).insert(groups).values(data).returning();
+  if (row) await syncEmployment(row.organizationId, row.managerUserId, tx);
   return row;
 };
 
+/**
+ * Hands the group to a new manager. Managing a group is one of the four links
+ * to an organization, so this joins the incoming manager and may be the
+ * outgoing one's last link. `tx` is required rather than optional because
+ * those three writes have to commit together.
+ */
 export const updateGroupManager = async (
   groupId: string,
-  newManagerId: string
+  newManagerId: string,
+  tx: DbTransaction
 ): Promise<GroupType | undefined> => {
-  const [row] = await db
+  const previous = await lockGroup(groupId, tx);
+  if (!previous) return undefined;
+
+  const [row] = await tx
     .update(groups)
     .set({
       managerUserId: newManagerId,
     })
     .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .returning();
+
+  if (!row) return undefined;
+
+  await syncEmployment(row.organizationId, newManagerId, tx);
+  if (previous.managerUserId !== newManagerId) {
+    await syncEmployment(row.organizationId, previous.managerUserId, tx);
+  }
 
   return row;
 };
@@ -89,14 +111,27 @@ export const updateGroupApprovalUsers = async (
   return row;
 };
 
-export const deleteGroup = async (groupId: string): Promise<GroupType | undefined> => {
-  const [row] = await db
+/**
+ * Soft-deletes the group. Its members keep their live `group_users` rows, so
+ * every one of them has to be re-evaluated: the group was the last link to the
+ * organization for anyone who belonged to no other. `tx` is required rather
+ * than optional because that sweep has to commit with the deletion.
+ */
+export const deleteGroup = async (
+  groupId: string,
+  tx: DbTransaction
+): Promise<GroupType | undefined> => {
+  const [row] = await tx
     .update(groups)
     .set({
       deletedAt: new Date(),
     })
     .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .returning();
+
+  if (!row) return undefined;
+
+  await syncEmploymentsForDeletedGroup(row, tx);
 
   return row;
 };

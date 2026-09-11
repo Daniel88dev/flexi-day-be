@@ -9,6 +9,7 @@ import { getUserById } from "../user/userServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import AppError from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
+import { syncEmployment } from "../employment/employmentServices.js";
 import type {
   OrganizationAdminListItem,
   OrganizationCandidate,
@@ -74,7 +75,13 @@ export const ensureOrganizationForUser = async (
     .onConflictDoNothing({ target: organizations.ownerUserId })
     .returning();
 
-  if (created) return created;
+  if (created) {
+    // Only on creation: `ownerUserId` never moves, so an existing organization
+    // already carries its owner's Employment and this is the hot path for
+    // checkout and group creation alike.
+    await syncEmployment(created.id, userId, tx);
+    return created;
+  }
 
   const raced = await getOrganizationForOwner(userId, tx);
   if (!raced) {
@@ -332,17 +339,19 @@ export const grantOrganizationAdmin = async (input: {
       )
       .returning({ id: organizationUsers.id });
 
-    if (revived.length > 0) return;
+    if (revived.length === 0) {
+      await tx
+        .insert(organizationUsers)
+        .values({
+          id: generateRandomUUID(),
+          organizationId: input.organizationId,
+          userId: input.userId,
+          grantedByUserId: input.grantedByUserId,
+        })
+        .onConflictDoNothing();
+    }
 
-    await tx
-      .insert(organizationUsers)
-      .values({
-        id: generateRandomUUID(),
-        organizationId: input.organizationId,
-        userId: input.userId,
-        grantedByUserId: input.grantedByUserId,
-      })
-      .onConflictDoNothing();
+    await syncEmployment(input.organizationId, input.userId, tx);
   });
 };
 
@@ -362,6 +371,12 @@ export const removeOrganizationAdmin = async (
       )
     )
     .returning({ id: organizationUsers.id });
+
+  if (removed.length > 0) {
+    // The grant may have been their last link — it is for a delegate who
+    // belongs to no group. `syncEmployment` decides; this one only asks.
+    await syncEmployment(organizationId, userId, tx);
+  }
 
   return removed.length > 0;
 };

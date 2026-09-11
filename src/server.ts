@@ -34,6 +34,7 @@ import { devRouter } from "./routes/devRouter.js";
 import { requestContext } from "./middleware/requestContext.js";
 import { billingRouter } from "./routes/billingRouter.js";
 import { organizationRouter } from "./routes/organizationRouter.js";
+import { employmentRouter } from "./routes/employmentRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
 import { supportRouter } from "./routes/supportRouter.js";
 import { attachmentRouter } from "./routes/attachmentRouter.js";
@@ -122,6 +123,7 @@ export const createServer = () => {
   app.use("/api/reports", reportRouter());
   app.use("/api/billing", billingRouter());
   app.use("/api/organization", organizationRouter());
+  app.use("/api/employment", employmentRouter());
   app.use("/api/attachments", attachmentRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
