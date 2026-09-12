@@ -71,6 +71,13 @@
       "when": 1789208063679,
       "tag": "0009_silent_prowler",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789221833008,
+      "tag": "0010_attendance_sessions",
+      "breakpoints": true
     }
   ]
 }

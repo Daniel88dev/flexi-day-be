@@ -129,5 +129,9 @@ reserved-domain address there is bad data, and bouncing it helps nobody.
 - `employment-schema.ts` — unique on `(organization_id, user_id)`, so the row is the person's
   **current** spell in that organization, not a history: a rejoin reopens it with a new
   `started_at` and the earlier spell is gone.
+- `attendance-schema.ts` — "one open session per Employment" and "one open break per session" are
+  partial unique indexes on the null `ended_at`, not handler checks; the reads that precede an
+  insert are for the error message. The six location columns are nullable and unwritten until the
+  location ticket.
 - `paddle-event-schema.ts` — webhook idempotency, not billing state (that is
   `subscription-schema.ts`).
