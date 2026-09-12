@@ -6,6 +6,7 @@ import {
   validateAttendanceScope,
 } from "../services/attendance/types.js";
 import { handleGetAttendanceState } from "../controllers/attendance/handleGetAttendanceState.js";
+import { handleGetAttendanceMonth } from "../controllers/attendance/handleGetAttendanceMonth.js";
 import { handleClockIn } from "../controllers/attendance/handleClockIn.js";
 import { handleClockOut } from "../controllers/attendance/handleClockOut.js";
 import { handleStartBreak } from "../controllers/attendance/handleStartBreak.js";
@@ -70,6 +71,86 @@ export const attendanceRouter = (): Router => {
    *         description: Malformed organizationId
    */
   app.get("/current", tryCatch(handleGetAttendanceState));
+
+  /**
+   * @openapi
+   * /api/attendance/month:
+   *   get:
+   *     tags:
+   *       - Attendance
+   *     summary: One month of the caller's own attendance
+   *     description: |
+   *       Every business date of the month with the sessions that fall on it and
+   *       the figures `docs/attendance.md` defines: presence, the break taken,
+   *       what was deducted, worked time, required time and the balance. The
+   *       rules travel with the answer — required minutes, the break allowance
+   *       and its threshold, and the balance mode — because an employee can read
+   *       them nowhere else.
+   *
+   *       A session belongs wholly to the business date it started on, so one
+   *       that crossed midnight is on the earlier day and its whole length
+   *       counts there.
+   *
+   *       The caller's own Employment only. An admin reads somebody else's
+   *       through the team dashboard, which carries the visibility matrix.
+   *       Naming another `userId` is refused rather than ignored, so a caller
+   *       is never shown their own month believing it is a colleague's.
+   *
+   *       Never gated by the plan: a lapsed organization's history stays
+   *       readable.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: year
+   *         required: true
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: month
+   *         required: true
+   *         description: 1 to 12.
+   *         schema:
+   *           type: integer
+   *       - in: query
+   *         name: organizationId
+   *         description: Defaults to the caller's own Employment.
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: userId
+   *         description: The caller's own, or the request is refused.
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: |
+   *           `{ organizationId, employmentId, timezone, businessDate, year,
+   *           month, balanceMode, requiredMinutesPerDay, requiredMinutesOverride,
+   *           breakMinutes, breakThresholdMinutes, days, totals }`.
+   *           `requiredMinutesPerDay` is what the days were measured against —
+   *           the Employment's override where there is one, which
+   *           `requiredMinutesOverride` repeats and is otherwise null.
+   *           A day is `{ businessDate, presenceMinutes, breaksMinutes,
+   *           deductedMinutes, workedMinutes, requiredMinutes, balanceMinutes,
+   *           upcoming, open, autoClosed, flagged, sessions }`;
+   *           `balanceMinutes` is null on an upcoming date and throughout
+   *           `MONTHLY` mode, where the month carries the only balance.
+   *           `totals` is `{ presenceMinutes, workedMinutes, requiredMinutes,
+   *           requiredRangeMinutes, balanceMinutes, flaggedDays }`, where
+   *           `requiredMinutes` counts only the dates already begun — what the
+   *           balance is measured against — and `requiredRangeMinutes` the whole
+   *           month.
+   *       '403':
+   *         description: |
+   *           The query named somebody else. `context.reason` is
+   *           `OWN_EMPLOYMENT_ONLY`.
+   *       '404':
+   *         description: The caller holds no Employment in that organization
+   *       '422':
+   *         description: Missing or malformed year, month or organizationId
+   */
+  app.get("/month", tryCatch(handleGetAttendanceMonth));
 
   /**
    * @openapi

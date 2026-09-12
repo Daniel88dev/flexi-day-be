@@ -6,6 +6,7 @@ import { organizationUsers } from "../../db/schema/organization-users-schema.js"
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
+import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import type { EmploymentListItem, EmploymentType } from "./types.js";
@@ -142,6 +143,47 @@ export const getEmployment = async (
   return row;
 };
 
+export const getEmploymentById = async (
+  employmentId: string,
+  tx?: DbTransaction
+): Promise<EmploymentType | undefined> => {
+  const [row] = await (tx ?? db)
+    .select()
+    .from(employments)
+    .where(eq(employments.id, employmentId))
+    .limit(1);
+
+  return row;
+};
+
+/**
+ * The per-person override of the organization's required minutes per day. Null
+ * clears it; nothing else on the row is an admin's to set, which is why this
+ * takes the one value rather than a patch object.
+ */
+export const setEmploymentRequiredMinutes = async (
+  employmentId: string,
+  requiredMinutesPerDay: number | null,
+  tx?: DbTransaction
+): Promise<EmploymentType> => {
+  const [row] = await (tx ?? db)
+    .update(employments)
+    .set({ requiredMinutesPerDay })
+    .where(eq(employments.id, employmentId))
+    .returning();
+
+  if (!row) {
+    throw new AppError({
+      message: "Employment not found",
+      logging: true,
+      code: 404,
+      context: { employmentId },
+    });
+  }
+
+  return row;
+};
+
 /**
  * The organization's roster, by name. `userIds` narrows it to the people a
  * group admin may see; an empty array means nobody, never everybody.
@@ -159,6 +201,7 @@ export const listEmployments = async (
       userId: employments.userId,
       startedAt: employments.startedAt,
       endedAt: employments.endedAt,
+      requiredMinutesPerDay: employments.requiredMinutesPerDay,
       userName: user.name,
       email: user.email,
     })

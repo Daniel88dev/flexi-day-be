@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import {
   attendanceBreaks,
@@ -9,11 +9,20 @@ import {
 } from "../../db/schema/attendance-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import AppError from "../../utils/appError.js";
-import { businessDateInZone, previousDay, type DateString } from "../../utils/dateFunc.js";
+import {
+  businessDateInZone,
+  expandDateRangeInclusive,
+  monthEnd,
+  monthStart,
+  previousDay,
+  type DateString,
+} from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAttendanceActive, isAttendanceActive } from "../billing/guards.js";
 import { getEmployment, listEmploymentsForUser } from "../employment/employmentServices.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
+import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
+import { computeAttendance } from "./attendanceCalculation.js";
 import type { AttendanceSettingsType } from "../organization/types.js";
 import type { EmploymentType } from "../employment/types.js";
 import type {
@@ -21,6 +30,7 @@ import type {
   AttendanceSessionType,
   AttendanceSessionView,
   AttendanceStateType,
+  AttendanceMonthType,
 } from "./types.js";
 
 /**
@@ -603,5 +613,92 @@ export const getAttendanceState = async (
         [previousDay(businessDate), businessDate],
         tx
       )) ?? null,
+  };
+};
+
+/** Every session of an inclusive business-date range, oldest first. */
+export const listSessionsForRange = async (
+  employmentId: string,
+  from: DateString,
+  to: DateString,
+  tx?: DbTransaction
+): Promise<AttendanceSessionView[]> => {
+  const rows = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        eq(attendanceSessions.employmentId, employmentId),
+        gte(attendanceSessions.businessDate, from),
+        lte(attendanceSessions.businessDate, to),
+        isNull(attendanceSessions.deletedAt)
+      )
+    )
+    .orderBy(asc(attendanceSessions.startedAt));
+
+  return withBreaks(rows, tx);
+};
+
+/**
+ * One month of the caller's own attendance: every business date in it, the
+ * sessions that fall on it, and the figures `attendanceCalculation` works out
+ * from them.
+ *
+ * Never gated by the plan, like every other attendance read — a lapsed
+ * organization's history is the last thing anyone should lose.
+ *
+ * An organization that never set attendance up has no zone and so no sessions
+ * either. It answers with the month's dates against the documented defaults
+ * rather than a 404, the way the settings read does, and carries
+ * `timezone: null` so the screen can say why the month is empty.
+ */
+export const getAttendanceMonth = async (
+  userId: string,
+  query: { organizationId?: string; year: number; month: number },
+  tx?: DbTransaction
+): Promise<AttendanceMonthType> => {
+  const subject = await requireSubject(userId, query.organizationId, tx);
+  const settings = { ...ATTENDANCE_SETTINGS_DEFAULTS, ...subject.settings };
+
+  const from = monthStart(query.year, query.month);
+  const to = monthEnd(query.year, query.month);
+  const sessions = await listSessionsForRange(subject.employment.id, from, to, tx);
+
+  const now = new Date();
+  // No zone means no session could ever have been recorded, so UTC decides only
+  // which of an empty month's days are still to come.
+  const timezone = settings.timezone ?? "UTC";
+  const { days, totals } = computeAttendance({
+    dates: expandDateRangeInclusive(from, to),
+    sessions,
+    rules: {
+      breakMinutes: settings.breakMinutes,
+      breakThresholdMinutes: settings.breakThresholdMinutes,
+      requiredMinutesPerDay: settings.requiredMinutesPerDay,
+      requiredMinutesOverride: subject.employment.requiredMinutesPerDay,
+      balanceMode: settings.balanceMode,
+    },
+    timezone,
+    now,
+  });
+
+  return {
+    organizationId: subject.organizationId,
+    employmentId: subject.employment.id,
+    timezone: settings.timezone,
+    businessDate: settings.timezone ? businessDateInZone(now, settings.timezone) : null,
+    year: query.year,
+    month: query.month,
+    balanceMode: settings.balanceMode,
+    requiredMinutesPerDay:
+      subject.employment.requiredMinutesPerDay ?? settings.requiredMinutesPerDay,
+    requiredMinutesOverride: subject.employment.requiredMinutesPerDay,
+    breakMinutes: settings.breakMinutes,
+    breakThresholdMinutes: settings.breakThresholdMinutes,
+    days: days.map((day) => ({
+      ...day,
+      sessions: sessions.filter((session) => session.businessDate === day.businessDate),
+    })),
+    totals,
   };
 };

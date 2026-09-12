@@ -3,6 +3,7 @@ import {
   validateAttendanceScope,
   type AttendanceBreakType,
   type AttendanceSessionView,
+  type AttendanceMonthType,
   type AttendanceStateType,
   type ValidatedAttendanceScopeType,
 } from "../../services/attendance/types.js";
@@ -53,4 +54,33 @@ export const presentAttendanceState = (state: AttendanceStateType) => ({
   openBreak: state.openBreak ? presentBreak(state.openBreak) : null,
   sessions: state.sessions.map(presentSession),
   autoClosedSession: state.autoClosedSession ? presentSession(state.autoClosedSession) : null,
+});
+
+export const presentAttendanceMonth = (month: AttendanceMonthType) => ({
+  organizationId: month.organizationId,
+  employmentId: month.employmentId,
+  timezone: month.timezone,
+  businessDate: month.businessDate,
+  year: month.year,
+  month: month.month,
+  balanceMode: month.balanceMode,
+  requiredMinutesPerDay: month.requiredMinutesPerDay,
+  requiredMinutesOverride: month.requiredMinutesOverride,
+  breakMinutes: month.breakMinutes,
+  breakThresholdMinutes: month.breakThresholdMinutes,
+  days: month.days.map((day) => ({
+    businessDate: day.businessDate,
+    presenceMinutes: day.presenceMinutes,
+    breaksMinutes: day.breaksMinutes,
+    deductedMinutes: day.deductedMinutes,
+    workedMinutes: day.workedMinutes,
+    requiredMinutes: day.requiredMinutes,
+    balanceMinutes: day.balanceMinutes,
+    upcoming: day.upcoming,
+    open: day.open,
+    autoClosed: day.autoClosed,
+    flagged: day.flagged,
+    sessions: day.sessions.map(presentSession),
+  })),
+  totals: month.totals,
 });

@@ -20,6 +20,8 @@ export type EmploymentListItem = {
   startedAt: Date;
   endedAt: Date | null;
   ended: boolean;
+  /** This person's own required time, null while the organization's rule stands. */
+  requiredMinutesPerDay: number | null;
   user: UserSummary;
 };
 
@@ -36,3 +38,15 @@ export const validateEmploymentQuery = z.object({
 });
 
 export type ValidatedEmploymentQueryType = z.infer<typeof validateEmploymentQuery>;
+
+/**
+ * The one field of an Employment an admin sets by hand. Null clears the
+ * override and puts the person back on the organization's required time, which
+ * is why it is nullable rather than optional — an absent key would be
+ * indistinguishable from "leave it alone" in a body with nothing else in it.
+ */
+export const validatePatchEmployment = z.object({
+  requiredMinutesPerDay: z.number().int().min(0).max(1440).nullable(),
+});
+
+export type ValidatedPatchEmploymentType = z.infer<typeof validatePatchEmployment>;

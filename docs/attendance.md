@@ -54,6 +54,12 @@ therefore required time plus the break allowance.
 enforces anything; nothing is blocked, and month-end balances neither carry over nor reset — they
 are reported and left to the employer.
 
+Mid-month, both modes measure the balance against the **working days already begun**, not against
+the whole month: on the 11th, the days nobody has worked yet are not a shortfall. The full month's
+required time is reported beside it, so the figure the month is heading for is still on the screen.
+A business date later than today is reported with its required time, so the full month's figure is
+still there, but it is kept out of the balance and carries none of its own.
+
 ## Excluded days
 
 No attendance is owed on a business date that is:
