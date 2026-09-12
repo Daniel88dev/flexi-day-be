@@ -90,11 +90,6 @@ const quota = await db.transaction(async (tx) => {
 
 ## Migrations
 
-**In progress:** [`docs/better-auth-1.7-migration.md`](docs/better-auth-1.7-migration.md). better-auth
-1.7.3 reverted the account key that production migrated onto, so the `issuer` column comes back out
-across two migrations, one either side of an ordinary deploy. Read it before deploying or migrating
-anything auth-related, and delete it once `0007` has run on production.
-
 `npm run db:generate` writes a new file into `src/db/schema/out/`. `scripts/db-migrate.sh` applies
 it, and its header documents every flag.
 

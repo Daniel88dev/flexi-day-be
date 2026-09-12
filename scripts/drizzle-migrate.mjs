@@ -31,7 +31,7 @@ try {
     console.error("  This looks like the squashed baseline being replayed over a");
     console.error("  database that already has those objects. Check the ledger with");
     console.error("  `--status`: if it holds the pre-squash entries, reconcile it with");
-    console.error("  `--baseline` before migrating. See docs/better-auth-1.7-migration.md.");
+    console.error("  `--baseline` before migrating. `scripts/db-migrate.sh` documents both.");
   }
   process.exitCode = 1;
 } finally {
