@@ -248,8 +248,9 @@ export const organizationRouter = (): Router => {
    *       the feature off — the screen renders the same form either way.
    *
    *       `active` is the live answer: the stored toggle alone does not make
-   *       attendance usable, so a lapsed paid plan leaves `attendanceEnabled`
-   *       true and `active` false, and the settings stay readable.
+   *       attendance usable, it also needs a live non-Free entitlement. Once a
+   *       lapsed subscription's grace has run out, `attendanceEnabled` stays
+   *       true, `active` goes false and the settings stay readable.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -311,7 +312,11 @@ export const organizationRouter = (): Router => {
    *           type: integer
    *         active:
    *           type: boolean
-   *           description: Enabled and on a live paid entitlement. False the moment the plan lapses.
+   *           description: |
+   *             Enabled and on a live non-Free entitlement — a paid subscription,
+   *             one still inside its grace window, or an active `PRO`,
+   *             `ENTERPRISE` or `CUSTOM` manual override. False once grace runs
+   *             out, without the stored toggle moving.
    */
   app.get("/attendance-settings", tryCatch(handleGetAttendanceSettings));
 
@@ -329,9 +334,11 @@ export const organizationRouter = (): Router => {
    *       than nulls.
    *
    *       Turning attendance on requires a timezone — it fixes the business
-   *       date — and a live `PRO` or `ENTERPRISE` entitlement, grace included.
-   *       Only an actual switch-on is gated: a lapsed organization can still
-   *       correct its rules, and turning the feature off is never refused.
+   *       date — and a live non-Free entitlement: a paid subscription, one
+   *       still inside its grace window, or an active `PRO`, `ENTERPRISE` or
+   *       `CUSTOM` manual override. Only an actual switch-on is gated, so an
+   *       organization whose grace has run out can still correct its rules,
+   *       and turning the feature off is never refused.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -411,8 +418,8 @@ export const organizationRouter = (): Router => {
    *           organization and administers several.
    *       '402':
    *         description: |
-   *           Turning attendance on without a live `PRO` or `ENTERPRISE`
-   *           entitlement. `errors[].context` carries `{ reason: "PLAN_LIMIT" }`.
+   *           Turning attendance on without a live non-Free entitlement.
+   *           `errors[].context` carries `{ reason: "PLAN_LIMIT" }`.
    *       '403':
    *         description: Caller does not administer this organization
    *       '404':
