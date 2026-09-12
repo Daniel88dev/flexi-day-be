@@ -5,6 +5,7 @@
  */
 
 import {
+  businessDateInZone,
   filterWorkingDays,
   formatDateToISOString,
   formatStartAndEndDate,
@@ -105,5 +106,34 @@ describe("filterWorkingDays", () => {
   test("returns all days when every day is a working day", () => {
     const days = ["2024-07-24", "2024-07-25"];
     expect(filterWorkingDays(days, monToFri)).toEqual(days);
+  });
+});
+
+describe("businessDateInZone", () => {
+  it("puts 23:30 local on the day it is local, not the UTC day", () => {
+    // 21:30Z is 23:30 in Europe/Prague on summer time.
+    expect(businessDateInZone(new Date("2026-07-15T21:30:00Z"), "Europe/Prague")).toBe(
+      "2026-07-15"
+    );
+  });
+
+  it("rolls to the next date at 00:30 local, while UTC is still on the day before", () => {
+    expect(businessDateInZone(new Date("2026-07-15T22:30:00Z"), "Europe/Prague")).toBe(
+      "2026-07-16"
+    );
+  });
+
+  it("reads a zone behind UTC as the earlier date", () => {
+    expect(businessDateInZone(new Date("2026-07-16T03:00:00Z"), "America/New_York")).toBe(
+      "2026-07-15"
+    );
+  });
+
+  it("pads single-digit months and days", () => {
+    expect(businessDateInZone(new Date("2026-01-02T12:00:00Z"), "UTC")).toBe("2026-01-02");
+  });
+
+  it("throws on an invalid instant", () => {
+    expect(() => businessDateInZone(new Date("nope"), "UTC")).toThrow();
   });
 });

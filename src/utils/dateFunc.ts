@@ -100,3 +100,32 @@ export const formatStartAndEndDate = (
     endDate: formatDateToISOString(endDate),
   };
 };
+
+/**
+ * The calendar date an instant falls on in an IANA zone — what fixes a
+ * session's `businessDate` at clock-in. `en-CA` is the only widely available
+ * locale whose numeric format is already ISO, but its parts are read
+ * explicitly rather than trusting that, because a runtime with a different CLDR
+ * would otherwise silently shift every business date by a formatting quirk.
+ */
+export const businessDateInZone = (instant: Date, timeZone: string): DateString => {
+  if (Number.isNaN(instant.getTime())) {
+    throw new AppError({
+      message: "Invalid date",
+      logging: true,
+      context: { input: String(instant), timeZone },
+    });
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+
+  const part = (type: "year" | "month" | "day") =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};

@@ -229,3 +229,18 @@ export const syncEmploymentsForDeletedGroup = async (
     tx
   );
 };
+
+/**
+ * Every Employment the person holds, oldest spell first, ended ones included —
+ * the attendance endpoints resolve an unnamed organization from this, and an
+ * ended row has to be in it or the refusal would read as "no employment here".
+ */
+export const listEmploymentsForUser = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<EmploymentType[]> =>
+  (tx ?? db)
+    .select()
+    .from(employments)
+    .where(eq(employments.userId, userId))
+    .orderBy(asc(employments.startedAt));
