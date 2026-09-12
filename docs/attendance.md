@@ -86,7 +86,9 @@ counts in the month.
   is a per-user setting and it never comes back.
 - Coordinates are nulled by the retention sweep once the business date is strictly more than twelve
   months old, so a session dated exactly twelve months back still carries them. The sweep shares the
-  nightly tick with the attachment sweep. The session stays.
+  nightly tick with the attachment sweep. The session stays, and so does its attendance event — but
+  the event's `before` and `after` are stripped of the same three keys on the same pass, or the
+  audit trail would outlive the promise the session columns keep.
 
 ## Plan
 

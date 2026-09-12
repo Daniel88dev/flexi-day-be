@@ -11,7 +11,7 @@ export const runAttendanceLocationSweep = async (now = new Date()): Promise<void
   try {
     const result = await sweepAttendanceLocations(now);
 
-    if (result.sessions === 0) {
+    if (result.sessions + result.events === 0) {
       logger.debug("Attendance location sweep: nothing to erase");
       return;
     }

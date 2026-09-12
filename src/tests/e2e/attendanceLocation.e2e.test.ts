@@ -77,7 +77,11 @@ describe("attendance location", () => {
 
   const locationEvents = (sessionId: string) =>
     db
-      .select({ eventType: attendanceEvents.eventType, after: attendanceEvents.after })
+      .select({
+        eventType: attendanceEvents.eventType,
+        before: attendanceEvents.before,
+        after: attendanceEvents.after,
+      })
       .from(attendanceEvents)
       .where(
         and(
@@ -352,7 +356,7 @@ describe("attendance location", () => {
 
       const before = await sessionRow(old);
 
-      expect(await sweepAttendanceLocations()).toEqual({ sessions: 1 });
+      expect(await sweepAttendanceLocations()).toMatchObject({ sessions: 1 });
 
       const swept = await sessionRow(old);
       expect(swept).toMatchObject({
@@ -384,15 +388,54 @@ describe("attendance location", () => {
       boundary.setUTCMonth(boundary.getUTCMonth() - 12);
       const id = await located(boundary.toISOString().slice(0, 10));
 
-      expect(await sweepAttendanceLocations()).toEqual({ sessions: 0 });
+      expect(await sweepAttendanceLocations()).toMatchObject({ sessions: 0 });
       expect((await sessionRow(id)).startAccuracy).toBe(12);
     });
 
     it("reports nothing on a second pass", async () => {
       await located(isoDay(400 * DAY_MS));
 
-      expect(await sweepAttendanceLocations()).toEqual({ sessions: 1 });
-      expect(await sweepAttendanceLocations()).toEqual({ sessions: 0 });
+      expect(await sweepAttendanceLocations()).toMatchObject({ sessions: 1 });
+      expect(await sweepAttendanceLocations()).toMatchObject({ sessions: 0 });
+    });
+
+    it("strips the coordinates out of the events as well as the columns", async () => {
+      // The audit trail carried the fix in `before` and `after`, so nulling the
+      // session columns alone would leave the coordinates past their date.
+      const session = await clockIn().expect(201);
+      await sendFix(session.body.id, { end: "IN", accuracy: 40 }).expect(200);
+      await sendFix(session.body.id, { end: "IN", accuracy: 6 }).expect(200);
+
+      await db
+        .update(attendanceSessions)
+        .set({ businessDate: isoDay(400 * DAY_MS) })
+        .where(eq(attendanceSessions.id, session.body.id));
+
+      const result = await sweepAttendanceLocations();
+      expect(result.sessions).toBe(1);
+      expect(result.events).toBe(2);
+
+      for (const event of await locationEvents(session.body.id)) {
+        for (const payload of [event.before, event.after]) {
+          expect(payload).not.toHaveProperty("latitude");
+          expect(payload).not.toHaveProperty("longitude");
+          expect(payload).not.toHaveProperty("accuracy");
+        }
+        // The row itself stays: that a fix landed is the part worth auditing.
+        expect(event.after).toMatchObject({ end: "IN" });
+      }
+
+      expect(await sweepAttendanceLocations()).toMatchObject({ sessions: 0, events: 0 });
+    });
+
+    it("leaves the events of a recent session alone", async () => {
+      const session = await clockIn().expect(201);
+      await sendFix(session.body.id, { end: "IN", accuracy: 11 }).expect(200);
+
+      expect(await sweepAttendanceLocations()).toMatchObject({ sessions: 0, events: 0 });
+
+      const [event] = await locationEvents(session.body.id);
+      expect(event!.after).toMatchObject({ accuracy: 11 });
     });
 
     it("sweeps a soft-deleted session too", async () => {
@@ -402,7 +445,7 @@ describe("attendance location", () => {
         .set({ deletedAt: new Date() })
         .where(eq(attendanceSessions.id, id));
 
-      expect(await sweepAttendanceLocations()).toEqual({ sessions: 1 });
+      expect(await sweepAttendanceLocations()).toMatchObject({ sessions: 1 });
       expect((await sessionRow(id)).startAccuracy).toBeNull();
     });
   });

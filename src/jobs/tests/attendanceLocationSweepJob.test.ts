@@ -16,7 +16,7 @@ import { logger } from "../../middleware/logger.js";
 describe("runAttendanceLocationSweep", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sweepMock.mockResolvedValue({ sessions: 0 });
+    sweepMock.mockResolvedValue({ sessions: 0, events: 0 });
   });
 
   it("sweeps as of now when no clock is given", async () => {
@@ -35,13 +35,26 @@ describe("runAttendanceLocationSweep", () => {
   });
 
   it("reports what it erased", async () => {
-    sweepMock.mockResolvedValue({ sessions: 4 });
+    sweepMock.mockResolvedValue({ sessions: 4, events: 7 });
 
     await runAttendanceLocationSweep();
 
     expect(logger.info).toHaveBeenCalledWith(
       "Attendance location sweep erased coordinates",
-      expect.objectContaining({ sessions: 4 })
+      expect.objectContaining({ sessions: 4, events: 7 })
+    );
+  });
+
+  it("speaks up for events redacted without a session left to clear", async () => {
+    // The session columns were cleared on an earlier tick and the payloads
+    // were not — the case this sweep exists to stop happening twice.
+    sweepMock.mockResolvedValue({ sessions: 0, events: 3 });
+
+    await runAttendanceLocationSweep();
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "Attendance location sweep erased coordinates",
+      expect.objectContaining({ sessions: 0, events: 3 })
     );
   });
 
