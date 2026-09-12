@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const {
+  mockGetAttendanceSettings,
   mockGetSubscription,
   mockGetGroup,
   mockGetAllGroups,
@@ -20,6 +21,7 @@ const {
   mockCountInvites: vi.fn(),
   mockLockOrganization: vi.fn(),
   mockGetOrganizationById: vi.fn(),
+  mockGetAttendanceSettings: vi.fn(),
 }));
 
 vi.mock("../subscriptionServices.js", () => ({
@@ -46,8 +48,14 @@ vi.mock("../../organization/organizationServices.js", () => ({
   getOrganizationById: mockGetOrganizationById,
 }));
 
+vi.mock("../../organization/attendanceSettingsServices.js", () => ({
+  getAttendanceSettings: mockGetAttendanceSettings,
+}));
+
 import {
   assertAttachmentUploadAvailable,
+  assertAttendanceActive,
+  isAttendanceActive,
   assertCanAddMember,
   assertCanCreateGroup,
   assertCanEnableSickDayBenefit,
@@ -56,7 +64,11 @@ import {
   assertGroupWritable,
   assertSickDayRequestable,
 } from "../guards.js";
-import { subscriptionPlan, subscriptionStatus } from "../../../db/schema/subscription-schema.js";
+import {
+  manualPlanOverride,
+  subscriptionPlan,
+  subscriptionStatus,
+} from "../../../db/schema/subscription-schema.js";
 
 const GROUP = { id: "group-1", organizationId: "org-1" };
 
@@ -373,5 +385,124 @@ describe("assertSickDayRequestable", () => {
     mockGetSubscription.mockResolvedValue(lapsedProSub);
 
     await expect(assertSickDayRequestable("group-1")).rejects.toMatchObject({ code: 422 });
+  });
+});
+
+describe("attendance activity", () => {
+  const activeProSub = {
+    ...lapsedProSub,
+    status: subscriptionStatus.Active,
+    graceEndsAt: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetAttendanceSettings.mockResolvedValue({ attendanceEnabled: true });
+  });
+
+  it("is inactive with no settings row — attendance was never set up", async () => {
+    mockGetAttendanceSettings.mockResolvedValue(undefined);
+    mockGetSubscription.mockResolvedValue(activeProSub);
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(false);
+    // The plan is never even resolved: the toggle decides first.
+    expect(mockGetSubscription).not.toHaveBeenCalled();
+  });
+
+  it("is inactive while the toggle is off, however good the plan", async () => {
+    mockGetAttendanceSettings.mockResolvedValue({ attendanceEnabled: false });
+    mockGetSubscription.mockResolvedValue(activeProSub);
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(false);
+  });
+
+  it("is inactive on Free, and 402s with PLAN_LIMIT", async () => {
+    mockGetSubscription.mockResolvedValue(undefined);
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(false);
+    await expect(assertAttendanceActive("org-1")).rejects.toMatchObject({
+      code: 402,
+      errors: [expect.objectContaining({ publicContext: { reason: "PLAN_LIMIT" } })],
+    });
+  });
+
+  it("is active on an active Pro subscription", async () => {
+    mockGetSubscription.mockResolvedValue(activeProSub);
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(true);
+    await expect(assertAttendanceActive("org-1")).resolves.toBeUndefined();
+  });
+
+  it("is active on an active Enterprise subscription", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...activeProSub,
+      plan: subscriptionPlan.Enterprise,
+    });
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(true);
+  });
+
+  it("is active on a trialing subscription", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...activeProSub,
+      status: subscriptionStatus.Trialing,
+    });
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(true);
+  });
+
+  it("stays active inside the grace window of a lapsed subscription", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      graceEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(true);
+  });
+
+  it("goes dormant once grace has expired, without touching the toggle", async () => {
+    mockGetSubscription.mockResolvedValue(lapsedProSub);
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(false);
+    await expect(assertAttendanceActive("org-1")).rejects.toMatchObject({ code: 402 });
+    // The settings row is only read, never written: the flag survives the lapse.
+    expect(mockGetAttendanceSettings).toHaveBeenCalledWith("org-1", undefined);
+  });
+
+  it("is active under a manual Pro override, whatever the subscription says", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      manualPlanOverride: manualPlanOverride.Pro,
+    });
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(true);
+  });
+
+  it("is active under a manual Custom override — Enterprise Custom is a paid plan", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      manualPlanOverride: manualPlanOverride.Custom,
+    });
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(true);
+  });
+
+  it("is inactive under a manual Free override, even on a paid subscription", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...activeProSub,
+      manualPlanOverride: manualPlanOverride.Free,
+    });
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(false);
+  });
+
+  it("ignores an expired manual Free override and falls back to the subscription", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...activeProSub,
+      manualPlanOverride: manualPlanOverride.Free,
+      manualPlanUntil: new Date(Date.now() - 60 * 1000),
+    });
+
+    await expect(isAttendanceActive("org-1")).resolves.toBe(true);
   });
 });

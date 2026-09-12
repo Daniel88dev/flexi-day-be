@@ -2,7 +2,10 @@ import type { Request } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
-import type { OrganizationType } from "../../services/organization/types.js";
+import type {
+  AttendanceSettingsType,
+  OrganizationType,
+} from "../../services/organization/types.js";
 import {
   getAdminOrganizationsForUser,
   getOrganizationById,
@@ -81,3 +84,24 @@ export const assertOrganizationOwner = (organization: OrganizationType, userId: 
     });
   }
 };
+
+/**
+ * The wire shape of the attendance settings, shared by the get and the put so
+ * a save answers exactly what a re-read would.
+ */
+export const presentAttendanceSettings = (settings: AttendanceSettingsType, active: boolean) => ({
+  organizationId: settings.organizationId,
+  attendanceEnabled: settings.attendanceEnabled,
+  locationEnabled: settings.locationEnabled,
+  timezone: settings.timezone,
+  holidayCountry: settings.holidayCountry,
+  workingDays: settings.workingDays,
+  breakMinutes: settings.breakMinutes,
+  breakThresholdMinutes: settings.breakThresholdMinutes,
+  requiredMinutesPerDay: settings.requiredMinutesPerDay,
+  balanceMode: settings.balanceMode,
+  sessionCeilingMinutes: settings.sessionCeilingMinutes,
+  breakCeilingMinutes: settings.breakCeilingMinutes,
+  /** The toggle alone does not make attendance usable; this is the live answer. */
+  active,
+});
