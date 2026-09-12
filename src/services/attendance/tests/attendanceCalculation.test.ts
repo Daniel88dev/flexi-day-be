@@ -2,9 +2,12 @@ import { describe, it, expect } from "vitest";
 import { balanceMode } from "../../../db/schema/organization-attendance-settings-schema.js";
 import { attendanceClosedBy } from "../../../db/schema/attendance-schema.js";
 import {
+  AttendanceExclusionCause,
+  AttendanceExclusionExtent,
   computeAttendance,
   type AttendanceRules,
   type CalculableSession,
+  type DayExclusion,
 } from "../attendanceCalculation.js";
 import { expandDateRangeInclusive } from "../../../utils/dateFunc.js";
 
@@ -43,12 +46,14 @@ const compute = (input: {
   dates: string[];
   sessions?: CalculableSession[];
   rules?: AttendanceRules;
+  exclusions?: Record<string, DayExclusion>;
   now?: Date;
 }) =>
   computeAttendance({
     dates: input.dates,
     sessions: input.sessions ?? [],
     rules: input.rules ?? rules(),
+    exclusions: new Map(Object.entries(input.exclusions ?? {})),
     timezone: PRAGUE,
     now: input.now ?? new Date("2026-09-30T23:00:00Z"),
   });
@@ -248,5 +253,168 @@ describe("computeAttendance", () => {
       flaggedDays: 2,
     });
     expect(totals.balanceMinutes).toBe(930 + 2010 + 480 - 1440);
+  });
+});
+
+describe("computeAttendance, excluded days", () => {
+  const excluded = (
+    cause: AttendanceExclusionCause,
+    label: string | null = null,
+    extent: AttendanceExclusionExtent = AttendanceExclusionExtent.Full
+  ): DayExclusion => ({ cause, extent, label });
+
+  it("owes nothing on a date the organization does not work", () => {
+    const { days } = compute({
+      dates: ["2026-09-05"],
+      exclusions: { "2026-09-05": excluded(AttendanceExclusionCause.NonWorkingDay) },
+    });
+
+    expect(days[0]).toMatchObject({
+      requiredMinutes: 0,
+      workedMinutes: 0,
+      balanceMinutes: null,
+      exclusion: { cause: "NON_WORKING_DAY", extent: "FULL", label: null },
+    });
+  });
+
+  it("carries the holiday's own name, so the day says why", () => {
+    const { days } = compute({
+      dates: ["2026-09-28"],
+      exclusions: {
+        "2026-09-28": excluded(AttendanceExclusionCause.Holiday, "Den české státnosti"),
+      },
+    });
+
+    expect(days[0]).toMatchObject({
+      requiredMinutes: 0,
+      exclusion: { cause: "HOLIDAY", extent: "FULL", label: "Den české státnosti" },
+    });
+  });
+
+  it("owes nothing on an approved absence and names its type", () => {
+    const { days } = compute({
+      dates: ["2026-09-21"],
+      exclusions: { "2026-09-21": excluded(AttendanceExclusionCause.Absence, "VACATION") },
+    });
+
+    expect(days[0]).toMatchObject({
+      requiredMinutes: 0,
+      exclusion: { cause: "ABSENCE", label: "VACATION" },
+    });
+  });
+
+  it("halves the required time for a half day rather than excluding it", () => {
+    const { days, totals } = compute({
+      dates: ["2026-09-08"],
+      sessions: [session("2026-09-08", "2026-09-08T06:00:00Z", "2026-09-08T10:10:00Z")],
+      exclusions: {
+        "2026-09-08": excluded(
+          AttendanceExclusionCause.Absence,
+          "VACATION",
+          AttendanceExclusionExtent.Half
+        ),
+      },
+    });
+
+    expect(days[0]).toMatchObject({
+      requiredMinutes: 240,
+      workedMinutes: 250,
+      balanceMinutes: 10,
+      exclusion: { extent: "HALF" },
+    });
+    // Half a day off is not a day off: the month's count is of whole ones.
+    expect(totals.excludedDays).toBe(0);
+  });
+
+  it("halves an overridden required time, not the organization's", () => {
+    const { days } = compute({
+      dates: ["2026-09-08"],
+      rules: rules({ requiredMinutesOverride: 360 }),
+      exclusions: {
+        "2026-09-08": excluded(
+          AttendanceExclusionCause.Absence,
+          "SICK_DAY",
+          AttendanceExclusionExtent.Half
+        ),
+      },
+    });
+
+    expect(days[0]).toMatchObject({ requiredMinutes: 180 });
+  });
+
+  it("counts a clock-in on an excluded day and flags it", () => {
+    const { days, totals } = compute({
+      dates: ["2026-09-05"],
+      sessions: [session("2026-09-05", "2026-09-05T07:00:00Z", "2026-09-05T09:10:00Z")],
+      exclusions: { "2026-09-05": excluded(AttendanceExclusionCause.NonWorkingDay) },
+    });
+
+    expect(days[0]).toMatchObject({
+      presenceMinutes: 130,
+      workedMinutes: 130,
+      requiredMinutes: 0,
+      balanceMinutes: 130,
+      excludedClockIn: true,
+      flagged: true,
+    });
+    expect(totals.workedMinutes).toBe(130);
+    expect(totals.flaggedDays).toBe(1);
+  });
+
+  it("owes nothing on a date outside the employment's own spell, and leaves it out of the count", () => {
+    const { days, totals } = compute({
+      dates: expandDateRangeInclusive("2026-09-01", "2026-09-07"),
+      sessions: [session("2026-09-07", "2026-09-07T06:00:00Z", "2026-09-07T14:30:00Z")],
+      exclusions: {
+        "2026-09-01": excluded(AttendanceExclusionCause.NotEmployed),
+        "2026-09-02": excluded(AttendanceExclusionCause.NotEmployed),
+        "2026-09-03": excluded(AttendanceExclusionCause.NotEmployed),
+        "2026-09-04": excluded(AttendanceExclusionCause.NotEmployed),
+        "2026-09-05": excluded(AttendanceExclusionCause.NonWorkingDay),
+        "2026-09-06": excluded(AttendanceExclusionCause.NonWorkingDay),
+      },
+    });
+
+    expect(days.slice(0, 4).map((day) => day.requiredMinutes)).toEqual([0, 0, 0, 0]);
+    expect(days.slice(0, 4).map((day) => day.balanceMinutes)).toEqual([null, null, null, null]);
+    // Only Monday is owed, and only the weekend counts as a day off — the four
+    // days before the person joined are not days they did not have to work.
+    expect(totals).toMatchObject({
+      requiredMinutes: 480,
+      requiredRangeMinutes: 480,
+      workedMinutes: 480,
+      balanceMinutes: 0,
+      excludedDays: 2,
+    });
+  });
+
+  it("keeps a rejoiner's older session without a balance or a flag against it", () => {
+    const { days, totals } = compute({
+      dates: ["2026-09-07"],
+      sessions: [session("2026-09-07", "2026-09-07T06:00:00Z", "2026-09-07T10:00:00Z")],
+      exclusions: { "2026-09-07": excluded(AttendanceExclusionCause.NotEmployed) },
+    });
+
+    expect(days[0]).toMatchObject({
+      workedMinutes: 240,
+      requiredMinutes: 0,
+      balanceMinutes: null,
+      excludedClockIn: false,
+      flagged: false,
+    });
+    expect(totals.workedMinutes).toBe(240);
+  });
+
+  it("keeps the required time of an upcoming date that nobody is excused from", () => {
+    const { days, totals } = compute({
+      dates: ["2026-09-11", "2026-09-12"],
+      exclusions: { "2026-09-12": excluded(AttendanceExclusionCause.NonWorkingDay) },
+      now: new Date("2026-09-11T09:00:00Z"),
+    });
+
+    expect(days[1]).toMatchObject({ upcoming: true, requiredMinutes: 0 });
+    expect(totals.requiredRangeMinutes).toBe(480);
+    // The weekend is a day off whether or not it has arrived.
+    expect(totals.excludedDays).toBe(1);
   });
 });

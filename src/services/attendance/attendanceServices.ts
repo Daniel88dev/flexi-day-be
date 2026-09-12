@@ -23,6 +23,7 @@ import { getEmployment, listEmploymentsForUser } from "../employment/employmentS
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { computeAttendance } from "./attendanceCalculation.js";
+import { getAttendanceExclusions } from "./attendanceExclusions.js";
 import type { AttendanceSettingsType } from "../organization/types.js";
 import type { EmploymentType } from "../employment/types.js";
 import type {
@@ -668,8 +669,21 @@ export const getAttendanceMonth = async (
   // No zone means no session could ever have been recorded, so UTC decides only
   // which of an empty month's days are still to come.
   const timezone = settings.timezone ?? "UTC";
+  const dates = expandDateRangeInclusive(from, to);
+  const exclusions = await getAttendanceExclusions(
+    {
+      organizationId: subject.organizationId,
+      userId,
+      employment: subject.employment,
+      dates,
+      rules: { workingDays: settings.workingDays, holidayCountry: settings.holidayCountry },
+      timezone,
+    },
+    tx
+  );
+
   const { days, totals } = computeAttendance({
-    dates: expandDateRangeInclusive(from, to),
+    dates,
     sessions,
     rules: {
       breakMinutes: settings.breakMinutes,
@@ -678,6 +692,7 @@ export const getAttendanceMonth = async (
       requiredMinutesOverride: subject.employment.requiredMinutesPerDay,
       balanceMode: settings.balanceMode,
     },
+    exclusions,
     timezone,
     now,
   });

@@ -37,6 +37,29 @@ export type AttendanceRules = {
   balanceMode: balanceMode;
 };
 
+/** Why nothing, or only half, is owed on a business date. */
+export enum AttendanceExclusionCause {
+  /** The date falls outside this Employment's own spell. */
+  NotEmployed = "NOT_EMPLOYED",
+  /** Not one of the organization's working days. */
+  NonWorkingDay = "NON_WORKING_DAY",
+  Holiday = "HOLIDAY",
+  Absence = "ABSENCE",
+}
+
+/** A whole day off, or half of one — a `halfDay` absence halves the required time. */
+export enum AttendanceExclusionExtent {
+  Full = "FULL",
+  Half = "HALF",
+}
+
+export type DayExclusion = {
+  cause: AttendanceExclusionCause;
+  extent: AttendanceExclusionExtent;
+  /** The holiday's name or the absence's type, for the day to say why. Null where the cause is the whole story. */
+  label: string | null;
+};
+
 export type AttendanceDay = {
   businessDate: DateString;
   presenceMinutes: number;
@@ -52,7 +75,11 @@ export type AttendanceDay = {
   open: boolean;
   /** The sweep closed the session or a break inside it, so a number here is wrong. */
   autoClosed: boolean;
-  /** {@link autoClosed}, or still open on a day that has passed — the day to look at. */
+  /** Null on an ordinary working day. */
+  exclusion: DayExclusion | null;
+  /** Somebody at work on a day nobody owed: allowed, counted, and worth a look. */
+  excludedClockIn: boolean;
+  /** {@link autoClosed}, {@link excludedClockIn}, or still open on a day that has passed. */
   flagged: boolean;
 };
 
@@ -69,6 +96,13 @@ export type AttendanceTotals = {
   requiredRangeMinutes: number;
   balanceMinutes: number;
   flaggedDays: number;
+  /**
+   * Whole days off in the range, upcoming ones included — a weekend is a day
+   * off whether or not it has arrived. A half day is not one of them, and
+   * neither is `NOT_EMPLOYED`: a date before somebody joined is not a day they
+   * were excused from.
+   */
+  excludedDays: number;
 };
 
 export type AttendanceSummary = { days: AttendanceDay[]; totals: AttendanceTotals };
@@ -78,6 +112,8 @@ export type AttendanceCalculationInput = {
   dates: DateString[];
   sessions: CalculableSession[];
   rules: AttendanceRules;
+  /** What each date is excused from, keyed by business date; absent means a full working day. */
+  exclusions: Map<DateString, DayExclusion>;
   timezone: string;
   now: Date;
 };
@@ -93,10 +129,21 @@ const spanMinutes = (span: Span, now: Date): number => {
 
 const sum = (values: number[]): number => values.reduce((total, value) => total + value, 0);
 
+/**
+ * What the day owes: nothing when it is excluded outright, half the ordinary
+ * figure on a half day. Halving rounds down, so two half days never owe a
+ * minute more than the whole one they came from.
+ */
+const requiredFor = (required: number, exclusion: DayExclusion | undefined): number => {
+  if (exclusion === undefined) return required;
+  return exclusion.extent === AttendanceExclusionExtent.Half ? Math.floor(required / 2) : 0;
+};
+
 export const computeAttendance = ({
   dates,
   sessions,
   rules,
+  exclusions,
   timezone,
   now,
 }: AttendanceCalculationInput): AttendanceSummary => {
@@ -120,6 +167,17 @@ export const computeAttendance = ({
         : breaksMinutes;
     const workedMinutes = Math.max(0, presenceMinutes - deductedMinutes);
 
+    const exclusion = exclusions.get(businessDate);
+    const requiredMinutes = requiredFor(required, exclusion);
+    const fullyExcluded =
+      exclusion !== undefined && exclusion.extent === AttendanceExclusionExtent.Full;
+    // A session on a date outside the spell is a rejoiner's old one — the
+    // Employment row carries the current spell and the sessions outlive it.
+    // The hours happened and still count, but there is nothing to flag: nobody
+    // clocked into a day off, and nobody can correct a spell that has closed.
+    const outsideTheSpell = exclusion?.cause === AttendanceExclusionCause.NotEmployed;
+    const excludedClockIn = fullyExcluded && !outsideTheSpell && presenceMinutes > 0;
+
     const upcoming = businessDate > today;
     const open = ofDate.some((session) => session.endedAt === null);
     const autoClosed = ofDate.some(
@@ -134,14 +192,23 @@ export const computeAttendance = ({
       breaksMinutes,
       deductedMinutes,
       workedMinutes,
-      requiredMinutes: required,
+      requiredMinutes,
+      // A day off nobody worked has no balance to show; one somebody clocked
+      // into does, and it is all surplus.
       balanceMinutes:
-        upcoming || rules.balanceMode === balanceMode.Monthly ? null : workedMinutes - required,
+        upcoming ||
+        rules.balanceMode === balanceMode.Monthly ||
+        outsideTheSpell ||
+        (fullyExcluded && presenceMinutes === 0)
+          ? null
+          : workedMinutes - requiredMinutes,
       upcoming,
       open,
       autoClosed,
+      exclusion: exclusion ?? null,
+      excludedClockIn,
       // An open session on today's date is somebody at work, not a mistake.
-      flagged: autoClosed || (open && businessDate < today),
+      flagged: autoClosed || excludedClockIn || (open && businessDate < today),
     };
   });
 
@@ -158,6 +225,12 @@ export const computeAttendance = ({
       requiredRangeMinutes: sum(days.map((day) => day.requiredMinutes)),
       balanceMinutes: workedMinutes - requiredMinutes,
       flaggedDays: days.filter((day) => day.flagged).length,
+      excludedDays: days.filter(
+        (day) =>
+          day.exclusion !== null &&
+          day.exclusion.extent === AttendanceExclusionExtent.Full &&
+          day.exclusion.cause !== AttendanceExclusionCause.NotEmployed
+      ).length,
     },
   };
 };

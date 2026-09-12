@@ -79,6 +79,8 @@ export const presentAttendanceMonth = (month: AttendanceMonthType) => ({
     upcoming: day.upcoming,
     open: day.open,
     autoClosed: day.autoClosed,
+    exclusion: day.exclusion,
+    excludedClockIn: day.excludedClockIn,
     flagged: day.flagged,
     sessions: day.sessions.map(presentSession),
   })),

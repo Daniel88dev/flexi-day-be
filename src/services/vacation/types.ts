@@ -3,6 +3,29 @@ import { z } from "zod";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 
+/**
+ * The record types that excuse somebody from attendance, per
+ * [`docs/attendance.md`](../../../docs/attendance.md) (Excluded days).
+ * `HOME_OFFICE` is absent on purpose — working from home is working — and so
+ * is `BANK_HOLIDAY`, which the holiday table answers for.
+ */
+export const EXCUSING_RECORD_TYPES = [
+  CalendarRecordType.Vacation,
+  CalendarRecordType.Sick,
+  CalendarRecordType.SickDay,
+  CalendarRecordType.PaidTimeOff,
+  CalendarRecordType.NonPaidLeave,
+  CalendarRecordType.StudyLeave,
+  CalendarRecordType.Other,
+];
+
+/** One person's excusing absence on one date. */
+export type ExcusingAbsence = {
+  requestedDay: DateString;
+  vacationType: CalendarRecordType;
+  halfDay: boolean;
+};
+
 export type VacationType = {
   id: string;
   userId: string;

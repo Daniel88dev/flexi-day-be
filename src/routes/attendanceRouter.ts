@@ -91,6 +91,12 @@ export const attendanceRouter = (): Router => {
    *       that crossed midnight is on the earlier day and its whole length
    *       counts there.
    *
+   *       Nothing is owed on an excluded date — a day of the week the
+   *       organization does not keep, a public holiday of its country, a date
+   *       outside this Employment's own spell, or an approved absence. A
+   *       half-day absence halves the required time instead. Clocking in on one
+   *       is allowed: the day counts and is flagged.
+   *
    *       The caller's own Employment only. An admin reads somebody else's
    *       through the team dashboard, which carries the visibility matrix.
    *       Naming another `userId` is refused rather than ignored, so a caller
@@ -133,14 +139,22 @@ export const attendanceRouter = (): Router => {
    *           `requiredMinutesOverride` repeats and is otherwise null.
    *           A day is `{ businessDate, presenceMinutes, breaksMinutes,
    *           deductedMinutes, workedMinutes, requiredMinutes, balanceMinutes,
-   *           upcoming, open, autoClosed, flagged, sessions }`;
-   *           `balanceMinutes` is null on an upcoming date and throughout
-   *           `MONTHLY` mode, where the month carries the only balance.
+   *           upcoming, open, autoClosed, exclusion, excludedClockIn, flagged,
+   *           sessions }`.
+   *           `balanceMinutes` is null on an upcoming date, throughout
+   *           `MONTHLY` mode, where the month carries the only balance, and on
+   *           an excluded day nobody worked.
+   *           `exclusion` is null on an ordinary working day and otherwise
+   *           `{ cause, extent, label }`: `cause` is `NOT_EMPLOYED`,
+   *           `NON_WORKING_DAY`, `HOLIDAY` or `ABSENCE`, `extent` is `FULL` or
+   *           `HALF`, and `label` is the holiday's name or the absence's record
+   *           type where there is one to give.
    *           `totals` is `{ presenceMinutes, workedMinutes, requiredMinutes,
-   *           requiredRangeMinutes, balanceMinutes, flaggedDays }`, where
-   *           `requiredMinutes` counts only the dates already begun — what the
-   *           balance is measured against — and `requiredRangeMinutes` the whole
-   *           month.
+   *           requiredRangeMinutes, balanceMinutes, flaggedDays, excludedDays }`,
+   *           where `requiredMinutes` counts only the dates already begun — what
+   *           the balance is measured against — and `requiredRangeMinutes` the
+   *           whole month. `excludedDays` counts the days off in the month,
+   *           upcoming ones included and `NOT_EMPLOYED` ones not.
    *       '403':
    *         description: |
    *           The query named somebody else. `context.reason` is
