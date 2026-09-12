@@ -52,4 +52,5 @@ export const presentAttendanceState = (state: AttendanceStateType) => ({
   openSession: state.openSession ? presentSession(state.openSession) : null,
   openBreak: state.openBreak ? presentBreak(state.openBreak) : null,
   sessions: state.sessions.map(presentSession),
+  autoClosedSession: state.autoClosedSession ? presentSession(state.autoClosedSession) : null,
 });

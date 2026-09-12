@@ -19,7 +19,17 @@ an Employment if they own the organization, hold a delegated admin row, or manag
   that crosses midnight belongs wholly to the day it started.
 - A session left open past the organization's ceiling (default 16 h) is closed by the sweep at
   `startedAt + ceiling` and marked as auto-closed. The same applies to a break left open past its
-  own ceiling. Both show on the dashboard as needing correction.
+  own ceiling, whose close is clamped to the session's so it cannot outlive it. Both show on the
+  dashboard as needing correction, and neither blocks the next clock-in. The sweep shares the
+  nightly tick with the retention ones and takes the same Employment lock a clock-out takes, so a
+  person closing their own session always wins.
+- A break still inside its ceiling when the sweep closes the session around it is counted to that
+  close like any clock-out, and is **not** marked auto-closed: the flag means a break that ran past
+  its own ceiling, which is the only one the employee has to correct. The sweep only looks at breaks
+  inside a session that is still running — under a closed session nobody is on a break. A break that
+  began _after_ the session's ceiling, in the window before the sweep ran, closes at its own start:
+  the session still ends where the ceiling is, so the break collapses rather than ending before it
+  began.
 - A break may start only inside an open session; an open break is closed at clock-out and counted
   to that instant.
 
