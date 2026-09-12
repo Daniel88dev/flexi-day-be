@@ -4,6 +4,7 @@ import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js"
 import {
   validatePatchOrganization,
   validatePostOrganizationAdmin,
+  validatePutAttendanceSettings,
 } from "../services/organization/types.js";
 import { handleGetOrganization } from "../controllers/organization/handleGetOrganization.js";
 import { handleGetOrganizations } from "../controllers/organization/handleGetOrganizations.js";
@@ -11,6 +12,8 @@ import { handlePatchOrganization } from "../controllers/organization/handlePatch
 import { handleGetOrganizationCandidates } from "../controllers/organization/handleGetOrganizationCandidates.js";
 import { handlePostOrganizationAdmin } from "../controllers/organization/handlePostOrganizationAdmin.js";
 import { handleDeleteOrganizationAdmin } from "../controllers/organization/handleDeleteOrganizationAdmin.js";
+import { handleGetAttendanceSettings } from "../controllers/organization/handleGetAttendanceSettings.js";
+import { handlePutAttendanceSettings } from "../controllers/organization/handlePutAttendanceSettings.js";
 
 export const organizationRouter = (): Router => {
   const app = Router();
@@ -231,6 +234,206 @@ export const organizationRouter = (): Router => {
    *         description: The target is not an administrator of this organization
    */
   app.delete("/admins/:userId", tryCatch(handleDeleteOrganizationAdmin));
+
+  /**
+   * @openapi
+   * /api/organization/attendance-settings:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: The organization's attendance rules
+   *     description: |
+   *       Organization admins only, owner and delegate alike. An organization
+   *       that never set attendance up has no row and gets the defaults with
+   *       the feature off — the screen renders the same form either way.
+   *
+   *       `active` is the live answer: the stored toggle alone does not make
+   *       attendance usable, it also needs a live non-Free entitlement. Once a
+   *       lapsed subscription's grace has run out, `attendanceEnabled` stays
+   *       true, `active` goes false and the settings stay readable.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The attendance settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AttendanceSettings'
+   *       '400':
+   *         description: |
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization, or the caller has none yet
+   */
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     AttendanceSettings:
+   *       type: object
+   *       properties:
+   *         organizationId:
+   *           type: string
+   *         attendanceEnabled:
+   *           type: boolean
+   *         locationEnabled:
+   *           type: boolean
+   *         timezone:
+   *           type: string
+   *           nullable: true
+   *         holidayCountry:
+   *           type: string
+   *           nullable: true
+   *         workingDays:
+   *           type: array
+   *           items:
+   *             type: integer
+   *         breakMinutes:
+   *           type: integer
+   *         breakThresholdMinutes:
+   *           type: integer
+   *         requiredMinutesPerDay:
+   *           type: integer
+   *         balanceMode:
+   *           type: string
+   *           enum: [DAILY, MONTHLY]
+   *         sessionCeilingMinutes:
+   *           type: integer
+   *         breakCeilingMinutes:
+   *           type: integer
+   *         active:
+   *           type: boolean
+   *           description: |
+   *             Enabled and on a live non-Free entitlement — a paid subscription,
+   *             one still inside its grace window, or an active `PRO`,
+   *             `ENTERPRISE` or `CUSTOM` manual override. False once grace runs
+   *             out, without the stored toggle moving.
+   */
+  app.get("/attendance-settings", tryCatch(handleGetAttendanceSettings));
+
+  /**
+   * @openapi
+   * /api/organization/attendance-settings:
+   *   put:
+   *     tags:
+   *       - Organization
+   *     summary: Replace the organization's attendance rules
+   *     description: |
+   *       Organization admins only. A full replacement: every rule but
+   *       `attendanceEnabled` is optional and falls back to its default, so a
+   *       body naming only the switch writes the documented defaults rather
+   *       than nulls.
+   *
+   *       Turning attendance on requires a timezone — it fixes the business
+   *       date — and a live non-Free entitlement: a paid subscription, one
+   *       still inside its grace window, or an active `PRO`, `ENTERPRISE` or
+   *       `CUSTOM` manual override. Only an actual switch-on is gated, so an
+   *       organization whose grace has run out can still correct its rules,
+   *       and turning the feature off is never refused.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - attendanceEnabled
+   *             properties:
+   *               attendanceEnabled:
+   *                 type: boolean
+   *               locationEnabled:
+   *                 type: boolean
+   *                 default: false
+   *               timezone:
+   *                 type: string
+   *                 nullable: true
+   *                 description: IANA zone, e.g. `Europe/Prague`. Required when enabling.
+   *               holidayCountry:
+   *                 type: string
+   *                 nullable: true
+   *                 description: ISO 3166-1 alpha-2, validated against the holiday dataset.
+   *               workingDays:
+   *                 type: array
+   *                 default: [1, 2, 3, 4, 5]
+   *                 items:
+   *                   type: integer
+   *                   minimum: 0
+   *                   maximum: 6
+   *                 description: '`Date.getUTCDay()` numbers, 0=Sunday.'
+   *               breakMinutes:
+   *                 type: integer
+   *                 minimum: 0
+   *                 maximum: 480
+   *                 default: 30
+   *               breakThresholdMinutes:
+   *                 type: integer
+   *                 minimum: 0
+   *                 maximum: 1440
+   *                 default: 360
+   *               requiredMinutesPerDay:
+   *                 type: integer
+   *                 minimum: 0
+   *                 maximum: 1440
+   *                 default: 480
+   *               balanceMode:
+   *                 type: string
+   *                 enum: [DAILY, MONTHLY]
+   *                 default: DAILY
+   *               sessionCeilingMinutes:
+   *                 type: integer
+   *                 minimum: 60
+   *                 maximum: 1440
+   *                 default: 960
+   *               breakCeilingMinutes:
+   *                 type: integer
+   *                 minimum: 15
+   *                 maximum: 1440
+   *                 default: 120
+   *     responses:
+   *       '200':
+   *         description: The saved attendance settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AttendanceSettings'
+   *       '400':
+   *         description: |
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
+   *       '402':
+   *         description: |
+   *           Turning attendance on without a live non-Free entitlement.
+   *           `errors[].context` carries `{ reason: "PLAN_LIMIT" }`.
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: Organization not found
+   *       '422':
+   *         description: |
+   *           A rule outside its range, an unknown timezone or holiday country,
+   *           or `attendanceEnabled` true with no timezone.
+   */
+  app.put(
+    "/attendance-settings",
+    bodyValidationMiddleware(validatePutAttendanceSettings),
+    tryCatch(handlePutAttendanceSettings)
+  );
 
   return app;
 };

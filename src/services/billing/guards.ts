@@ -11,6 +11,7 @@ import {
 import { countActiveMembersInGroup } from "../groupUser/groupUserServices.js";
 import { countOpenInvitesForGroup } from "../groupUser/inviteLinkServices.js";
 import { getOrganizationById, lockOrganization } from "../organization/organizationServices.js";
+import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 
 const planLimitError = (params: {
   message: string;
@@ -312,5 +313,42 @@ export const assertGroupsWritable = async (
         context: { groupId: group.id, organizationId: group.organizationId },
       });
     }
+  }
+};
+
+/**
+ * Active only while the stored toggle is on AND the plan is paid — the Sick
+ * day benefit's rule, and the same dormancy: a lapse makes this false without
+ * touching the settings row or a single session, and re-subscribing makes it
+ * true again.
+ */
+export const isAttendanceActive = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const settings = await getAttendanceSettings(organizationId, tx);
+  if (!settings?.attendanceEnabled) return false;
+
+  const entitlements = await entitlementsForOrganization(organizationId, tx);
+  return entitlements.plan !== "FREE";
+};
+
+/**
+ * Throws 402 unless {@link isAttendanceActive}. Guards switching the feature
+ * on, and every attendance write that follows — clocking in on a lapsed plan
+ * is refused while the history stays readable.
+ */
+export const assertAttendanceActive = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  if (!(await isAttendanceActive(organizationId, tx))) {
+    throw new AppError({
+      message: "Attendance requires a paid plan",
+      logging: true,
+      code: 402,
+      context: { organizationId },
+      publicContext: { reason: "PLAN_LIMIT" },
+    });
   }
 };

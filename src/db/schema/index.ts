@@ -18,6 +18,7 @@ import { subscriptions } from "./subscription-schema.js";
 import { paddleEvents } from "./paddle-event-schema.js";
 import { attachments } from "./attachment-schema.js";
 import { employments } from "./employment-schema.js";
+import { organizationAttendanceSettings } from "./organization-attendance-settings-schema.js";
 
 export const schema = {
   account,
@@ -46,4 +47,5 @@ export const schema = {
   paddleEvents,
   attachments,
   employments,
+  organizationAttendanceSettings,
 };
