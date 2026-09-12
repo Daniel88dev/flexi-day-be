@@ -35,7 +35,9 @@ export const attendanceRouter = (): Router => {
    *       why there is no button.
    *
    *       The open session is not necessarily one of `sessions`: one left
-   *       running across midnight keeps the business date it started on.
+   *       running across midnight keeps the business date it started on, and
+   *       neither is `autoClosedSession`, which reaches back a day and may be
+   *       open.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -49,7 +51,14 @@ export const attendanceRouter = (): Router => {
    *         description: |
    *           `{ organizationId, employmentId, employmentEnded, active,
    *           locationEnabled, timezone, businessDate, openSession, openBreak,
-   *           sessions }`. A session is `{ id, businessDate, startedAt, endedAt,
+   *           sessions, autoClosedSession }`. `autoClosedSession` is the most
+   *           recent session on this business date or the one before that the
+   *           ceiling sweep touched, or null — what the widget asks to be
+   *           corrected. Two cases, so read both markers: `closedBy: "SWEEP"`
+   *           is the session itself, and a `breaks[]` entry with
+   *           `autoClosed: true` is a break closed inside a session that may
+   *           still be open and may read `closedBy: "USER"`.
+   *           A session is `{ id, businessDate, startedAt, endedAt,
    *           timezone, closedBy, open, startLatitude, startLongitude,
    *           startAccuracy, endLatitude, endLongitude, endAccuracy, breaks }`,
    *           the six location fields null unless the organization records

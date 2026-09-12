@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { logger } from "../middleware/logger.js";
 import { rolloverQuotasForYear } from "../services/quotaRollover/quotaRolloverServices.js";
 import { runAttachmentSweep } from "./attachmentSweepJob.js";
+import { runAttendanceCeilingSweep } from "./attendanceCeilingSweepJob.js";
 import { runAttendanceLocationSweep } from "./attendanceLocationSweepJob.js";
 
 let job: Cron | null = null;
@@ -37,11 +38,12 @@ export const runQuotaRollover = async (year = new Date().getFullYear()): Promise
   }
 };
 
-/** One nightly tick: the rollover, then the two retention sweeps. Each swallows its own failure. */
+/** One nightly tick: the rollover, then the sweeps. Each swallows its own failure. */
 const runNightly = async (): Promise<void> => {
   await runQuotaRollover();
   await runAttachmentSweep();
   await runAttendanceLocationSweep();
+  await runAttendanceCeilingSweep();
 };
 
 /**

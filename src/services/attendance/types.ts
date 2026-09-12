@@ -59,6 +59,13 @@ export type AttendanceStateType = {
   openSession: AttendanceSessionView | null;
   openBreak: AttendanceBreakType | null;
   sessions: AttendanceSessionView[];
+  /**
+   * The most recent session the sweep touched, today or yesterday — the one
+   * thing on the widget that asks to be corrected rather than clicked. It is
+   * either a session the sweep closed or one holding a break it closed, so it
+   * may still be open and may read `closedBy: USER`.
+   */
+  autoClosedSession: AttendanceSessionView | null;
 };
 
 /**

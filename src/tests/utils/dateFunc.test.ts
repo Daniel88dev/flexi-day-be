@@ -10,6 +10,7 @@ import {
   formatDateToISOString,
   formatStartAndEndDate,
   isWorkingDay,
+  previousDay,
 } from "../../utils/dateFunc";
 
 describe("formatDateToISOString", () => {
@@ -135,5 +136,25 @@ describe("businessDateInZone", () => {
 
   it("throws on an invalid instant", () => {
     expect(() => businessDateInZone(new Date("nope"), "UTC")).toThrow();
+  });
+});
+
+describe("previousDay", () => {
+  it("steps back one day", () => {
+    expect(previousDay("2026-09-12")).toBe("2026-09-11");
+  });
+
+  it("crosses a month boundary", () => {
+    expect(previousDay("2026-09-01")).toBe("2026-08-31");
+  });
+
+  it("crosses a year boundary", () => {
+    expect(previousDay("2026-01-01")).toBe("2025-12-31");
+  });
+
+  it("steps the date rather than subtracting a day of real time", () => {
+    // The morning after Europe/Prague springs forward: that day is 23 hours
+    // long, so `now - 24 h` would land on the 28th and skip the 29th.
+    expect(previousDay("2026-03-30")).toBe("2026-03-29");
   });
 });

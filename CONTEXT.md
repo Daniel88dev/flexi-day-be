@@ -105,6 +105,12 @@ left (every day cancelled or rejected), and `UPLOADING` rows older than ten minu
 Each case removes the object and the row; a user's own delete only soft-deletes, keeping the row as
 the history entry until one of the sweep cases catches the Request.
 
+Two attendance sweeps ride the same tick. `attendance/attendanceRetention.ts` erases coordinates
+twelve months past the business date, and `attendance/attendanceCeilings.ts` closes what an employee
+forgot — a session left running past its organization's ceiling, at `started_at` plus the ceiling
+rather than at the instant the tick ran, and a break past its own. Neither asks the plan: a lapse
+must not leave a clock open forever.
+
 ## Undeliverable recipients
 
 `emailSender` is wrapped by `src/services/email/suppressUndeliverable.ts` so recipients at reserved

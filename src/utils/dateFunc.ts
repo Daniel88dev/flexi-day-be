@@ -113,6 +113,18 @@ export const monthsAgoDay = (instant: Date, months: number): DateString => {
 };
 
 /**
+ * The calendar day before a business date. Stepping the date itself rather than
+ * subtracting a day of real time from the instant: on the morning after a
+ * spring-forward the short day makes `now - 24 h` land two days back, which
+ * would drop the day in between out of whatever range was being built.
+ */
+export const previousDay = (date: DateString): DateString => {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - 1);
+  return day.toISOString().slice(0, 10);
+};
+
+/**
  * The calendar date an instant falls on in an IANA zone — what fixes a
  * session's `businessDate` at clock-in. `en-CA` is the only widely available
  * locale whose numeric format is already ISO, but its parts are read

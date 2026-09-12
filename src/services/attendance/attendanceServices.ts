@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import {
   attendanceBreaks,
@@ -9,7 +9,7 @@ import {
 } from "../../db/schema/attendance-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import AppError from "../../utils/appError.js";
-import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
+import { businessDateInZone, previousDay, type DateString } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAttendanceActive, isAttendanceActive } from "../billing/guards.js";
 import { getEmployment, listEmploymentsForUser } from "../employment/employmentServices.js";
@@ -178,8 +178,12 @@ export const beginAttendanceWrite = async (
  * open-session read below is a plain select, so without this two parallel
  * clock-ins both see nothing open and one dies on the unique index with a
  * message that cannot say when the other one started.
+ *
+ * The ceiling sweep takes the same lock: it is the one thing that writes to a
+ * clock without a person behind it, and it must queue with them rather than
+ * race them.
  */
-const lockEmployment = async (employmentId: string, tx: DbTransaction): Promise<void> => {
+export const lockEmployment = async (employmentId: string, tx: DbTransaction): Promise<void> => {
   const [row] = await tx
     .select({ id: employments.id })
     .from(employments)
@@ -278,9 +282,61 @@ export const listSessionsForDate = async (
 };
 
 /**
+ * The most recent session the sweep closed, on the current business date or the
+ * one before it — the thing the widget asks the person to correct.
+ *
+ * Yesterday is in scope because that is where the case actually lands: somebody
+ * who forgets to clock out is swept in the small hours, and by the time they
+ * read the notice the business date has moved on. It stops there rather than
+ * reaching further back, since an older day is an admin's to fix anyway
+ * (`docs/attendance.md`), and a notice nothing can clear would never leave.
+ *
+ * A session counts when the sweep closed it *or* when it holds a break the
+ * sweep closed, because a break auto-closed inside an otherwise ordinary day is
+ * just as wrong a number.
+ */
+const getAutoClosedSession = async (
+  employmentId: string,
+  businessDates: DateString[],
+  tx?: DbTransaction
+): Promise<AttendanceSessionView | undefined> => {
+  const [row] = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        eq(attendanceSessions.employmentId, employmentId),
+        inArray(attendanceSessions.businessDate, businessDates),
+        isNull(attendanceSessions.deletedAt),
+        or(
+          eq(attendanceSessions.closedBy, attendanceClosedBy.Sweep),
+          exists(
+            (tx ?? db)
+              .select({ one: sql`1` })
+              .from(attendanceBreaks)
+              .where(
+                and(
+                  eq(attendanceBreaks.sessionId, attendanceSessions.id),
+                  eq(attendanceBreaks.autoClosed, true)
+                )
+              )
+          )
+        )
+      )
+    )
+    .orderBy(desc(attendanceSessions.startedAt))
+    .limit(1);
+
+  if (!row) return undefined;
+
+  const [view] = await withBreaks([row], tx);
+  return view;
+};
+
+/**
  * The append-only record, written in the same transaction as the change it
- * describes. A null `changedByUserId` is the sweep — every caller here is a
- * person, so they all pass one.
+ * describes. A null `changedByUserId` is the sweep; the ceiling sweep is the
+ * one caller that is not a person.
  */
 export const appendAttendanceEvent = async (
   entry: {
@@ -513,7 +569,14 @@ export const getAttendanceState = async (
   };
 
   if (!timezone) {
-    return { ...base, businessDate: null, openSession: null, openBreak: null, sessions: [] };
+    return {
+      ...base,
+      businessDate: null,
+      openSession: null,
+      openBreak: null,
+      sessions: [],
+      autoClosedSession: null,
+    };
   }
 
   const businessDate = businessDateInZone(new Date(), timezone);
@@ -534,5 +597,11 @@ export const getAttendanceState = async (
     openSession,
     openBreak: open ? ((await getOpenBreak(open.id, tx)) ?? null) : null,
     sessions,
+    autoClosedSession:
+      (await getAutoClosedSession(
+        subject.employment.id,
+        [previousDay(businessDate), businessDate],
+        tx
+      )) ?? null,
   };
 };
