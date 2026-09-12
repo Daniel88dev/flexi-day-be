@@ -9,6 +9,7 @@ const {
   mockListOrganizationAdminCandidates,
   mockGrantOrganizationAdmin,
   mockRemoveOrganizationAdmin,
+  mockLockOrganization,
   mockGetSubscriptionForOrganization,
   mockGetGroupUsageForOrganization,
   mockAssertCanEnableSickDayBenefit,
@@ -21,12 +22,20 @@ const {
   mockListOrganizationAdminCandidates: vi.fn(),
   mockGrantOrganizationAdmin: vi.fn(),
   mockRemoveOrganizationAdmin: vi.fn(),
+  mockLockOrganization: vi.fn(),
   mockGetSubscriptionForOrganization: vi.fn(),
   mockGetGroupUsageForOrganization: vi.fn(),
   mockAssertCanEnableSickDayBenefit: vi.fn(),
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
+
+// The revoke runs under `lockOrganization`, so it needs a transaction. Run the
+// callback straight through: the lock itself is asserted in e2e, against a real
+// database that can actually hold one.
+vi.mock("../../../db/db.js", () => ({
+  db: { transaction: (run: (tx: unknown) => unknown) => run({}) },
+}));
 
 vi.mock("../../../services/billing/subscriptionServices.js", () => ({
   getSubscriptionForOrganization: mockGetSubscriptionForOrganization,
@@ -53,6 +62,7 @@ vi.mock("../../../services/organization/organizationServices.js", () => ({
   listOrganizationAdminCandidates: mockListOrganizationAdminCandidates,
   grantOrganizationAdmin: mockGrantOrganizationAdmin,
   removeOrganizationAdmin: mockRemoveOrganizationAdmin,
+  lockOrganization: mockLockOrganization,
 }));
 
 import { handleGetOrganization } from "../handleGetOrganization.js";
@@ -318,7 +328,13 @@ describe("organization controllers", () => {
 
       await handleDeleteOrganizationAdmin(req, res);
 
-      expect(mockRemoveOrganizationAdmin).toHaveBeenCalledWith("org-1", DELEGATE);
+      // Third argument is the transaction the lock is held in.
+      expect(mockRemoveOrganizationAdmin).toHaveBeenCalledWith(
+        "org-1",
+        DELEGATE,
+        expect.anything()
+      );
+      expect(mockLockOrganization).toHaveBeenCalledWith("org-1", expect.anything());
       expect(res.json).toHaveBeenCalledWith([{ userId: OWNER }]);
     });
   });

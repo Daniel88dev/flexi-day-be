@@ -141,6 +141,9 @@ describe("billing overview over the API", () => {
       writable: true,
     });
     expect(res.body.usage.groupsUsed).toBe(2);
+    // The owner plus the two delegated admins. Neither delegate belongs to a
+    // group, so headcount and the group meters below disagree on purpose.
+    expect(res.body.usage.activeEmployments).toBe(3);
     expect(res.body.usage.groups).toEqual([
       expect.objectContaining({ groupName: "Engineering", members: 1 }),
       expect.objectContaining({ groupName: "Support", members: 0 }),
@@ -205,7 +208,7 @@ describe("billing overview over the API", () => {
     expect(res.body.organization).toBeNull();
     expect(res.body.subscription).toBeNull();
     expect(res.body.entitlements).toMatchObject({ plan: "FREE", maxGroups: 3, writable: true });
-    expect(res.body.usage).toEqual({ groupsUsed: 0, groups: [] });
+    expect(res.body.usage).toEqual({ groupsUsed: 0, groups: [], activeEmployments: 0 });
   });
 
   // Runs last: the checkout case below creates the delegate's own organization,

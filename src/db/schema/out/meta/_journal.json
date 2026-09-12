@@ -57,6 +57,13 @@
       "when": 1789064856516,
       "tag": "0007_drop_account_issuer",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789159148521,
+      "tag": "0008_employments",
+      "breakpoints": true
     }
   ]
 }

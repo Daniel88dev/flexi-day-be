@@ -125,5 +125,8 @@ reserved-domain address there is bad data, and bouncing it helps nobody.
 - `report-export-schema.ts` / `support-access-schema.ts` — write-only audit trails; nothing reads
   them back.
 - `user-settings-schema.ts` — a missing row means defaults, not opt-out.
+- `employment-schema.ts` — unique on `(organization_id, user_id)`, so the row is the person's
+  **current** spell in that organization, not a history: a rejoin reopens it with a new
+  `started_at` and the earlier spell is gone.
 - `paddle-event-schema.ts` — webhook idempotency, not billing state (that is
   `subscription-schema.ts`).

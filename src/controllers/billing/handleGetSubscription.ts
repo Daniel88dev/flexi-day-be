@@ -4,6 +4,7 @@ import { resolveEntitlements, PLAN_LIMITS } from "../../services/billing/entitle
 import { getSubscriptionForOrganization } from "../../services/billing/subscriptionServices.js";
 import { getGroupUsageForOrganization } from "../../services/group/groupServices.js";
 import { getAdminOrganizationsForUser } from "../../services/organization/organizationServices.js";
+import { countActiveEmployments } from "../../services/employment/employmentServices.js";
 
 /**
  * The organization the caller administers — owned first, else a delegate row.
@@ -24,7 +25,7 @@ export const handleGetSubscription = async (req: Request, res: Response) => {
       organization: null,
       subscription: null,
       entitlements: resolveEntitlements(null, new Date()),
-      usage: { groupsUsed: 0, groups: [] },
+      usage: { groupsUsed: 0, groups: [], activeEmployments: 0 },
       planLimits: PLAN_LIMITS,
     });
   }
@@ -32,6 +33,10 @@ export const handleGetSubscription = async (req: Request, res: Response) => {
   const subscription = await getSubscriptionForOrganization(organization.id);
   const entitlements = resolveEntitlements(subscription ?? null, new Date());
   const groups = await getGroupUsageForOrganization(organization.id);
+  // Headcount, not seats: no plan caps Employments. It is on the billing
+  // screen because it is the only number that says how big the organization
+  // is, which the per-group meters beside it cannot.
+  const activeEmployments = await countActiveEmployments(organization.id);
 
   // The plan, never the money — the same split as `handleGetOrganization`.
   // `isOwner` gates the client's write affordances: checkout creates an
@@ -61,6 +66,7 @@ export const handleGetSubscription = async (req: Request, res: Response) => {
     entitlements,
     usage: {
       groupsUsed: groups.length,
+      activeEmployments,
       groups: groups.map((group) => ({
         id: group.id,
         groupName: group.groupName,
