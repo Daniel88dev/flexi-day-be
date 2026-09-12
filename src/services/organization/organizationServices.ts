@@ -54,6 +54,18 @@ export const ensureOrganizationForUser = async (
   const existing = await getOrganizationForOwner(userId, tx);
   if (existing) return existing;
 
+  // Creating one writes two rows — the organization and its owner's
+  // Employment — and checkout is one of the callers that opens no transaction
+  // of its own, so it gets one here rather than half the pair.
+  if (!tx) return db.transaction((opened) => createOrganizationForUser(userId, opened));
+
+  return createOrganizationForUser(userId, tx);
+};
+
+const createOrganizationForUser = async (
+  userId: string,
+  tx: DbTransaction
+): Promise<OrganizationType> => {
   const owner = await getUserById(userId, tx);
   if (!owner) {
     throw new AppError({
@@ -64,7 +76,7 @@ export const ensureOrganizationForUser = async (
     });
   }
 
-  const [created] = await (tx ?? db)
+  const [created] = await tx
     .insert(organizations)
     .values({
       id: generateRandomUUID(),

@@ -157,6 +157,13 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
 - **The grant is scoped to membership.** `handleDeleteGroupUser` revokes it when the user leaves
   the organization's last group, under a `lockOrganization` — the count spans the org, so a group
   lock alone lets two concurrent removals each see the other's membership as live.
+- **Every path that grants or revokes a grant takes `lockOrganization`.** `grantOrganizationAdmin`
+  and `handleDeleteGroupUser` always did; `handleDeleteOrganizationAdmin` now does too. Revoking
+  and losing the last membership are the two removals that can end an Employment, and
+  `handleDeleteGroupUser` does both in one transaction. Unserialized, the two can interleave so
+  each sees the other's link as still live, the membership transaction then finds the grant
+  already gone and skips its own recomputation, and the Employment is left open with nothing
+  holding it.
 - **A billing write never reaches the organization the caller merely administers.** `billingEmail`,
   granting and revoking admins all go through `assertOrganizationOwner`. Change-plan, slots and the
   portal resolve the org with `getOrganizationForOwner`, which finds nothing for a delegate.
@@ -188,7 +195,10 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
   admin grant, and only the second of those finds nothing left. A delta would double-end it or
   miss it depending on the order.
 - **It runs in the caller's transaction.** The row that decides the answer is usually one the
-  caller has just written and not committed; passing `tx` is what lets the sync see it.
+  caller has just written and not committed; passing `tx` is what lets the sync see it. A caller
+  with no transaction of its own gets one: `ensureOrganizationForUser` opens it, because an
+  organization and its owner's Employment are a single fact and checkout creates one outside any
+  boundary.
 - **Reading an Employment is wider than belonging to one.** `attendanceAccess.ts` is the only
   statement of who may read and correct one, and it deliberately leaves a manager's own Employment
   — and anyone else's who belongs to no group — to org admins alone, because no group admin's

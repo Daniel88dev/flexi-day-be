@@ -5,7 +5,6 @@ import { v4 as uuidv4 } from "uuid";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { employments } from "../../db/schema/employment-schema.js";
-import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { cleanupTestData, createTestUser } from "./helpers/testSetup.js";
 import { getEmployment, listEmployments } from "../../services/employment/employmentServices.js";
@@ -76,8 +75,13 @@ describe("the employment roster", () => {
     await deleteGroupUser(membership!.id);
   };
 
-  const isEmployed = async (userId: string) =>
-    (await getEmployment(organizationId, userId))?.endedAt === null;
+  // Asserts the row survives: a leave path that deleted the Employment rather
+  // than ending it would otherwise satisfy every expectation below.
+  const isEmployed = async (userId: string) => {
+    const employment = await getEmployment(organizationId, userId);
+    expect(employment).toBeDefined();
+    return employment?.endedAt === null;
+  };
 
   beforeAll(async () => {
     await cleanupTestData();
