@@ -38,9 +38,10 @@ export const attendanceClosedByEnum = pgEnum(
  * organization may change its own later, and a recomputed date would silently
  * move history.
  *
- * The six location columns arrive nullable and unused — the location ticket
- * fills them, and lands as a behaviour change rather than a migration. Nothing
- * in this ticket writes them.
+ * The six location columns stay null unless the organization switched location
+ * on and the browser's own prompt was allowed. They are nulled again twelve
+ * months after `businessDate` by the retention sweep, which leaves the session
+ * itself standing.
  */
 export const attendanceSessions = pgTable(
   "attendance_sessions",
@@ -126,6 +127,8 @@ export enum attendanceEventType {
   ClockOut = "CLOCK_OUT",
   BreakStart = "BREAK_START",
   BreakEnd = "BREAK_END",
+  /** A fix from the browser landed on one end of the session. */
+  LocationUpdated = "LOCATION_UPDATED",
 }
 
 export const attendanceEventTypeEnum = pgEnum(

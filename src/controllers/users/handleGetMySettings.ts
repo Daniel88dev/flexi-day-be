@@ -13,5 +13,8 @@ export const handleGetMySettings = async (req: Request, res: Response) => {
     emailNotifications: settings?.emailNotifications ?? DEFAULT_USER_SETTINGS.emailNotifications,
     dashboardScope: settings?.dashboardScope ?? DEFAULT_USER_SETTINGS.dashboardScope,
     dashboardGroupId: settings?.dashboardGroupId ?? DEFAULT_USER_SETTINGS.dashboardGroupId,
+    attendanceLocationNoticeDismissed:
+      settings?.attendanceLocationNoticeDismissed ??
+      DEFAULT_USER_SETTINGS.attendanceLocationNoticeDismissed,
   });
 };

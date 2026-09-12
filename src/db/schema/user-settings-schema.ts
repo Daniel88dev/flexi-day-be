@@ -33,6 +33,11 @@ export const userSettings = pgTable("user_settings", {
   dashboardGroupId: text("dashboard_group_id").references(() => groups.id, {
     onDelete: "set null",
   }),
+  // The clock's one-time location notice. Per user, not per organization: the
+  // person has read it.
+  attendanceLocationNoticeDismissed: boolean("attendance_location_notice_dismissed")
+    .notNull()
+    .default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

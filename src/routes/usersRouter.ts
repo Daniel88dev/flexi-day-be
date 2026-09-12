@@ -126,6 +126,11 @@ export const usersRouter = (): Router => {
    *           type: string
    *           format: uuid
    *           nullable: true
+   *         attendanceLocationNoticeDismissed:
+   *           type: boolean
+   *           description: |
+   *             The clock's one-time notice that the organization records
+   *             location. Set once and never unset.
    */
   app.get("/me/settings", tryCatch(handleGetMySettings));
   app.put(

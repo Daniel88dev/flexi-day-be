@@ -41,6 +41,12 @@ const SESSION_COLUMNS = {
   endedAt: attendanceSessions.endedAt,
   timezone: attendanceSessions.timezone,
   closedBy: attendanceSessions.closedBy,
+  startLatitude: attendanceSessions.startLatitude,
+  startLongitude: attendanceSessions.startLongitude,
+  startAccuracy: attendanceSessions.startAccuracy,
+  endLatitude: attendanceSessions.endLatitude,
+  endLongitude: attendanceSessions.endLongitude,
+  endAccuracy: attendanceSessions.endAccuracy,
 };
 
 const BREAK_COLUMNS = {

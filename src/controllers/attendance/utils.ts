@@ -32,6 +32,12 @@ export const presentSession = (session: AttendanceSessionView) => ({
   timezone: session.timezone,
   closedBy: session.closedBy,
   open: session.endedAt === null,
+  startLatitude: session.startLatitude,
+  startLongitude: session.startLongitude,
+  startAccuracy: session.startAccuracy,
+  endLatitude: session.endLatitude,
+  endLongitude: session.endLongitude,
+  endAccuracy: session.endAccuracy,
   breaks: session.breaks.map(presentBreak),
 });
 

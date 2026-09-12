@@ -1,6 +1,7 @@
 import { and, eq, isNull, lt, max, notExists, sql, type SQL } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { logger } from "../../middleware/logger.js";
+import { monthsAgoDay } from "../../utils/dateFunc.js";
 import { attachments, AttachmentStatus } from "../../db/schema/attachment-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { deleteStoredBytes } from "./attachmentServices.js";
@@ -15,11 +16,7 @@ export type AttachmentSweepResult = {
   stale: number;
 };
 
-const retentionCutoffDay = (now: Date): string => {
-  const cutoff = new Date(now);
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - ATTACHMENT_RETENTION_MONTHS);
-  return cutoff.toISOString().slice(0, 10);
-};
+const retentionCutoffDay = (now: Date): string => monthsAgoDay(now, ATTACHMENT_RETENTION_MONTHS);
 
 /**
  * True once the Request's last day is twelve months gone: the sweep removes
