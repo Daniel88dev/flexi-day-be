@@ -434,6 +434,26 @@ describe("attendance location", () => {
 
       expect((await getSettings().expect(200)).body.attendanceLocationNoticeDismissed).toBe(true);
     });
+
+    it("is an ordinary preference, so a person may put the notice back", async () => {
+      await request(app)
+        .put("/api/users/me/settings")
+        .set("Cookie", memberCookie)
+        .send({ attendanceLocationNoticeDismissed: true })
+        .expect(200);
+
+      // Nothing in the product sends this, but the endpoint does not pretend
+      // the flag is write-once — every other field on it is freely settable,
+      // and un-dismissing only means seeing the notice again.
+      const undismissed = await request(app)
+        .put("/api/users/me/settings")
+        .set("Cookie", memberCookie)
+        .send({ attendanceLocationNoticeDismissed: false })
+        .expect(200);
+
+      expect(undismissed.body.attendanceLocationNoticeDismissed).toBe(false);
+      expect((await getSettings().expect(200)).body.attendanceLocationNoticeDismissed).toBe(false);
+    });
   });
 
   describe("the organization switch", () => {

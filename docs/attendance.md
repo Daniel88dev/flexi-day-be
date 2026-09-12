@@ -77,15 +77,16 @@ counts in the month.
 - Coordinates come from the browser's own permission prompt at the clock-in and clock-out
   instants — never in the background, never through a custom prompt, never required. Declining is
   not recorded as a reason and not styled differently from any other missing value.
-- Stored: latitude, longitude, accuracy. A session is created on click without coordinates; later
-  fixes update it only while they improve on the accuracy already stored, and only within two
-  minutes of the instant they name. A fix that is late, no better, or aimed at a clock-out that has
-  not happened yet is dropped without an error — the browser answers twice per click and neither
-  answer is the person's problem.
+- Stored: latitude, longitude, accuracy. A session is created on click without coordinates; the
+  first fix to arrive fills them, and a later one replaces it only when its accuracy is better.
+  Either way only within two minutes of the instant the fix names. A fix that is late, no sharper,
+  or aimed at a clock-out that has not happened yet is dropped without an error — the browser
+  answers twice per click and neither answer is the person's problem.
 - The person is told once, on the widget, that the organization records this; dismissing the notice
   is a per-user setting and it never comes back.
-- Coordinates are nulled twelve months after the business date by the retention sweep, which shares
-  the nightly tick with the attachment sweep. The session stays.
+- Coordinates are nulled by the retention sweep once the business date is strictly more than twelve
+  months old, so a session dated exactly twelve months back still carries them. The sweep shares the
+  nightly tick with the attachment sweep. The session stays.
 
 ## Plan
 

@@ -16,7 +16,7 @@ export type UserSettingsResponse = {
   emailNotifications: boolean;
   dashboardScope: dashboardScope;
   dashboardGroupId: string | null;
-  /** The clock's one-time location notice. Once true it never goes back. */
+  /** True once the person has dismissed the clock's location notice. */
   attendanceLocationNoticeDismissed: boolean;
 };
 
