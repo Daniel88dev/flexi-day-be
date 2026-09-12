@@ -1,5 +1,7 @@
 import { z } from "zod";
 import type { attendanceClosedBy } from "../../db/schema/attendance-schema.js";
+import type { balanceMode } from "../../db/schema/organization-attendance-settings-schema.js";
+import type { AttendanceDay, AttendanceTotals } from "./attendanceCalculation.js";
 import type { DateString } from "../../utils/dateFunc.js";
 
 export type AttendanceBreakType = {
@@ -113,4 +115,52 @@ export type ValidatedAttendanceLocationType = z.infer<typeof validateAttendanceL
 export type AttendanceLocationResult = AttendanceLocation & {
   applied: boolean;
   end: AttendanceSessionEnd;
+};
+
+/**
+ * The month view's range. Year and month travel in the query string, so they
+ * arrive as strings and are coerced; `organizationId` is optional for the same
+ * reason as {@link validateAttendanceScope}.
+ *
+ * `userId` is accepted only so that naming somebody else can be refused. The
+ * caller would otherwise be shown their own month while believing they were
+ * reading a colleague's — an admin reads one through the team dashboard, which
+ * carries the visibility matrix.
+ */
+export const validateAttendanceMonthQuery = z.object({
+  organizationId: z.string().min(1).optional(),
+  // better-auth user ids are opaque non-UUID strings.
+  userId: z.string().min(1).optional(),
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
+export type ValidatedAttendanceMonthQueryType = z.infer<typeof validateAttendanceMonthQuery>;
+
+/** One business date of the month: the figures, and the rows they were worked out from. */
+export type AttendanceMonthDay = AttendanceDay & { sessions: AttendanceSessionView[] };
+
+/**
+ * A month of one Employment's attendance. The rules travel with it — the
+ * screen prints "of 8:00" and colours against the balance mode, and neither is
+ * readable by an employee anywhere else.
+ */
+export type AttendanceMonthType = {
+  organizationId: string;
+  employmentId: string;
+  /** The zone the days are counted in, null for an organization that never set attendance up. */
+  timezone: string | null;
+  /** Today in that zone, so the screen knows which day is live without a second clock. */
+  businessDate: DateString | null;
+  year: number;
+  month: number;
+  balanceMode: balanceMode;
+  /** What the day is measured against: the override where there is one. */
+  requiredMinutesPerDay: number;
+  /** Null unless this Employment overrides the organization's figure. */
+  requiredMinutesOverride: number | null;
+  breakMinutes: number;
+  breakThresholdMinutes: number;
+  days: AttendanceMonthDay[];
+  totals: AttendanceTotals;
 };
