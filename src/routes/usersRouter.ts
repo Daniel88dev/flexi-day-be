@@ -126,6 +126,14 @@ export const usersRouter = (): Router => {
    *           type: string
    *           format: uuid
    *           nullable: true
+   *         attendanceLocationNoticeDismissed:
+   *           type: boolean
+   *           description: |
+   *             Whether the person has dismissed the clock's notice that the
+   *             organization records location. The widget sets it and then
+   *             never shows the notice again; an ordinary preference otherwise,
+   *             so sending `false` brings the notice back for that person and
+   *             nobody else.
    */
   app.get("/me/settings", tryCatch(handleGetMySettings));
   app.put(

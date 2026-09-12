@@ -26,6 +26,8 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
   if (data.emailNotifications !== undefined) patch.emailNotifications = data.emailNotifications;
   if (data.dashboardScope !== undefined) patch.dashboardScope = data.dashboardScope;
   if (data.dashboardGroupId !== undefined) patch.dashboardGroupId = data.dashboardGroupId;
+  if (data.attendanceLocationNoticeDismissed !== undefined)
+    patch.attendanceLocationNoticeDismissed = data.attendanceLocationNoticeDismissed;
 
   // The patch is validated against the settings it produces, not against
   // itself: switching to GROUP scope may rely on a group chosen earlier.
@@ -71,5 +73,6 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
     emailNotifications: updated.emailNotifications,
     dashboardScope: updated.dashboardScope,
     dashboardGroupId: updated.dashboardGroupId,
+    attendanceLocationNoticeDismissed: updated.attendanceLocationNoticeDismissed,
   });
 };

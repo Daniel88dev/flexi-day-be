@@ -1,0 +1,2 @@
+ALTER TYPE "public"."attendance_event_type" ADD VALUE 'LOCATION_UPDATED';--> statement-breakpoint
+ALTER TABLE "user_settings" ADD COLUMN "attendance_location_notice_dismissed" boolean DEFAULT false NOT NULL;

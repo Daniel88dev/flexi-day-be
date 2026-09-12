@@ -1,12 +1,16 @@
 import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
-import { validateAttendanceScope } from "../services/attendance/types.js";
+import {
+  validateAttendanceLocation,
+  validateAttendanceScope,
+} from "../services/attendance/types.js";
 import { handleGetAttendanceState } from "../controllers/attendance/handleGetAttendanceState.js";
 import { handleClockIn } from "../controllers/attendance/handleClockIn.js";
 import { handleClockOut } from "../controllers/attendance/handleClockOut.js";
 import { handleStartBreak } from "../controllers/attendance/handleStartBreak.js";
 import { handleEndBreak } from "../controllers/attendance/handleEndBreak.js";
+import { handleUpdateSessionLocation } from "../controllers/attendance/handleUpdateSessionLocation.js";
 
 export const attendanceRouter = (): Router => {
   const app = Router();
@@ -46,8 +50,11 @@ export const attendanceRouter = (): Router => {
    *           `{ organizationId, employmentId, employmentEnded, active,
    *           locationEnabled, timezone, businessDate, openSession, openBreak,
    *           sessions }`. A session is `{ id, businessDate, startedAt, endedAt,
-   *           timezone, closedBy, open, breaks }`; a break is `{ id, sessionId,
-   *           startedAt, endedAt, autoClosed, open }`.
+   *           timezone, closedBy, open, startLatitude, startLongitude,
+   *           startAccuracy, endLatitude, endLongitude, endAccuracy, breaks }`,
+   *           the six location fields null unless the organization records
+   *           location and the browser's prompt was allowed; a break is
+   *           `{ id, sessionId, startedAt, endedAt, autoClosed, open }`.
    *       '404':
    *         description: The caller holds no Employment in that organization
    *       '422':
@@ -222,6 +229,87 @@ export const attendanceRouter = (): Router => {
     "/break/end",
     bodyValidationMiddleware(validateAttendanceScope),
     tryCatch(handleEndBreak)
+  );
+
+  /**
+   * @openapi
+   * /api/attendance/sessions/{sessionId}/location:
+   *   post:
+   *     tags:
+   *       - Attendance
+   *     summary: Attach a location fix to one end of a session
+   *     description: |
+   *       Where the clock was pressed, as the browser's own permission prompt
+   *       reported it a moment after the click. Never asked for in the
+   *       background and never required: a person who declines leaves the
+   *       columns null, which is indistinguishable from never having been
+   *       asked.
+   *
+   *       A fix is written only when it arrives within two minutes of the
+   *       instant it names and beats the accuracy already stored — `accuracy`
+   *       is the browser's radius in metres, so smaller wins. The client sends
+   *       two per clock, a fast coarse one and a slower precise one, so most
+   *       calls legitimately change nothing.
+   *
+   *       Everything short of an outright refusal answers 200 with
+   *       `applied: false` and the coordinates as they stand: the window has
+   *       passed, the fix is no better, the organization never switched
+   *       location on, or `OUT` was named on a session still open. Only
+   *       somebody else's session and a malformed fix are errors.
+   *
+   *       Appends one `LOCATION_UPDATED` event, and only when something
+   *       actually changed.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [end, latitude, longitude, accuracy]
+   *             properties:
+   *               end:
+   *                 type: string
+   *                 enum: [IN, OUT]
+   *                 description: Which clock the fix belongs to.
+   *               latitude:
+   *                 type: number
+   *                 minimum: -90
+   *                 maximum: 90
+   *               longitude:
+   *                 type: number
+   *                 minimum: -180
+   *                 maximum: 180
+   *               accuracy:
+   *                 type: number
+   *                 exclusiveMinimum: 0
+   *                 description: The browser's radius in metres; smaller is better.
+   *     responses:
+   *       '200':
+   *         description: |
+   *           `{ applied, end, latitude, longitude, accuracy }` — the
+   *           coordinates as they now stand for that end, whether or not this
+   *           call is what put them there.
+   *       '403':
+   *         description: |
+   *           The session belongs to another user. `context.reason` is
+   *           `NOT_YOUR_SESSION`.
+   *       '404':
+   *         description: No such session
+   *       '422':
+   *         description: Malformed fix
+   */
+  app.post(
+    "/sessions/:sessionId/location",
+    bodyValidationMiddleware(validateAttendanceLocation),
+    tryCatch(handleUpdateSessionLocation)
   );
 
   return app;

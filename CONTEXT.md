@@ -33,7 +33,8 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Required time**        | The worked time an Employment owes on a working day: the organization's rule unless the Employment overrides it.                                                                                                       |
 | **Excluded day**         | A business date on which no attendance is owed: a non-working day, a public holiday, or a day with a live approved absence. Clocking in on one is allowed and flagged. See [`docs/attendance.md`](docs/attendance.md). |
 | **Balance mode**         | Whether required time is measured per day or per month. Changes only how the numbers are presented; nothing is enforced.                                                                                               |
-| **Attendance event**     | Append-only timeline entry per attendance session. A null changing user means the auto-close sweep wrote it, not a person.                                                                                             |
+| **Attendance event**     | Append-only timeline entry per attendance session. A null changing user means the auto-close sweep wrote it, not a person. Its payload is redacted, never deleted, when retention catches up with it.                  |
+| **Location fix**         | Latitude, longitude and accuracy from the browser at one end of an attendance session. Never required, erased after twelve months. See [`docs/attendance.md`](docs/attendance.md).                                     |
 
 ## Vacation workflow
 
@@ -131,7 +132,8 @@ reserved-domain address there is bad data, and bouncing it helps nobody.
   `started_at` and the earlier spell is gone.
 - `attendance-schema.ts` — "one open session per Employment" and "one open break per session" are
   partial unique indexes on the null `ended_at`, not handler checks; the reads that precede an
-  insert are for the error message. The six location columns are nullable and unwritten until the
-  location ticket.
+  insert are for the error message. The six location columns are null unless the organization
+  switched location on and the browser's prompt was allowed, and null again once the retention
+  sweep has passed over them — a declined prompt and an erased one look the same, deliberately.
 - `paddle-event-schema.ts` — webhook idempotency, not billing state (that is
   `subscription-schema.ts`).

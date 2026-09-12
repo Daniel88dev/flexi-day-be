@@ -29,6 +29,7 @@ const DEFAULTS = {
   emailNotifications: true,
   dashboardScope: dashboardScope.Mine,
   dashboardGroupId: null,
+  attendanceLocationNoticeDismissed: false,
 };
 
 const scopeEntry = (access: "all" | "self") => ({
@@ -59,6 +60,7 @@ describe("user settings endpoints", () => {
       emailNotifications: false,
       dashboardScope: dashboardScope.Group,
       dashboardGroupId: "group_1",
+      attendanceLocationNoticeDismissed: true,
     });
 
     await handleGetMySettings(req, res);
@@ -67,6 +69,7 @@ describe("user settings endpoints", () => {
       emailNotifications: false,
       dashboardScope: dashboardScope.Group,
       dashboardGroupId: "group_1",
+      attendanceLocationNoticeDismissed: true,
     });
   });
 

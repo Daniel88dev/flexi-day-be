@@ -102,6 +102,17 @@ export const formatStartAndEndDate = (
 };
 
 /**
+ * The UTC calendar date a whole number of months before `instant` — the cutoff
+ * both retention sweeps measure against. Day-of-month overflow rolls forward
+ * the way `Date` does, so 29 February a year on reads as 1 March.
+ */
+export const monthsAgoDay = (instant: Date, months: number): DateString => {
+  const cutoff = new Date(instant);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - months);
+  return cutoff.toISOString().slice(0, 10);
+};
+
+/**
  * The calendar date an instant falls on in an IANA zone — what fixes a
  * session's `businessDate` at clock-in. `en-CA` is the only widely available
  * locale whose numeric format is already ISO, but its parts are read

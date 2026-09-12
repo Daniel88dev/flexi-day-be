@@ -6,6 +6,7 @@ export type UserSettingsRecord = {
   emailNotifications: boolean;
   dashboardScope: dashboardScope;
   dashboardGroupId: string | null;
+  attendanceLocationNoticeDismissed: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -15,12 +16,15 @@ export type UserSettingsResponse = {
   emailNotifications: boolean;
   dashboardScope: dashboardScope;
   dashboardGroupId: string | null;
+  /** True once the person has dismissed the clock's location notice. */
+  attendanceLocationNoticeDismissed: boolean;
 };
 
 export const DEFAULT_USER_SETTINGS: UserSettingsResponse = {
   emailNotifications: true,
   dashboardScope: dashboardScope.Mine,
   dashboardGroupId: null,
+  attendanceLocationNoticeDismissed: false,
 };
 
 /**
@@ -32,6 +36,7 @@ export const validatePutUserSettings = z
     emailNotifications: z.boolean().optional(),
     dashboardScope: z.enum(dashboardScope).optional(),
     dashboardGroupId: z.string().nullable().optional(),
+    attendanceLocationNoticeDismissed: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one setting must be supplied",
@@ -43,4 +48,5 @@ export type UserSettingsPatch = {
   emailNotifications?: boolean;
   dashboardScope?: dashboardScope;
   dashboardGroupId?: string | null;
+  attendanceLocationNoticeDismissed?: boolean;
 };
