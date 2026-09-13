@@ -1,23 +1,38 @@
 import type { DbTransaction } from "../../db/db.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { getLiveGroupIdsForOrganizationOrdered } from "../group/groupServices.js";
-import { listExcusingAbsences } from "../vacation/vacationServices.js";
+import { listExcusingAbsencesForUsers } from "../vacation/vacationServices.js";
+import type { ExcusingAbsence } from "../vacation/types.js";
 import { getNonWorkingDays } from "../workingDays/workingDaysServices.js";
-import { NonWorkingDayCause, type WorkingDayRules } from "../workingDays/types.js";
+import {
+  NonWorkingDayCause,
+  type NonWorkingDay,
+  type WorkingDayRules,
+} from "../workingDays/types.js";
 import {
   AttendanceExclusionCause,
   AttendanceExclusionExtent,
   type DayExclusion,
 } from "./attendanceCalculation.js";
 
+/** The current spell. Dates either side of it are excluded outright. */
+type EmploymentSpell = { startedAt: Date; endedAt: Date | null };
+
 export type AttendanceExclusionInput = {
   organizationId: string;
   userId: string;
-  /** The current spell. Dates either side of it are excluded outright. */
-  employment: { startedAt: Date; endedAt: Date | null };
+  employment: EmploymentSpell;
   dates: DateString[];
   rules: WorkingDayRules;
   /** The organization's zone, which is what turns the spell's instants into dates. */
+  timezone: string;
+};
+
+export type AttendanceExclusionsForPeopleInput = {
+  organizationId: string;
+  people: { userId: string; employment: EmploymentSpell }[];
+  dates: DateString[];
+  rules: WorkingDayRules;
   timezone: string;
 };
 
@@ -28,8 +43,8 @@ const full = (cause: AttendanceExclusionCause, label: string | null = null): Day
 });
 
 /**
- * What each business date of a range is excused from, ready for
- * `computeAttendance`. Three sources, in the order they overrule each other:
+ * One person's exclusions from the pieces already read. Three sources, in the
+ * order they overrule each other:
  *
  * 1. the Employment's own spell — a date outside it was never this person's to
  *    work, which is a blunter fact than any day off;
@@ -40,14 +55,14 @@ const full = (cause: AttendanceExclusionCause, label: string | null = null): Day
  * An absence landing on a day nobody works changes nothing: the day is already
  * gone, and "half a Saturday" is not a figure anybody wants to read.
  */
-export const getAttendanceExclusions = async (
-  { organizationId, userId, employment, dates, rules, timezone }: AttendanceExclusionInput,
-  tx?: DbTransaction
-): Promise<Map<DateString, DayExclusion>> => {
+const buildExclusions = (
+  employment: EmploymentSpell,
+  dates: DateString[],
+  timezone: string,
+  nonWorking: Map<DateString, NonWorkingDay>,
+  absences: ExcusingAbsence[]
+): Map<DateString, DayExclusion> => {
   const exclusions = new Map<DateString, DayExclusion>();
-  const from = dates[0];
-  const to = dates[dates.length - 1];
-  if (from === undefined || to === undefined) return exclusions;
 
   const employedFrom = businessDateInZone(employment.startedAt, timezone);
   const employedTo =
@@ -59,7 +74,6 @@ export const getAttendanceExclusions = async (
     }
   }
 
-  const nonWorking = await getNonWorkingDays(rules, from, to, tx);
   for (const [date, day] of nonWorking) {
     if (exclusions.has(date)) continue;
     exclusions.set(
@@ -73,10 +87,6 @@ export const getAttendanceExclusions = async (
     );
   }
 
-  const groupIds = await getLiveGroupIdsForOrganizationOrdered(organizationId, tx);
-  if (groupIds.length === 0) return exclusions;
-
-  const absences = await listExcusingAbsences(userId, groupIds, from, to, tx);
   for (const absence of absences) {
     if (exclusions.has(absence.requestedDay)) continue;
     exclusions.set(absence.requestedDay, {
@@ -87,4 +97,63 @@ export const getAttendanceExclusions = async (
   }
 
   return exclusions;
+};
+
+/**
+ * What each business date of a range excuses each person from, keyed by user
+ * id and ready for `computeAttendance`. The calendar and the absences are read
+ * once for everybody; only the spell is each person's own.
+ */
+export const getAttendanceExclusionsForPeople = async (
+  { organizationId, people, dates, rules, timezone }: AttendanceExclusionsForPeopleInput,
+  tx?: DbTransaction
+): Promise<Map<string, Map<DateString, DayExclusion>>> => {
+  const byUser = new Map<string, Map<DateString, DayExclusion>>();
+  const from = dates[0];
+  const to = dates[dates.length - 1];
+  if (people.length === 0 || from === undefined || to === undefined) {
+    for (const person of people) byUser.set(person.userId, new Map());
+    return byUser;
+  }
+
+  const nonWorking = await getNonWorkingDays(rules, from, to, tx);
+
+  const groupIds = await getLiveGroupIdsForOrganizationOrdered(organizationId, tx);
+  const absences =
+    groupIds.length === 0
+      ? []
+      : await listExcusingAbsencesForUsers(
+          people.map((person) => person.userId),
+          groupIds,
+          from,
+          to,
+          tx
+        );
+
+  for (const person of people) {
+    byUser.set(
+      person.userId,
+      buildExclusions(
+        person.employment,
+        dates,
+        timezone,
+        nonWorking,
+        absences.filter((absence) => absence.userId === person.userId)
+      )
+    );
+  }
+
+  return byUser;
+};
+
+/** {@link getAttendanceExclusionsForPeople} for one person. */
+export const getAttendanceExclusions = async (
+  { organizationId, userId, employment, dates, rules, timezone }: AttendanceExclusionInput,
+  tx?: DbTransaction
+): Promise<Map<DateString, DayExclusion>> => {
+  const byUser = await getAttendanceExclusionsForPeople(
+    { organizationId, people: [{ userId, employment }], dates, rules, timezone },
+    tx
+  );
+  return byUser.get(userId) ?? new Map();
 };

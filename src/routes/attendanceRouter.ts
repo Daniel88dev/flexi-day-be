@@ -7,6 +7,7 @@ import {
 } from "../services/attendance/types.js";
 import { handleGetAttendanceState } from "../controllers/attendance/handleGetAttendanceState.js";
 import { handleGetAttendanceMonth } from "../controllers/attendance/handleGetAttendanceMonth.js";
+import { handleGetTeamAttendance } from "../controllers/attendance/handleGetTeamAttendance.js";
 import { handleClockIn } from "../controllers/attendance/handleClockIn.js";
 import { handleClockOut } from "../controllers/attendance/handleClockOut.js";
 import { handleStartBreak } from "../controllers/attendance/handleStartBreak.js";
@@ -165,6 +166,90 @@ export const attendanceRouter = (): Router => {
    *         description: Missing or malformed year, month or organizationId
    */
   app.get("/month", tryCatch(handleGetAttendanceMonth));
+
+  /**
+   * @openapi
+   * /api/attendance/team:
+   *   get:
+   *     tags:
+   *       - Attendance
+   *     summary: The team dashboard
+   *     description: |
+   *       Every Employment the caller may see, each with its days over the
+   *       range and the range's totals, and who is clocked in right now. The
+   *       scope is the visibility table's in `docs/attendance.md`: an
+   *       organization admin sees every active Employment, a group admin the
+   *       union of their groups' current members, and anyone else is refused.
+   *       A manager holds no membership row, so their own Employment — and
+   *       anyone else's in no group — appears only for organization admins.
+   *
+   *       `groupId` narrows the answer to that group's current members. An
+   *       organization admin may name any live group of the organization; a
+   *       group admin only one they administer.
+   *
+   *       Each day carries the same figures and flags as `/api/attendance/month`,
+   *       worked out by the same computation, minus the sessions themselves.
+   *       `inNow` lists the open sessions regardless of business date, so
+   *       somebody still clocked in from an earlier day is in it.
+   *
+   *       Never gated by the plan: a lapsed organization's history stays
+   *       readable.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: from
+   *         required: true
+   *         description: First business date, `YYYY-MM-DD`.
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: to
+   *         required: true
+   *         description: Last business date, inclusive. At most 93 days after `from`.
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: groupId
+   *         description: Narrow to one group's current members.
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: |
+   *           `{ organizationId, timezone, businessDate, from, to, balanceMode,
+   *           requiredMinutesPerDay, breakMinutes, breakThresholdMinutes,
+   *           scope, group, people, inNow }`.
+   *           `scope` is `ORGANIZATION` when the caller sees the whole
+   *           organization and `GROUPS` when they see only their groups'
+   *           members, whether or not a group was named. `group` is
+   *           `{ id, groupName }` when the answer was narrowed, otherwise null.
+   *           A person is `{ employmentId, userId, user, groups,
+   *           requiredMinutesPerDay, requiredMinutesOverride, days, totals }`,
+   *           sorted by name; `groups` is `[{ id, groupName }]` of the live
+   *           groups they belong to. Each day and the totals read exactly as
+   *           on `/api/attendance/month`, without `sessions`.
+   *           An entry of `inNow` is `{ employmentId, userId, sessionId,
+   *           businessDate, startedAt, onBreak, breakStartedAt }`.
+   *       '403':
+   *         description: |
+   *           The caller administers nothing in the organization, or named a
+   *           group they do not administer.
+   *       '404':
+   *         description: No live group with that id in that organization
+   *       '422':
+   *         description: |
+   *           Missing or malformed organizationId, from or to; `to` before
+   *           `from`; or a range longer than 93 days.
+   */
+  app.get("/team", tryCatch(handleGetTeamAttendance));
 
   /**
    * @openapi

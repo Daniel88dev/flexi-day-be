@@ -640,6 +640,74 @@ export const listSessionsForRange = async (
   return withBreaks(rows, tx);
 };
 
+/** {@link listSessionsForRange} for a whole team in one read, oldest first. */
+export const listSessionsForEmploymentsInRange = async (
+  employmentIds: string[],
+  from: DateString,
+  to: DateString,
+  tx?: DbTransaction
+): Promise<AttendanceSessionView[]> => {
+  if (employmentIds.length === 0) return [];
+
+  const rows = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        inArray(attendanceSessions.employmentId, employmentIds),
+        gte(attendanceSessions.businessDate, from),
+        lte(attendanceSessions.businessDate, to),
+        isNull(attendanceSessions.deletedAt)
+      )
+    )
+    .orderBy(asc(attendanceSessions.startedAt));
+
+  return withBreaks(rows, tx);
+};
+
+/**
+ * Who is clocked in right now among these Employments, with the break they are
+ * on if any. Unbounded by date on purpose: a session left running since
+ * Thursday is still somebody "in", and the dashboard is where that gets seen.
+ */
+export const listOpenSessionsForEmployments = async (
+  employmentIds: string[],
+  tx?: DbTransaction
+): Promise<{ session: AttendanceSessionType; openBreak: AttendanceBreakType | null }[]> => {
+  if (employmentIds.length === 0) return [];
+
+  const sessions = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        inArray(attendanceSessions.employmentId, employmentIds),
+        isNull(attendanceSessions.endedAt),
+        isNull(attendanceSessions.deletedAt)
+      )
+    )
+    .orderBy(asc(attendanceSessions.startedAt));
+  if (sessions.length === 0) return [];
+
+  const openBreaks = await (tx ?? db)
+    .select(BREAK_COLUMNS)
+    .from(attendanceBreaks)
+    .where(
+      and(
+        inArray(
+          attendanceBreaks.sessionId,
+          sessions.map((session) => session.id)
+        ),
+        isNull(attendanceBreaks.endedAt)
+      )
+    );
+
+  return sessions.map((session) => ({
+    session,
+    openBreak: openBreaks.find((entry) => entry.sessionId === session.id) ?? null,
+  }));
+};
+
 /**
  * One month of the caller's own attendance: every business date in it, the
  * sessions that fall on it, and the figures `attendanceCalculation` works out

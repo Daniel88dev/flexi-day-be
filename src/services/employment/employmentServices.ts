@@ -186,11 +186,12 @@ export const setEmploymentRequiredMinutes = async (
 
 /**
  * The organization's roster, by name. `userIds` narrows it to the people a
- * group admin may see; an empty array means nobody, never everybody.
+ * group admin may see; an empty array means nobody, never everybody. `active`
+ * drops the ended spells, which the team dashboard has no column for.
  */
 export const listEmployments = async (
   organizationId: string,
-  options?: { userIds?: string[] },
+  options?: { userIds?: string[]; active?: boolean },
   tx?: DbTransaction
 ): Promise<EmploymentListItem[]> => {
   if (options?.userIds?.length === 0) return [];
@@ -210,7 +211,8 @@ export const listEmployments = async (
     .where(
       and(
         eq(employments.organizationId, organizationId),
-        options?.userIds ? inArray(employments.userId, options.userIds) : undefined
+        options?.userIds ? inArray(employments.userId, options.userIds) : undefined,
+        options?.active ? isNull(employments.endedAt) : undefined
       )
     )
     .orderBy(asc(user.name));

@@ -33,6 +33,7 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Required time**        | The worked time an Employment owes on a working day: the organization's rule unless the Employment overrides it.                                                                                        |
 | **Excluded day**         | A business date on which no attendance is owed: a date outside the Employment's spell, a non-working day, a public holiday, or an approved absence. See [`docs/attendance.md`](docs/attendance.md).     |
 | **Balance mode**         | Whether required time is measured per day or per month. Changes only how the numbers are presented; nothing is enforced.                                                                                |
+| **Team attendance**      | The admin dashboard: every Employment the viewer may see, per the visibility table, with each person's days over a range and who is clocked in now. See [`docs/attendance.md`](docs/attendance.md).     |
 | **Attendance event**     | Append-only timeline entry per attendance session. A null changing user means the auto-close sweep wrote it, not a person. Its payload is redacted, never deleted, when retention catches up with it.   |
 | **Location fix**         | Latitude, longitude and accuracy from the browser at one end of an attendance session. Never required, erased after twelve months. See [`docs/attendance.md`](docs/attendance.md).                      |
 
