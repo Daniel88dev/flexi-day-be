@@ -265,10 +265,12 @@ const withBreaks = async (
     tx
   );
 
-  return sessions.map((session) => ({
-    ...session,
-    breaks: breaks.filter((entry) => entry.sessionId === session.id),
-  }));
+  const bySession = new Map<string, AttendanceBreakType[]>();
+  for (const entry of breaks) {
+    bySession.set(entry.sessionId, [...(bySession.get(entry.sessionId) ?? []), entry]);
+  }
+
+  return sessions.map((session) => ({ ...session, breaks: bySession.get(session.id) ?? [] }));
 };
 
 /** One business date's sessions, oldest first. Soft-deleted ones are gone for good. */
@@ -702,9 +704,11 @@ export const listOpenSessionsForEmployments = async (
       )
     );
 
+  const bySession = new Map(openBreaks.map((entry) => [entry.sessionId, entry]));
+
   return sessions.map((session) => ({
     session,
-    openBreak: openBreaks.find((entry) => entry.sessionId === session.id) ?? null,
+    openBreak: bySession.get(session.id) ?? null,
   }));
 };
 

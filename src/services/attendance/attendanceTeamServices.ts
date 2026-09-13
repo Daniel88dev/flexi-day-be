@@ -17,6 +17,7 @@ import {
 } from "./attendanceServices.js";
 import {
   AttendanceTeamScope,
+  type AttendanceSessionView,
   type AttendanceTeamType,
   type ValidatedAttendanceTeamQueryType,
 } from "./types.js";
@@ -47,7 +48,17 @@ export const getTeamAttendance = async (
   const employmentIds = employments.map((employment) => employment.id);
 
   const groupsByUser = await getActiveGroupsForUsersInOrganization(organizationId, userIds, tx);
+  // A row names only the groups the viewer administers: somebody in two groups
+  // must not tell the admin of one about the other.
+  const nameable = audience.groupIds === undefined ? null : new Set(audience.groupIds);
   const sessions = await listSessionsForEmploymentsInRange(employmentIds, from, to, tx);
+  const sessionsByEmployment = new Map<string, AttendanceSessionView[]>();
+  for (const session of sessions) {
+    sessionsByEmployment.set(session.employmentId, [
+      ...(sessionsByEmployment.get(session.employmentId) ?? []),
+      session,
+    ]);
+  }
   const open = await listOpenSessionsForEmployments(employmentIds, tx);
 
   const now = new Date();
@@ -72,7 +83,7 @@ export const getTeamAttendance = async (
   const people = employments.map((employment) => {
     const { days, totals } = computeAttendance({
       dates,
-      sessions: sessions.filter((session) => session.employmentId === employment.id),
+      sessions: sessionsByEmployment.get(employment.id) ?? [],
       rules: {
         breakMinutes: settings.breakMinutes,
         breakThresholdMinutes: settings.breakThresholdMinutes,
@@ -89,7 +100,9 @@ export const getTeamAttendance = async (
       employmentId: employment.id,
       userId: employment.userId,
       user: employment.user,
-      groups: groupsByUser.get(employment.userId) ?? [],
+      groups: (groupsByUser.get(employment.userId) ?? []).filter(
+        (group) => nameable === null || nameable.has(group.id)
+      ),
       requiredMinutesPerDay: employment.requiredMinutesPerDay ?? settings.requiredMinutesPerDay,
       requiredMinutesOverride: employment.requiredMinutesPerDay,
       days,

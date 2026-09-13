@@ -36,6 +36,8 @@ export type TeamAudience = {
   everyone: boolean;
   /** The people actually shown; undefined for the whole organization. */
   userIds: string[] | undefined;
+  /** The groups the viewer may name on a row; undefined for every group of the organization. */
+  groupIds: string[] | undefined;
   /** The group the list was narrowed to, when it was. */
   group: { id: string; groupName: string } | null;
 };
@@ -120,7 +122,8 @@ export const resolveRosterAudience = async (
  * org admin may narrow to any live group of the organization; a group admin
  * only to one they administer, refused before its members are read so the
  * answer never says who is in a group that is not theirs. A group that is gone
- * or belongs elsewhere is 404 either way.
+ * or belongs elsewhere is 404 either way. `groupIds` is what a row may name:
+ * a member of two groups is shown to the admin of one with that group alone.
  */
 export const resolveTeamAudience = async (
   viewerUserId: string,
@@ -130,10 +133,13 @@ export const resolveTeamAudience = async (
 ): Promise<TeamAudience> => {
   const audience = await resolveRosterAudience(viewerUserId, organizationId, tx);
 
+  const groupIds = audience.everyone ? undefined : audience.groupIds;
+
   if (groupId === undefined) {
     return {
       everyone: audience.everyone,
       userIds: audience.everyone ? undefined : audience.userIds,
+      groupIds,
       group: null,
     };
   }
@@ -160,6 +166,7 @@ export const resolveTeamAudience = async (
   return {
     everyone: audience.everyone,
     userIds: await getActiveMemberIdsForGroups([groupId], tx),
+    groupIds,
     group: { id: group.id, groupName: group.groupName },
   };
 };

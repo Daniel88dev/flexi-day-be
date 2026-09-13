@@ -212,7 +212,7 @@ export const attendanceRouter = (): Router => {
    *       - in: query
    *         name: to
    *         required: true
-   *         description: Last business date, inclusive. At most 93 days after `from`.
+   *         description: Last business date, inclusive. The range may contain at most 93 dates.
    *         schema:
    *           type: string
    *           format: date

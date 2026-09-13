@@ -154,6 +154,7 @@ describe("the team a viewer may open on the dashboard", () => {
     expect(await resolveTeamAudience("olivia", ORGANIZATION)).toEqual({
       everyone: true,
       userIds: undefined,
+      groupIds: undefined,
       group: null,
     });
     expect(mockGetGroup).not.toHaveBeenCalled();
@@ -167,6 +168,7 @@ describe("the team a viewer may open on the dashboard", () => {
     expect(await resolveTeamAudience("olivia", ORGANIZATION, "engineering")).toEqual({
       everyone: true,
       userIds: ["dana", "dex"],
+      groupIds: undefined,
       group: { id: "engineering", groupName: "Engineering" },
     });
     expect(mockGetActiveMemberIdsForGroups).toHaveBeenCalledWith(["engineering"], undefined);
@@ -179,6 +181,7 @@ describe("the team a viewer may open on the dashboard", () => {
     expect(await resolveTeamAudience("mark", ORGANIZATION)).toEqual({
       everyone: false,
       userIds: ["dana", "dex"],
+      groupIds: ["engineering", "support"],
       group: null,
     });
   });
@@ -191,6 +194,7 @@ describe("the team a viewer may open on the dashboard", () => {
     expect(await resolveTeamAudience("mark", ORGANIZATION, "engineering")).toEqual({
       everyone: false,
       userIds: ["dana"],
+      groupIds: ["engineering", "support"],
       group: { id: "engineering", groupName: "Engineering" },
     });
   });

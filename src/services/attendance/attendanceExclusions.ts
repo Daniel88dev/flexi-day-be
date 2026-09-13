@@ -130,6 +130,11 @@ export const getAttendanceExclusionsForPeople = async (
           tx
         );
 
+  const absencesByUser = new Map<string, ExcusingAbsence[]>();
+  for (const absence of absences) {
+    absencesByUser.set(absence.userId, [...(absencesByUser.get(absence.userId) ?? []), absence]);
+  }
+
   for (const person of people) {
     byUser.set(
       person.userId,
@@ -138,7 +143,7 @@ export const getAttendanceExclusionsForPeople = async (
         dates,
         timezone,
         nonWorking,
-        absences.filter((absence) => absence.userId === person.userId)
+        absencesByUser.get(person.userId) ?? []
       )
     );
   }

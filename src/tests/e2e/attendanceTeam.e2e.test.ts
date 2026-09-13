@@ -154,6 +154,8 @@ describe("team attendance", () => {
       [groupAdmin, engineeringId, true],
       [member, engineeringId, false],
       [colleague, engineeringId, false],
+      // In both groups, so each group's admin is told about their own only.
+      [colleague, salesId, false],
       [salesAdmin, salesId, true],
       [salesMember, salesId, false],
     ];
@@ -219,8 +221,20 @@ describe("team attendance", () => {
     it("does not show a group admin of another group", async () => {
       const { body } = await getTeam(salesAdmin).expect(200);
 
-      expect(userIdsOf(body)).toEqual([salesAdmin.id, salesMember.id].sort());
+      expect(userIdsOf(body)).toEqual([salesAdmin.id, salesMember.id, colleague.id].sort());
       expect(userIdsOf(body)).not.toContain(member.id);
+    });
+
+    it("names on a row only the groups the viewer administers", async () => {
+      const groupsOf = (body: { people: { userId: string; groups: { groupName: string }[] }[] }) =>
+        body.people
+          .find((person) => person.userId === colleague.id)!
+          .groups.map((group) => group.groupName)
+          .sort();
+
+      expect(groupsOf((await getTeam(groupAdmin).expect(200)).body)).toEqual(["Engineering"]);
+      expect(groupsOf((await getTeam(salesAdmin).expect(200)).body)).toEqual(["Sales"]);
+      expect(groupsOf((await getTeam(owner).expect(200)).body)).toEqual(["Engineering", "Sales"]);
     });
 
     it("shows the manager their members but not their own row", async () => {
@@ -350,10 +364,10 @@ describe("team attendance", () => {
       // Somebody else in right now, on a break, outside the range entirely.
       await seedSession({
         person: salesMember,
-        day: MONDAY + 2,
-        startedAt: at(MONDAY + 2, "07:00"),
+        day: MONDAY + 7,
+        startedAt: at(MONDAY + 7, "07:00"),
         endedAt: null,
-        breaks: [{ startedAt: at(MONDAY + 2, "09:00"), endedAt: null }],
+        breaks: [{ startedAt: at(MONDAY + 7, "09:00"), endedAt: null }],
       });
     });
 
@@ -409,7 +423,7 @@ describe("team attendance", () => {
         inNow.find((entry: { userId: string }) => entry.userId === salesMember.id)
       ).toMatchObject({
         onBreak: true,
-        breakStartedAt: at(MONDAY + 2, "09:00").toISOString(),
+        breakStartedAt: at(MONDAY + 7, "09:00").toISOString(),
       });
     });
 
