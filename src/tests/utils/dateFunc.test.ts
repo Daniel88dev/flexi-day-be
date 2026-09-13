@@ -10,6 +10,8 @@ import {
   formatDateToISOString,
   formatStartAndEndDate,
   isWorkingDay,
+  monthEnd,
+  monthStart,
   previousDay,
 } from "../../utils/dateFunc";
 
@@ -156,5 +158,21 @@ describe("previousDay", () => {
     // The morning after Europe/Prague springs forward: that day is 23 hours
     // long, so `now - 24 h` would land on the 28th and skip the 29th.
     expect(previousDay("2026-03-30")).toBe("2026-03-29");
+  });
+});
+
+describe("monthStart and monthEnd", () => {
+  it("spans a whole month inclusively", () => {
+    expect(monthStart(2026, 9)).toBe("2026-09-01");
+    expect(monthEnd(2026, 9)).toBe("2026-09-30");
+  });
+
+  it("ends February on the leap day", () => {
+    expect(monthEnd(2024, 2)).toBe("2024-02-29");
+    expect(monthEnd(2026, 2)).toBe("2026-02-28");
+  });
+
+  it("ends December on the last day of the year", () => {
+    expect(monthEnd(2026, 12)).toBe("2026-12-31");
   });
 });

@@ -152,3 +152,14 @@ export const businessDateInZone = (instant: Date, timeZone: string): DateString 
 
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
+
+/**
+ * The first and last calendar dates of a month. `formatStartAndEndDate` returns
+ * the first of the *next* month as its end, which is what a half-open range
+ * wants and what an inclusive one must not have.
+ */
+export const monthStart = (year: number, month: number): DateString =>
+  formatDateToISOString(new Date(Date.UTC(year, month - 1, 1)));
+
+export const monthEnd = (year: number, month: number): DateString =>
+  formatDateToISOString(new Date(Date.UTC(year, month, 0)));

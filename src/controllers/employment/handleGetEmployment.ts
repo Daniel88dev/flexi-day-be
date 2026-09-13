@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
+import { presentEmployment } from "./utils.js";
 import AppError from "../../utils/appError.js";
 import { assertEmploymentReadable } from "../../services/employment/attendanceAccess.js";
 import { getEmployment } from "../../services/employment/employmentServices.js";
@@ -33,13 +34,5 @@ export const handleGetEmployment = async (req: Request, res: Response) => {
     });
   }
 
-  return res.status(200).json({
-    id: employment.id,
-    organizationId: employment.organizationId,
-    userId: employment.userId,
-    startedAt: employment.startedAt,
-    endedAt: employment.endedAt,
-    ended: employment.endedAt !== null,
-    requiredMinutesPerDay: employment.requiredMinutesPerDay,
-  });
+  return res.status(200).json(presentEmployment(employment));
 };

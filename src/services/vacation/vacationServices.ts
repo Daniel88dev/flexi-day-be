@@ -21,6 +21,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type {
+  ExcusingAbsence,
   GroupVacationListItem,
   LiveVacationType,
   VacationDetail,
@@ -34,7 +35,9 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { alias } from "drizzle-orm/pg-core";
 import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
+import { EXCUSING_RECORD_TYPES } from "./types.js";
 import { sumDaysWhere } from "./dayWeight.js";
+import type { DateString } from "../../utils/dateFunc.js";
 
 type VacationRowWithUser = VacationType & {
   userName: string;
@@ -813,4 +816,45 @@ export const aggregateUserUsageForYear = async (
     used: Number(r.used),
     pending: Number(r.pending),
   }));
+};
+
+/**
+ * The absences that excuse one person from attendance across the supplied
+ * groups, over an inclusive range of days.
+ *
+ * The predicate is the calendar feed's — not cancelled, not rejected,
+ * approved — which is stricter than the glossary's Live row: a booking waiting
+ * for its approver excuses nobody from being at work. Mirrored records are a
+ * read-side projection of another group's row and are never joined here; the
+ * source row is already in range whenever its own group is.
+ */
+export const listExcusingAbsences = async (
+  userId: string,
+  groupIds: string[],
+  fromIsoInclusive: DateString,
+  toIsoInclusive: DateString,
+  tx?: DbTransaction
+): Promise<ExcusingAbsence[]> => {
+  if (groupIds.length === 0) return [];
+
+  return (tx ?? db)
+    .select({
+      requestedDay: vacation.requestedDay,
+      vacationType: vacation.vacationType,
+      halfDay: vacation.halfDay,
+    })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, userId),
+        inArray(vacation.groupId, groupIds),
+        isNull(vacation.deletedAt),
+        isNull(vacation.rejectedAt),
+        isNotNull(vacation.approvedAt),
+        inArray(vacation.vacationType, EXCUSING_RECORD_TYPES),
+        gte(vacation.requestedDay, fromIsoInclusive),
+        lte(vacation.requestedDay, toIsoInclusive)
+      )
+    )
+    .orderBy(asc(vacation.requestedDay));
 };

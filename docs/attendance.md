@@ -54,20 +54,40 @@ therefore required time plus the break allowance.
 enforces anything; nothing is blocked, and month-end balances neither carry over nor reset — they
 are reported and left to the employer.
 
+Mid-month, both modes measure the balance against the **working days already begun**, not against
+the whole month: on the 11th, the days nobody has worked yet are not a shortfall. The full month's
+required time is reported beside it, so the figure the month is heading for is still on the screen.
+A business date later than today is reported with its required time, so the full month's figure is
+still there, but it is kept out of the balance and carries none of its own.
+
 ## Excluded days
 
 No attendance is owed on a business date that is:
 
+- outside the Employment's own spell, before it began or after it ended;
 - not one of the organization's `workingDays`;
 - a public holiday for the organization's `holidayCountry`;
 - covered by a live, approved absence of type `VACATION`, `SICK`, `SICK_DAY`, `PAID_TIME_OFF`,
-  `NON_PAID_LEAVE`, `STUDY_LEAVE` or `OTHER`.
+  `NON_PAID_LEAVE`, `STUDY_LEAVE` or `OTHER`, in any group of the organization.
+
+They rank in that order, so a date says the bluntest true thing about itself: somebody who joined
+on the 15th is told the 1st was not theirs to work rather than that it was a Tuesday off.
+
+Approved means the calendar feed's predicate — not cancelled, not rejected, approved — which is
+stricter than the glossary's Live row: a booking still waiting for its approver excuses nobody from
+being at work. A mirrored record is a read-side projection of another group's row and never counts
+on its own; the row it projects already counts wherever its own group belongs to the organization.
 
 `HOME_OFFICE` does not exclude a day: working from home is working. A `halfDay` record halves the
-required time for that day rather than excluding it.
+required time for that day rather than excluding it, and half a day off is not one of the month's
+days off. A half day landing on a day nobody works changes nothing: the day is already gone.
+
+A date outside the spell owes nothing, carries no balance, and is left out of the month's count of
+days off — it is not a day somebody was excused from.
 
 The organization carries its own timezone, holiday country and working days for attendance. A
-group's settings are never read, because an Employment is not group-shaped.
+group's settings are never read, because an Employment is not group-shaped. Holidays resolve
+through the stored table and its lazy fill, so the first ask for a year computes and keeps it.
 
 Clocking in on an excluded day is allowed. The day is flagged on the dashboard and its worked time
 counts in the month.
