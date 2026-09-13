@@ -2,16 +2,24 @@ import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
+  validateAttendanceCorrection,
   validateAttendanceLocation,
   validateAttendanceScope,
 } from "../services/attendance/types.js";
 import { handleGetAttendanceState } from "../controllers/attendance/handleGetAttendanceState.js";
 import { handleGetAttendanceMonth } from "../controllers/attendance/handleGetAttendanceMonth.js";
+import { handleGetTeamAttendance } from "../controllers/attendance/handleGetTeamAttendance.js";
+import { handleGetAttendanceDay } from "../controllers/attendance/handleGetAttendanceDay.js";
 import { handleClockIn } from "../controllers/attendance/handleClockIn.js";
 import { handleClockOut } from "../controllers/attendance/handleClockOut.js";
 import { handleStartBreak } from "../controllers/attendance/handleStartBreak.js";
 import { handleEndBreak } from "../controllers/attendance/handleEndBreak.js";
 import { handleUpdateSessionLocation } from "../controllers/attendance/handleUpdateSessionLocation.js";
+import { handlePatchAttendanceSession } from "../controllers/attendance/handlePatchAttendanceSession.js";
+import { handleDeleteAttendanceSession } from "../controllers/attendance/handleDeleteAttendanceSession.js";
+import { handlePatchAttendanceBreak } from "../controllers/attendance/handlePatchAttendanceBreak.js";
+import { handleDeleteAttendanceBreak } from "../controllers/attendance/handleDeleteAttendanceBreak.js";
+import { handleGetAttendanceSessionEvents } from "../controllers/attendance/handleGetAttendanceSessionEvents.js";
 
 export const attendanceRouter = (): Router => {
   const app = Router();
@@ -165,6 +173,141 @@ export const attendanceRouter = (): Router => {
    *         description: Missing or malformed year, month or organizationId
    */
   app.get("/month", tryCatch(handleGetAttendanceMonth));
+
+  /**
+   * @openapi
+   * /api/attendance/day:
+   *   get:
+   *     tags:
+   *       - Attendance
+   *     summary: One person's business date
+   *     description: |
+   *       The sessions of one Employment on one business date, with their
+   *       breaks — what the correction dialog opens onto, from either screen.
+   *
+   *       Scoped by the visibility table in `docs/attendance.md`: the person
+   *       themselves, the group admins of any group they belong to, and the
+   *       organization's admins. Naming somebody else is the normal case here,
+   *       unlike `/api/attendance/month`, which answers for its caller alone.
+   *
+   *       Soft-deleted sessions are gone from it. Never gated by the plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: businessDate
+   *         required: true
+   *         description: '`YYYY-MM-DD`, the organization's local day.'
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: userId
+   *         description: Defaults to the caller.
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: |
+   *           `{ organizationId, employmentId, userId, businessDate, timezone,
+   *           sessions }`, a session shaped as on `/api/attendance/current`.
+   *       '403':
+   *         description: No permission for that Employment
+   *       '404':
+   *         description: That person holds no Employment in that organization
+   *       '422':
+   *         description: Missing or malformed organizationId or businessDate
+   */
+  app.get("/day", tryCatch(handleGetAttendanceDay));
+
+  /**
+   * @openapi
+   * /api/attendance/team:
+   *   get:
+   *     tags:
+   *       - Attendance
+   *     summary: The team dashboard
+   *     description: |
+   *       Every Employment the caller may see, each with its days over the
+   *       range and the range's totals, and who is clocked in right now. The
+   *       scope is the visibility table's in `docs/attendance.md`: an
+   *       organization admin sees every active Employment, a group admin the
+   *       union of their groups' current members, and anyone else is refused.
+   *       A manager holds no membership row, so their own Employment — and
+   *       anyone else's in no group — appears only for organization admins.
+   *
+   *       `groupId` narrows the answer to that group's current members. An
+   *       organization admin may name any live group of the organization; a
+   *       group admin only one they administer.
+   *
+   *       Each day carries the same figures and flags as `/api/attendance/month`,
+   *       worked out by the same computation, minus the sessions themselves.
+   *       `inNow` lists the open sessions regardless of business date, so
+   *       somebody still clocked in from an earlier day is in it.
+   *
+   *       Never gated by the plan: a lapsed organization's history stays
+   *       readable.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: from
+   *         required: true
+   *         description: First business date, `YYYY-MM-DD`.
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: to
+   *         required: true
+   *         description: Last business date, inclusive. The range may contain at most 93 dates.
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: groupId
+   *         description: Narrow to one group's current members.
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: |
+   *           `{ organizationId, timezone, businessDate, from, to, balanceMode,
+   *           requiredMinutesPerDay, breakMinutes, breakThresholdMinutes,
+   *           scope, group, people, inNow }`.
+   *           `scope` is `ORGANIZATION` when the caller sees the whole
+   *           organization and `GROUPS` when they see only their groups'
+   *           members, whether or not a group was named. `group` is
+   *           `{ id, groupName }` when the answer was narrowed, otherwise null.
+   *           A person is `{ employmentId, userId, user, groups,
+   *           requiredMinutesPerDay, requiredMinutesOverride, days, totals }`,
+   *           sorted by name; `groups` is `[{ id, groupName }]` of the live
+   *           groups they belong to. Each day and the totals read exactly as
+   *           on `/api/attendance/month`, without `sessions`.
+   *           An entry of `inNow` is `{ employmentId, userId, sessionId,
+   *           businessDate, startedAt, onBreak, breakStartedAt }`.
+   *       '403':
+   *         description: |
+   *           The caller administers nothing in the organization, or named a
+   *           group they do not administer.
+   *       '404':
+   *         description: No live group with that id in that organization
+   *       '422':
+   *         description: |
+   *           Missing or malformed organizationId, from or to; `to` before
+   *           `from`; or a range longer than 93 days.
+   */
+  app.get("/team", tryCatch(handleGetTeamAttendance));
 
   /**
    * @openapi
@@ -415,6 +558,267 @@ export const attendanceRouter = (): Router => {
     bodyValidationMiddleware(validateAttendanceLocation),
     tryCatch(handleUpdateSessionLocation)
   );
+
+  /**
+   * @openapi
+   * /api/attendance/sessions/{sessionId}:
+   *   patch:
+   *     tags:
+   *       - Attendance
+   *     summary: Correct a session's clock-in or clock-out
+   *     description: |
+   *       Moves one end of a session or both. Who may: the session's own user
+   *       while it is open or belongs to today's business date, a group admin of
+   *       any group that person belongs to, and the organization's admins —
+   *       `docs/attendance.md`, the visibility table plus the self-service
+   *       window. Outside the window the employee is told to ask an admin
+   *       rather than simply refused.
+   *
+   *       Only the keys present are changed. `endedAt: null` reopens a closed
+   *       session, which an absent `endedAt` never does.
+   *
+   *       The business date does not move with the times: it is fixed at
+   *       clock-in and never recomputed, so a correction changes what a day
+   *       holds rather than which day holds it.
+   *
+   *       Correcting an end records who closed the session, so a session the
+   *       sweep closed stops being flagged once somebody has overruled it.
+   *
+   *       One `SESSION_EDITED` event is appended in the same transaction,
+   *       carrying the times and `closedBy` as they stood before and after.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               startedAt:
+   *                 type: string
+   *                 format: date-time
+   *               endedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *                 description: Null reopens the session.
+   *     responses:
+   *       '200':
+   *         description: The session as it now stands, with its breaks
+   *       '402':
+   *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
+   *       '403':
+   *         description: |
+   *           No standing over this Employment, or the employee's own window has
+   *           closed — `context.reason` is `SELF_SERVICE_WINDOW`.
+   *       '404':
+   *         description: No such session, or it has been deleted
+   *       '409':
+   *         description: |
+   *           `SESSION_ALREADY_OPEN` when reopening this one would leave two
+   *           open at once, or `SESSION_OVERLAPS` when the corrected times would
+   *           run across another of that person's sessions — two spans over the
+   *           same minutes would be counted twice. `context` carries the other
+   *           session's `{ sessionId, startedAt }` either way.
+   *       '422':
+   *         description: |
+   *           A patch that changes nothing, a malformed instant, an end at or
+   *           before its start (`END_BEFORE_START`), or times that would leave a
+   *           break outside its session (`BREAK_OUTSIDE_SESSION`).
+   */
+  app.patch(
+    "/sessions/:sessionId",
+    bodyValidationMiddleware(validateAttendanceCorrection),
+    tryCatch(handlePatchAttendanceSession)
+  );
+
+  /**
+   * @openapi
+   * /api/attendance/sessions/{sessionId}:
+   *   delete:
+   *     tags:
+   *       - Attendance
+   *     summary: Soft-delete a session
+   *     description: |
+   *       For a session clocked by mistake. The row stays with `deletedAt` set
+   *       and disappears from every read; its breaks and its whole timeline stay
+   *       with it, and one `SESSION_DELETED` event is appended.
+   *
+   *       Deleting an open session frees the clock — the index behind "one open
+   *       session per Employment" excludes deleted rows.
+   *
+   *       Authorized exactly as the patch is, self-service window included.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The session that was deleted, as it stood
+   *       '402':
+   *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
+   *       '403':
+   *         description: |
+   *           No standing over this Employment, or the window has closed
+   *           (`SELF_SERVICE_WINDOW`).
+   *       '404':
+   *         description: No such session, or it was already deleted
+   */
+  app.delete("/sessions/:sessionId", tryCatch(handleDeleteAttendanceSession));
+
+  /**
+   * @openapi
+   * /api/attendance/breaks/{breakId}:
+   *   patch:
+   *     tags:
+   *       - Attendance
+   *     summary: Correct a break's times
+   *     description: |
+   *       Moves one end of a break or both, under the same authorization as the
+   *       session it belongs to. A break has to stay inside its session and end
+   *       after it starts; `endedAt: null` reopens it, and is refused when
+   *       another break on the session is already open.
+   *
+   *       Correcting the end clears `autoClosed`: the flag is the sweep's claim
+   *       that nobody has checked the number, and somebody just has.
+   *
+   *       Answers with the whole session, because the day's figures moved with
+   *       the break. One `BREAK_EDITED` event is appended.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: breakId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               startedAt:
+   *                 type: string
+   *                 format: date-time
+   *               endedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *                 description: Null reopens the break.
+   *     responses:
+   *       '200':
+   *         description: The session the break belongs to, as it now stands
+   *       '402':
+   *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
+   *       '403':
+   *         description: |
+   *           No standing over this Employment, or the window has closed
+   *           (`SELF_SERVICE_WINDOW`).
+   *       '404':
+   *         description: No such break, or its session has been deleted
+   *       '409':
+   *         description: |
+   *           Reopening it would leave two breaks open on the session.
+   *           `context` carries `{ reason: "BREAK_ALREADY_OPEN", breakId, startedAt }`.
+   *       '422':
+   *         description: |
+   *           A patch that changes nothing, a malformed instant,
+   *           `END_BEFORE_START`, or `BREAK_OUTSIDE_SESSION`.
+   */
+  app.patch(
+    "/breaks/:breakId",
+    bodyValidationMiddleware(validateAttendanceCorrection),
+    tryCatch(handlePatchAttendanceBreak)
+  );
+
+  /**
+   * @openapi
+   * /api/attendance/breaks/{breakId}:
+   *   delete:
+   *     tags:
+   *       - Attendance
+   *     summary: Remove a break
+   *     description: |
+   *       Deletes the break row outright, under the same authorization as its
+   *       session. One `BREAK_DELETED` event carries what it was, which is all
+   *       that is left of it.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: breakId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The session the break belonged to, as it now stands
+   *       '402':
+   *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
+   *       '403':
+   *         description: |
+   *           No standing over this Employment, or the window has closed
+   *           (`SELF_SERVICE_WINDOW`).
+   *       '404':
+   *         description: No such break, or its session has been deleted
+   */
+  app.delete("/breaks/:breakId", tryCatch(handleDeleteAttendanceBreak));
+
+  /**
+   * @openapi
+   * /api/attendance/sessions/{sessionId}/events:
+   *   get:
+   *     tags:
+   *       - Attendance
+   *     summary: A session's timeline
+   *     description: |
+   *       Every change to the session, oldest first, with the person behind it.
+   *       A null `user` is the ceiling sweep, or an account that has since been
+   *       deleted.
+   *
+   *       Read rights rather than correction rights: an employee reads their own
+   *       history however old it is, and only changing it needs the window. A
+   *       soft-deleted session still answers, its last entry being the delete.
+   *
+   *       `before` and `after` carry only the fields the change touched, so
+   *       their shape follows `eventType`. Coordinates in a `LOCATION_UPDATED`
+   *       payload are stripped by the retention sweep at twelve months, like the
+   *       session's own.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: |
+   *           `{ sessionId, events }`, an event being
+   *           `{ id, sessionId, eventType, user, before, after, createdAt }`.
+   *           `eventType` is one of `CLOCK_IN`, `CLOCK_OUT`, `BREAK_START`,
+   *           `BREAK_END`, `LOCATION_UPDATED`, `SESSION_EDITED`, `BREAK_EDITED`,
+   *           `BREAK_DELETED` or `SESSION_DELETED`.
+   *       '403':
+   *         description: No permission for this Employment
+   *       '404':
+   *         description: No such session
+   */
+  app.get("/sessions/:sessionId/events", tryCatch(handleGetAttendanceSessionEvents));
 
   return app;
 };

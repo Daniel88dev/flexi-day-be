@@ -1,4 +1,19 @@
-import { and, asc, desc, eq, exists, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import {
   attendanceBreaks,
@@ -20,6 +35,7 @@ import {
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAttendanceActive, isAttendanceActive } from "../billing/guards.js";
 import { getEmployment, listEmploymentsForUser } from "../employment/employmentServices.js";
+import { assertEmploymentReadable } from "../employment/attendanceAccess.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { computeAttendance } from "./attendanceCalculation.js";
@@ -28,10 +44,12 @@ import type { AttendanceSettingsType } from "../organization/types.js";
 import type { EmploymentType } from "../employment/types.js";
 import type {
   AttendanceBreakType,
+  AttendanceDayType,
   AttendanceSessionType,
   AttendanceSessionView,
   AttendanceStateType,
   AttendanceMonthType,
+  ValidatedAttendanceDayQueryType,
 } from "./types.js";
 
 /**
@@ -68,7 +86,12 @@ const BREAK_COLUMNS = {
   autoClosed: attendanceBreaks.autoClosed,
 };
 
-const conflict = (
+/**
+ * A 409 with a stable `reason` the client can branch on. Shared with the
+ * corrections module, whose refusals are the same states seen from the other
+ * side — an edit that would leave two sessions open is the clock-in conflict.
+ */
+export const attendanceConflict = (
   reason: string,
   message: string,
   publicContext?: { [key: string]: unknown },
@@ -243,6 +266,48 @@ export const getOpenBreak = async (
   return row;
 };
 
+/**
+ * One session by id, whatever shape it is in. `includeDeleted` is for the
+ * timeline alone: a soft-deleted session is gone from every other read, and
+ * its history is the one thing a delete is not allowed to take away.
+ */
+export const getSessionById = async (
+  sessionId: string,
+  options: { includeDeleted?: boolean } = {},
+  tx?: DbTransaction
+): Promise<AttendanceSessionType | undefined> => {
+  const [row] = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      options.includeDeleted
+        ? eq(attendanceSessions.id, sessionId)
+        : and(eq(attendanceSessions.id, sessionId), isNull(attendanceSessions.deletedAt))
+    )
+    .limit(1);
+
+  return row;
+};
+
+export const getBreakById = async (
+  breakId: string,
+  tx?: DbTransaction
+): Promise<AttendanceBreakType | undefined> => {
+  const [row] = await (tx ?? db)
+    .select(BREAK_COLUMNS)
+    .from(attendanceBreaks)
+    .where(eq(attendanceBreaks.id, breakId))
+    .limit(1);
+
+  return row;
+};
+
+/** The breaks of one session, oldest first. */
+export const listBreaksForSession = async (
+  sessionId: string,
+  tx?: DbTransaction
+): Promise<AttendanceBreakType[]> => listBreaksForSessions([sessionId], tx);
+
 const listBreaksForSessions = async (
   sessionIds: string[],
   tx?: DbTransaction
@@ -265,10 +330,12 @@ const withBreaks = async (
     tx
   );
 
-  return sessions.map((session) => ({
-    ...session,
-    breaks: breaks.filter((entry) => entry.sessionId === session.id),
-  }));
+  const bySession = new Map<string, AttendanceBreakType[]>();
+  for (const entry of breaks) {
+    bySession.set(entry.sessionId, [...(bySession.get(entry.sessionId) ?? []), entry]);
+  }
+
+  return sessions.map((session) => ({ ...session, breaks: bySession.get(session.id) ?? [] }));
 };
 
 /** One business date's sessions, oldest first. Soft-deleted ones are gone for good. */
@@ -379,8 +446,8 @@ const written = <T>(row: T | undefined, what: string, context: { [key: string]: 
   throw new AppError({ message: `Failed to ${what}`, logging: true, code: 500, context });
 };
 
-const sessionAlreadyOpen = (session: AttendanceSessionType) =>
-  conflict(
+export const sessionAlreadyOpen = (session: AttendanceSessionType) =>
+  attendanceConflict(
     "SESSION_ALREADY_OPEN",
     "You are already clocked in",
     { startedAt: session.startedAt.toISOString(), sessionId: session.id },
@@ -388,7 +455,7 @@ const sessionAlreadyOpen = (session: AttendanceSessionType) =>
   );
 
 const noOpenSession = (employmentId: string) =>
-  conflict("NO_OPEN_SESSION", "You are not clocked in", undefined, { employmentId });
+  attendanceConflict("NO_OPEN_SESSION", "You are not clocked in", undefined, { employmentId });
 
 export const clockIn = async (
   subject: AttendanceSubject & { timezone: string },
@@ -497,7 +564,7 @@ export const startBreak = async (
 
   const running = await getOpenBreak(open.id, tx);
   if (running) {
-    throw conflict(
+    throw attendanceConflict(
       "BREAK_ALREADY_OPEN",
       "You are already on a break",
       { startedAt: running.startedAt.toISOString(), breakId: running.id },
@@ -533,7 +600,9 @@ export const endBreak = async (
 
   const running = await getOpenBreak(open.id, tx);
   if (!running) {
-    throw conflict("NO_OPEN_BREAK", "You are not on a break", undefined, { sessionId: open.id });
+    throw attendanceConflict("NO_OPEN_BREAK", "You are not on a break", undefined, {
+      sessionId: open.id,
+    });
   }
 
   const [updated] = await tx
@@ -617,6 +686,80 @@ export const getAttendanceState = async (
   };
 };
 
+/**
+ * One person's sessions on one business date, for the correction dialog. The
+ * visibility matrix decides, so an employee reads their own and an admin reads
+ * anyone they administer — and unlike the month, naming somebody else is the
+ * normal case rather than a refusal.
+ *
+ * Never gated by the plan; reads never are.
+ */
+export const getAttendanceDay = async (
+  viewerUserId: string,
+  query: ValidatedAttendanceDayQueryType,
+  tx?: DbTransaction
+): Promise<AttendanceDayType> => {
+  const userId = query.userId ?? viewerUserId;
+  const employment = await getEmployment(query.organizationId, userId, tx);
+  if (!employment) {
+    throw new AppError({
+      message: "No employment in this organization",
+      logging: true,
+      code: 404,
+      context: { viewerUserId, organizationId: query.organizationId, target: userId },
+    });
+  }
+
+  await assertEmploymentReadable(viewerUserId, employment, tx);
+
+  const settings = await getAttendanceSettings(query.organizationId, tx);
+
+  return {
+    organizationId: query.organizationId,
+    employmentId: employment.id,
+    userId,
+    businessDate: query.businessDate,
+    timezone: settings?.timezone ?? null,
+    sessions: await listSessionsForDate(employment.id, query.businessDate, tx),
+  };
+};
+
+/**
+ * The Employment's other live sessions that run across a span — the check a
+ * correction needs and a clock-in does not: clocking in cannot overlap
+ * anything, because the open-session index allows only one at a time and it
+ * starts now. Moving a closed session can, and two overlapping spans would
+ * count the same minutes twice in `presence`.
+ *
+ * An open session is treated as running to the end of time, which is what
+ * "still clocked in" means for an overlap.
+ */
+export const listSessionsOverlapping = async (
+  employmentId: string,
+  span: { startedAt: Date; endedAt: Date | null },
+  exceptSessionId: string,
+  tx?: DbTransaction
+): Promise<AttendanceSessionType[]> =>
+  (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        eq(attendanceSessions.employmentId, employmentId),
+        isNull(attendanceSessions.deletedAt),
+        ne(attendanceSessions.id, exceptSessionId),
+        // Half-open on both sides, so a session that ends exactly where the
+        // next one starts is back to back rather than overlapping.
+        span.endedAt === null
+          ? or(isNull(attendanceSessions.endedAt), gt(attendanceSessions.endedAt, span.startedAt))
+          : and(
+              lt(attendanceSessions.startedAt, span.endedAt),
+              or(isNull(attendanceSessions.endedAt), gt(attendanceSessions.endedAt, span.startedAt))
+            )
+      )
+    )
+    .orderBy(asc(attendanceSessions.startedAt));
+
 /** Every session of an inclusive business-date range, oldest first. */
 export const listSessionsForRange = async (
   employmentId: string,
@@ -638,6 +781,76 @@ export const listSessionsForRange = async (
     .orderBy(asc(attendanceSessions.startedAt));
 
   return withBreaks(rows, tx);
+};
+
+/** {@link listSessionsForRange} for a whole team in one read, oldest first. */
+export const listSessionsForEmploymentsInRange = async (
+  employmentIds: string[],
+  from: DateString,
+  to: DateString,
+  tx?: DbTransaction
+): Promise<AttendanceSessionView[]> => {
+  if (employmentIds.length === 0) return [];
+
+  const rows = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        inArray(attendanceSessions.employmentId, employmentIds),
+        gte(attendanceSessions.businessDate, from),
+        lte(attendanceSessions.businessDate, to),
+        isNull(attendanceSessions.deletedAt)
+      )
+    )
+    .orderBy(asc(attendanceSessions.startedAt));
+
+  return withBreaks(rows, tx);
+};
+
+/**
+ * Who is clocked in right now among these Employments, with the break they are
+ * on if any. Unbounded by date on purpose: a session left running since
+ * Thursday is still somebody "in", and the dashboard is where that gets seen.
+ */
+export const listOpenSessionsForEmployments = async (
+  employmentIds: string[],
+  tx?: DbTransaction
+): Promise<{ session: AttendanceSessionType; openBreak: AttendanceBreakType | null }[]> => {
+  if (employmentIds.length === 0) return [];
+
+  const sessions = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        inArray(attendanceSessions.employmentId, employmentIds),
+        isNull(attendanceSessions.endedAt),
+        isNull(attendanceSessions.deletedAt)
+      )
+    )
+    .orderBy(asc(attendanceSessions.startedAt));
+  if (sessions.length === 0) return [];
+
+  const openBreaks = await (tx ?? db)
+    .select(BREAK_COLUMNS)
+    .from(attendanceBreaks)
+    .where(
+      and(
+        inArray(
+          attendanceBreaks.sessionId,
+          sessions.map((session) => session.id)
+        ),
+        isNull(attendanceBreaks.endedAt)
+      )
+    );
+
+  const bySession = new Map(openBreaks.map((entry) => [entry.sessionId, entry]));
+
+  return sessions.map((session) => ({
+    session,
+    openBreak: bySession.get(session.id) ?? null,
+  }));
 };
 
 /**

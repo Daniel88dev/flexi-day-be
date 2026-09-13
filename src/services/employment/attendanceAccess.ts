@@ -6,6 +6,7 @@ import {
   getActiveGroupIdsInOrganization,
   getActiveMemberIdsForGroups,
 } from "../groupUser/groupUserServices.js";
+import { getGroup } from "../group/groupServices.js";
 
 /**
  * Who may read an Employment, from the visibility table in
@@ -26,15 +27,33 @@ import {
 
 type EmploymentSubject = { organizationId: string; userId: string };
 
-export type EmploymentAudience = { everyone: true } | { everyone: false; userIds: string[] };
+export type EmploymentAudience =
+  { everyone: true } | { everyone: false; userIds: string[]; groupIds: string[] };
 
-export const canReadEmployment = async (
+/** Who the team dashboard shows. */
+export type TeamAudience = {
+  /** The viewer's standing — an org admin or a group admin — whatever the filter did to the list. */
+  everyone: boolean;
+  /** The people actually shown; undefined for the whole organization. */
+  userIds: string[] | undefined;
+  /** The groups the viewer may name on a row; undefined for every group of the organization. */
+  groupIds: string[] | undefined;
+  /** The group the list was narrowed to, when it was. */
+  group: { id: string; groupName: string } | null;
+};
+
+/**
+ * The visibility table without its first row: an admin's standing over somebody
+ * else's Employment, and over their own only where they hold it as an admin
+ * rather than as its subject. Corrections read this rather than
+ * {@link canReadEmployment}, because "your own" is exactly the case the
+ * self-service window governs.
+ */
+export const canAdministerEmployment = async (
   viewerUserId: string,
   employment: EmploymentSubject,
   tx?: DbTransaction
 ): Promise<boolean> => {
-  if (viewerUserId === employment.userId) return true;
-
   if (await isOrganizationAdmin(viewerUserId, employment.organizationId, tx)) return true;
 
   const subjectGroupIds = await getActiveGroupIdsInOrganization(
@@ -52,6 +71,16 @@ export const canReadEmployment = async (
   const administrableSet = new Set(administrable);
 
   return subjectGroupIds.some((groupId) => administrableSet.has(groupId));
+};
+
+export const canReadEmployment = async (
+  viewerUserId: string,
+  employment: EmploymentSubject,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  if (viewerUserId === employment.userId) return true;
+
+  return canAdministerEmployment(viewerUserId, employment, tx);
 };
 
 export const assertEmploymentReadable = async (
@@ -96,5 +125,63 @@ export const resolveRosterAudience = async (
     });
   }
 
-  return { everyone: false, userIds: await getActiveMemberIdsForGroups(administrable, tx) };
+  return {
+    everyone: false,
+    userIds: await getActiveMemberIdsForGroups(administrable, tx),
+    groupIds: administrable,
+  };
+};
+
+/**
+ * {@link resolveRosterAudience} with the dashboard's group filter on top. An
+ * org admin may narrow to any live group of the organization; a group admin
+ * only to one they administer, refused before its members are read so the
+ * answer never says who is in a group that is not theirs. A group that is gone
+ * or belongs elsewhere is 404 either way. `groupIds` is what a row may name:
+ * a member of two groups is shown to the admin of one with that group alone.
+ */
+export const resolveTeamAudience = async (
+  viewerUserId: string,
+  organizationId: string,
+  groupId?: string,
+  tx?: DbTransaction
+): Promise<TeamAudience> => {
+  const audience = await resolveRosterAudience(viewerUserId, organizationId, tx);
+
+  const groupIds = audience.everyone ? undefined : audience.groupIds;
+
+  if (groupId === undefined) {
+    return {
+      everyone: audience.everyone,
+      userIds: audience.everyone ? undefined : audience.userIds,
+      groupIds,
+      group: null,
+    };
+  }
+
+  const group = await getGroup(groupId, tx);
+  if (!group || group.organizationId !== organizationId) {
+    throw new AppError({
+      message: "Group not found",
+      logging: true,
+      code: 404,
+      context: { viewerUserId, organizationId, groupId },
+    });
+  }
+
+  if (!audience.everyone && !audience.groupIds.includes(groupId)) {
+    throw new AppError({
+      message: "No permission for related group",
+      logging: true,
+      code: 403,
+      context: { viewerUserId, organizationId, groupId },
+    });
+  }
+
+  return {
+    everyone: audience.everyone,
+    userIds: await getActiveMemberIdsForGroups([groupId], tx),
+    groupIds,
+    group: { id: group.id, groupName: group.groupName },
+  };
 };

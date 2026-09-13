@@ -828,17 +828,18 @@ export const aggregateUserUsageForYear = async (
  * read-side projection of another group's row and are never joined here; the
  * source row is already in range whenever its own group is.
  */
-export const listExcusingAbsences = async (
-  userId: string,
+export const listExcusingAbsencesForUsers = async (
+  userIds: string[],
   groupIds: string[],
   fromIsoInclusive: DateString,
   toIsoInclusive: DateString,
   tx?: DbTransaction
-): Promise<ExcusingAbsence[]> => {
-  if (groupIds.length === 0) return [];
+): Promise<(ExcusingAbsence & { userId: string })[]> => {
+  if (userIds.length === 0 || groupIds.length === 0) return [];
 
   return (tx ?? db)
     .select({
+      userId: vacation.userId,
       requestedDay: vacation.requestedDay,
       vacationType: vacation.vacationType,
       halfDay: vacation.halfDay,
@@ -846,7 +847,7 @@ export const listExcusingAbsences = async (
     .from(vacation)
     .where(
       and(
-        eq(vacation.userId, userId),
+        inArray(vacation.userId, userIds),
         inArray(vacation.groupId, groupIds),
         isNull(vacation.deletedAt),
         isNull(vacation.rejectedAt),

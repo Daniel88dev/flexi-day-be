@@ -129,6 +129,14 @@ export enum attendanceEventType {
   BreakEnd = "BREAK_END",
   /** A fix from the browser landed on one end of the session. */
   LocationUpdated = "LOCATION_UPDATED",
+  /** An admin or the person themselves moved a clock-in or a clock-out. */
+  SessionEdited = "SESSION_EDITED",
+  /** A break's own times were moved. */
+  BreakEdited = "BREAK_EDITED",
+  /** A break was taken off the session; the row itself is gone, this is what is left of it. */
+  BreakDeleted = "BREAK_DELETED",
+  /** The session was soft-deleted. The row stays, and so does everything before this. */
+  SessionDeleted = "SESSION_DELETED",
 }
 
 export const attendanceEventTypeEnum = pgEnum(

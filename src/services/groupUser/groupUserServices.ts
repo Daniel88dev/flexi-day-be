@@ -191,6 +191,42 @@ export const getActiveMemberIdsForGroups = async (
   return rows.map((row) => row.userId);
 };
 
+/**
+ * The organization's live groups each of these people actively belongs to, by
+ * name — the dashboard row's subtitle. A person in none is absent from the map.
+ */
+export const getActiveGroupsForUsersInOrganization = async (
+  organizationId: string,
+  userIds: string[],
+  tx?: DbTransaction
+): Promise<Map<string, { id: string; groupName: string }[]>> => {
+  const byUser = new Map<string, { id: string; groupName: string }[]>();
+  if (userIds.length === 0) return byUser;
+
+  const rows = await (tx ?? db)
+    .select({ userId: groupUsers.userId, id: groups.id, groupName: groups.groupName })
+    .from(groupUsers)
+    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
+    .where(
+      and(
+        inArray(groupUsers.userId, userIds),
+        eq(groups.organizationId, organizationId),
+        isNull(groupUsers.deletedAt),
+        isNull(groups.deletedAt)
+      )
+    )
+    .orderBy(asc(groups.groupName), asc(groups.id));
+
+  for (const row of rows) {
+    byUser.set(row.userId, [
+      ...(byUser.get(row.userId) ?? []),
+      { id: row.id, groupName: row.groupName },
+    ]);
+  }
+
+  return byUser;
+};
+
 /** Active (user, group) membership pairs, for cross-referencing many at once. */
 export const getMembershipPairs = async (
   userIds: string[],

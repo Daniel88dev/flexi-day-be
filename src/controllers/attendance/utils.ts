@@ -1,10 +1,13 @@
 import type { Request } from "express";
+import AppError from "../../utils/appError.js";
 import {
   validateAttendanceScope,
   type AttendanceBreakType,
+  type AttendanceEventView,
   type AttendanceSessionView,
   type AttendanceMonthType,
   type AttendanceStateType,
+  type AttendanceTeamType,
   type ValidatedAttendanceScopeType,
 } from "../../services/attendance/types.js";
 
@@ -85,4 +88,45 @@ export const presentAttendanceMonth = (month: AttendanceMonthType) => ({
     sessions: day.sessions.map(presentSession),
   })),
   totals: month.totals,
+});
+
+export const presentAttendanceTeam = (team: AttendanceTeamType) => ({
+  organizationId: team.organizationId,
+  timezone: team.timezone,
+  businessDate: team.businessDate,
+  from: team.from,
+  to: team.to,
+  balanceMode: team.balanceMode,
+  requiredMinutesPerDay: team.requiredMinutesPerDay,
+  breakMinutes: team.breakMinutes,
+  breakThresholdMinutes: team.breakThresholdMinutes,
+  scope: team.scope,
+  group: team.group,
+  people: team.people.map((person) => ({
+    employmentId: person.employmentId,
+    userId: person.userId,
+    user: person.user,
+    groups: person.groups,
+    requiredMinutesPerDay: person.requiredMinutesPerDay,
+    requiredMinutesOverride: person.requiredMinutesOverride,
+    days: person.days,
+    totals: person.totals,
+  })),
+  inNow: team.inNow,
+});
+
+/** A path parameter Express typed as optional but the route cannot match without. */
+export const requirePathParam = (value: string | undefined, what: string): string => {
+  if (value) return value;
+  throw new AppError({ message: `A ${what} is required`, logging: false, code: 422 });
+};
+
+export const presentAttendanceEvent = (event: AttendanceEventView) => ({
+  id: event.id,
+  sessionId: event.sessionId,
+  eventType: event.eventType,
+  user: event.user,
+  before: event.before,
+  after: event.after,
+  createdAt: event.createdAt,
 });

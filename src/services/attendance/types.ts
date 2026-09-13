@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type { attendanceClosedBy } from "../../db/schema/attendance-schema.js";
+import type { attendanceClosedBy, attendanceEventType } from "../../db/schema/attendance-schema.js";
 import type { balanceMode } from "../../db/schema/organization-attendance-settings-schema.js";
 import type { AttendanceDay, AttendanceTotals } from "./attendanceCalculation.js";
 import type { DateString } from "../../utils/dateFunc.js";
+import type { UserSummary } from "../../utils/userPresentation.js";
 
 export type AttendanceBreakType = {
   id: string;
@@ -137,6 +138,33 @@ export const validateAttendanceMonthQuery = z.object({
 
 export type ValidatedAttendanceMonthQueryType = z.infer<typeof validateAttendanceMonthQuery>;
 
+/**
+ * One person's one business date — what the correction dialog opens onto. The
+ * organization is required and `userId` defaults to the caller, so an admin
+ * names the person and an employee names nobody. Who may read it is the
+ * visibility matrix, unlike {@link validateAttendanceMonthQuery}, which refuses
+ * anyone but its subject: a day is exactly what an admin came to the team
+ * dashboard to look at.
+ */
+export const validateAttendanceDayQuery = z.object({
+  // better-auth user ids are opaque non-UUID strings.
+  organizationId: z.string().min(1),
+  userId: z.string().min(1).optional(),
+  businessDate: z.iso.date(),
+});
+
+export type ValidatedAttendanceDayQueryType = z.infer<typeof validateAttendanceDayQuery>;
+
+/** One person's sessions on one business date, with the zone they read in. */
+export type AttendanceDayType = {
+  organizationId: string;
+  employmentId: string;
+  userId: string;
+  businessDate: DateString;
+  timezone: string | null;
+  sessions: AttendanceSessionView[];
+};
+
 /** One business date of the month: the figures, and the rows they were worked out from. */
 export type AttendanceMonthDay = AttendanceDay & { sessions: AttendanceSessionView[] };
 
@@ -163,4 +191,130 @@ export type AttendanceMonthType = {
   breakThresholdMinutes: number;
   days: AttendanceMonthDay[];
   totals: AttendanceTotals;
+};
+
+/**
+ * The longest range the team dashboard answers for: a quarter, with a day to
+ * spare. Every person costs a computation over every date, and a year of a
+ * whole organization is a report, not a screen.
+ */
+export const TEAM_RANGE_MAX_DAYS = 93;
+
+const daysInclusive = (from: DateString, to: DateString): number =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+
+/**
+ * The team dashboard's scope. `organizationId` is required here where the
+ * caller's own reads default it: an admin may administer groups in several
+ * organizations, and nothing about them says which one they mean.
+ */
+export const validateAttendanceTeamQuery = z
+  .object({
+    // better-auth user ids and group ids are opaque non-UUID strings.
+    organizationId: z.string().min(1),
+    groupId: z.string().min(1).optional(),
+    from: z.iso.date(),
+    to: z.iso.date(),
+  })
+  .refine((query) => query.from <= query.to, {
+    message: "The range ends before it starts",
+    path: ["to"],
+  })
+  .refine((query) => daysInclusive(query.from, query.to) <= TEAM_RANGE_MAX_DAYS, {
+    message: `The range may cover at most ${TEAM_RANGE_MAX_DAYS} days`,
+    path: ["to"],
+  });
+
+export type ValidatedAttendanceTeamQueryType = z.infer<typeof validateAttendanceTeamQuery>;
+
+export type AttendanceTeamGroup = { id: string; groupName: string };
+
+/** One row of the dashboard: a person, their days in the range, and the range's totals. */
+export type AttendanceTeamPerson = {
+  employmentId: string;
+  userId: string;
+  user: UserSummary;
+  /** The organization's live groups this person belongs to, by name. A manager's may be empty. */
+  groups: AttendanceTeamGroup[];
+  /** What their days were measured against: the override where there is one. */
+  requiredMinutesPerDay: number;
+  requiredMinutesOverride: number | null;
+  days: AttendanceDay[];
+  totals: AttendanceTotals;
+};
+
+/** Somebody clocked in right now, whichever business date the session belongs to. */
+export type AttendanceTeamOpenSession = {
+  employmentId: string;
+  userId: string;
+  sessionId: string;
+  businessDate: DateString;
+  startedAt: Date;
+  onBreak: boolean;
+  breakStartedAt: Date | null;
+};
+
+/** Whether the viewer sees the whole organization or only their groups' members. */
+export enum AttendanceTeamScope {
+  Organization = "ORGANIZATION",
+  Groups = "GROUPS",
+}
+
+export type AttendanceTeamType = {
+  organizationId: string;
+  timezone: string | null;
+  businessDate: DateString | null;
+  from: DateString;
+  to: DateString;
+  balanceMode: balanceMode;
+  /** The organization's figure; a row carries its own where it differs. */
+  requiredMinutesPerDay: number;
+  breakMinutes: number;
+  breakThresholdMinutes: number;
+  scope: AttendanceTeamScope;
+  /** The group the answer was narrowed to, null for the viewer's whole audience. */
+  group: AttendanceTeamGroup | null;
+  people: AttendanceTeamPerson[];
+  inNow: AttendanceTeamOpenSession[];
+};
+
+/**
+ * A correction to one end of a session or a break. Both keys are optional and
+ * an absent one is left alone, but `endedAt: null` is a change of its own —
+ * reopening what was closed — so the two cases cannot be collapsed.
+ *
+ * Instants travel as ISO strings with an offset, unlike the clock itself, whose
+ * instant is always the server's. A correction is by definition about a time
+ * that has already passed, and only the client knows which one the person meant.
+ */
+export const validateAttendanceCorrection = z
+  .object({
+    startedAt: z.iso.datetime({ offset: true }).optional(),
+    endedAt: z.iso.datetime({ offset: true }).nullable().optional(),
+  })
+  .refine((patch) => patch.startedAt !== undefined || "endedAt" in patch, {
+    message: "A correction has to change something",
+  });
+
+export type ValidatedAttendanceCorrectionType = z.infer<typeof validateAttendanceCorrection>;
+
+/**
+ * Whose authority a correction is being made under: an admin over somebody's
+ * Employment, or the person themselves inside the self-service window.
+ */
+export enum AttendanceCorrectionRight {
+  Admin = "ADMIN",
+  Self = "SELF",
+}
+
+/** One entry of a session's timeline, with the person behind it where there was one. */
+export type AttendanceEventView = {
+  id: string;
+  sessionId: string;
+  eventType: attendanceEventType;
+  /** Null is the sweep, or an account that has since gone. */
+  user: UserSummary | null;
+  before: unknown;
+  after: unknown;
+  createdAt: Date;
 };

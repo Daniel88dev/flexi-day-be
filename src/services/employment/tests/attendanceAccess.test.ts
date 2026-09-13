@@ -5,11 +5,13 @@ const {
   mockGetAdministrableGroupIds,
   mockGetActiveGroupIdsInOrganization,
   mockGetActiveMemberIdsForGroups,
+  mockGetGroup,
 } = vi.hoisted(() => ({
   mockIsOrganizationAdmin: vi.fn(),
   mockGetAdministrableGroupIds: vi.fn(),
   mockGetActiveGroupIdsInOrganization: vi.fn(),
   mockGetActiveMemberIdsForGroups: vi.fn(),
+  mockGetGroup: vi.fn(),
 }));
 
 vi.mock("../../organization/organizationServices.js", () => ({
@@ -25,10 +27,15 @@ vi.mock("../../groupUser/groupUserServices.js", () => ({
   getActiveMemberIdsForGroups: mockGetActiveMemberIdsForGroups,
 }));
 
+vi.mock("../../group/groupServices.js", () => ({
+  getGroup: mockGetGroup,
+}));
+
 import {
   assertEmploymentReadable,
   canReadEmployment,
   resolveRosterAudience,
+  resolveTeamAudience,
 } from "../attendanceAccess.js";
 
 const ORGANIZATION = "org-1";
@@ -127,5 +134,95 @@ describe("the roster a viewer may list", () => {
 
   it("refuses someone who administers nothing — the roster is an admin surface", async () => {
     await expect(resolveRosterAudience("dana", ORGANIZATION)).rejects.toMatchObject({ code: 403 });
+  });
+});
+
+describe("the team a viewer may open on the dashboard", () => {
+  const engineering = { id: "engineering", organizationId: ORGANIZATION, groupName: "Engineering" };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockIsOrganizationAdmin.mockResolvedValue(false);
+    mockGetAdministrableGroupIds.mockResolvedValue([]);
+    mockGetActiveMemberIdsForGroups.mockResolvedValue([]);
+    mockGetGroup.mockResolvedValue(undefined);
+  });
+
+  it("gives an org admin the whole organization when no group is named", async () => {
+    mockIsOrganizationAdmin.mockResolvedValue(true);
+
+    expect(await resolveTeamAudience("olivia", ORGANIZATION)).toEqual({
+      everyone: true,
+      userIds: undefined,
+      groupIds: undefined,
+      group: null,
+    });
+    expect(mockGetGroup).not.toHaveBeenCalled();
+  });
+
+  it("narrows an org admin to one group's members", async () => {
+    mockIsOrganizationAdmin.mockResolvedValue(true);
+    mockGetGroup.mockResolvedValue(engineering);
+    mockGetActiveMemberIdsForGroups.mockResolvedValue(["dana", "dex"]);
+
+    expect(await resolveTeamAudience("olivia", ORGANIZATION, "engineering")).toEqual({
+      everyone: true,
+      userIds: ["dana", "dex"],
+      groupIds: undefined,
+      group: { id: "engineering", groupName: "Engineering" },
+    });
+    expect(mockGetActiveMemberIdsForGroups).toHaveBeenCalledWith(["engineering"], undefined);
+  });
+
+  it("gives a group admin the union of their groups' members", async () => {
+    mockGetAdministrableGroupIds.mockResolvedValue(["engineering", "support"]);
+    mockGetActiveMemberIdsForGroups.mockResolvedValue(["dana", "dex"]);
+
+    expect(await resolveTeamAudience("mark", ORGANIZATION)).toEqual({
+      everyone: false,
+      userIds: ["dana", "dex"],
+      groupIds: ["engineering", "support"],
+      group: null,
+    });
+  });
+
+  it("lets a group admin narrow to one of their own groups", async () => {
+    mockGetAdministrableGroupIds.mockResolvedValue(["engineering", "support"]);
+    mockGetGroup.mockResolvedValue(engineering);
+    mockGetActiveMemberIdsForGroups.mockResolvedValue(["dana"]);
+
+    expect(await resolveTeamAudience("mark", ORGANIZATION, "engineering")).toEqual({
+      everyone: false,
+      userIds: ["dana"],
+      groupIds: ["engineering", "support"],
+      group: { id: "engineering", groupName: "Engineering" },
+    });
+  });
+
+  it("refuses a group admin a group they do not administer, before reading its members", async () => {
+    mockGetAdministrableGroupIds.mockResolvedValue(["support"]);
+    mockGetGroup.mockResolvedValue(engineering);
+
+    await expect(resolveTeamAudience("mark", ORGANIZATION, "engineering")).rejects.toMatchObject({
+      code: 403,
+    });
+    expect(mockGetActiveMemberIdsForGroups).not.toHaveBeenCalledWith(["engineering"], undefined);
+  });
+
+  it("answers 404 for a group that is gone or belongs to another organization", async () => {
+    mockIsOrganizationAdmin.mockResolvedValue(true);
+
+    await expect(resolveTeamAudience("olivia", ORGANIZATION, "gone")).rejects.toMatchObject({
+      code: 404,
+    });
+
+    mockGetGroup.mockResolvedValue({ ...engineering, organizationId: "org-2" });
+    await expect(resolveTeamAudience("olivia", ORGANIZATION, "engineering")).rejects.toMatchObject({
+      code: 404,
+    });
+  });
+
+  it("refuses someone who administers nothing", async () => {
+    await expect(resolveTeamAudience("dana", ORGANIZATION)).rejects.toMatchObject({ code: 403 });
   });
 });
