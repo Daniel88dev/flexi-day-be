@@ -9,7 +9,7 @@ export const handleStartBreak = async (req: Request, res: Response) => {
   const organizationId = attendanceScopeOfBody(req);
 
   const entry = await db.transaction(async (tx) => {
-    const subject = await beginAttendanceWrite(auth.userId, organizationId, tx);
+    const subject = await beginAttendanceWrite(auth.userId, organizationId, tx, "OPEN");
     return startBreak(subject, auth.userId, tx);
   });
 

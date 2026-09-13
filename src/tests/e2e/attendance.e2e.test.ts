@@ -10,6 +10,7 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import {
   attendanceBreaks,
+  attendanceClosedBy,
   attendanceEvents,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
@@ -354,20 +355,48 @@ describe("attendance clock", () => {
   });
 
   describe("the plan gate", () => {
-    it("refuses every write with 402 once the plan has lapsed", async () => {
+    it("refuses to open anything with 402 once the plan has lapsed", async () => {
       await lapsed();
 
-      for (const send of [clockIn, clockOut, breakStart, breakEnd]) {
+      for (const send of [clockIn, breakStart]) {
         const refused = await send().expect(402);
         expect(refused.body.errors[0].context).toMatchObject({ reason: "PLAN_LIMIT" });
       }
     });
 
-    it("refuses every write with 402 while attendance is switched off", async () => {
+    it("still closes a session the lapse caught open", async () => {
+      await clockIn().expect(201);
+      await breakStart().expect(201);
+
+      await lapsed();
+
+      await breakEnd().expect(200);
+      const closed = await clockOut().expect(200);
+
+      expect(closed.body.endedAt).not.toBeNull();
+      // The person closed it, so it is an ordinary day rather than one the
+      // sweep cut short and filed for correction.
+      expect(closed.body.closedBy).toBe(attendanceClosedBy.User);
+
+      const state = await current().expect(200);
+      expect(state.body).toMatchObject({ active: false, openSession: null, openBreak: null });
+    });
+
+    it("refuses to open anything with 402 while attendance is switched off", async () => {
       await settings({ attendanceEnabled: false });
 
       await clockIn().expect(402);
       await breakStart().expect(402);
+    });
+
+    it("still closes a session that switching attendance off caught open", async () => {
+      await clockIn().expect(201);
+
+      await settings({ attendanceEnabled: false });
+
+      await clockOut().expect(200);
+      const state = await current().expect(200);
+      expect(state.body).toMatchObject({ active: false, openSession: null });
     });
 
     it("keeps the day readable with active false rather than refusing the read", async () => {
