@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { attendanceClosedBy } from "../../db/schema/attendance-schema.js";
+import type { attendanceClosedBy, attendanceEventType } from "../../db/schema/attendance-schema.js";
 import type { balanceMode } from "../../db/schema/organization-attendance-settings-schema.js";
 import type { AttendanceDay, AttendanceTotals } from "./attendanceCalculation.js";
 import type { DateString } from "../../utils/dateFunc.js";
@@ -138,6 +138,33 @@ export const validateAttendanceMonthQuery = z.object({
 
 export type ValidatedAttendanceMonthQueryType = z.infer<typeof validateAttendanceMonthQuery>;
 
+/**
+ * One person's one business date — what the correction dialog opens onto. The
+ * organization is required and `userId` defaults to the caller, so an admin
+ * names the person and an employee names nobody. Who may read it is the
+ * visibility matrix, unlike {@link validateAttendanceMonthQuery}, which refuses
+ * anyone but its subject: a day is exactly what an admin came to the team
+ * dashboard to look at.
+ */
+export const validateAttendanceDayQuery = z.object({
+  // better-auth user ids are opaque non-UUID strings.
+  organizationId: z.string().min(1),
+  userId: z.string().min(1).optional(),
+  businessDate: z.iso.date(),
+});
+
+export type ValidatedAttendanceDayQueryType = z.infer<typeof validateAttendanceDayQuery>;
+
+/** One person's sessions on one business date, with the zone they read in. */
+export type AttendanceDayType = {
+  organizationId: string;
+  employmentId: string;
+  userId: string;
+  businessDate: DateString;
+  timezone: string | null;
+  sessions: AttendanceSessionView[];
+};
+
 /** One business date of the month: the figures, and the rows they were worked out from. */
 export type AttendanceMonthDay = AttendanceDay & { sessions: AttendanceSessionView[] };
 
@@ -249,4 +276,45 @@ export type AttendanceTeamType = {
   group: AttendanceTeamGroup | null;
   people: AttendanceTeamPerson[];
   inNow: AttendanceTeamOpenSession[];
+};
+
+/**
+ * A correction to one end of a session or a break. Both keys are optional and
+ * an absent one is left alone, but `endedAt: null` is a change of its own —
+ * reopening what was closed — so the two cases cannot be collapsed.
+ *
+ * Instants travel as ISO strings with an offset, unlike the clock itself, whose
+ * instant is always the server's. A correction is by definition about a time
+ * that has already passed, and only the client knows which one the person meant.
+ */
+export const validateAttendanceCorrection = z
+  .object({
+    startedAt: z.iso.datetime({ offset: true }).optional(),
+    endedAt: z.iso.datetime({ offset: true }).nullable().optional(),
+  })
+  .refine((patch) => patch.startedAt !== undefined || "endedAt" in patch, {
+    message: "A correction has to change something",
+  });
+
+export type ValidatedAttendanceCorrectionType = z.infer<typeof validateAttendanceCorrection>;
+
+/**
+ * Whose authority a correction is being made under: an admin over somebody's
+ * Employment, or the person themselves inside the self-service window.
+ */
+export enum AttendanceCorrectionRight {
+  Admin = "ADMIN",
+  Self = "SELF",
+}
+
+/** One entry of a session's timeline, with the person behind it where there was one. */
+export type AttendanceEventView = {
+  id: string;
+  sessionId: string;
+  eventType: attendanceEventType;
+  /** Null is the sweep, or an account that has since gone. */
+  user: UserSummary | null;
+  before: unknown;
+  after: unknown;
+  createdAt: Date;
 };

@@ -95,10 +95,27 @@ counts in the month.
 ## Corrections
 
 - An employee may correct their own session only while it is open or belongs to today's business
-  date. Anything older goes through a Group admin (for a group member) or an Org admin (anyone).
+  date. Anything older goes through a Group admin (for a group member) or an Org admin (anyone),
+  and the refusal says so rather than reading as a bare "no".
 - Every change, by a person or by the sweep, appends an attendance event. A null changing user is
   the sweep.
 - No approval workflow: the admin is the authority.
+- A correction moves times, never days. `businessDate` is fixed at clock-in and is not recomputed
+  from a corrected start, so an edit changes what a day holds rather than which day holds it.
+- Correcting a clock-out records who closed the session, which is how a swept session stops being
+  flagged; correcting a break's end clears its auto-closed flag for the same reason. Moving only a
+  clock-in leaves both alone — nobody has looked at the end yet.
+- A session must end after it starts and hold its breaks inside itself; the open-session and
+  open-break indexes still hold, so an edit that would reopen one while another is open is refused
+  rather than silently losing the race.
+- Deleting a session is soft: the row, its breaks and its whole timeline stay, every read filters
+  it out, and the clock is free again because the open-session index ignores deleted rows.
+  Deleting a break is not soft — the event that records what it was is all that is left of it.
+- Reading a session's timeline follows the visibility table rather than the window: an employee
+  reads their own history however old it is, and only changing it needs the window.
+- Corrections are writes, so the plan gate applies: a lapsed organization's history is readable and
+  not editable. An ended Employment is the exception a clock-in is not — its last day is the one
+  most likely to need fixing.
 
 ## Location
 

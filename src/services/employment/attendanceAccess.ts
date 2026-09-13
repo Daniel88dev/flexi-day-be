@@ -42,13 +42,18 @@ export type TeamAudience = {
   group: { id: string; groupName: string } | null;
 };
 
-export const canReadEmployment = async (
+/**
+ * The visibility table without its first row: an admin's standing over somebody
+ * else's Employment, and over their own only where they hold it as an admin
+ * rather than as its subject. Corrections read this rather than
+ * {@link canReadEmployment}, because "your own" is exactly the case the
+ * self-service window governs.
+ */
+export const canAdministerEmployment = async (
   viewerUserId: string,
   employment: EmploymentSubject,
   tx?: DbTransaction
 ): Promise<boolean> => {
-  if (viewerUserId === employment.userId) return true;
-
   if (await isOrganizationAdmin(viewerUserId, employment.organizationId, tx)) return true;
 
   const subjectGroupIds = await getActiveGroupIdsInOrganization(
@@ -66,6 +71,16 @@ export const canReadEmployment = async (
   const administrableSet = new Set(administrable);
 
   return subjectGroupIds.some((groupId) => administrableSet.has(groupId));
+};
+
+export const canReadEmployment = async (
+  viewerUserId: string,
+  employment: EmploymentSubject,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  if (viewerUserId === employment.userId) return true;
+
+  return canAdministerEmployment(viewerUserId, employment, tx);
 };
 
 export const assertEmploymentReadable = async (

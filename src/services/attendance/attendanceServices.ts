@@ -20,6 +20,7 @@ import {
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAttendanceActive, isAttendanceActive } from "../billing/guards.js";
 import { getEmployment, listEmploymentsForUser } from "../employment/employmentServices.js";
+import { assertEmploymentReadable } from "../employment/attendanceAccess.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { computeAttendance } from "./attendanceCalculation.js";
@@ -28,10 +29,12 @@ import type { AttendanceSettingsType } from "../organization/types.js";
 import type { EmploymentType } from "../employment/types.js";
 import type {
   AttendanceBreakType,
+  AttendanceDayType,
   AttendanceSessionType,
   AttendanceSessionView,
   AttendanceStateType,
   AttendanceMonthType,
+  ValidatedAttendanceDayQueryType,
 } from "./types.js";
 
 /**
@@ -68,7 +71,12 @@ const BREAK_COLUMNS = {
   autoClosed: attendanceBreaks.autoClosed,
 };
 
-const conflict = (
+/**
+ * A 409 with a stable `reason` the client can branch on. Shared with the
+ * corrections module, whose refusals are the same states seen from the other
+ * side — an edit that would leave two sessions open is the clock-in conflict.
+ */
+export const attendanceConflict = (
   reason: string,
   message: string,
   publicContext?: { [key: string]: unknown },
@@ -243,6 +251,48 @@ export const getOpenBreak = async (
   return row;
 };
 
+/**
+ * One session by id, whatever shape it is in. `includeDeleted` is for the
+ * timeline alone: a soft-deleted session is gone from every other read, and
+ * its history is the one thing a delete is not allowed to take away.
+ */
+export const getSessionById = async (
+  sessionId: string,
+  options: { includeDeleted?: boolean } = {},
+  tx?: DbTransaction
+): Promise<AttendanceSessionType | undefined> => {
+  const [row] = await (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      options.includeDeleted
+        ? eq(attendanceSessions.id, sessionId)
+        : and(eq(attendanceSessions.id, sessionId), isNull(attendanceSessions.deletedAt))
+    )
+    .limit(1);
+
+  return row;
+};
+
+export const getBreakById = async (
+  breakId: string,
+  tx?: DbTransaction
+): Promise<AttendanceBreakType | undefined> => {
+  const [row] = await (tx ?? db)
+    .select(BREAK_COLUMNS)
+    .from(attendanceBreaks)
+    .where(eq(attendanceBreaks.id, breakId))
+    .limit(1);
+
+  return row;
+};
+
+/** The breaks of one session, oldest first. */
+export const listBreaksForSession = async (
+  sessionId: string,
+  tx?: DbTransaction
+): Promise<AttendanceBreakType[]> => listBreaksForSessions([sessionId], tx);
+
 const listBreaksForSessions = async (
   sessionIds: string[],
   tx?: DbTransaction
@@ -381,8 +431,8 @@ const written = <T>(row: T | undefined, what: string, context: { [key: string]: 
   throw new AppError({ message: `Failed to ${what}`, logging: true, code: 500, context });
 };
 
-const sessionAlreadyOpen = (session: AttendanceSessionType) =>
-  conflict(
+export const sessionAlreadyOpen = (session: AttendanceSessionType) =>
+  attendanceConflict(
     "SESSION_ALREADY_OPEN",
     "You are already clocked in",
     { startedAt: session.startedAt.toISOString(), sessionId: session.id },
@@ -390,7 +440,7 @@ const sessionAlreadyOpen = (session: AttendanceSessionType) =>
   );
 
 const noOpenSession = (employmentId: string) =>
-  conflict("NO_OPEN_SESSION", "You are not clocked in", undefined, { employmentId });
+  attendanceConflict("NO_OPEN_SESSION", "You are not clocked in", undefined, { employmentId });
 
 export const clockIn = async (
   subject: AttendanceSubject & { timezone: string },
@@ -499,7 +549,7 @@ export const startBreak = async (
 
   const running = await getOpenBreak(open.id, tx);
   if (running) {
-    throw conflict(
+    throw attendanceConflict(
       "BREAK_ALREADY_OPEN",
       "You are already on a break",
       { startedAt: running.startedAt.toISOString(), breakId: running.id },
@@ -535,7 +585,9 @@ export const endBreak = async (
 
   const running = await getOpenBreak(open.id, tx);
   if (!running) {
-    throw conflict("NO_OPEN_BREAK", "You are not on a break", undefined, { sessionId: open.id });
+    throw attendanceConflict("NO_OPEN_BREAK", "You are not on a break", undefined, {
+      sessionId: open.id,
+    });
   }
 
   const [updated] = await tx
@@ -616,6 +668,44 @@ export const getAttendanceState = async (
         [previousDay(businessDate), businessDate],
         tx
       )) ?? null,
+  };
+};
+
+/**
+ * One person's sessions on one business date, for the correction dialog. The
+ * visibility matrix decides, so an employee reads their own and an admin reads
+ * anyone they administer — and unlike the month, naming somebody else is the
+ * normal case rather than a refusal.
+ *
+ * Never gated by the plan; reads never are.
+ */
+export const getAttendanceDay = async (
+  viewerUserId: string,
+  query: ValidatedAttendanceDayQueryType,
+  tx?: DbTransaction
+): Promise<AttendanceDayType> => {
+  const userId = query.userId ?? viewerUserId;
+  const employment = await getEmployment(query.organizationId, userId, tx);
+  if (!employment) {
+    throw new AppError({
+      message: "No employment in this organization",
+      logging: true,
+      code: 404,
+      context: { viewerUserId, organizationId: query.organizationId, target: userId },
+    });
+  }
+
+  await assertEmploymentReadable(viewerUserId, employment, tx);
+
+  const settings = await getAttendanceSettings(query.organizationId, tx);
+
+  return {
+    organizationId: query.organizationId,
+    employmentId: employment.id,
+    userId,
+    businessDate: query.businessDate,
+    timezone: settings?.timezone ?? null,
+    sessions: await listSessionsForDate(employment.id, query.businessDate, tx),
   };
 };
 

@@ -1,7 +1,9 @@
 import type { Request } from "express";
+import AppError from "../../utils/appError.js";
 import {
   validateAttendanceScope,
   type AttendanceBreakType,
+  type AttendanceEventView,
   type AttendanceSessionView,
   type AttendanceMonthType,
   type AttendanceStateType,
@@ -111,4 +113,20 @@ export const presentAttendanceTeam = (team: AttendanceTeamType) => ({
     totals: person.totals,
   })),
   inNow: team.inNow,
+});
+
+/** A path parameter Express typed as optional but the route cannot match without. */
+export const requirePathParam = (value: string | undefined, what: string): string => {
+  if (value) return value;
+  throw new AppError({ message: `A ${what} is required`, logging: false, code: 422 });
+};
+
+export const presentAttendanceEvent = (event: AttendanceEventView) => ({
+  id: event.id,
+  sessionId: event.sessionId,
+  eventType: event.eventType,
+  user: event.user,
+  before: event.before,
+  after: event.after,
+  createdAt: event.createdAt,
 });
