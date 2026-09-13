@@ -142,8 +142,13 @@ counts in the month.
 ## Plan
 
 `attendanceEnabled` is a stored organization setting; attendance is _active_ only while the
-organization's live entitlement is `PRO` or `ENTERPRISE`. When the plan lapses, clock-in is refused
-with a plain message and history stays readable. No cap on Employments per plan.
+organization's live entitlement is `PRO` or `ENTERPRISE`. When the plan lapses, or when an admin
+switches attendance off, the clock **refuses to open and still lets a person close**: clock-in and
+break-start are refused with a plain message, clock-out and break-end go through, and history stays
+readable. Anything else would strand whoever was clocked in at that moment — the sweep would close
+their day at its ceiling and flag it, and corrections are gated too, so nobody could put it right
+until the organization paid again. Corrections stay gated: a lapsed organization can finish the day
+it started, not rewrite it. No cap on Employments per plan.
 
 ## Visibility
 

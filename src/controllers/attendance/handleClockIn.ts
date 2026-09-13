@@ -13,7 +13,7 @@ export const handleClockIn = async (req: Request, res: Response) => {
   const organizationId = attendanceScopeOfBody(req);
 
   const session = await db.transaction(async (tx) => {
-    const subject = await beginAttendanceWrite(auth.userId, organizationId, tx);
+    const subject = await beginAttendanceWrite(auth.userId, organizationId, tx, "OPEN");
     return clockIn(subject, auth.userId, tx);
   });
 

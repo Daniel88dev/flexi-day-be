@@ -168,19 +168,31 @@ const requireSubject = async (
 };
 
 /**
+ * Which way a write moves the clock. `OPEN` starts a session or a break, `CLOSE`
+ * ends one, and only the first needs a live plan.
+ */
+export type AttendanceWriteKind = "OPEN" | "CLOSE";
+
+/**
  * What every attendance write does before it touches a row: the plan gate, the
  * roster, and the zone the business date will be fixed in. Runs inside the
  * caller's transaction, so a 402 rolls the whole request back rather than
  * leaving half of it.
+ *
+ * A lapsed plan refuses to open anything and still lets a person close what is
+ * already open. Gating both would strand whoever was clocked in the moment the
+ * subscription expired: they could not clock out, the sweep would close the day
+ * at its ceiling and flag it, and nobody could correct it either.
  */
 export const beginAttendanceWrite = async (
   userId: string,
   organizationId: string | undefined,
-  tx: DbTransaction
+  tx: DbTransaction,
+  kind: AttendanceWriteKind
 ): Promise<AttendanceSubject & { timezone: string }> => {
   const subject = await requireSubject(userId, organizationId, tx);
 
-  await assertAttendanceActive(subject.organizationId, tx);
+  if (kind === "OPEN") await assertAttendanceActive(subject.organizationId, tx);
 
   if (subject.employment.endedAt !== null) {
     throw new AppError({
