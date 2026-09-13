@@ -26,6 +26,7 @@ import {
   getOpenSession,
   getSessionById,
   listBreaksForSession,
+  listSessionsOverlapping,
   lockEmployment,
   sessionAlreadyOpen,
 } from "./attendanceServices.js";
@@ -117,6 +118,14 @@ export const assertCoherent = (session: Span, breaks: (Span & { id: string })[])
   }
 };
 
+const sessionNotFound = (sessionId: string, viewerUserId: string) =>
+  new AppError({
+    message: "Session not found",
+    logging: true,
+    code: 404,
+    context: { sessionId, viewerUserId },
+  });
+
 const breakNotFound = (breakId: string, viewerUserId: string) =>
   new AppError({
     message: "Break not found",
@@ -160,14 +169,7 @@ const loadCorrectable = async (
   now: Date
 ): Promise<CorrectionSubject> => {
   const found = await getSessionById(sessionId, {}, tx);
-  if (!found) {
-    throw new AppError({
-      message: "Session not found",
-      logging: true,
-      code: 404,
-      context: { sessionId, viewerUserId },
-    });
-  }
+  if (!found) throw sessionNotFound(sessionId, viewerUserId);
 
   const employment = await getEmploymentById(found.employmentId, tx);
   if (!employment) throw employmentMissing(found.employmentId);
@@ -178,9 +180,12 @@ const loadCorrectable = async (
 
   await lockEmployment(employment.id, tx);
 
-  // Re-read behind the lock: a clock-out or the sweep may have moved this
-  // session between the read above and the lock.
-  const session = (await getSessionById(sessionId, {}, tx)) ?? found;
+  // Re-read behind the lock: a clock-out, the sweep or another admin may have
+  // moved this session between the read above and the lock. Gone means gone —
+  // falling back to the row read before the lock would let a correction write
+  // over a session somebody deleted while it waited.
+  const session = await getSessionById(sessionId, {}, tx);
+  if (!session) throw sessionNotFound(sessionId, viewerUserId);
 
   return {
     session,
@@ -269,6 +274,23 @@ export const correctAttendanceSession = async (
   if (session.endedAt !== null && next.endedAt === null) {
     const open = await getOpenSession(session.employmentId, tx);
     if (open && open.id !== session.id) throw sessionAlreadyOpen(open);
+  }
+
+  // Nothing in the schema stops two spans of one Employment covering the same
+  // minutes, and `presence` would count them twice. Only a correction can make
+  // that shape, so this is where it is refused.
+  const [overlap] = await listSessionsOverlapping(session.employmentId, next, session.id, tx);
+  if (overlap) {
+    throw attendanceConflict(
+      "SESSION_OVERLAPS",
+      "Another session of theirs already covers that time",
+      {
+        sessionId: overlap.id,
+        startedAt: overlap.startedAt.toISOString(),
+        endedAt: overlap.endedAt?.toISOString() ?? null,
+      },
+      { employmentId: session.employmentId }
+    );
   }
 
   const closedBy = closedByAfter(session, next, patch, right);
@@ -475,14 +497,7 @@ export const listAttendanceSessionEvents = async (
   tx?: DbTransaction
 ): Promise<AttendanceEventView[]> => {
   const session = await getSessionById(sessionId, { includeDeleted: true }, tx);
-  if (!session) {
-    throw new AppError({
-      message: "Session not found",
-      logging: true,
-      code: 404,
-      context: { sessionId, viewerUserId },
-    });
-  }
+  if (!session) throw sessionNotFound(sessionId, viewerUserId);
 
   const employment = await getEmploymentById(session.employmentId, tx);
   if (!employment) throw employmentMissing(session.employmentId);

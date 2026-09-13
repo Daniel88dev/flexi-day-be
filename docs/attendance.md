@@ -107,7 +107,9 @@ counts in the month.
   clock-in leaves both alone — nobody has looked at the end yet.
 - A session must end after it starts and hold its breaks inside itself; the open-session and
   open-break indexes still hold, so an edit that would reopen one while another is open is refused
-  rather than silently losing the race.
+  rather than silently losing the race. Two sessions of one Employment may not cover the same
+  minutes either — nothing but a correction can make that shape, and presence would count them
+  twice. Back to back is fine: a session may end exactly where the next one starts.
 - Deleting a session is soft: the row, its breaks and its whole timeline stay, every read filters
   it out, and the clock is free again because the open-session index ignores deleted rows.
   Deleting a break is not soft — the event that records what it was is all that is left of it.

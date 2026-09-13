@@ -622,8 +622,11 @@ export const attendanceRouter = (): Router => {
    *         description: No such session, or it has been deleted
    *       '409':
    *         description: |
-   *           Reopening this session would leave two open at once.
-   *           `context` carries `{ reason: "SESSION_ALREADY_OPEN", sessionId, startedAt }`.
+   *           `SESSION_ALREADY_OPEN` when reopening this one would leave two
+   *           open at once, or `SESSION_OVERLAPS` when the corrected times would
+   *           run across another of that person's sessions — two spans over the
+   *           same minutes would be counted twice. `context` carries the other
+   *           session's `{ sessionId, startedAt }` either way.
    *       '422':
    *         description: |
    *           A patch that changes nothing, a malformed instant, an end at or

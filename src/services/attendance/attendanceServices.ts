@@ -1,4 +1,19 @@
-import { and, asc, desc, eq, exists, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import {
   attendanceBreaks,
@@ -708,6 +723,42 @@ export const getAttendanceDay = async (
     sessions: await listSessionsForDate(employment.id, query.businessDate, tx),
   };
 };
+
+/**
+ * The Employment's other live sessions that run across a span — the check a
+ * correction needs and a clock-in does not: clocking in cannot overlap
+ * anything, because the open-session index allows only one at a time and it
+ * starts now. Moving a closed session can, and two overlapping spans would
+ * count the same minutes twice in `presence`.
+ *
+ * An open session is treated as running to the end of time, which is what
+ * "still clocked in" means for an overlap.
+ */
+export const listSessionsOverlapping = async (
+  employmentId: string,
+  span: { startedAt: Date; endedAt: Date | null },
+  exceptSessionId: string,
+  tx?: DbTransaction
+): Promise<AttendanceSessionType[]> =>
+  (tx ?? db)
+    .select(SESSION_COLUMNS)
+    .from(attendanceSessions)
+    .where(
+      and(
+        eq(attendanceSessions.employmentId, employmentId),
+        isNull(attendanceSessions.deletedAt),
+        ne(attendanceSessions.id, exceptSessionId),
+        // Half-open on both sides, so a session that ends exactly where the
+        // next one starts is back to back rather than overlapping.
+        span.endedAt === null
+          ? or(isNull(attendanceSessions.endedAt), gt(attendanceSessions.endedAt, span.startedAt))
+          : and(
+              lt(attendanceSessions.startedAt, span.endedAt),
+              or(isNull(attendanceSessions.endedAt), gt(attendanceSessions.endedAt, span.startedAt))
+            )
+      )
+    )
+    .orderBy(asc(attendanceSessions.startedAt));
 
 /** Every session of an inclusive business-date range, oldest first. */
 export const listSessionsForRange = async (

@@ -339,6 +339,22 @@ describe("attendance corrections", () => {
       expect(written[0]!.before).toMatchObject({ breakId: breakIds[0] });
     });
 
+    it("leaves a session deleted while the correction waited alone", async () => {
+      const { id } = await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(30),
+        endedAt: hoursAgo(22),
+      });
+
+      await deleteSession(owner, id).expect(200);
+
+      // The row is still there, and every write path refuses it.
+      await patchSession(owner, id, { endedAt: hoursAgo(21).toISOString() }).expect(404);
+      await deleteSession(owner, id).expect(404);
+      expect((await eventRows(id)).map((event) => event.eventType)).toEqual(["SESSION_DELETED"]);
+    });
+
     it("soft-deletes a session, leaving the row and its events standing", async () => {
       const { id } = await seedSession({
         person: member,
@@ -544,6 +560,70 @@ describe("attendance corrections", () => {
         reason: "BREAK_ALREADY_OPEN",
         breakId: breakIds[1],
       });
+    });
+
+    it("refuses times that would run across another of that person's sessions", async () => {
+      const { id } = await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(30),
+        endedAt: hoursAgo(26),
+      });
+      const later = await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(24),
+        endedAt: hoursAgo(20),
+      });
+
+      const { body } = await patchSession(owner, id, {
+        endedAt: hoursAgo(22).toISOString(),
+      }).expect(409);
+
+      expect(body.errors[0].context).toMatchObject({
+        reason: "SESSION_OVERLAPS",
+        sessionId: later.id,
+      });
+      expect(await eventRows(id)).toHaveLength(0);
+    });
+
+    it("allows a session that ends exactly where the next one starts", async () => {
+      // One instant for both sides: `hoursAgo` reads the clock each call, and a
+      // patch a millisecond past the next session's start is a real overlap.
+      const boundary = hoursAgo(24);
+
+      const { id } = await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(30),
+        endedAt: hoursAgo(26),
+      });
+      await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: boundary,
+        endedAt: hoursAgo(20),
+      });
+
+      await patchSession(owner, id, { endedAt: boundary.toISOString() }).expect(200);
+    });
+
+    it("refuses reopening a session that would then run across a later one", async () => {
+      const { id } = await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(30),
+        endedAt: hoursAgo(26),
+      });
+      await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(24),
+        endedAt: hoursAgo(20),
+      });
+
+      const { body } = await patchSession(owner, id, { endedAt: null }).expect(409);
+      expect(body.errors[0].context.reason).toBe("SESSION_OVERLAPS");
     });
 
     it("refuses a patch that changes nothing", async () => {
