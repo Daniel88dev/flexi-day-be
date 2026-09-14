@@ -33,3 +33,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # init and analyze are two actions out of one repo, and the action aborts
+      # with a configuration error when a workflow runs two versions of itself.
+      # Split PRs are two red runs, so every part moves as one.
+      codeql-action:
+        patterns:
+          - github/codeql-action*
