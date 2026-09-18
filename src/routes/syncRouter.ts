@@ -36,7 +36,8 @@ export const syncRouter = (): Router => {
    *
    *       A pull carrying a cursor answers a delta: `reset` is `false` and each
    *       table holds only the rows whose `updatedAt` is later than the cursor
-   *       time minus 60 seconds, ordered by `updatedAt` then `id`.
+   *       time minus 60 seconds and no later than the position this pull was
+   *       minted with, ordered by `updatedAt` then `id`.
    *       `organizations` names the organization of every group in the delta.
    *       The 60 second overlap covers the clock difference between the
    *       database, which stamps inserts, and the server instance that stamps
@@ -57,13 +58,32 @@ export const syncRouter = (): Router => {
    *       cursor, a cursor the server cannot decode, a cursor minted by another
    *       cursor version, a cursor whose time is more than 30 days old, a
    *       cursor whose time is more than 60 seconds ahead of the server clock,
-   *       or anything else the server cannot read as one cursor, such as the
-   *       parameter repeated. A cursor is never rejected with an error.
+   *       a cursor whose paging state the server cannot resume, or anything
+   *       else it cannot read as one cursor, such as the parameter repeated. A
+   *       cursor is never rejected with an error, and an unusable one mid-loop
+   *       restarts the loop as a fresh snapshot.
    *
-   *       `hasMore` is always `false`: the pull is not paged yet. The tables
-   *       this endpoint does not fill yet — `users`, `groupMirrors`,
-   *       `userYearQuotas`, `bankHolidays` and `vacations` — arrive as empty
-   *       arrays.
+   *       A pull is paged at a fixed 1000 rows across all tables, and there is
+   *       no `limit` parameter. When more rows are waiting, `hasMore` is `true`
+   *       and the same opaque `cursor` also carries the table the page stopped
+   *       in and the last row it took. The client loops: send back the cursor
+   *       it was just handed, apply each page as it lands, and stop at the page
+   *       that answers `hasMore: false`. Only that last cursor is worth storing
+   *       for the next pull, and it decodes to the position minted on the first
+   *       page of the loop.
+   *
+   *       The cursor time does not move inside a loop, so every page of it
+   *       reads the same window: no row arrives twice and none is skipped. A
+   *       row that changes between two pages is not chased into a later page —
+   *       it leaves the window, and the next delta after the loop carries it.
+   *       A paged snapshot answers `reset: true` on every one of its pages, and
+   *       a paged delta stays `reset: false` throughout.
+   *
+   *       Tables arrive in dependency order across the loop, so a page that
+   *       resumes inside one table carries the tables before it as empty
+   *       arrays: they landed on an earlier page. The tables this endpoint does
+   *       not fill yet — `users`, `groupMirrors`, `userYearQuotas`,
+   *       `bankHolidays` and `vacations` — arrive as empty arrays throughout.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -99,11 +119,15 @@ export const syncRouter = (): Router => {
    *                 cursor:
    *                   type: string
    *                   description: |
-   *                     Opaque position to send on the next pull, minted when
-   *                     this pull started
+   *                     Opaque position to send back on the next call, minted
+   *                     when this pull started. While `hasMore` is true it also
+   *                     carries where this page stopped, so the next call
+   *                     continues the same loop rather than starting a pull
    *                 hasMore:
    *                   type: boolean
-   *                   description: True when another page of this pull is waiting
+   *                   description: |
+   *                     True when another page of this pull is waiting: call
+   *                     again with `cursor` until a page answers false
    *                 reset:
    *                   type: boolean
    *                   description: |

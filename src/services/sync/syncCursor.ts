@@ -1,4 +1,5 @@
-import type { SyncCursor } from "./types.js";
+import { SYNC_TABLE_ORDER } from "./syncPage.js";
+import type { SyncCursor, SyncCursorPage, SyncKeyset, SyncTableName } from "./types.js";
 
 export const SYNC_CURSOR_VERSION = 1;
 
@@ -16,17 +17,92 @@ export const SYNC_CURSOR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
  */
 export const SYNC_OVERLAP_MS = 60 * 1000;
 
+/**
+ * Version 1 carries the paging state in an optional `p`, so a cursor minted
+ * before paging existed still decodes — it simply asks for a fresh pull.
+ */
+type SyncCursorPageBody = {
+  /** True when the loop is a snapshot, so every page of it answers `reset: true`. */
+  r: boolean;
+  /** The cursor the loop started from, on a delta loop only. */
+  s?: string;
+  tb: SyncTableName;
+  ua?: string | null;
+  id?: string;
+};
+
 type SyncCursorBody = {
   v: number;
   t: string;
+  p?: SyncCursorPageBody;
 };
 
-export const encodeSyncCursor = (cursorTime: Date): string => {
-  const body: SyncCursorBody = { v: SYNC_CURSOR_VERSION, t: cursorTime.toISOString() };
+const encodePage = (page: SyncCursorPage): SyncCursorPageBody => ({
+  r: page.reset,
+  ...(page.previousCursorTime === null ? {} : { s: page.previousCursorTime.toISOString() }),
+  tb: page.position.table,
+  ...(page.position.after === null
+    ? {}
+    : {
+        ua: page.position.after.updatedAt?.toISOString() ?? null,
+        id: page.position.after.id,
+      }),
+});
+
+export const encodeSyncCursor = (cursorTime: Date, page: SyncCursorPage | null = null): string => {
+  const body: SyncCursorBody = {
+    v: SYNC_CURSOR_VERSION,
+    t: cursorTime.toISOString(),
+    ...(page === null ? {} : { p: encodePage(page) }),
+  };
   return Buffer.from(JSON.stringify(body), "utf8").toString("base64url");
 };
 
-/** Null for anything a delta cannot be built from: unreadable, another version, expired, or ahead of the clock. */
+const readDate = (value: string): Date | null => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isTableName = (value: unknown): value is SyncTableName =>
+  typeof value === "string" && SYNC_TABLE_ORDER.includes(value as SyncTableName);
+
+const hasExpired = (cursorTime: Date, now: Date): boolean =>
+  now.getTime() - cursorTime.getTime() > SYNC_CURSOR_MAX_AGE_MS;
+
+/** Null for page state the walk cannot resume from, which makes the whole cursor unusable. */
+const decodePage = (body: unknown, now: Date): SyncCursorPage | null => {
+  if (typeof body !== "object" || body === null) return null;
+
+  const { r, s, tb, ua, id } = body as Partial<SyncCursorPageBody>;
+  if (typeof r !== "boolean" || !isTableName(tb)) return null;
+
+  let after: SyncKeyset | null = null;
+  if (id !== undefined) {
+    if (typeof id !== "string") return null;
+    let updatedAt: Date | null = null;
+    if (typeof ua === "string") {
+      updatedAt = readDate(ua);
+      if (updatedAt === null) return null;
+    } else if (ua !== null && ua !== undefined) {
+      return null;
+    }
+    after = { updatedAt, id };
+  }
+
+  const position = { table: tb, after };
+  if (r) return { reset: true, previousCursorTime: null, position };
+
+  if (typeof s !== "string") return null;
+  const previousCursorTime = readDate(s);
+  if (previousCursorTime === null) return null;
+  // The loop it continues would otherwise reach back further than a fresh
+  // cursor of the same age is allowed to.
+  if (hasExpired(previousCursorTime, now)) return null;
+
+  return { reset: false, previousCursorTime, position };
+};
+
+/** Null for anything a pull cannot continue from: unreadable, another version, expired, ahead of the clock, or page state the walk cannot resume. */
 export const decodeSyncCursor = (value: string, now: Date = new Date()): SyncCursor | null => {
   let body: unknown;
   try {
@@ -37,13 +113,18 @@ export const decodeSyncCursor = (value: string, now: Date = new Date()): SyncCur
 
   if (typeof body !== "object" || body === null) return null;
 
-  const { v, t } = body as Partial<SyncCursorBody>;
+  const { v, t, p } = body as Partial<SyncCursorBody>;
   if (v !== SYNC_CURSOR_VERSION || typeof t !== "string") return null;
 
   const cursorTime = new Date(t);
   if (Number.isNaN(cursorTime.getTime())) return null;
-  if (now.getTime() - cursorTime.getTime() > SYNC_CURSOR_MAX_AGE_MS) return null;
+  if (hasExpired(cursorTime, now)) return null;
   if (cursorTime.getTime() - now.getTime() > SYNC_OVERLAP_MS) return null;
 
-  return { version: v, cursorTime };
+  if (p === undefined) return { version: v, cursorTime, page: null };
+
+  const page = decodePage(p, now);
+  if (page === null) return null;
+
+  return { version: v, cursorTime, page };
 };

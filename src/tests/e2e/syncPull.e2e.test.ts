@@ -5,11 +5,12 @@ import { v4 as uuidv4 } from "uuid";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { db } from "../../db/db.js";
+import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
-import { encodeSyncCursor } from "../../services/sync/syncCursor.js";
+import { decodeSyncCursor, encodeSyncCursor } from "../../services/sync/syncCursor.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import {
   addMember,
@@ -87,6 +88,36 @@ const ageEverything = async (): Promise<void> => {
   const longAgo = ago(365 * DAY);
   await db.update(groups).set({ updatedAt: longAgo });
   await db.update(groupUsers).set({ updatedAt: longAgo });
+};
+
+/**
+ * One insert per table rather than a fixture call per row: the paging tests
+ * need more rows than the page holds, and 1100 round trips would dominate the
+ * suite's runtime.
+ */
+const seedMembers = async (groupId: string, count: number): Promise<string[]> => {
+  const stamp = new Date();
+  const members = Array.from({ length: count }, (_, index) => ({
+    id: uuidv4(),
+    email: `bulk-${index.toString()}-${uuidv4()}@report-e2e.test`,
+    name: `Bulk ${index.toString()}`,
+    emailVerified: true,
+    createdAt: stamp,
+    updatedAt: stamp,
+  }));
+  await db.insert(user).values(members);
+
+  const memberships = members.map((member) => ({
+    id: uuidv4(),
+    groupId,
+    userId: member.id,
+    controlledUser: true,
+    createdAt: stamp,
+    updatedAt: stamp,
+  }));
+  await db.insert(groupUsers).values(memberships);
+
+  return memberships.map((row) => row.id);
 };
 
 describe("Sync pull E2E", () => {
@@ -582,6 +613,138 @@ describe("Sync pull E2E", () => {
         .expect(200);
 
       expect(res.body.reset).toBe(true);
+    });
+  });
+
+  describe("GET /api/sync/pull over more than one page", () => {
+    type SyncPageBody = {
+      cursor: string;
+      hasMore: boolean;
+      reset: boolean;
+      organizations: { id: string }[];
+      groups: GroupRow[];
+      groupUsers: GroupUserRow[];
+    };
+
+    const pull = async (cookie: string, cursor?: string): Promise<SyncPageBody> => {
+      const call = request(app).get("/api/sync/pull").set("Cookie", cookie);
+      const res = await (cursor === undefined ? call : call.query({ cursor })).expect(200);
+      expect(res.headers["cache-control"]).toBe("no-store");
+      return res.body as SyncPageBody;
+    };
+
+    /** Follows the loop the way a client does: page after page until one says it is the last. */
+    const pullLoop = async (cookie: string): Promise<SyncPageBody[]> => {
+      const pages: SyncPageBody[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await pull(cookie, cursor);
+        pages.push(page);
+        cursor = page.hasMore ? page.cursor : undefined;
+      } while (cursor !== undefined && pages.length < 10);
+      return pages;
+    };
+
+    /** A group whose membership list alone overflows one page. */
+    const seedOverflowingGroup = async (): Promise<{
+      cookie: string;
+      groupId: string;
+      membershipIds: string[];
+    }> => {
+      const manager = await makeUser("Manager");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, manager.id, { adminAccess: true });
+      await seedMembers(groupId, 1100);
+      await ageEverything();
+      return {
+        cookie: await authCookieFor(manager.id),
+        groupId,
+        membershipIds: await membershipIdsOf(groupId),
+      };
+    };
+
+    it("splits a snapshot of more than 1000 rows into pages the caller follows to the end", async () => {
+      const { cookie } = await seedOverflowingGroup();
+
+      const pages = await pullLoop(cookie);
+
+      expect(pages).toHaveLength(2);
+      const [first, last] = pages as [SyncPageBody, SyncPageBody];
+      expect(first.hasMore).toBe(true);
+      expect(first.organizations).toHaveLength(1);
+      expect(first.groups).toHaveLength(1);
+      expect(first.organizations.length + first.groups.length + first.groupUsers.length).toBe(1000);
+      expect(last.hasMore).toBe(false);
+      expect(last.groupUsers.length).toBeGreaterThan(0);
+    });
+
+    it("keeps reset true on every page of a paged snapshot", async () => {
+      const { cookie } = await seedOverflowingGroup();
+
+      const pages = await pullLoop(cookie);
+
+      expect(pages.map((page) => page.reset)).toEqual([true, true]);
+      expect(pages[1]!.organizations).toEqual([]);
+      expect(pages[1]!.groups).toEqual([]);
+    });
+
+    it("returns no membership twice and skips none across the pages of one loop", async () => {
+      const { membershipIds, cookie } = await seedOverflowingGroup();
+
+      const pages = await pullLoop(cookie);
+
+      const delivered = pages.flatMap((page) => page.groupUsers.map((row) => row.id));
+      expect(new Set(delivered).size).toBe(delivered.length);
+      expect(delivered.sort()).toEqual([...membershipIds].sort());
+    });
+
+    it("hands back a final cursor that decodes to the time the first page was minted with", async () => {
+      const { cookie } = await seedOverflowingGroup();
+
+      const pages = await pullLoop(cookie);
+
+      const now = new Date();
+      const first = decodeSyncCursor(pages[0]!.cursor, now);
+      const last = decodeSyncCursor(pages[1]!.cursor, now);
+      expect(first?.page?.position.table).toBe("groupUsers");
+      expect(last?.page).toBeNull();
+      expect(last?.cursorTime.toISOString()).toBe(first?.cursorTime.toISOString());
+    });
+
+    it("pages a delta too, keeping reset false and delivering every changed row once", async () => {
+      const { membershipIds, cookie } = await seedOverflowingGroup();
+      await db.update(groupUsers).set({ updatedAt: ago(5 * MINUTE) });
+
+      const first = await pull(cookie, encodeSyncCursor(ago(10 * MINUTE)));
+      const last = await pull(cookie, first.cursor);
+
+      expect(first.hasMore).toBe(true);
+      expect(first.reset).toBe(false);
+      expect(last.hasMore).toBe(false);
+      expect(last.reset).toBe(false);
+      const delivered = [...first.groupUsers, ...last.groupUsers].map((row) => row.id);
+      expect(new Set(delivered).size).toBe(delivered.length);
+      expect(delivered.sort()).toEqual([...membershipIds].sort());
+    });
+
+    it("leaves a row changed mid-loop to the next delta rather than chasing it into a later page", async () => {
+      const { membershipIds, cookie } = await seedOverflowingGroup();
+
+      const first = await pull(cookie);
+      const onFirstPage = new Set(first.groupUsers.map((row) => row.id));
+      const changedLater = membershipIds.find((id) => !onFirstPage.has(id))!;
+      await db
+        .update(groupUsers)
+        .set({ updatedAt: new Date() })
+        .where(eq(groupUsers.id, changedLater));
+
+      const last = await pull(cookie, first.cursor);
+      const delta = await pull(cookie, last.cursor);
+
+      expect(last.hasMore).toBe(false);
+      expect(last.groupUsers.map((row) => row.id)).not.toContain(changedLater);
+      expect(delta.reset).toBe(false);
+      expect(delta.groupUsers.map((row) => row.id)).toEqual([changedLater]);
     });
   });
 });

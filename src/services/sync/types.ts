@@ -1,6 +1,58 @@
+export type SyncTableName =
+  | "organizations"
+  | "users"
+  | "groups"
+  | "groupUsers"
+  | "groupMirrors"
+  | "userYearQuotas"
+  | "bankHolidays"
+  | "vacations";
+
+/** A row's place in its table's `updatedAt, id` order. `updatedAt` is null for a table ordered by id alone. */
+export type SyncKeyset = {
+  updatedAt: Date | null;
+  id: string;
+};
+
+/** Where a page stopped. `after` is null for the start of the table. */
+export type SyncPagePosition = {
+  table: SyncTableName;
+  after: SyncKeyset | null;
+};
+
+/**
+ * What a pull is: a snapshot, which has no earlier cursor, or a delta, which
+ * reads from the cursor the client sent. Every page of one loop carries the
+ * same answer, so `reset` cannot flip halfway through.
+ */
+export type SyncLoop =
+  { reset: true; previousCursorTime: null } | { reset: false; previousCursorTime: Date };
+
+/** The paging state a cursor carries mid-loop. A cursor without one asks for a fresh pull. */
+export type SyncCursorPage = SyncLoop & {
+  position: SyncPagePosition;
+};
+
 export type SyncCursor = {
   version: number;
   cursorTime: Date;
+  page: SyncCursorPage | null;
+};
+
+export type SyncPageRow = {
+  key: SyncKeyset;
+  row: unknown;
+};
+
+export type SyncTableReader = {
+  table: SyncTableName;
+  read: (after: SyncKeyset | null, limit: number) => Promise<SyncPageRow[]>;
+};
+
+export type SyncPage = {
+  rows: Map<SyncTableName, unknown[]>;
+  hasMore: boolean;
+  next: SyncPagePosition | null;
 };
 
 export type SyncOrganizationRow = {
