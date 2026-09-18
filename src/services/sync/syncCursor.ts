@@ -5,6 +5,17 @@ export const SYNC_CURSOR_VERSION = 1;
 /** Past this age a cursor cannot be trusted to have covered hard deletes, so the pull resets. */
 export const SYNC_CURSOR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * A delta reaches back one overlap window before the cursor. Inserts stamp
+ * `updatedAt` from the database and updates from whichever App Runner instance
+ * ran them, so a row committed by a clock behind the one that minted the
+ * cursor would otherwise fall between two pulls and never arrive. The price is
+ * that a row can arrive twice; the client upserts, so the second is a no-op.
+ * The same window bounds how far ahead of the reading clock a cursor may sit:
+ * further than that, the overlap no longer covers the gap, so the pull resets.
+ */
+export const SYNC_OVERLAP_MS = 60 * 1000;
+
 type SyncCursorBody = {
   v: number;
   t: string;
@@ -15,7 +26,7 @@ export const encodeSyncCursor = (cursorTime: Date): string => {
   return Buffer.from(JSON.stringify(body), "utf8").toString("base64url");
 };
 
-/** Null for anything a delta cannot be built from: unreadable, another version, or expired. */
+/** Null for anything a delta cannot be built from: unreadable, another version, expired, or ahead of the clock. */
 export const decodeSyncCursor = (value: string, now: Date = new Date()): SyncCursor | null => {
   let body: unknown;
   try {
@@ -32,6 +43,7 @@ export const decodeSyncCursor = (value: string, now: Date = new Date()): SyncCur
   const cursorTime = new Date(t);
   if (Number.isNaN(cursorTime.getTime())) return null;
   if (now.getTime() - cursorTime.getTime() > SYNC_CURSOR_MAX_AGE_MS) return null;
+  if (cursorTime.getTime() - now.getTime() > SYNC_OVERLAP_MS) return null;
 
   return { version: v, cursorTime };
 };

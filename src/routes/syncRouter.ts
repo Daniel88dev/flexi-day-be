@@ -55,8 +55,9 @@ export const syncRouter = (): Router => {
    *       A pull answers a sync reset — `reset` is `true` and the payload is a
    *       full snapshot rather than a delta — when the request carries no
    *       cursor, a cursor the server cannot decode, a cursor minted by another
-   *       cursor version, a cursor whose time is more than 30 days old, or
-   *       anything else the server cannot read as one cursor, such as the
+   *       cursor version, a cursor whose time is more than 30 days old, a
+   *       cursor whose time is more than 60 seconds ahead of the server clock,
+   *       or anything else the server cannot read as one cursor, such as the
    *       parameter repeated. A cursor is never rejected with an error.
    *
    *       `hasMore` is always `false`: the pull is not paged yet. The tables

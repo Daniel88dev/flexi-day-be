@@ -5,17 +5,8 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { getScopeEntries } from "../report/reportServices.js";
 import type { ReportScopeEntry } from "../report/types.js";
-import { encodeSyncCursor } from "./syncCursor.js";
+import { encodeSyncCursor, SYNC_OVERLAP_MS } from "./syncCursor.js";
 import type { SyncEnvelope, SyncGroupRow, SyncGroupUserRow, SyncOrganizationRow } from "./types.js";
-
-/**
- * A delta reaches back one overlap window before the cursor. Inserts stamp
- * `updatedAt` from the database and updates from whichever App Runner instance
- * ran them, so a row committed by a clock behind the one that minted the
- * cursor would otherwise fall between two pulls and never arrive. The price is
- * that a row can arrive twice; the client upserts, so the second is a no-op.
- */
-const SYNC_OVERLAP_MS = 60 * 1000;
 
 /** The caller's groups split by how much of each they see. */
 type SyncScope = {
