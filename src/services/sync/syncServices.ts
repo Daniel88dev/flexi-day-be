@@ -10,7 +10,7 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { getScopeEntries } from "../report/reportServices.js";
 import type { ReportScopeEntry } from "../report/types.js";
 import { encodeSyncCursor, SYNC_OVERLAP_MS } from "./syncCursor.js";
-import { syncHistoryWindow } from "./syncHistory.js";
+import { sameHistoryWindow, syncHistoryWindow } from "./syncHistory.js";
 import { collectSyncPage } from "./syncPage.js";
 import type {
   SyncCursor,
@@ -297,7 +297,10 @@ type SyncUserIds = {
  * happened to hold: users are walked before vacations, so a page-by-page count
  * would leave a later page's row without the people on it.
  */
-const getVacationActorIds = async (context: SyncReadContext): Promise<string[]> => {
+const getVacationActorIds = async (
+  context: SyncReadContext,
+  window: SyncWindow | null
+): Promise<string[]> => {
   const rows = await db
     .selectDistinct({
       userId: vacation.userId,
@@ -311,7 +314,7 @@ const getVacationActorIds = async (context: SyncReadContext): Promise<string[]> 
       and(
         inVacationScope(context.scope, context.callerId),
         gte(vacation.requestedDay, context.history.firstDay),
-        inWindow(vacation.updatedAt, context.window)
+        window === null ? undefined : inWindow(vacation.updatedAt, window)
       )
     );
 
@@ -331,8 +334,13 @@ const getVacationActorIds = async (context: SyncReadContext): Promise<string[]> 
 };
 
 const getSyncUserIds = async (context: SyncReadContext): Promise<SyncUserIds> => {
-  const actors = await getVacationActorIds(context);
-  const ids = new Set<string>([context.callerId, ...actors]);
+  // The people on the rows this pull carries are owed whatever their own row
+  // says; the people on every visible row are eligible when their own row
+  // changed, or a renamed approver on an old booking would never arrive.
+  const actors = await getVacationActorIds(context, context.window);
+  const everyActor =
+    context.window.since === null ? actors : await getVacationActorIds(context, null);
+  const ids = new Set<string>([context.callerId, ...everyActor]);
 
   if (context.scope.fullGroupIds.length > 0) {
     const [members, managers] = await Promise.all([
@@ -653,7 +661,14 @@ export const buildSyncPull = (
   if (cursor === null) return buildSyncSnapshot(userId, cursorTime);
 
   const page = cursor.page;
-  if (page === null) return buildSyncDelta(userId, cursor.cursorTime, cursorTime);
+  if (page === null) {
+    // The dated tables stop matching last year's oldest rows once the window
+    // moves, and a delta has no tombstone for that; a snapshot lets the client
+    // sweep them.
+    return sameHistoryWindow(cursor.cursorTime, cursorTime)
+      ? buildSyncDelta(userId, cursor.cursorTime, cursorTime)
+      : buildSyncSnapshot(userId, cursorTime);
+  }
 
   return page.reset
     ? buildSyncSnapshot(userId, cursor.cursorTime, page.position)

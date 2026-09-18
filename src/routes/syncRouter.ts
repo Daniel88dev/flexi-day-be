@@ -107,7 +107,10 @@ export const syncRouter = (): Router => {
    *       cursor, a cursor the server cannot decode, a cursor minted by another
    *       cursor version, a cursor whose time is more than 30 days old, a
    *       cursor whose time is more than 60 seconds ahead of the server clock,
-   *       a cursor whose paging state the server cannot resume, or anything
+   *       a cursor minted in an earlier calendar year than the pull (the
+   *       history window has moved, and only a snapshot lets the client sweep
+   *       the rows that fell out of it), a cursor whose paging state the
+   *       server cannot resume, or anything
    *       else it cannot read as one cursor, such as the parameter repeated. A
    *       cursor is never rejected with an error, and an unusable one mid-loop
    *       restarts the loop as a fresh snapshot.

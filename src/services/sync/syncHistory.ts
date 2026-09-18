@@ -10,3 +10,7 @@ export const syncHistoryWindow = (now: Date): SyncHistoryWindow => {
   const year = (now.getUTCFullYear() - 1).toString();
   return { firstDay: `${year}-01-01`, firstYear: year };
 };
+
+/** Whether two pulls reach back to the same first day. */
+export const sameHistoryWindow = (a: Date, b: Date): boolean =>
+  syncHistoryWindow(a).firstDay === syncHistoryWindow(b).firstDay;

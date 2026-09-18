@@ -1143,6 +1143,32 @@ describe("Sync pull E2E", () => {
       expect((res.body.vacations as VacationRow[]).map((row) => row.id)).toEqual([changed]);
     });
 
+    it("carries an actor whose own row changed even though their booking did not", async () => {
+      const manager = await makeUser("Manager");
+      const caller = await makeUser("Caller");
+      const approver = await makeUser("Approver");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, caller.id);
+      await addLeave(groupId, caller.id, dayIn(THIS_YEAR, 5, 4), { approvedBy: approver.id });
+      await ageEverything();
+      await db
+        .update(user)
+        .set({ name: "Approver Renamed", updatedAt: ago(1 * MINUTE) })
+        .where(eq(user.id, approver.id));
+
+      const res = await request(app)
+        .get("/api/sync/pull")
+        .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
+        .set("Cookie", await authCookieFor(caller.id))
+        .expect(200);
+
+      expect(res.body.reset).toBe(false);
+      expect(res.body.vacations).toEqual([]);
+      expect(res.body.users).toEqual([
+        expect.objectContaining({ id: approver.id, name: "Approver Renamed" }),
+      ]);
+    });
+
     it("carries a quota changed since the cursor and leaves an untouched one out", async () => {
       const manager = await makeUser("Manager");
       const caller = await makeUser("Caller");
