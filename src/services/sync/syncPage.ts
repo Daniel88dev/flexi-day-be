@@ -3,6 +3,11 @@ import type { SyncPage, SyncPagePosition, SyncTableName, SyncTableReader } from 
 /** Fixed server-side: the endpoint takes no `limit`, so one page is one page everywhere. */
 export const SYNC_PAGE_SIZE = 1000;
 
+/** Tables whose keyset is `id` alone; every other table pages by `updatedAt, id`. */
+export const ID_ORDERED_TABLES: ReadonlySet<SyncTableName> = new Set<SyncTableName>([
+  "organizations",
+]);
+
 export const SYNC_TABLE_ORDER: readonly SyncTableName[] = [
   "organizations",
   "users",

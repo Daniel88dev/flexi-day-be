@@ -1,4 +1,4 @@
-import { SYNC_TABLE_ORDER } from "./syncPage.js";
+import { ID_ORDERED_TABLES, SYNC_TABLE_ORDER } from "./syncPage.js";
 import type { SyncCursor, SyncCursorPage, SyncKeyset, SyncTableName } from "./types.js";
 
 export const SYNC_CURSOR_VERSION = 1;
@@ -70,7 +70,7 @@ const hasExpired = (cursorTime: Date, now: Date): boolean =>
   now.getTime() - cursorTime.getTime() > SYNC_CURSOR_MAX_AGE_MS;
 
 /** Null for page state the walk cannot resume from, which makes the whole cursor unusable. */
-const decodePage = (body: unknown, now: Date): SyncCursorPage | null => {
+const decodePage = (body: unknown, cursorTime: Date, now: Date): SyncCursorPage | null => {
   if (typeof body !== "object" || body === null) return null;
 
   const { r, s, tb, ua, id } = body as Partial<SyncCursorPageBody>;
@@ -79,14 +79,17 @@ const decodePage = (body: unknown, now: Date): SyncCursorPage | null => {
   let after: SyncKeyset | null = null;
   if (id !== undefined) {
     if (typeof id !== "string") return null;
-    let updatedAt: Date | null = null;
-    if (typeof ua === "string") {
-      updatedAt = readDate(ua);
+    if (ID_ORDERED_TABLES.has(tb)) {
+      if (ua !== null && ua !== undefined) return null;
+      after = { updatedAt: null, id };
+    } else {
+      // A keyset without its timestamp would resume on `id` alone and skip
+      // rows that sort after the cursor by time but before it by id.
+      if (typeof ua !== "string") return null;
+      const updatedAt = readDate(ua);
       if (updatedAt === null) return null;
-    } else if (ua !== null && ua !== undefined) {
-      return null;
+      after = { updatedAt, id };
     }
-    after = { updatedAt, id };
   }
 
   const position = { table: tb, after };
@@ -96,8 +99,9 @@ const decodePage = (body: unknown, now: Date): SyncCursorPage | null => {
   const previousCursorTime = readDate(s);
   if (previousCursorTime === null) return null;
   // The loop it continues would otherwise reach back further than a fresh
-  // cursor of the same age is allowed to.
+  // cursor of the same age is allowed to, or start after the time it ends.
   if (hasExpired(previousCursorTime, now)) return null;
+  if (previousCursorTime.getTime() > cursorTime.getTime()) return null;
 
   return { reset: false, previousCursorTime, position };
 };
@@ -123,7 +127,7 @@ export const decodeSyncCursor = (value: string, now: Date = new Date()): SyncCur
 
   if (p === undefined) return { version: v, cursorTime, page: null };
 
-  const page = decodePage(p, now);
+  const page = decodePage(p, cursorTime, now);
   if (page === null) return null;
 
   return { version: v, cursorTime, page };

@@ -230,6 +230,38 @@ describe("sync cursor paging state", () => {
     expect(decodeSyncCursor(badPrevious, cursorTime)).toBeNull();
   });
 
+  it("rejects a keyset without its timestamp in a table ordered by updatedAt then id", () => {
+    const noTimestamp = encodeBody({
+      v: SYNC_CURSOR_VERSION,
+      t: cursorTime.toISOString(),
+      p: { r: true, tb: "groupUsers", id: "member-42" },
+    });
+    const nullTimestamp = encodeBody({
+      v: SYNC_CURSOR_VERSION,
+      t: cursorTime.toISOString(),
+      p: { r: true, tb: "groupUsers", ua: null, id: "member-42" },
+    });
+    const timestampWhereNoneBelongs = encodeBody({
+      v: SYNC_CURSOR_VERSION,
+      t: cursorTime.toISOString(),
+      p: { r: true, tb: "organizations", ua: stoppedAt.toISOString(), id: "org-3" },
+    });
+
+    expect(decodeSyncCursor(noTimestamp, cursorTime)).toBeNull();
+    expect(decodeSyncCursor(nullTimestamp, cursorTime)).toBeNull();
+    expect(decodeSyncCursor(timestampWhereNoneBelongs, cursorTime)).toBeNull();
+  });
+
+  it("rejects a delta loop that started after the cursor time it carries", () => {
+    const page: SyncCursorPage = {
+      reset: false,
+      previousCursorTime: new Date(cursorTime.getTime() + 1),
+      position: { table: "groups", after: null },
+    };
+
+    expect(decodeSyncCursor(encodeSyncCursor(cursorTime, page), cursorTime)).toBeNull();
+  });
+
   it("rejects a delta loop reaching back further than the expiry window", () => {
     const tooOld = new Date(cursorTime.getTime() - SYNC_CURSOR_MAX_AGE_MS - 1);
     const page: SyncCursorPage = {
