@@ -65,4 +65,30 @@ describe("sync cursor codec", () => {
     });
     expect(decodeSyncCursor(encoded, pastWindow)).toBeNull();
   });
+
+  it("holds the expiry boundary to the millisecond", () => {
+    const cursorTime = new Date("2026-09-18T10:00:00.000Z");
+    const encoded = encodeSyncCursor(cursorTime);
+
+    const exactlyAtTheLimit = new Date(cursorTime.getTime() + SYNC_CURSOR_MAX_AGE_MS);
+    const oneMillisecondPast = new Date(cursorTime.getTime() + SYNC_CURSOR_MAX_AGE_MS + 1);
+
+    expect(decodeSyncCursor(encoded, exactlyAtTheLimit)).toEqual({
+      version: SYNC_CURSOR_VERSION,
+      cursorTime,
+    });
+    expect(decodeSyncCursor(encoded, oneMillisecondPast)).toBeNull();
+  });
+
+  it("accepts a cursor minted ahead of the clock reading it", () => {
+    const cursorTime = new Date("2026-09-18T10:00:00.000Z");
+    const encoded = encodeSyncCursor(cursorTime);
+
+    const behindByAMinute = new Date(cursorTime.getTime() - 60 * 1000);
+
+    expect(decodeSyncCursor(encoded, behindByAMinute)).toEqual({
+      version: SYNC_CURSOR_VERSION,
+      cursorTime,
+    });
+  });
 });

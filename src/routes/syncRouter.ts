@@ -24,18 +24,45 @@ export const syncRouter = (): Router => {
    *
    *       Scope is membership-only, exactly the web dashboard and calendar. A
    *       group where the caller has view access, admin access, or is the
-   *       manager returns its full live member list; a group where they are a
-   *       plain member returns only their own membership row. A group the
-   *       caller only administers as an org admin is not included.
+   *       manager returns its whole member list; a group where they are a plain
+   *       member returns only their own membership row. A group the caller only
+   *       administers as an org admin is not included.
    *
-   *       A pull without a cursor is a sync reset: `reset` is `true` and the
-   *       response is a full snapshot rather than a delta. The `cursor` in the
-   *       response is opaque and versioned — the client stores it verbatim,
-   *       never parses it, and sends it back on the next pull. Cursors are
-   *       minted but not read back yet, so every pull answers a sync reset,
-   *       `hasMore` is always `false`, and the tables this endpoint does not
-   *       fill yet — `users`, `groupMirrors`, `userYearQuotas`,
-   *       `bankHolidays` and `vacations` — arrive as empty arrays.
+   *       The `cursor` in the response is opaque and versioned — the client
+   *       stores it verbatim, never parses it, and sends it back on the next
+   *       pull. Its position is minted when the pull starts, before any row is
+   *       read, so consecutive pulls chain and a change landing mid-read falls
+   *       to the next pull rather than between the two.
+   *
+   *       A pull carrying a cursor answers a delta: `reset` is `false` and each
+   *       table holds only the rows whose `updatedAt` is later than the cursor
+   *       time minus 60 seconds, ordered by `updatedAt` then `id`.
+   *       `organizations` names the organization of every group in the delta.
+   *       The 60 second overlap covers the clock difference between the
+   *       database, which stamps inserts, and the server instance that stamps
+   *       an update, so the same row may arrive on two consecutive pulls; a
+   *       client applies rows as upserts and the second delivery changes
+   *       nothing.
+   *
+   *       A soft-deleted row arrives in a delta as a tombstone: the whole row
+   *       with `deletedAt` set, so the client can drop its copy. A delta
+   *       tombstones a group the caller still belongs to and, in a group they
+   *       see in full, the membership of anyone who left it. The caller's own
+   *       removal takes the group out of scope instead of tombstoning it. A
+   *       snapshot holds live membership rows only — the client sweeps whatever
+   *       the snapshot did not re-send.
+   *
+   *       A pull answers a sync reset — `reset` is `true` and the payload is a
+   *       full snapshot rather than a delta — when the request carries no
+   *       cursor, a cursor the server cannot decode, a cursor minted by another
+   *       cursor version, a cursor whose time is more than 30 days old, or
+   *       anything else the server cannot read as one cursor, such as the
+   *       parameter repeated. A cursor is never rejected with an error.
+   *
+   *       `hasMore` is always `false`: the pull is not paged yet. The tables
+   *       this endpoint does not fill yet — `users`, `groupMirrors`,
+   *       `userYearQuotas`, `bankHolidays` and `vacations` — arrive as empty
+   *       arrays.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -43,7 +70,8 @@ export const syncRouter = (): Router => {
    *         in: query
    *         required: false
    *         description: |
-   *           The opaque cursor from a previous pull. Never rejected: a cursor
+   *           The opaque cursor from a previous pull, sent back verbatim.
+   *           Omitting it asks for a full snapshot. Never rejected: a cursor
    *           the server cannot use answers with a sync reset.
    *         schema:
    *           type: string
@@ -69,13 +97,17 @@ export const syncRouter = (): Router => {
    *               properties:
    *                 cursor:
    *                   type: string
-   *                   description: Opaque position to send on the next pull
+   *                   description: |
+   *                     Opaque position to send on the next pull, minted when
+   *                     this pull started
    *                 hasMore:
    *                   type: boolean
    *                   description: True when another page of this pull is waiting
    *                 reset:
    *                   type: boolean
-   *                   description: True when the payload is a full snapshot rather than a delta
+   *                   description: |
+   *                     True when the payload is a full snapshot rather than a
+   *                     delta: no cursor, or one the server could not use
    *                 organizations:
    *                   type: array
    *                   items:
@@ -125,6 +157,7 @@ export const syncRouter = (): Router => {
    *                         type: string
    *                         format: date-time
    *                         nullable: true
+   *                         description: Set on a tombstone; null on a live row
    *                       createdAt:
    *                         type: string
    *                         format: date-time
@@ -156,6 +189,7 @@ export const syncRouter = (): Router => {
    *                         type: string
    *                         format: date-time
    *                         nullable: true
+   *                         description: Set on a tombstone; null on a live row
    *                       createdAt:
    *                         type: string
    *                         format: date-time

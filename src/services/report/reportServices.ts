@@ -36,8 +36,15 @@ const quotaScopeColumns = { userId: userYearQuotas.userId, groupId: userYearQuot
  * The groups the caller may pull into a report, and at what depth. View
  * access, admin access, or being the group's manager all open the whole
  * group; a plain membership still lets the member report on themselves.
+ *
+ * `includeDeletedGroups` is for the sync pull alone: membership rows outlive a
+ * soft-deleted group, and a client that already holds the group needs its
+ * tombstone. Reporting never wants it.
  */
-export const getScopeEntries = async (userId: string): Promise<ReportScopeEntry[]> => {
+export const getScopeEntries = async (
+  userId: string,
+  options: { includeDeletedGroups?: boolean } = {}
+): Promise<ReportScopeEntry[]> => {
   const rows = await db
     .select({
       groupId: groups.id,
@@ -49,7 +56,11 @@ export const getScopeEntries = async (userId: string): Promise<ReportScopeEntry[
     .from(groupUsers)
     .innerJoin(groups, eq(groupUsers.groupId, groups.id))
     .where(
-      and(eq(groupUsers.userId, userId), isNull(groupUsers.deletedAt), isNull(groups.deletedAt))
+      and(
+        eq(groupUsers.userId, userId),
+        isNull(groupUsers.deletedAt),
+        options.includeDeletedGroups ? undefined : isNull(groups.deletedAt)
+      )
     )
     .orderBy(asc(groups.groupName));
 
