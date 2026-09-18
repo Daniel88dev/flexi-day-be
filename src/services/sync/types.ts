@@ -1,3 +1,5 @@
+import type { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+
 export type SyncTableName =
   | "organizations"
   | "users"
@@ -92,6 +94,67 @@ export type SyncGroupUserRow = {
 };
 
 /**
+ * The far edge of the tables a pull bounds by date rather than by change:
+ * vacations by requested day, quotas by related year.
+ */
+export type SyncHistoryWindow = {
+  /** `YYYY-MM-DD`, compared against `vacation.requested_day`. */
+  firstDay: string;
+  /**
+   * `YYYY`, compared as text against `user_year_quotas.related_year`. That
+   * sorts as the number only because the column's check constraint pins it to
+   * four digits.
+   */
+  firstYear: string;
+};
+
+/** Four columns only: a pull names the people on its rows, it does not carry accounts. */
+export type SyncUserRow = {
+  id: string;
+  name: string;
+  image: string | null;
+  updatedAt: string;
+};
+
+export type SyncUserYearQuotaRow = {
+  id: string;
+  userId: string;
+  groupId: string;
+  organizationId: string;
+  relatedYear: string;
+  vacationDays: number;
+  homeOfficeDays: number;
+  sickDays: number;
+  carriedOverDays: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SyncVacationRow = {
+  id: string;
+  userId: string;
+  groupId: string;
+  organizationId: string;
+  requestId: string;
+  requestedDay: string;
+  startTime: string | null;
+  endTime: string | null;
+  vacationType: CalendarRecordType;
+  halfDay: boolean;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  rejectedAt: string | null;
+  rejectedBy: string | null;
+  rejectionReason: string | null;
+  note: string | null;
+  createdByUserId: string | null;
+  deletedAt: string | null;
+  deletedByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
  * The tables arrive in dependency order so a client can apply a page as it
  * lands. Keys are the Drizzle export names; the tables this endpoint does not
  * fill yet ship as empty arrays.
@@ -101,11 +164,11 @@ export type SyncEnvelope = {
   hasMore: boolean;
   reset: boolean;
   organizations: SyncOrganizationRow[];
-  users: unknown[];
+  users: SyncUserRow[];
   groups: SyncGroupRow[];
   groupUsers: SyncGroupUserRow[];
   groupMirrors: unknown[];
-  userYearQuotas: unknown[];
+  userYearQuotas: SyncUserYearQuotaRow[];
   bankHolidays: unknown[];
-  vacations: unknown[];
+  vacations: SyncVacationRow[];
 };

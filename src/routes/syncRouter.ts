@@ -28,6 +28,49 @@ export const syncRouter = (): Router => {
    *       member returns only their own membership row. A group the caller only
    *       administers as an org admin is not included.
    *
+   *       `vacations` splits the same way: a group seen in full carries every
+   *       member's bookings, a self-scoped group only the caller's. On top of
+   *       that the caller's own bookings arrive from every group they hold
+   *       them in, including one they have left, because the personal calendar
+   *       still shows them. `groups` then also carries the row of any group
+   *       that owns a returned booking, so the client can label it, and a
+   *       group row arriving without a membership row is how the client
+   *       recognises a former group. Nothing else of a former group ships: no
+   *       other member's bookings, no membership row, no quota row. The one
+   *       exception is `users`, which still names whoever approved, rejected,
+   *       booked or cancelled a returned booking, because the client cannot
+   *       render the row without them.
+   *
+   *       Bookings are raw rows, `note` and `rejectionReason` included, with
+   *       no per-row verdict — whether the caller may approve or cancel one
+   *       stays on the action endpoints.
+   *
+   *       `userYearQuotas` splits the same way but does not reach past the
+   *       caller's current groups: every member's rows in a group seen in
+   *       full, the caller's own rows in their other groups, and nothing from
+   *       a group they have left.
+   *
+   *       `users` carries `id`, `name`, `image` and `updatedAt` and nothing
+   *       else — no email, no account state. It holds the members and the
+   *       manager of every group seen in full, the caller, and every actor
+   *       named on a booking this pull covers: who created it, who approved
+   *       it, who rejected it and who cancelled it. Those actors arrive
+   *       whatever their own `updatedAt` says, and on a paged pull they arrive
+   *       before the bookings that name them, so no returned booking ever
+   *       names somebody the client cannot resolve.
+   *
+   *       `users` and `userYearQuotas` carry no `deletedAt` and so ship no
+   *       tombstones. Somebody who leaves a group stays in `users` as a stale
+   *       row until a sync reset drops it, and a quota row is rewritten rather
+   *       than deleted.
+   *
+   *       The two dated tables reach back to 1 January of the previous year on
+   *       the server clock, read in UTC: `vacations` by `requestedDay`,
+   *       `userYearQuotas` by `relatedYear`. A row dated before that boundary
+   *       is absent however recently it changed. The boundary comes from the
+   *       position the pull was minted with, so it holds still across every
+   *       page of one loop.
+   *
    *       The `cursor` in the response is opaque and versioned — the client
    *       stores it verbatim, never parses it, and sends it back on the next
    *       pull. Its position is minted when the pull starts, before any row is
@@ -52,6 +95,12 @@ export const syncRouter = (): Router => {
    *       removal takes the group out of scope instead of tombstoning it. A
    *       snapshot holds live membership rows only — the client sweeps whatever
    *       the snapshot did not re-send.
+   *
+   *       A cancelled booking arrives the same way, in full with `deletedAt`
+   *       and `deletedByUserId` set, but the client keeps it rather than
+   *       dropping it: the web calendar shows cancelled bookings as history.
+   *       For the same reason a snapshot carries them too, so a sync reset
+   *       does not sweep away history the phone is meant to hold.
    *
    *       A pull answers a sync reset — `reset` is `true` and the payload is a
    *       full snapshot rather than a delta — when the request carries no
@@ -82,8 +131,8 @@ export const syncRouter = (): Router => {
    *       Tables arrive in dependency order across the loop, so a page that
    *       resumes inside one table carries the tables before it as empty
    *       arrays: they landed on an earlier page. The tables this endpoint does
-   *       not fill yet — `users`, `groupMirrors`, `userYearQuotas`,
-   *       `bankHolidays` and `vacations` — arrive as empty arrays throughout.
+   *       not fill yet — `groupMirrors` and `bankHolidays` — arrive as empty
+   *       arrays throughout.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -144,8 +193,22 @@ export const syncRouter = (): Router => {
    *                         type: string
    *                 users:
    *                   type: array
+   *                   description: |
+   *                     The people named on this page's rows, four columns
+   *                     only. Never tombstoned
    *                   items:
    *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       name:
+   *                         type: string
+   *                       image:
+   *                         type: string
+   *                         nullable: true
+   *                       updatedAt:
+   *                         type: string
+   *                         format: date-time
    *                 groups:
    *                   type: array
    *                   items:
@@ -227,16 +290,122 @@ export const syncRouter = (): Router => {
    *                     type: object
    *                 userYearQuotas:
    *                   type: array
+   *                   description: |
+   *                     Allowances by year, from the previous year onwards.
+   *                     Never tombstoned
    *                   items:
    *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       userId:
+   *                         type: string
+   *                       groupId:
+   *                         type: string
+   *                       organizationId:
+   *                         type: string
+   *                       relatedYear:
+   *                         type: string
+   *                         description: Four digits, `YYYY`
+   *                       vacationDays:
+   *                         type: integer
+   *                       homeOfficeDays:
+   *                         type: integer
+   *                       sickDays:
+   *                         type: integer
+   *                       carriedOverDays:
+   *                         type: integer
+   *                       createdAt:
+   *                         type: string
+   *                         format: date-time
+   *                       updatedAt:
+   *                         type: string
+   *                         format: date-time
    *                 bankHolidays:
    *                   type: array
    *                   items:
    *                     type: object
    *                 vacations:
    *                   type: array
+   *                   description: |
+   *                     Bookings requested on or after 1 January of the
+   *                     previous year, one row per day
    *                   items:
    *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       userId:
+   *                         type: string
+   *                       groupId:
+   *                         type: string
+   *                       organizationId:
+   *                         type: string
+   *                       requestId:
+   *                         type: string
+   *                         description: Shared by every day row of one submission
+   *                       requestedDay:
+   *                         type: string
+   *                         format: date
+   *                       startTime:
+   *                         type: string
+   *                         nullable: true
+   *                       endTime:
+   *                         type: string
+   *                         nullable: true
+   *                       vacationType:
+   *                         type: string
+   *                         enum:
+   *                           - VACATION
+   *                           - HOME_OFFICE
+   *                           - SICK
+   *                           - BANK_HOLIDAY
+   *                           - NON_PAID_LEAVE
+   *                           - PAID_TIME_OFF
+   *                           - SICK_DAY
+   *                           - STUDY_LEAVE
+   *                           - OTHER
+   *                       halfDay:
+   *                         type: boolean
+   *                         description: Authoritative for quota accounting, unlike the times
+   *                       approvedAt:
+   *                         type: string
+   *                         format: date-time
+   *                         nullable: true
+   *                       approvedBy:
+   *                         type: string
+   *                         nullable: true
+   *                       rejectedAt:
+   *                         type: string
+   *                         format: date-time
+   *                         nullable: true
+   *                       rejectedBy:
+   *                         type: string
+   *                         nullable: true
+   *                       rejectionReason:
+   *                         type: string
+   *                         nullable: true
+   *                       note:
+   *                         type: string
+   *                         nullable: true
+   *                       createdByUserId:
+   *                         type: string
+   *                         nullable: true
+   *                         description: Differs from userId when somebody booked on the member's behalf
+   *                       deletedAt:
+   *                         type: string
+   *                         format: date-time
+   *                         nullable: true
+   *                         description: Set on a cancelled booking, which the client keeps as history
+   *                       deletedByUserId:
+   *                         type: string
+   *                         nullable: true
+   *                       createdAt:
+   *                         type: string
+   *                         format: date-time
+   *                       updatedAt:
+   *                         type: string
+   *                         format: date-time
    *       '401':
    *         description: Unauthorized - missing or invalid authentication
    */

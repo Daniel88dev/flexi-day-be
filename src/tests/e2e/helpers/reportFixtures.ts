@@ -123,6 +123,11 @@ export type LeaveOptions = {
   approved?: boolean;
   rejected?: boolean;
   note?: string | null;
+  rejectionReason?: string | null;
+  /** The actor columns, for tests that assert who a row points at. */
+  approvedBy?: string;
+  rejectedBy?: string;
+  createdByUserId?: string;
 };
 
 /** Books one day. `approved` defaults to true so usage lands in "used". */
@@ -142,12 +147,28 @@ export async function addLeave(
     vacationType: options.type ?? CalendarRecordType.Vacation,
     halfDay: options.halfDay ?? false,
     approvedAt: options.approved === false ? null : new Date(),
+    approvedBy: options.approvedBy ?? null,
     rejectedAt: options.rejected ? new Date() : null,
+    rejectedBy: options.rejectedBy ?? null,
+    rejectionReason: options.rejectionReason ?? null,
     note: options.note ?? null,
+    createdByUserId: options.createdByUserId ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
   return id;
+}
+
+/** Cancels a booking the way the cancel transition does: soft-deleted, actor recorded. */
+export async function cancelLeave(
+  vacationId: string,
+  deletedByUserId: string,
+  at: Date = new Date()
+): Promise<void> {
+  await db
+    .update(vacation)
+    .set({ deletedAt: at, deletedByUserId, updatedAt: at })
+    .where(eq(vacation.id, vacationId));
 }
 
 export async function addLeaveRange(

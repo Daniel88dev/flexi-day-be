@@ -1,18 +1,23 @@
-import { and, asc, eq, gt, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "../../db/db.js";
+import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
+import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
+import { vacation } from "../../db/schema/vacation-schema.js";
 import { getScopeEntries } from "../report/reportServices.js";
 import type { ReportScopeEntry } from "../report/types.js";
 import { encodeSyncCursor, SYNC_OVERLAP_MS } from "./syncCursor.js";
+import { syncHistoryWindow } from "./syncHistory.js";
 import { collectSyncPage } from "./syncPage.js";
 import type {
   SyncCursor,
   SyncEnvelope,
   SyncGroupRow,
   SyncGroupUserRow,
+  SyncHistoryWindow,
   SyncKeyset,
   SyncLoop,
   SyncOrganizationRow,
@@ -20,6 +25,9 @@ import type {
   SyncPagePosition,
   SyncTableName,
   SyncTableReader,
+  SyncUserRow,
+  SyncUserYearQuotaRow,
+  SyncVacationRow,
 } from "./types.js";
 
 /** The caller's groups split by how much of each they see. */
@@ -46,13 +54,42 @@ const splitScope = (entries: ReportScopeEntry[]): SyncScope => {
   return { fullGroupIds, selfGroupIds, groupIds: [...fullGroupIds, ...selfGroupIds] };
 };
 
-/** Every membership row of a group seen in full, the caller's own row elsewhere. */
-const inMembershipScope = (scope: SyncScope, callerId: string): SQL | undefined =>
+/**
+ * Every row of a group the caller sees in full, their own rows elsewhere, over
+ * any table keyed by (userId, groupId). The `false` branches keep the
+ * predicate defined when one half of the scope is empty — dropping them would
+ * leave `or()` undefined and widen the `WHERE` to the whole table.
+ */
+const inGroupScope = (
+  scope: SyncScope,
+  callerId: string,
+  columns: { userId: PgColumn; groupId: PgColumn }
+): SQL | undefined =>
   or(
-    scope.fullGroupIds.length > 0 ? inArray(groupUsers.groupId, scope.fullGroupIds) : sql`false`,
+    scope.fullGroupIds.length > 0 ? inArray(columns.groupId, scope.fullGroupIds) : sql`false`,
     scope.selfGroupIds.length > 0
-      ? and(inArray(groupUsers.groupId, scope.selfGroupIds), eq(groupUsers.userId, callerId))
+      ? and(inArray(columns.groupId, scope.selfGroupIds), eq(columns.userId, callerId))
       : sql`false`
+  );
+
+const inMembershipScope = (scope: SyncScope, callerId: string): SQL | undefined =>
+  inGroupScope(scope, callerId, { userId: groupUsers.userId, groupId: groupUsers.groupId });
+
+const inQuotaScope = (scope: SyncScope, callerId: string): SQL | undefined =>
+  inGroupScope(scope, callerId, {
+    userId: userYearQuotas.userId,
+    groupId: userYearQuotas.groupId,
+  });
+
+/**
+ * Vacations do not follow that split all the way: on top of every row of a
+ * group seen in full, the caller's own rows arrive from any group at all,
+ * including one they have left, because the personal calendar still shows them.
+ */
+const inVacationScope = (scope: SyncScope, callerId: string): SQL | undefined =>
+  or(
+    scope.fullGroupIds.length > 0 ? inArray(vacation.groupId, scope.fullGroupIds) : sql`false`,
+    eq(vacation.userId, callerId)
   );
 
 const inWindow = (updatedAt: PgColumn, window: SyncWindow): SQL | undefined =>
@@ -188,11 +225,13 @@ const readGroupsPage = async (
   }));
 };
 
-/** What every reader of one pull shares: whose rows, which window, and how deep. */
+/** What every reader of one pull shares: whose rows, which windows, and how deep. */
 type SyncReadContext = {
   scope: SyncScope;
   callerId: string;
   window: SyncWindow;
+  /** How far back the dated tables reach, whatever their `updatedAt` says. */
+  history: SyncHistoryWindow;
   /** A snapshot holds live membership rows only; a delta keeps the tombstones. */
   liveOnly: boolean;
 };
@@ -226,15 +265,247 @@ const readMembershipsPage = async (
 };
 
 /**
+ * Groups the pull must name beyond the caller's memberships: one they have
+ * left still owns their own vacation rows, and the client needs the group row
+ * to label them. Only the caller's own rows can widen the set — every other
+ * visible row belongs to a group they are still in.
+ */
+const getFormerGroupIds = async (context: SyncReadContext): Promise<string[]> => {
+  const rows = await db
+    .selectDistinct({ groupId: vacation.groupId })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, context.callerId),
+        gte(vacation.requestedDay, context.history.firstDay)
+      )
+    );
+
+  const scoped = new Set(context.scope.groupIds);
+  return rows.map((row) => row.groupId).filter((groupId) => !scoped.has(groupId));
+};
+
+/** Everyone this pull may name, and the subset it owes the client whatever their own row says. */
+type SyncUserIds = {
+  actors: string[];
+  all: string[];
+};
+
+/**
+ * The people on the vacation rows this pull covers, read from the same scope
+ * and window as the vacations reader rather than from the rows one page
+ * happened to hold: users are walked before vacations, so a page-by-page count
+ * would leave a later page's row without the people on it.
+ */
+const getVacationActorIds = async (context: SyncReadContext): Promise<string[]> => {
+  const rows = await db
+    .selectDistinct({
+      userId: vacation.userId,
+      approvedBy: vacation.approvedBy,
+      rejectedBy: vacation.rejectedBy,
+      deletedByUserId: vacation.deletedByUserId,
+      createdByUserId: vacation.createdByUserId,
+    })
+    .from(vacation)
+    .where(
+      and(
+        inVacationScope(context.scope, context.callerId),
+        gte(vacation.requestedDay, context.history.firstDay),
+        inWindow(vacation.updatedAt, context.window)
+      )
+    );
+
+  const ids = new Set<string>();
+  for (const row of rows) {
+    for (const id of [
+      row.userId,
+      row.approvedBy,
+      row.rejectedBy,
+      row.deletedByUserId,
+      row.createdByUserId,
+    ]) {
+      if (id !== null) ids.add(id);
+    }
+  }
+  return [...ids];
+};
+
+const getSyncUserIds = async (context: SyncReadContext): Promise<SyncUserIds> => {
+  const actors = await getVacationActorIds(context);
+  const ids = new Set<string>([context.callerId, ...actors]);
+
+  if (context.scope.fullGroupIds.length > 0) {
+    const [members, managers] = await Promise.all([
+      db
+        .select({ userId: groupUsers.userId })
+        .from(groupUsers)
+        .where(
+          and(
+            inArray(groupUsers.groupId, context.scope.fullGroupIds),
+            context.liveOnly ? isNull(groupUsers.deletedAt) : undefined
+          )
+        ),
+      // A manager holds no membership row of their own in every group, so the
+      // group row's own column is what keeps them nameable.
+      db
+        .select({ managerUserId: groups.managerUserId })
+        .from(groups)
+        .where(inArray(groups.id, context.scope.fullGroupIds)),
+    ]);
+
+    for (const row of members) ids.add(row.userId);
+    for (const row of managers) ids.add(row.managerUserId);
+  }
+
+  return { actors, all: [...ids] };
+};
+
+/**
+ * The users table carries no `deletedAt` and ships no tombstones, so an actor
+ * is force-included rather than filtered by its own `updatedAt`: a vacation
+ * row must never arrive naming somebody the client cannot resolve.
+ */
+const readUsersPage = async (
+  context: SyncReadContext,
+  ids: SyncUserIds,
+  after: SyncKeyset | null,
+  limit: number
+) => {
+  const changed = inWindow(user.updatedAt, context.window);
+  const rows = await db
+    .select({ id: user.id, name: user.name, image: user.image, updatedAt: user.updatedAt })
+    .from(user)
+    .where(
+      and(
+        inArray(user.id, ids.all),
+        ids.actors.length > 0 ? or(inArray(user.id, ids.actors), changed) : changed,
+        afterKeyset(user.updatedAt, user.id, after)
+      )
+    )
+    .orderBy(asc(user.updatedAt), asc(user.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    key: { updatedAt: row.updatedAt, id: row.id },
+    row: {
+      id: row.id,
+      name: row.name,
+      image: row.image,
+      updatedAt: row.updatedAt.toISOString(),
+    } satisfies SyncUserRow,
+  }));
+};
+
+const readQuotasPage = async (
+  context: SyncReadContext,
+  organizationIdByGroupId: Map<string, string>,
+  after: SyncKeyset | null,
+  limit: number
+) => {
+  if (context.scope.groupIds.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(userYearQuotas)
+    .where(
+      and(
+        inQuotaScope(context.scope, context.callerId),
+        gte(userYearQuotas.relatedYear, context.history.firstYear),
+        inWindow(userYearQuotas.updatedAt, context.window),
+        afterKeyset(userYearQuotas.updatedAt, userYearQuotas.id, after)
+      )
+    )
+    .orderBy(asc(userYearQuotas.updatedAt), asc(userYearQuotas.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    key: { updatedAt: row.updatedAt, id: row.id },
+    row: {
+      id: row.id,
+      userId: row.userId,
+      groupId: row.groupId,
+      organizationId: organizationIdByGroupId.get(row.groupId)!,
+      relatedYear: row.relatedYear,
+      vacationDays: row.vacationDays,
+      homeOfficeDays: row.homeOfficeDays,
+      sickDays: row.sickDays,
+      carriedOverDays: row.carriedOverDays,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    } satisfies SyncUserYearQuotaRow,
+  }));
+};
+
+/**
+ * Cancelled rows are not filtered by `liveOnly`: the web calendar keeps a
+ * cancelled booking as history, so a snapshot that dropped it would have the
+ * client sweep away history it is supposed to hold.
+ */
+const readVacationsPage = async (
+  context: SyncReadContext,
+  organizationIdByGroupId: Map<string, string>,
+  after: SyncKeyset | null,
+  limit: number
+) => {
+  const rows = await db
+    .select()
+    .from(vacation)
+    .where(
+      and(
+        inVacationScope(context.scope, context.callerId),
+        gte(vacation.requestedDay, context.history.firstDay),
+        inWindow(vacation.updatedAt, context.window),
+        afterKeyset(vacation.updatedAt, vacation.id, after)
+      )
+    )
+    .orderBy(asc(vacation.updatedAt), asc(vacation.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    key: { updatedAt: row.updatedAt, id: row.id },
+    row: {
+      id: row.id,
+      userId: row.userId,
+      groupId: row.groupId,
+      organizationId: organizationIdByGroupId.get(row.groupId)!,
+      requestId: row.requestId,
+      requestedDay: row.requestedDay,
+      startTime: row.startTime,
+      endTime: row.endTime,
+      vacationType: row.vacationType,
+      halfDay: row.halfDay,
+      approvedAt: toIso(row.approvedAt),
+      approvedBy: row.approvedBy,
+      rejectedAt: toIso(row.rejectedAt),
+      rejectedBy: row.rejectedBy,
+      rejectionReason: row.rejectionReason,
+      note: row.note,
+      createdByUserId: row.createdByUserId,
+      deletedAt: toIso(row.deletedAt),
+      deletedByUserId: row.deletedByUserId,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    } satisfies SyncVacationRow,
+  }));
+};
+
+/**
  * One reader per table the endpoint fills, in dependency order. The tables
  * still to come have no reader yet and ship empty; adding one here is all the
  * paging walk needs to start splitting it.
  */
 const buildReaders = (context: SyncReadContext): SyncTableReader[] => {
-  const organizationIds = memoize(() =>
-    getScopedOrganizationIds(context.scope.groupIds, context.window)
+  const visibleGroupIds = memoize(async () => [
+    ...context.scope.groupIds,
+    ...(await getFormerGroupIds(context)),
+  ]);
+  const organizationIds = memoize(async () =>
+    getScopedOrganizationIds(await visibleGroupIds(), context.window)
   );
-  const organizationIdByGroupId = memoize(() => getOrganizationIdByGroupId(context.scope.groupIds));
+  const organizationIdByGroupId = memoize(async () =>
+    getOrganizationIdByGroupId(await visibleGroupIds())
+  );
+  const userIds = memoize(() => getSyncUserIds(context));
 
   return [
     {
@@ -242,13 +513,28 @@ const buildReaders = (context: SyncReadContext): SyncTableReader[] => {
       read: async (after, limit) => readOrganizationsPage(await organizationIds(), after, limit),
     },
     {
+      table: "users",
+      read: async (after, limit) => readUsersPage(context, await userIds(), after, limit),
+    },
+    {
       table: "groups",
-      read: (after, limit) => readGroupsPage(context.scope.groupIds, context.window, after, limit),
+      read: async (after, limit) =>
+        readGroupsPage(await visibleGroupIds(), context.window, after, limit),
     },
     {
       table: "groupUsers",
       read: async (after, limit) =>
         readMembershipsPage(context, await organizationIdByGroupId(), after, limit),
+    },
+    {
+      table: "userYearQuotas",
+      read: async (after, limit) =>
+        readQuotasPage(context, await organizationIdByGroupId(), after, limit),
+    },
+    {
+      table: "vacations",
+      read: async (after, limit) =>
+        readVacationsPage(context, await organizationIdByGroupId(), after, limit),
     },
   ];
 };
@@ -274,13 +560,13 @@ const buildEnvelope = (payload: {
   hasMore: payload.page.hasMore,
   reset: payload.loop.reset,
   organizations: rowsOf<SyncOrganizationRow>(payload.page, "organizations"),
-  users: rowsOf(payload.page, "users"),
+  users: rowsOf<SyncUserRow>(payload.page, "users"),
   groups: rowsOf<SyncGroupRow>(payload.page, "groups"),
   groupUsers: rowsOf<SyncGroupUserRow>(payload.page, "groupUsers"),
   groupMirrors: rowsOf(payload.page, "groupMirrors"),
-  userYearQuotas: rowsOf(payload.page, "userYearQuotas"),
+  userYearQuotas: rowsOf<SyncUserYearQuotaRow>(payload.page, "userYearQuotas"),
   bankHolidays: rowsOf(payload.page, "bankHolidays"),
-  vacations: rowsOf(payload.page, "vacations"),
+  vacations: rowsOf<SyncVacationRow>(payload.page, "vacations"),
 });
 
 /**
@@ -301,6 +587,7 @@ const buildSyncSnapshot = async (
       scope,
       callerId: userId,
       window: { since: null, until: cursorTime },
+      history: syncHistoryWindow(cursorTime),
       liveOnly: true,
     }),
     resume
@@ -339,6 +626,7 @@ const buildSyncDelta = async (
       scope,
       callerId: userId,
       window: { since, until: cursorTime },
+      history: syncHistoryWindow(cursorTime),
       liveOnly: false,
     }),
     resume
