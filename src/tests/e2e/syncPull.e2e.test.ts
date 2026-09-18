@@ -65,6 +65,7 @@ describe("Sync pull E2E", () => {
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
 
+      expect(res.headers["cache-control"]).toBe("no-store");
       expect(Object.keys(res.body)).toEqual(ENVELOPE_KEYS);
       expect(res.body.reset).toBe(true);
       expect(res.body.hasMore).toBe(false);

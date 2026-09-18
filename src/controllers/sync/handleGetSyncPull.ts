@@ -9,5 +9,6 @@ export const handleGetSyncPull = async (req: Request, res: Response) => {
 
   const envelope = await buildSyncSnapshot(auth.userId);
 
+  res.setHeader("Cache-Control", "no-store");
   return res.status(200).json(envelope);
 };
