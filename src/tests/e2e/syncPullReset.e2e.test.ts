@@ -201,6 +201,37 @@ describe("Sync pull reset triggers E2E", () => {
       expect(idsOf(body.vacations)).not.toContain(fixture.mirroredVacationId);
       expect(idsOf(body.groups)).toEqual([fixture.targetGroupId]);
     });
+
+    it("answers a sync reset when the mirror's owner leaves the target group", async () => {
+      const fixture = await seedMirrorShape();
+      await addMirror(fixture.dana.id, fixture.sourceGroupId, fixture.targetGroupId);
+      await ageEverything();
+      await removeMember(fixture.targetGroupId, fixture.dana.id);
+
+      const body = await pull(await authCookieFor(fixture.caller.id), staleCursor());
+
+      expect(body.reset).toBe(true);
+      expect(body.groupMirrors).toEqual([]);
+      expect(idsOf(body.vacations)).not.toContain(fixture.mirroredVacationId);
+    });
+
+    it("answers a sync reset when the mirror's owner rejoins the target group", async () => {
+      const fixture = await seedMirrorShape();
+      const mirrorId = await addMirror(
+        fixture.dana.id,
+        fixture.sourceGroupId,
+        fixture.targetGroupId
+      );
+      await removeMember(fixture.targetGroupId, fixture.dana.id);
+      await ageEverything();
+      await addMember(fixture.targetGroupId, fixture.dana.id);
+
+      const body = await pull(await authCookieFor(fixture.caller.id), staleCursor());
+
+      expect(body.reset).toBe(true);
+      expect(idsOf(body.groupMirrors)).toEqual([mirrorId]);
+      expect(idsOf(body.vacations)).toContain(fixture.mirroredVacationId);
+    });
   });
 
   describe("a scoped group row", () => {

@@ -159,12 +159,16 @@ export const syncRouter = (): Router => {
    *       triggers are a row changed later than the cursor time minus 60
    *       seconds and no later than the position this pull was minted with —
    *       a soft delete counts, because it stamps `updatedAt` like any other
-   *       write — in one of three places:
+   *       write — in one of four places:
    *
    *       - a `groupUsers` row of the caller, in any group: joining, gaining
    *         or losing a flag, or being removed;
    *       - a `groupMirrors` row whose target is a group the caller belongs
    *         to, added or removed;
+   *       - a `groupUsers` row of a mirror's owner in the target group of that
+   *         mirror, when the caller belongs to it: a mirror shows only while
+   *         its owner is a member, so the owner joining or leaving changes
+   *         what the caller sees without touching the mirror row;
    *       - a `groups` row of a group the caller belongs to: a manager
    *         transfer, a rename, a holiday country change or a soft delete.
    *
@@ -196,8 +200,10 @@ export const syncRouter = (): Router => {
    *
    *       A pull sent with `Accept-Encoding: gzip` is answered gzip-encoded,
    *       whatever the size of the page, and the response says so with
-   *       `Content-Encoding: gzip`; without that request header the body is
-   *       plain JSON. This is the only compressed route in the API. The
+   *       `Content-Encoding: gzip`. The coding is negotiated from the request
+   *       header, so a client advertising `br` or `deflate` instead may get
+   *       one of those; a request advertising none gets plain JSON. This is
+   *       the only compressed route in the API. The
    *       payload is the same either way, and every response carries
    *       `Cache-Control: no-store`: it is one caller's rows and no cache may
    *       hold it.
@@ -225,8 +231,9 @@ export const syncRouter = (): Router => {
    *             schema:
    *               type: string
    *             description: |
-   *               `gzip` when the request sent `Accept-Encoding: gzip`, absent
-   *               otherwise
+   *               `gzip` when the request sent `Accept-Encoding: gzip`; `br` or
+   *               `deflate` when the request advertised only those; absent when
+   *               it advertised none
    *           Vary:
    *             schema:
    *               type: string

@@ -940,6 +940,37 @@ const anyChangedInWindow = async (
  * left since the cursor changed their membership row too, so it has already
  * triggered.
  */
+/**
+ * A mirror shows only while its owner belongs to the target group, so the
+ * owner joining or leaving one of the caller's groups changes what the caller
+ * sees without touching the mirror row itself.
+ */
+const mirrorOwnerMembershipChanged = async (
+  groupIds: string[],
+  window: SyncWindow
+): Promise<boolean> => {
+  const rows = await db
+    .select({ one: sql`1` })
+    .from(groupUsers)
+    .innerJoin(
+      groupMirrors,
+      and(
+        eq(groupMirrors.userId, groupUsers.userId),
+        eq(groupMirrors.targetGroupId, groupUsers.groupId)
+      )
+    )
+    .where(
+      and(
+        inArray(groupMirrors.targetGroupId, groupIds),
+        isNull(groupMirrors.deletedAt),
+        inWindow(groupUsers.updatedAt, window)
+      )
+    )
+    .limit(1);
+
+  return rows.length > 0;
+};
+
 const hasSyncResetTrigger = async (callerId: string, window: SyncWindow): Promise<boolean> => {
   const memberships = await db
     .select({
@@ -959,12 +990,13 @@ const hasSyncResetTrigger = async (callerId: string, window: SyncWindow): Promis
   ];
   if (groupIds.length === 0) return false;
 
-  const [mirrors, scopedGroups] = await Promise.all([
+  const [mirrors, mirrorOwners, scopedGroups] = await Promise.all([
     anyChangedInWindow(groupMirrors, groupMirrors.targetGroupId, groupIds, window),
+    mirrorOwnerMembershipChanged(groupIds, window),
     anyChangedInWindow(groups, groups.id, groupIds, window),
   ]);
 
-  return mirrors || scopedGroups;
+  return mirrors || mirrorOwners || scopedGroups;
 };
 
 /**
