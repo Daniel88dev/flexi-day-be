@@ -10,7 +10,6 @@ type DBConfig = { database: string };
 type AuthConfig = {
   secret: string;
   url: string;
-  trustedOrigins: string[];
   // Google OAuth. Optional: absent in test and until the credentials are
   // provisioned. The client secret is sensitive; the client id is not.
   googleClientId?: string;
@@ -31,7 +30,7 @@ type EmailConfig = {
   configurationSet?: string;
   // Frontend app base URL. better-auth redirects the browser here
   // (`/email-verified/`) after verifying an email token, so it MUST be within
-  // `auth.trustedOrigins` or better-auth rejects the redirect.
+  // `trustedOrigins` or better-auth rejects the redirect.
   appUrl: string;
 };
 
@@ -85,6 +84,12 @@ type DevToolsConfig = {
 type Config = {
   api: APIConfig;
   db: DBConfig;
+  /**
+   * Origins better-auth accepts, web ones plus the phone app's `flexiday://`.
+   * Outside `auth` because that block is absent under test and the e2e suite
+   * drives the origin check.
+   */
+  trustedOrigins: string[];
   auth?: AuthConfig;
   email: EmailConfig;
   quotaRollover: QuotaRolloverConfig;
@@ -247,6 +252,14 @@ const parseSupport = (): SupportConfig | undefined => {
   return { userIds };
 };
 
+const parseTrustedOrigins = (): string[] => {
+  const origins = (process.env.TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  return origins.length > 0 ? origins : ["http://localhost:3000"];
+};
+
 /**
  * The disk store is a development stand-in: per-instance, ephemeral, and it
  * mounts session-less upload and download routes. Production must name a
@@ -288,12 +301,12 @@ export const config: Config = {
   db: {
     database: databaseUrl,
   },
+  trustedOrigins: parseTrustedOrigins(),
   auth:
     environment !== "test"
       ? {
           secret: envOrThrow("BETTER_AUTH_SECRET"),
           url: envOrThrow("BETTER_AUTH_URL"),
-          trustedOrigins: process.env.TRUSTED_ORIGINS?.split(",") ?? ["http://localhost:3000"],
           googleClientId: process.env.GOOGLE_CLIENT_ID,
           googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
           microsoftClientId: process.env.MICROSOFT_CLIENT_ID,

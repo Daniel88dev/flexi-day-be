@@ -85,13 +85,16 @@ resource "aws_s3_bucket_lifecycle_configuration" "attachments" {
 
 # The presigned POST is a cross-origin form post from the frontend; the
 # presigned GET is opened or fetched from there too.
+#
+# Browser origins only: `trusted_origins` also carries the phone app's URL
+# scheme, and nothing native ever sends a preflight.
 resource "aws_s3_bucket_cors_configuration" "attachments" {
   bucket = aws_s3_bucket.attachments.id
 
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "POST"]
-    allowed_origins = var.trusted_origins
+    allowed_origins = [for origin in var.trusted_origins : origin if can(regex("^https?://", origin))]
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }

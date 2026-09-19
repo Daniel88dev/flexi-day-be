@@ -20,6 +20,8 @@ import { getRequestContext, updateRequestContext } from "../../utils/requestStor
 
 const UUID_A = "6f1b3c2e-1d4a-4b7e-9c2f-0a1b2c3d4e5f";
 const UUID_B = "9a8b7c6d-5e4f-4a3b-8c9d-1e2f3a4b5c6d";
+// The phone mints a base64 device id, which is not UUID-shaped.
+const DEVICE_ID = "S3ZXHSMlXqZrkZSF0Zl0z1wfcpbCJoGPjM4aEo5cEcs=";
 
 const makeReqResNext = (
   headers: Record<string, string> = {},
@@ -111,10 +113,12 @@ describe("requestContext middleware", () => {
     });
   });
 
-  it("drops client ids that are not UUID-shaped rather than logging attacker input", () => {
+  it("drops client ids that are not the accepted shape rather than logging attacker input", () => {
     const { req, res, next } = makeReqResNext({
       "x-client-session-id": "'; DROP TABLE user; --",
       "x-client-device-id": "x".repeat(500),
+      "x-client-platform": "windows-phone",
+      "x-client-app-version": "9".repeat(200),
     });
     let ctx: ReturnType<typeof getRequestContext>;
     (next as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
@@ -125,7 +129,54 @@ describe("requestContext middleware", () => {
 
     expect(ctx?.clientSessionId).toBeUndefined();
     expect(ctx?.clientDeviceId).toBeUndefined();
+    expect(ctx?.clientPlatform).toBeUndefined();
+    expect(ctx?.clientAppVersion).toBeUndefined();
     expect(Sentry.setTag).not.toHaveBeenCalledWith("client_session_id", expect.anything());
+    // Dropped whole, so no prefix of an over-long value reaches an attribute.
+    expect(JSON.stringify(vi.mocked(Sentry.setAttributes).mock.calls)).not.toContain("999");
+  });
+
+  it("keeps the session id UUID-only while the device id takes the phone's shape", () => {
+    const { req, res, next } = makeReqResNext({
+      "x-client-session-id": DEVICE_ID,
+      "x-client-device-id": DEVICE_ID,
+    });
+    let ctx: ReturnType<typeof getRequestContext>;
+    (next as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      ctx = getRequestContext();
+    });
+
+    requestContext(req, res, next);
+
+    expect(ctx?.clientSessionId).toBeUndefined();
+    expect(ctx?.clientDeviceId).toBe(DEVICE_ID);
+  });
+
+  it("carries the phone's platform and app version onto the context and Sentry", () => {
+    const { req, res, next } = makeReqResNext({
+      "x-client-device-id": DEVICE_ID,
+      "x-client-platform": "ios",
+      "x-client-app-version": "1.0.0+12",
+    });
+    let ctx: ReturnType<typeof getRequestContext>;
+    (next as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      ctx = getRequestContext();
+    });
+
+    requestContext(req, res, next);
+
+    expect(ctx).toMatchObject({
+      clientDeviceId: DEVICE_ID,
+      clientPlatform: "ios",
+      clientAppVersion: "1.0.0+12",
+    });
+    expect(Sentry.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({
+        "client.device_id": DEVICE_ID,
+        "client.platform": "ios",
+        "client.app_version": "1.0.0+12",
+      })
+    );
   });
 
   it("registers Sentry attributes and tags for the request", () => {

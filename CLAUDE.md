@@ -136,7 +136,10 @@ and response schemas, auth requirements, error codes, parameter validation. Foll
 - E2E: `src/**/*.e2e.test.ts`, run with `npm run test:e2e` — it checks the DB connection first
   (`src/tests/e2e/check-db.ts`) and reads `.env.e2e.test`. Real database, helpers in
   `src/tests/e2e/helpers/`, and each test cleans up after itself. `npm run docker:e2e:run` runs
-  the suite against a containerised Postgres, as CI does.
+  the suite against a containerised Postgres, as CI does. `.env.e2e.test` is gitignored and has no
+  tracked example, so write it by hand on a fresh clone; besides the database and better-auth
+  values it must set `TRUSTED_ORIGINS=http://localhost:3000,flexiday://`, the same value `ci.yml`
+  exports, or the origin-check suite fails.
 
 ## Configuration
 

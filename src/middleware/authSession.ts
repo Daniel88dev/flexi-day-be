@@ -5,6 +5,11 @@ import { auth } from "../utils/auth.js";
 import { logger } from "./logger.js";
 import AppError from "../utils/appError.js";
 import { updateRequestContext } from "../utils/requestStore.js";
+import {
+  SESSION_DEVICE_MISMATCH,
+  SESSION_DEVICE_MISMATCH_MESSAGE,
+  isDeviceMismatchError,
+} from "../utils/nativeSession.js";
 
 export type AuthSession = {
   sessionId: string;
@@ -35,6 +40,20 @@ export const authSession = async (req: Request, res: Response, next: NextFunctio
     updateRequestContext({ userId: session.user.id });
     next();
   } catch (err) {
+    // The device check runs inside better-auth, so it arrives as a rejected
+    // `auth.api` call rather than a response, and `errorMiddleware` would
+    // otherwise answer 500 for what is a 401 the phone has to recognise.
+    // `logging: false` because the hook already logged the warning.
+    if (isDeviceMismatchError(err)) {
+      return next(
+        new AppError({
+          message: SESSION_DEVICE_MISMATCH_MESSAGE,
+          code: 401,
+          logging: false,
+          publicContext: { code: SESSION_DEVICE_MISMATCH },
+        })
+      );
+    }
     logger.error("authSession", { error: err });
     return next(err);
   }

@@ -1,14 +1,28 @@
 import * as Sentry from "@sentry/node";
-import { betterAuth } from "better-auth";
+import { expo } from "@better-auth/expo";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { setSessionCookie } from "better-auth/cookies";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db/db.js";
-import { account as accountTable, user as userTable } from "../db/schema/auth-schema.js";
+import {
+  account as accountTable,
+  session as sessionTable,
+  user as userTable,
+} from "../db/schema/auth-schema.js";
 import { customSession, haveIBeenPwned, openAPI, twoFactor } from "better-auth/plugins";
 import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
 import { buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
+import {
+  deviceMismatchError,
+  isDeviceMismatch,
+  nativeClientOf,
+  nativeSessionEviction,
+  nativeSessionStamp,
+} from "./nativeSession.js";
 
 // better-auth's default verification-token expiry is 3600 s. Keep this string
 // in sync if `emailVerification.expiresIn` is ever configured below.
@@ -23,6 +37,36 @@ const RESET_EXPIRES_IN = "1 hour";
 const OTP_EXPIRES_IN = "3 minutes";
 
 const socialProviders = buildSocialProviders(config?.auth);
+
+/**
+ * One phone, one session. A plugin hook rather than the user-level
+ * `hooks.after` below, because better-auth runs that one before every plugin's
+ * and the two-factor redirect is not in the body yet when it does — see "One
+ * phone holds one session" in `docs/invariants.md`.
+ */
+const nativeSessionEvictionPlugin = {
+  id: "native-session-eviction",
+  hooks: {
+    after: [
+      {
+        matcher: () => true,
+        handler: createAuthMiddleware(async (ctx) => {
+          const eviction = nativeSessionEviction(ctx);
+          if (!eviction) return;
+
+          await db
+            .delete(sessionTable)
+            .where(
+              and(
+                eq(sessionTable.deviceId, eviction.deviceId),
+                ne(sessionTable.id, eviction.keepSessionId)
+              )
+            );
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin;
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -158,10 +202,108 @@ export const auth = betterAuth({
     window: 10,
     max: 50,
   },
-  trustedOrigins: config?.auth?.trustedOrigins ?? [],
+  session: {
+    // `input: false` keeps them off the request body: only the hook below
+    // writes them, from headers that were matched against a bounded pattern.
+    additionalFields: {
+      deviceId: { type: "string", required: false, input: false },
+      platform: { type: "string", required: false, input: false },
+      appVersion: { type: "string", required: false, input: false },
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        // Stamps the phone that opened the session and a flat ten-year expiry.
+        // Fires twice on a two-factor sign-in — the throwaway pre-challenge
+        // session and the real one — and stamps both. A web sign-in falls
+        // through to better-auth's own seven days.
+        before: (_session, context) => {
+          const stamp = nativeSessionStamp(context);
+          return Promise.resolve(stamp ? { data: stamp } : undefined);
+        },
+      },
+    },
+  },
+  hooks: {
+    // Covers the app's own routes as well as better-auth's: `authSession`
+    // reaches better-auth through `auth.api`, which runs this same pipeline.
+    //
+    // It reads the one column it needs rather than calling `getSessionFromCtx`.
+    // That helper runs the whole /get-session endpoint, which refreshes the
+    // session, writes the cookie cache and appends `Set-Cookie` — side effects
+    // this check has no business causing on a sign-in or a password reset — and
+    // its memo saves nothing, because /get-session, the path `authSession`
+    // actually takes, re-reads the row regardless.
+    before: createAuthMiddleware(async (ctx) => {
+      const token = await ctx.getSignedCookie(
+        ctx.context.authCookies.sessionToken.name,
+        ctx.context.secret
+      );
+      if (!token) return;
+
+      const [row] = await db
+        .select({
+          id: sessionTable.id,
+          userId: sessionTable.userId,
+          deviceId: sessionTable.deviceId,
+        })
+        .from(sessionTable)
+        .where(eq(sessionTable.token, token))
+        .limit(1);
+
+      const requestDeviceId = nativeClientOf(ctx)?.deviceId ?? null;
+      if (!row || !isDeviceMismatch(row.deviceId, requestDeviceId)) return;
+
+      // Deleted, not just refused, so the mismatch cannot be retried with the
+      // right id. Both device ids are logged in full: neither is a secret —
+      // forging one buys nothing — and both are already bounded by
+      // `readNativeClient` before they reach a log line.
+      await db.delete(sessionTable).where(eq(sessionTable.id, row.id));
+      logger.warn("session.device_mismatch", {
+        "session.id": row.id,
+        "user.id": row.userId,
+        "session.device_id": row.deviceId,
+        "request.device_id": requestDeviceId,
+      });
+
+      throw deviceMismatchError();
+    }),
+    // Path-agnostic on purpose: any endpoint that hands a native request a new
+    // session gets the phone's cookie, which covers the email sign-in and all
+    // three two-factor verify endpoints without a path list. better-auth's own
+    // helper re-issues it, so name, signature and attributes stay identical
+    // and only the lifetime changes. It drops the seven-day `Max-Age` rather
+    // than raising it: a cookie cannot say ten years — better-call caps one at
+    // 400 days — and one with no expiry lives until the server ends it, which
+    // leaves the row's expiry as the session's only lifetime. The endpoint's
+    // own cookie is already on the response; this one trails it, and the last
+    // `Set-Cookie` of a name is the one every client keeps.
+    after: createAuthMiddleware(async (ctx) => {
+      const newSession = ctx.context.newSession;
+      if (!newSession || !nativeClientOf(ctx)) return;
+
+      await setSessionCookie(ctx, newSession, undefined, { maxAge: undefined });
+    }),
+  },
+  trustedOrigins: config.trustedOrigins,
+  advanced: {
+    // Stated because better-auth skips the origin check on its own whenever
+    // NODE_ENV is "test" — the environment the e2e suite runs in, which would
+    // leave a TRUSTED_ORIGINS mistake to surface in production.
+    disableOriginCheck: false,
+  },
+  // A betterAuth option, not a plugin one: `expo()`'s only option is
+  // `disableOriginOverride`. Its authorization proxy redirects to any https
+  // URL its query names, and nothing signs in that way.
+  disabledPaths: ["/expo-authorization-proxy"],
   plugins: [
     haveIBeenPwned(),
     openAPI(),
+    // A native fetch sends no `Origin`, so the app sends `expo-origin` and
+    // this copies it across when there is none — an input to the origin check
+    // and nothing else. What makes a request native is `readNativeClient`.
+    expo(),
     // 2FA gates password sign-in only — social sign-in never enters the
     // plugin's hook. `skipVerificationOnEnable` stays unset: enrollment must
     // be proven with a code before `twoFactorEnabled` flips, so an abandoned
@@ -199,6 +341,8 @@ export const auth = betterAuth({
         },
       },
     }),
+    // After `twoFactor`, so it sees the redirect body that plugin returns.
+    nativeSessionEvictionPlugin,
     // Last on purpose (better-auth infers session fields added by earlier
     // plugins into this callback). Rides on the session fetch the client
     // already makes, so the frontend learns whether to render the support UI

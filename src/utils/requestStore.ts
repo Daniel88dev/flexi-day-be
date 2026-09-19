@@ -1,9 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { ClientPlatform } from "./clientHeaders.js";
 
 export type RequestContext = {
   requestId: string;
   clientSessionId?: string;
   clientDeviceId?: string;
+  clientPlatform?: ClientPlatform;
+  clientAppVersion?: string;
   method: string;
   /** Redacted — the calendar feed carries its token here. */
   path: string;
