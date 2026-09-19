@@ -122,12 +122,30 @@ under-protects the endpoints that matter:
 The store is in-memory: counters are per-process and reset on deploy. Running more than one instance
 multiplies the effective limits — that needs a shared store before scaling out.
 
+## Sync pull transport (`src/routes/syncRouter.ts`)
+
+`GET /api/sync/pull` is the phone app's whole view of the backend, so its transport is part of the
+contract rather than a tuning detail. See [`sync-pull.md`](sync-pull.md) for what it answers.
+
+- **It is the only compressed surface.** `compression` is mounted on the sync router alone, not in
+  `server.ts`, and with `threshold: 0` so a small delta is encoded like a large snapshot. Moving it
+  up to the app would start compressing every other API response, which is a decision nothing has
+  taken: `src/tests/e2e/syncPullTransport.e2e.test.ts` asserts an over-threshold body on another
+  `/api` route still comes back uncompressed.
+- **It adds no limiter of its own.** The router is mounted under `/api`, so it sits behind
+  `apiFailureLimiter`, `authSession` and `apiLimiter` like every other API route, and a pull spends
+  the same per-session budget a web request does. The e2e suite pins that from outside: a pull
+  carries the same rate-limit header names, limit and policy as `/api/group`. A sync-specific
+  limiter would let a phone loop past the budget the rest of the API holds a user to.
+- **Every response is `no-store`.** The envelope is selected by the caller's user id, so no cache
+  may hold it, and the header survives compression.
+
 ## Organization admin boundary (`organization_users`)
 
 See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
 
-- **Owner-or-row.** The owner holds no `organization_users` row, exactly as a group's manager
-  holds no `group_users` row. Querying the table alone answers half the question — always go
+- **Owner-or-row.** The owner holds no `organization_users` row; `organizations.ownerUserId` is
+  the other half of the answer. Querying the table alone answers half the question — always go
   through `isOrganizationAdmin`, and for group standing through the `groupUser/groupAccess.ts`
   resolvers, which credit the manager as well as the membership row.
 - **Administration, never approval.** `assertGroupAdmin` / `validateUserGroupAccess` accept org
@@ -200,9 +218,9 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
   organization and its owner's Employment are a single fact and checkout creates one outside any
   boundary.
 - **Reading an Employment is wider than belonging to one.** `attendanceAccess.ts` is the only
-  statement of who may read and correct one, and it deliberately leaves a manager's own Employment
-  — and anyone else's who belongs to no group — to org admins alone, because no group admin's
-  scope contains someone with no `group_users` row.
+  statement of who may read and correct one, and it deliberately leaves the Employment of anybody
+  who belongs to no group — a manager whose own group holds no membership row for them, say — to
+  org admins alone, because a group admin's scope reaches only people who hold a `group_users` row.
 
 ## Billing config is opt-in (`src/config.ts`)
 

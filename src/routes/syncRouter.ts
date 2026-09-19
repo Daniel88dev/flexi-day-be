@@ -27,11 +27,13 @@ export const syncRouter = (): Router => {
    *       no joined summaries and no per-row verdicts. Every partitioned row
    *       carries `organizationId`.
    *
-   *       Scope is membership-only, exactly the web dashboard and calendar. A
-   *       group where the caller has view access, admin access, or is the
-   *       manager returns its whole member list; a group where they are a plain
-   *       member returns only their own membership row. A group the caller only
-   *       administers as an org admin is not included.
+   *       Scope is membership-only, exactly the web dashboard and calendar,
+   *       and it is read from the caller's live `group_users` rows. A group
+   *       they hold no such row in is left out whatever else they are there,
+   *       an org admin of the owning organization or the group's own manager.
+   *       A group where their row carries view access or admin access, or
+   *       where they are the manager, returns its whole member list; a group
+   *       where they are a plain member returns only their own membership row.
    *
    *       `vacations` splits the same way: a group seen in full carries every
    *       member's bookings, a self-scoped group only the caller's. On top of
@@ -56,12 +58,15 @@ export const syncRouter = (): Router => {
    *       source group and the mirrored person ship in `groups` and `users` so
    *       the client can label them. A mirror is only followed while its owner
    *       still belongs to the target group: once they leave, neither the
-   *       mirror row nor the bookings it projected arrive. A tombstone is the
-   *       exception — a removed mirror still arrives with `deletedAt` set,
-   *       whether or not its owner is still a member, because the client holds
-   *       a copy it has to be told to drop. A mirror into a
+   *       mirror row nor the bookings it projected arrive. A mirror into a
    *       self-scoped group brings neither, because the mirror is a row of the
    *       target group the caller does not see in full.
+   *
+   *       A mirror appearing in or leaving a group the caller belongs to is
+   *       a sync reset trigger, so a removed mirror is answered by a snapshot
+   *       that no longer carries it rather than by a tombstone, and the client
+   *       drops it in the sweep that follows a reset. The same holds when the
+   *       mirror's owner leaves or rejoins the target group.
    *
    *       Bookings are raw rows, `note` and `rejectionReason` included, with
    *       no per-row verdict — whether the caller may approve or cancel one
@@ -79,7 +84,12 @@ export const syncRouter = (): Router => {
    *       it, who rejected it and who cancelled it. Those actors arrive
    *       whatever their own `updatedAt` says, and on a paged pull they arrive
    *       before the bookings that name them, so no returned booking ever
-   *       names somebody the client cannot resolve.
+   *       names somebody the client cannot resolve. The people on the
+   *       membership rows a pull carries arrive the same way, so a member
+   *       added to a group seen in full is never nameless. Everybody else in
+   *       the set arrives only when their own row changed since the cursor,
+   *       which is how an approver renamed long after a booking settled
+   *       reaches the client.
    *
    *       `users` and `userYearQuotas` carry no `deletedAt` and so ship no
    *       tombstones. Somebody who leaves a group stays in `users` as a stale
@@ -94,10 +104,12 @@ export const syncRouter = (): Router => {
    *       group-wide calendar marks. A country held only by a group the caller
    *       is not a member of is absent, and none of a group they have left, a
    *       soft-deleted one a delta still tombstones, or the source group of a
-   *       mirror adds one. Before reading, the server
-   *       computes and stores any of those country-and-year pairs it has never
-   *       seen, so a first pull for a new country is never empty; those rows
-   *       are new, so they arrive on the pull that created them. The rows are
+   *       mirror adds one. Before reading, the server computes and stores any
+   *       of those country-and-year pairs it has never seen, so a first pull
+   *       for a new country is never empty; those rows are new, so they arrive
+   *       on the pull that created them. They are stamped after that pull's
+   *       position was minted, so the next delta carries them once more, like
+   *       any row the overlap repeats. The rows are
    *       unpartitioned reference data: no `organizationId`, no `deletedAt`
    *       and so no tombstones, and a holiday that leaves the window drops off
    *       at the next sync reset like any other dated row.
@@ -118,8 +130,12 @@ export const syncRouter = (): Router => {
    *       A pull carrying a cursor answers a delta: `reset` is `false` and each
    *       table holds only the rows whose `updatedAt` is later than the cursor
    *       time minus 60 seconds and no later than the position this pull was
-   *       minted with, ordered by `updatedAt` then `id`.
-   *       `organizations` names the organization of every group in the delta.
+   *       minted with, ordered by `updatedAt` then `id`. `bankHolidays` is the
+   *       one table bounded from below alone, so the rows its own fill just
+   *       wrote are not held back. `organizations` names the organization of
+   *       every group in the delta and only those: an organization renamed on
+   *       its own carries no group with it, so the new name reaches the client
+   *       on the next pull that does carry one of its groups.
    *       The 60 second overlap covers the clock difference between the
    *       database, which stamps inserts, and the server instance that stamps
    *       an update, so the same row may arrive on two consecutive pulls; a
@@ -129,11 +145,14 @@ export const syncRouter = (): Router => {
    *       A soft-deleted row arrives in a delta as a tombstone: the whole row
    *       with `deletedAt` set, so the client can drop its copy. In a group
    *       the caller sees in full that is the membership of anybody else who
-   *       left it. Their own removal, a group of theirs being deleted and a
-   *       mirror removed from one are reset triggers instead, so the snapshot
-   *       that answers them stops carrying those rows rather than tombstoning
-   *       them. A snapshot holds live membership rows only, for the same
-   *       reason — the client sweeps whatever the snapshot did not re-send.
+   *       left it, and beyond their own groups it is the row of a group they
+   *       have left and still hold bookings in, whose deletion triggers
+   *       nothing because they no longer belong to it. Their own removal, a
+   *       group of theirs being deleted and a mirror added to or removed from
+   *       one are reset triggers instead, so the snapshot that answers them
+   *       stops carrying those rows rather than tombstoning them. A snapshot
+   *       holds live membership and mirror rows only, for the same reason —
+   *       the client sweeps whatever the snapshot did not re-send.
    *
    *       A cancelled booking arrives the same way, in full with `deletedAt`
    *       and `deletedByUserId` set, but the client keeps it rather than
@@ -146,11 +165,13 @@ export const syncRouter = (): Router => {
    *       cursor, a cursor the server cannot decode, a cursor minted by another
    *       cursor version, a cursor whose time is more than 30 days old, a
    *       cursor whose time is more than 60 seconds ahead of the server clock,
-   *       a cursor minted in an earlier calendar year than the pull (the
-   *       history window has moved, and only a snapshot lets the client sweep
-   *       the rows that fell out of it), a cursor whose paging state the
-   *       server cannot resume, or anything
-   *       else it cannot read as one cursor, such as the parameter repeated. A
+   *       a fresh pull whose cursor was minted in an earlier calendar year
+   *       (the history window has moved, and only a snapshot lets the client
+   *       sweep the rows that fell out of it; a cursor resuming a paged loop
+   *       is not checked for this and finishes on the window it started
+   *       with), a cursor whose paging state the
+   *       server cannot resume, or anything else it cannot read as one
+   *       cursor, such as the parameter repeated. A
    *       cursor is never rejected with an error, and an unusable one mid-loop
    *       restarts the loop as a fresh snapshot.
    *
@@ -181,8 +202,9 @@ export const syncRouter = (): Router => {
    *       A pull is paged at a fixed 1000 rows across all tables, and there is
    *       no `limit` parameter. When more rows are waiting, `hasMore` is `true`
    *       and the same opaque `cursor` also carries the table the page stopped
-   *       in and the last row it took. The client loops: send back the cursor
-   *       it was just handed, apply each page as it lands, and stop at the page
+   *       in, the last row it took and which kind of loop it belongs to, so
+   *       `reset` cannot flip halfway through. The client loops: send back the
+   *       cursor it was handed, apply each page as it lands, and stop at the page
    *       that answers `hasMore: false`. Only that last cursor is worth storing
    *       for the next pull, and it decodes to the position minted on the first
    *       page of the loop.
@@ -198,13 +220,14 @@ export const syncRouter = (): Router => {
    *       resumes inside one table carries the tables before it as empty
    *       arrays: they landed on an earlier page.
    *
-   *       A pull sent with `Accept-Encoding: gzip` is answered gzip-encoded,
-   *       whatever the size of the page, and the response says so with
-   *       `Content-Encoding: gzip`. The coding is negotiated from the request
-   *       header, so a client advertising `br` or `deflate` instead may get
-   *       one of those; a request advertising none gets plain JSON. This is
-   *       the only compressed route in the API. The
-   *       payload is the same either way, and every response carries
+   *       A pull is answered encoded whatever the size of the page, and the
+   *       response names the coding in `Content-Encoding`. It is negotiated
+   *       from the request header with Brotli preferred over gzip, so a client
+   *       sending `Accept-Encoding: gzip` is answered `gzip` and one that also
+   *       offers `br` is answered `br`; a request advertising no coding at all
+   *       gets plain JSON. This is
+   *       the only compressed route in the API. The payload is the same
+   *       either way, and every response carries
    *       `Cache-Control: no-store`: it is one caller's rows and no cache may
    *       hold it.
    *     security:
@@ -231,9 +254,9 @@ export const syncRouter = (): Router => {
    *             schema:
    *               type: string
    *             description: |
-   *               `gzip` when the request sent `Accept-Encoding: gzip`; `br` or
-   *               `deflate` when the request advertised only those; absent when
-   *               it advertised none
+   *               `br` when the request accepts Brotli, `gzip` when it accepts
+   *               gzip and not Brotli, `deflate` when that is all it offers;
+   *               absent when it advertised none
    *           Vary:
    *             schema:
    *               type: string
