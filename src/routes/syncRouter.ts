@@ -1,9 +1,14 @@
 import { Router } from "express";
+import compression from "compression";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetSyncPull } from "../controllers/sync/handleGetSyncPull.js";
 
 export const syncRouter = (): Router => {
   const app = Router();
+
+  // `threshold: 0` rather than the default 1 KB: the client's transport
+  // contract should not depend on how big a given page happens to be.
+  app.use(compression({ threshold: 0 }));
 
   /**
    * @openapi
@@ -188,6 +193,14 @@ export const syncRouter = (): Router => {
    *       Tables arrive in dependency order across the loop, so a page that
    *       resumes inside one table carries the tables before it as empty
    *       arrays: they landed on an earlier page.
+   *
+   *       A pull sent with `Accept-Encoding: gzip` is answered gzip-encoded,
+   *       whatever the size of the page, and the response says so with
+   *       `Content-Encoding: gzip`; without that request header the body is
+   *       plain JSON. This is the only compressed route in the API. The
+   *       payload is the same either way, and every response carries
+   *       `Cache-Control: no-store`: it is one caller's rows and no cache may
+   *       hold it.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -203,6 +216,21 @@ export const syncRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: One page of the caller's rows
+   *         headers:
+   *           Cache-Control:
+   *             schema:
+   *               type: string
+   *             description: Always `no-store`
+   *           Content-Encoding:
+   *             schema:
+   *               type: string
+   *             description: |
+   *               `gzip` when the request sent `Accept-Encoding: gzip`, absent
+   *               otherwise
+   *           Vary:
+   *             schema:
+   *               type: string
+   *             description: Includes `Accept-Encoding`
    *         content:
    *           application/json:
    *             schema:
