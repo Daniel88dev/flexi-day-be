@@ -137,9 +137,9 @@ variable "manage_dns_validation_records" {
 }
 
 variable "trusted_origins" {
-  description = "Frontend origins allowed for CORS / Better Auth (TRUSTED_ORIGINS env)"
+  description = "Origins allowed for Better Auth (TRUSTED_ORIGINS env), including the phone app's flexiday:// scheme; attachments.tf filters this to the http(s) entries for the bucket's CORS rule."
   type        = list(string)
-  default     = ["https://flexi-day.com", "https://www.flexi-day.com"]
+  default     = ["https://flexi-day.com", "https://www.flexi-day.com", "flexiday://"]
 }
 
 # Developer DB access (IAM authentication)

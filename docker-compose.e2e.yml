@@ -29,6 +29,8 @@ services:
       DATABASE: postgresql://postgres:password@postgres:5432/testdb
       BETTER_AUTH_SECRET: test-secret-key-for-e2e-testing-only
       BETTER_AUTH_URL: http://localhost:8080
+      # The origin-check suite signs in with the phone app's scheme.
+      TRUSTED_ORIGINS: http://localhost:3000,flexiday://
     command: >
       sh -c "
         npm run db:migrate &&

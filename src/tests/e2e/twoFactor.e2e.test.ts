@@ -38,6 +38,13 @@ describe("two-factor authentication", () => {
   let totpSecret: string;
   let backupCodes: string[];
 
+  // better-auth's CSRF check requires an Origin on a cookie-bearing POST, as
+  // every browser sends and `advanced.disableOriginCheck: false` keeps on here.
+  const BROWSER_ORIGIN = "http://localhost:3000";
+
+  const postWithCookie = (path: string, cookie: string) =>
+    request(app).post(path).set("Origin", BROWSER_ORIGIN).set("Cookie", cookie);
+
   const cookiesOf = (res: request.Response): string =>
     (res.headers["set-cookie"] as unknown as string[] | undefined)
       ?.map((c) => c.split(";")[0])
@@ -82,10 +89,9 @@ describe("two-factor authentication", () => {
 
   it("refuses to start enrollment with a wrong password", async () => {
     const cookie = await authCookieFor(userId);
-    const res = await request(app)
-      .post("/api/auth/two-factor/enable")
-      .set("Cookie", cookie)
-      .send({ password: "not-the-password" });
+    const res = await postWithCookie("/api/auth/two-factor/enable", cookie).send({
+      password: "not-the-password",
+    });
 
     // Pinned (not >= 400): a 429 from the shared credentialsLimiter store
     // would otherwise satisfy this without proving the password check.
@@ -96,10 +102,7 @@ describe("two-factor authentication", () => {
 
   it("hands out the TOTP URI and backup codes without flipping the flag yet", async () => {
     const cookie = await authCookieFor(userId);
-    const res = await request(app)
-      .post("/api/auth/two-factor/enable")
-      .set("Cookie", cookie)
-      .send({ password });
+    const res = await postWithCookie("/api/auth/two-factor/enable", cookie).send({ password });
 
     expect(res.status).toBe(200);
     expect(res.body.totpURI).toContain("otpauth://totp/");
@@ -117,10 +120,9 @@ describe("two-factor authentication", () => {
 
   it("activates 2FA once a TOTP code proves the authenticator", async () => {
     const cookie = await authCookieFor(userId);
-    const res = await request(app)
-      .post("/api/auth/two-factor/verify-totp")
-      .set("Cookie", cookie)
-      .send({ code: await totpCode() });
+    const res = await postWithCookie("/api/auth/two-factor/verify-totp", cookie).send({
+      code: await totpCode(),
+    });
 
     expect(res.status).toBe(200);
     const [row] = await db.select().from(user).where(eq(user.id, userId));
@@ -140,16 +142,14 @@ describe("two-factor authentication", () => {
     const challenge = await signIn();
     const challengeCookies = cookiesOf(challenge);
 
-    const wrong = await request(app)
-      .post("/api/auth/two-factor/verify-totp")
-      .set("Cookie", challengeCookies)
-      .send({ code: "000000" });
+    const wrong = await postWithCookie("/api/auth/two-factor/verify-totp", challengeCookies).send({
+      code: "000000",
+    });
     expect(wrong.status).toBe(401);
 
-    const right = await request(app)
-      .post("/api/auth/two-factor/verify-totp")
-      .set("Cookie", challengeCookies)
-      .send({ code: await totpCode() });
+    const right = await postWithCookie("/api/auth/two-factor/verify-totp", challengeCookies).send({
+      code: await totpCode(),
+    });
     expect(right.status).toBe(200);
 
     const sessionCookies = cookiesOf(right);
@@ -161,18 +161,18 @@ describe("two-factor authentication", () => {
 
   it("accepts a backup code exactly once", async () => {
     const first = await signIn();
-    const res = await request(app)
-      .post("/api/auth/two-factor/verify-backup-code")
-      .set("Cookie", cookiesOf(first))
-      .send({ code: backupCodes[0] });
+    const res = await postWithCookie(
+      "/api/auth/two-factor/verify-backup-code",
+      cookiesOf(first)
+    ).send({ code: backupCodes[0] });
     expect(res.status).toBe(200);
     expect(cookiesOf(res)).toContain("session_token");
 
     const second = await signIn();
-    const replay = await request(app)
-      .post("/api/auth/two-factor/verify-backup-code")
-      .set("Cookie", cookiesOf(second))
-      .send({ code: backupCodes[0] });
+    const replay = await postWithCookie(
+      "/api/auth/two-factor/verify-backup-code",
+      cookiesOf(second)
+    ).send({ code: backupCodes[0] });
     expect(replay.status).toBe(401);
   });
 
@@ -208,20 +208,13 @@ describe("two-factor authentication", () => {
 
     // Enroll: enable, then prove the address instead of an authenticator.
     const cookie = await authCookieFor(otpUserId);
-    const en = await request(app)
-      .post("/api/auth/two-factor/enable")
-      .set("Cookie", cookie)
-      .send({ password });
+    const en = await postWithCookie("/api/auth/two-factor/enable", cookie).send({ password });
     expect(en.status).toBe(200);
-    const send = await request(app)
-      .post("/api/auth/two-factor/send-otp")
-      .set("Cookie", cookie)
-      .send({});
+    const send = await postWithCookie("/api/auth/two-factor/send-otp", cookie).send({});
     expect(send.status).toBe(200);
-    const verify = await request(app)
-      .post("/api/auth/two-factor/verify-otp")
-      .set("Cookie", cookie)
-      .send({ code: lastCode() });
+    const verify = await postWithCookie("/api/auth/two-factor/verify-otp", cookie).send({
+      code: lastCode(),
+    });
     expect(verify.status).toBe(200);
     const [row] = await db.select().from(user).where(eq(user.id, otpUserId));
     expect(row?.twoFactorEnabled).toBe(true);
@@ -236,25 +229,18 @@ describe("two-factor authentication", () => {
     expect(challenge.body.twoFactorMethods).not.toContain("totp");
 
     const challengeCookies = cookiesOf(challenge);
-    const resend = await request(app)
-      .post("/api/auth/two-factor/send-otp")
-      .set("Cookie", challengeCookies)
-      .send({});
+    const resend = await postWithCookie("/api/auth/two-factor/send-otp", challengeCookies).send({});
     expect(resend.status).toBe(200);
-    const signedIn = await request(app)
-      .post("/api/auth/two-factor/verify-otp")
-      .set("Cookie", challengeCookies)
-      .send({ code: lastCode() });
+    const signedIn = await postWithCookie("/api/auth/two-factor/verify-otp", challengeCookies).send(
+      { code: lastCode() }
+    );
     expect(signedIn.status).toBe(200);
     expect(cookiesOf(signedIn)).toContain("session_token");
   });
 
   it("restores single-factor sign-in when 2FA is disabled with the password", async () => {
     const cookie = await authCookieFor(userId);
-    const res = await request(app)
-      .post("/api/auth/two-factor/disable")
-      .set("Cookie", cookie)
-      .send({ password });
+    const res = await postWithCookie("/api/auth/two-factor/disable", cookie).send({ password });
     expect(res.status).toBe(200);
 
     const signin = await signIn();

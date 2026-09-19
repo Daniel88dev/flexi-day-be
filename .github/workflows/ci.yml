@@ -75,6 +75,7 @@ jobs:
           echo "DATABASE=postgresql://postgres:password@localhost:5432/testdb" >> $GITHUB_ENV
           echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> $GITHUB_ENV
           echo "BETTER_AUTH_URL=http://localhost:8080" >> $GITHUB_ENV
+          echo "TRUSTED_ORIGINS=http://localhost:3000,flexiday://" >> $GITHUB_ENV
 
       - name: Generate database schemas
         run: npm run db:generate

@@ -84,8 +84,9 @@ versioning, so it stays at S3's default, off. The lifecycle rules back up the AP
 rather than replace it. Objects under `incoming/` expire after a day. Everything else expires 1190
 days after upload, which lands past the sweep's twelve months from the Request's last day even for
 a Request booked on the last bookable day, 31 December of next year; the sweep, not the rule, is
-what normally removes a file. CORS allows GET and POST from `trusted_origins`, because both
-presigned requests run in the browser.
+what normally removes a file. CORS allows GET and POST from the http(s) entries of
+`trusted_origins` — both presigned requests run in the browser, and the list also carries the phone
+app's URL scheme, which no browser sends.
 
 The `attachment-processor` Lambda has a role of its own: list the bucket, get under `incoming/`,
 put anywhere except `incoming/`, delete anywhere (the incoming object once handled, and a final

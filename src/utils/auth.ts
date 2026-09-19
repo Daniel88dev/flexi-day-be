@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { and, eq, ne } from "drizzle-orm";
@@ -158,10 +159,24 @@ export const auth = betterAuth({
     window: 10,
     max: 50,
   },
-  trustedOrigins: config?.auth?.trustedOrigins ?? [],
+  trustedOrigins: config.trustedOrigins,
+  advanced: {
+    // Stated because better-auth skips the origin check on its own whenever
+    // NODE_ENV is "test" — the environment the e2e suite runs in, which would
+    // leave a TRUSTED_ORIGINS mistake to surface in production.
+    disableOriginCheck: false,
+  },
+  // A betterAuth option, not a plugin one: `expo()`'s only option is
+  // `disableOriginOverride`. Its authorization proxy redirects to any https
+  // URL its query names, and nothing signs in that way.
+  disabledPaths: ["/expo-authorization-proxy"],
   plugins: [
     haveIBeenPwned(),
     openAPI(),
+    // A native fetch sends no `Origin`, so the app sends `expo-origin` and
+    // this copies it across when there is none — an input to the origin check
+    // and nothing else. What makes a request native is `readNativeClient`.
+    expo(),
     // 2FA gates password sign-in only — social sign-in never enters the
     // plugin's hook. `skipVerificationOnEnable` stays unset: enrollment must
     // be proven with a code before `twoFactorEnabled` flips, so an abandoned

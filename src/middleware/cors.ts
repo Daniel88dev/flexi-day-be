@@ -4,9 +4,12 @@ import { CLIENT_HEADERS } from "../utils/clientHeaders.js";
 
 // Production origins come from the TRUSTED_ORIGINS env var (same list
 // better-auth uses for CSRF protection), e.g. the CloudFront frontend URLs.
+// Browser origins only: the list also carries the phone app's URL scheme, and
+// nothing native ever sends a preflight (`terraform/attachments.tf` filters
+// the bucket's CORS rule the same way).
 const allowedOrigins =
   config.api.env === "production"
-    ? (config.auth?.trustedOrigins ?? [])
+    ? config.trustedOrigins.filter((origin) => /^https?:\/\//.test(origin))
     : [/^http:\/\/localhost:(\d{2,5})$/];
 
 export const serverCors = cors({

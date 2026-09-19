@@ -48,6 +48,7 @@
     "@aws-sdk/client-sesv2": "^3.1131.0",
     "@aws-sdk/s3-presigned-post": "^3.1131.0",
     "@aws-sdk/s3-request-presigner": "^3.1131.0",
+    "@better-auth/expo": "^1.7.4",
     "@paddle/paddle-node-sdk": "^3.10.0",
     "@sentry/node": "^10.74.0",
     "@sentry/profiling-node": "^10.74.0",
