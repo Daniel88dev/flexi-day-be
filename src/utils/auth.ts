@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import { expo } from "@better-auth/expo";
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { setSessionCookie } from "better-auth/cookies";
@@ -20,6 +20,7 @@ import {
   deviceMismatchError,
   isDeviceMismatch,
   nativeClientOf,
+  nativeSessionEviction,
   nativeSessionStamp,
 } from "./nativeSession.js";
 
@@ -36,6 +37,36 @@ const RESET_EXPIRES_IN = "1 hour";
 const OTP_EXPIRES_IN = "3 minutes";
 
 const socialProviders = buildSocialProviders(config?.auth);
+
+/**
+ * One phone, one session. A plugin hook rather than the user-level
+ * `hooks.after` below, because better-auth runs that one before every plugin's
+ * and the two-factor redirect is not in the body yet when it does — see "One
+ * phone holds one session" in `docs/invariants.md`.
+ */
+const nativeSessionEvictionPlugin = {
+  id: "native-session-eviction",
+  hooks: {
+    after: [
+      {
+        matcher: () => true,
+        handler: createAuthMiddleware(async (ctx) => {
+          const eviction = nativeSessionEviction(ctx);
+          if (!eviction) return;
+
+          await db
+            .delete(sessionTable)
+            .where(
+              and(
+                eq(sessionTable.deviceId, eviction.deviceId),
+                ne(sessionTable.id, eviction.keepSessionId)
+              )
+            );
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin;
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -310,6 +341,8 @@ export const auth = betterAuth({
         },
       },
     }),
+    // After `twoFactor`, so it sees the redirect body that plugin returns.
+    nativeSessionEvictionPlugin,
     // Last on purpose (better-auth infers session fields added by earlier
     // plugins into this callback). Rides on the session fetch the client
     // already makes, so the frontend learns whether to render the support UI

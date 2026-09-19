@@ -144,6 +144,57 @@ describe("native session", () => {
     expect(rows[0]).toMatchObject({ deviceId: device, platform: null, appVersion: null });
   });
 
+  it("takes the earlier session's place when the same phone signs in again", async () => {
+    const device = deviceId();
+    const { id, email } = await createWebUser("Same Device Subject");
+
+    const first = await signIn(email, nativeHeaders(device));
+    expect(first.status).toBe(200);
+    const [replaced] = await sessionsOf(id);
+
+    const second = await signIn(email, nativeHeaders(device));
+    expect(second.status).toBe(200);
+
+    const rows = await sessionsOf(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).not.toBe(replaced!.id);
+    expect(rows[0]).toMatchObject({ deviceId: device });
+
+    const stale = await request(app)
+      .get("/api/auth/get-session")
+      .set("Cookie", cookieHeaderOf(first))
+      .set("x-client-device-id", device);
+    expect(stale.status).toBe(200);
+    expect(stale.body?.user).toBeFalsy();
+  });
+
+  it("leaves the other phone signed in when a second device signs in", async () => {
+    const phone = deviceId();
+    const tablet = deviceId();
+    const { id, email } = await createWebUser("Two Device Subject");
+
+    expect((await signIn(email, nativeHeaders(phone))).status).toBe(200);
+    expect((await signIn(email, nativeHeaders(tablet))).status).toBe(200);
+
+    const rows = await sessionsOf(id);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.deviceId).sort()).toEqual([phone, tablet].sort());
+  });
+
+  it("replaces the session on the phone even when someone else signs in", async () => {
+    const device = deviceId();
+    const first = await createWebUser("Handed Over Phone Subject");
+    const second = await createWebUser("Handed The Phone Subject");
+
+    expect((await signIn(first.email, nativeHeaders(device))).status).toBe(200);
+    expect((await signIn(second.email, nativeHeaders(device))).status).toBe(200);
+
+    // The device id is the key, never the user: one phone, one session, no
+    // matter whose account it is.
+    expect(await sessionsOf(first.id)).toHaveLength(0);
+    expect(await sessionsOf(second.id)).toHaveLength(1);
+  });
+
   it("changes nothing about a web sign-in", async () => {
     const { id, email } = await createWebUser("Web Sign In Subject");
 
@@ -267,6 +318,43 @@ describe("native session", () => {
       await db.delete(sessionTable).where(eq(sessionTable.userId, userId));
     });
 
+    it("stands through a challenge, and is replaced by the session that ends it", async () => {
+      const device = deviceId();
+
+      const opened = await signIn(email, nativeHeaders(device));
+      const established = await request(app)
+        .post("/api/auth/two-factor/verify-totp")
+        .set(nativeHeaders(device))
+        .set("Cookie", cookieHeaderOf(opened))
+        .send({ code: await totpCode() });
+      expect(established.status).toBe(200);
+      const [standing] = await sessionsOf(userId);
+      expect(standing).toBeDefined();
+
+      const challenge = await signIn(email, nativeHeaders(device));
+      expect(challenge.body.twoFactorRedirect).toBe(true);
+
+      // The throwaway pre-challenge session must not knock the phone out, so
+      // walking away from the code here costs the person nothing.
+      const during = await sessionsOf(userId);
+      expect(during).toHaveLength(1);
+      expect(during[0]!.id).toBe(standing!.id);
+
+      const verified = await request(app)
+        .post("/api/auth/two-factor/verify-totp")
+        .set(nativeHeaders(device))
+        .set("Cookie", cookieHeaderOf(challenge))
+        .send({ code: await totpCode() });
+      expect(verified.status).toBe(200);
+
+      const rows = await sessionsOf(userId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.id).not.toBe(standing!.id);
+      expect(rows[0]).toMatchObject({ deviceId: device });
+
+      await db.delete(sessionTable).where(eq(sessionTable.userId, userId));
+    });
+
     it("stamps the pre-challenge session too, which a trusted device keeps", async () => {
       const device = deviceId();
 
@@ -294,6 +382,47 @@ describe("native session", () => {
       expect(rows[0]).toMatchObject({ deviceId: device });
       expect(yearsUntil(rows[0]!.expiresAt)).toBeGreaterThan(9.9);
       expectNoCookieExpiry(res, SESSION_COOKIE);
+    });
+
+    /**
+     * The `send-otp` limiter needed nothing of its own for the phone, which is
+     * a claim worth driving rather than reading: the expo client forwards its
+     * cookie jar as a `Cookie` header, so a real native challenge keys on that
+     * cookie exactly as a browser does, and two phones behind one NAT never
+     * pool into a single budget.
+     */
+    it("keys a native request on the cookie it carries, not on its IP", async () => {
+      const sendOtp = (challenge: request.Response, device: string) =>
+        request(app)
+          .post("/api/auth/two-factor/send-otp")
+          .set(nativeHeaders(device))
+          .set("Cookie", cookieHeaderOf(challenge))
+          .send({});
+
+      const budgetOf = (res: request.Response) => ({
+        limit: Number(res.headers["ratelimit-limit"]),
+        remaining: Number(res.headers["ratelimit-remaining"]),
+      });
+
+      const device = deviceId();
+      const challenge = await signIn(email, nativeHeaders(device));
+      expect(challenge.body.twoFactorRedirect).toBe(true);
+
+      const first = budgetOf(await sendOtp(challenge, device));
+      const repeat = budgetOf(await sendOtp(challenge, device));
+
+      // Mounted last of the limiters on this path, so these headers are its
+      // own: a fresh budget for this challenge, spent one request at a time.
+      expect(first.remaining).toBe(first.limit - 1);
+      expect(repeat.remaining).toBe(first.remaining - 1);
+
+      // Same IP, same phone, a second challenge: a budget of its own, which an
+      // IP-keyed limiter could not hand it.
+      const second = await signIn(email, nativeHeaders(deviceId()));
+      expect(second.body.twoFactorRedirect).toBe(true);
+      const elsewhere = budgetOf(await sendOtp(second, device));
+
+      expect(elsewhere.remaining).toBe(first.remaining);
     });
   });
 

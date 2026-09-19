@@ -44,6 +44,43 @@ export const nativeSessionStamp = (
   return { ...client, expiresAt: nativeSessionExpiresAt(now) };
 };
 
+/** A request context after the endpoint has answered, with what it answered. */
+type AfterContext = RequestContext & {
+  context?:
+    | {
+        newSession?: { session?: { id?: string | null } | null } | null | undefined;
+        returned?: unknown;
+      }
+    | null
+    | undefined;
+};
+
+/** What the twoFactor plugin answers a sign-in with when it still owes a code. */
+const isTwoFactorRedirect = (returned: unknown): boolean =>
+  typeof returned === "object" &&
+  returned !== null &&
+  (returned as { twoFactorRedirect?: unknown }).twoFactorRedirect === true;
+
+/** The phone a response signed in, and the one session it is left holding. */
+export type NativeSessionEviction = { deviceId: string; keepSessionId: string };
+
+/**
+ * One phone, one session: whose other sessions this response ends. Null for a
+ * web request, for a response that carries no new session, and for the
+ * two-factor redirect — its pre-challenge session is a throwaway, so a
+ * challenge nobody finishes must leave the phone's existing session standing.
+ */
+export const nativeSessionEviction = (
+  context: AfterContext | null | undefined
+): NativeSessionEviction | null => {
+  const client = nativeClientOf(context);
+  const keepSessionId = context?.context?.newSession?.session?.id;
+  if (!client || !keepSessionId) return null;
+  if (isTwoFactorRedirect(context.context?.returned)) return null;
+
+  return { deviceId: client.deviceId, keepSessionId };
+};
+
 /**
  * The contract with the phone app: this code, and nothing else, is what tells
  * it to wipe its cookie jar, session cache and local store.

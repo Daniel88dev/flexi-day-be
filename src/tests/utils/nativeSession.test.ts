@@ -8,6 +8,7 @@ import {
   isDeviceMismatch,
   isDeviceMismatchError,
   nativeClientOf,
+  nativeSessionEviction,
   nativeSessionExpiresAt,
   nativeSessionStamp,
 } from "../../utils/nativeSession.js";
@@ -142,5 +143,58 @@ describe("the device check", () => {
     expect(isDeviceMismatchError(new APIError("UNAUTHORIZED", { message: "nope" }))).toBe(false);
     expect(isDeviceMismatchError(new Error(SESSION_DEVICE_MISMATCH))).toBe(false);
     expect(isDeviceMismatchError(null)).toBe(false);
+  });
+});
+
+describe("one session per device", () => {
+  const SESSION_ID = "session-2f6a1c";
+
+  const afterContext = ({
+    headers = nativeHeaders(),
+    newSession = { session: { id: SESSION_ID } },
+    returned = { token: "t", user: {} } as unknown,
+  }: {
+    headers?: Headers;
+    newSession?: { session: { id: string } } | null;
+    returned?: unknown;
+  } = {}) => ({ headers, context: { newSession, returned } });
+
+  it("evicts the phone's other sessions when a native request signs in", () => {
+    expect(nativeSessionEviction(afterContext())).toEqual({
+      deviceId: DEVICE_ID,
+      keepSessionId: SESSION_ID,
+    });
+  });
+
+  it("evicts nothing on the two-factor redirect", () => {
+    // The pre-challenge session is a throwaway, so abandoning the second step
+    // has to leave the session the phone already had standing.
+    const ctx = afterContext({ returned: { twoFactorRedirect: true, twoFactorMethods: ["totp"] } });
+
+    expect(nativeSessionEviction(ctx)).toBeNull();
+  });
+
+  it("evicts nothing for a web request, whatever it returns", () => {
+    expect(nativeSessionEviction(afterContext({ headers: new Headers() }))).toBeNull();
+    expect(
+      nativeSessionEviction(
+        afterContext({ headers: new Headers({ "x-client-device-id": "short" }) })
+      )
+    ).toBeNull();
+  });
+
+  it("evicts nothing when the response carries no new session", () => {
+    expect(nativeSessionEviction(afterContext({ newSession: null }))).toBeNull();
+    expect(nativeSessionEviction({ headers: nativeHeaders() })).toBeNull();
+    expect(nativeSessionEviction(null)).toBeNull();
+  });
+
+  it("reads a response body that is not a plain object as no redirect", () => {
+    expect(nativeSessionEviction(afterContext({ returned: undefined }))).toMatchObject({
+      deviceId: DEVICE_ID,
+    });
+    expect(nativeSessionEviction(afterContext({ returned: "twoFactorRedirect" }))).toMatchObject({
+      deviceId: DEVICE_ID,
+    });
   });
 });

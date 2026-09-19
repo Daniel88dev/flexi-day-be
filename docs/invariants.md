@@ -47,6 +47,19 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   `/api` route, the untouched web and dev-login sessions and the warning, and "ignores a sign-in
   body that tries to stamp the fields itself" covers the body.
   `src/tests/utils/nativeSession.test.ts` ("the device check") pins the predicate on its own.
+- **One phone holds one session.** A completed native sign-in deletes every other session row
+  carrying the same `device_id` — keyed on the device and not the user, so signing in as someone
+  else on that phone replaces the session too. The hook that does it is registered as a plugin
+  hook _after_ `twoFactor`, and has to stay there: better-auth runs the user-level `hooks.after`
+  before every plugin's, and from there a two-factor sign-in cannot be told from a completed one —
+  `twoFactorRedirect` is not in the body yet and the throwaway pre-challenge session is still
+  `newSession` — so evicting from the user hook would end the phone's real session the moment a
+  challenge started, and abandoning the code would cost the person their session.
+  `src/tests/e2e/nativeSession.e2e.test.ts` fails if the eviction or its placement goes: "takes the
+  earlier session's place", "leaves the other phone signed in", "replaces the session on the phone
+  even when someone else signs in" and "stands through a challenge, and is replaced by the session
+  that ends it". `src/tests/utils/nativeSession.test.ts` ("one session per device") pins the
+  predicate on its own.
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 
@@ -110,7 +123,7 @@ under-protects the endpoints that matter:
 | `apiLimiter`           | `/api` (after the auth and dev routes)               | validated user id, IP fallback | 1000 / 5 min             |
 | `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor      | IP                             | 20 **failures** / 15 min |
 | `passwordResetLimiter` | `request-password-reset`                             | IP                             | 5 / 15 min               |
-| `otpSendLimiter`       | `two-factor/send-otp`                                | IP                             | 10 / 15 min              |
+| `otpSendLimiter`       | `two-factor/send-otp`                                | challenge cookie, IP fallback  | 10 / 15 min              |
 | `calendarFeedLimiter`  | `/calendars/:token.ics`                              | feed token                     | 120 / hour               |
 | `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed` | IP                             | 5000 / 5 min             |
 
@@ -123,7 +136,10 @@ under-protects the endpoints that matter:
   stolen session cookie could brute-force the password via `POST /two-factor/disable` and switch
   2FA off. `otpSendLimiter` exists for `send-otp` for the same reason `passwordResetLimiter` does:
   the route always answers 200, so failures-only counting never triggers, and what needs bounding
-  is the email it sends.
+  is the email it sends. It keys on the challenge cookie rather than the IP, so an office NAT
+  never pools — and the phone needs nothing of its own for that, because the expo client forwards
+  its cookie jar as a `Cookie` header exactly as a browser does
+  (`src/tests/e2e/nativeSession.e2e.test.ts`, "keys a native request on the cookie it carries").
 - **`passwordResetLimiter` exists because `credentialsLimiter` cannot cover that route.** Asking
   for a reset answers 200 for every input on purpose (it must reveal nothing about which addresses
   exist), and `credentialsLimiter` counts only failures — so nothing would ever increment. What
