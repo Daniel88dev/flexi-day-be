@@ -1,7 +1,9 @@
 import * as Sentry from "@sentry/node";
 import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { setSessionCookie } from "better-auth/cookies";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { account as accountTable, user as userTable } from "../db/schema/auth-schema.js";
@@ -10,6 +12,7 @@ import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
 import { buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
+import { nativeClientOf, nativeSessionStamp } from "./nativeSession.js";
 
 // better-auth's default verification-token expiry is 3600 s. Keep this string
 // in sync if `emailVerification.expiresIn` is ever configured below.
@@ -158,6 +161,47 @@ export const auth = betterAuth({
     enabled: config.api.env !== "test",
     window: 10,
     max: 50,
+  },
+  session: {
+    // `input: false` keeps them off the request body: only the hook below
+    // writes them, from headers that were matched against a bounded pattern.
+    additionalFields: {
+      deviceId: { type: "string", required: false, input: false },
+      platform: { type: "string", required: false, input: false },
+      appVersion: { type: "string", required: false, input: false },
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        // Stamps the phone that opened the session and a flat ten-year expiry.
+        // Fires twice on a two-factor sign-in — the throwaway pre-challenge
+        // session and the real one — and stamps both. A web sign-in falls
+        // through to better-auth's own seven days.
+        before: (_session, context) => {
+          const stamp = nativeSessionStamp(context);
+          return Promise.resolve(stamp ? { data: stamp } : undefined);
+        },
+      },
+    },
+  },
+  hooks: {
+    // Path-agnostic on purpose: any endpoint that hands a native request a new
+    // session gets the phone's cookie, which covers the email sign-in and all
+    // three two-factor verify endpoints without a path list. better-auth's own
+    // helper re-issues it, so name, signature and attributes stay identical
+    // and only the lifetime changes. It drops the seven-day `Max-Age` rather
+    // than raising it: a cookie cannot say ten years — better-call caps one at
+    // 400 days — and one with no expiry lives until the server ends it, which
+    // leaves the row's expiry as the session's only lifetime. The endpoint's
+    // own cookie is already on the response; this one trails it, and the last
+    // `Set-Cookie` of a name is the one every client keeps.
+    after: createAuthMiddleware(async (ctx) => {
+      const newSession = ctx.context.newSession;
+      if (!newSession || !nativeClientOf(ctx)) return;
+
+      await setSessionCookie(ctx, newSession, undefined, { maxAge: undefined });
+    }),
   },
   trustedOrigins: config.trustedOrigins,
   advanced: {

@@ -1,0 +1,44 @@
+import { readNativeClient, type HeaderSource, type NativeClient } from "./clientHeaders.js";
+
+/**
+ * Ten years, in seconds. A cookie cannot say this: better-call caps one at 400
+ * days and throws above it. So the native session cookie carries no expiry at
+ * all, the phone holds it until the server ends it, and the row is the only
+ * lifetime there is.
+ */
+export const NATIVE_SESSION_TTL = 10 * 365 * 24 * 60 * 60;
+
+export const NATIVE_SESSION_TTL_MS = NATIVE_SESSION_TTL * 1000;
+
+export const nativeSessionExpiresAt = (from: Date = new Date()): Date =>
+  new Date(from.getTime() + NATIVE_SESSION_TTL_MS);
+
+/**
+ * Structurally a better-auth endpoint context. A database hook receives one
+ * only while a request is in flight, and it carries the headers either
+ * directly or on the `Request` it was built from.
+ */
+type RequestContext = {
+  headers?: HeaderSource | null | undefined;
+  request?: { headers?: HeaderSource | null | undefined } | null | undefined;
+};
+
+export const nativeClientOf = (context: RequestContext | null | undefined): NativeClient | null =>
+  readNativeClient(context?.headers ?? context?.request?.headers);
+
+export type NativeSessionStamp = NativeClient & { expiresAt: Date };
+
+/**
+ * What a session row created for this request gains when the request is from
+ * the phone: the three columns and a flat ten-year expiry. Null for every web
+ * request, which leaves better-auth's own defaults in place.
+ */
+export const nativeSessionStamp = (
+  context: RequestContext | null | undefined,
+  now: Date = new Date()
+): NativeSessionStamp | null => {
+  const client = nativeClientOf(context);
+  if (!client) return null;
+
+  return { ...client, expiresAt: nativeSessionExpiresAt(now) };
+};

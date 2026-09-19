@@ -27,7 +27,7 @@ export type NativeClient = {
 };
 
 /** Structurally a `Headers`, which is what a better-auth hook context holds. */
-type HeaderSource = { get: (name: string) => string | null | undefined };
+export type HeaderSource = { get: (name: string) => string | null | undefined };
 
 export const acceptClientSessionId = (value: string | null | undefined): string | undefined =>
   value && CLIENT_SESSION_ID_PATTERN.test(value) ? value : undefined;

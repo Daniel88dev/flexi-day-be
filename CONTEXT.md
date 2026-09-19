@@ -40,6 +40,8 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Sync cursor**          | The opaque position a sync pull hands back and the next one sends in. Minted by the server, never read by a client. See [`docs/sync-pull.md`](docs/sync-pull.md). Avoid: last sync time, watermark.                         |
 | **Tombstone**            | A soft-deleted row a sync pull returns in full with `deletedAt` set, so the client can drop or archive its copy. See [`docs/sync-pull.md`](docs/sync-pull.md). Avoid: deletion marker.                                      |
 | **Sync reset**           | A sync pull that answers with a full snapshot instead of a delta: no cursor, an undecodable or expired one, or a change to what the caller may see. See [`docs/sync-pull.md`](docs/sync-pull.md). Avoid: full sync, resync. |
+| **Native session**       | A session created by the phone app. Bound to one Device id, valid ten years or until sign-out, password reset, or a sign-in on the same phone. Avoid: mobile session, app session.                                          |
+| **Device id**            | An opaque id the phone mints once and keeps in its Keychain; sent on every request and checked against the Native session it belongs to. Identifies the phone, not the person. Avoid: install id, app instance id.          |
 
 ## Vacation workflow
 
