@@ -1,5 +1,6 @@
 import cors from "cors";
 import { config } from "../config.js";
+import { CLIENT_HEADERS } from "../utils/clientHeaders.js";
 
 // Production origins come from the TRUSTED_ORIGINS env var (same list
 // better-auth uses for CSRF protection), e.g. the CloudFront frontend URLs.
@@ -20,8 +21,7 @@ export const serverCors = cors({
     "Authorization",
     "sentry-trace",
     "baggage",
-    "x-client-session-id",
-    "x-client-device-id",
+    ...Object.values(CLIENT_HEADERS),
     ...(config.api.env === "production" ? [] : ["x-dev-token"]),
   ],
   // The report export sends its filename here; without exposing it the SPA

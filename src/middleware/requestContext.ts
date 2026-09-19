@@ -1,6 +1,13 @@
 import type { NextFunction, Request, Response } from "express";
 import * as Sentry from "@sentry/node";
 import { generateRandomUUID } from "../utils/generateUUID.js";
+import {
+  CLIENT_HEADERS,
+  acceptClientAppVersion,
+  acceptClientDeviceId,
+  acceptClientPlatform,
+  acceptClientSessionId,
+} from "../utils/clientHeaders.js";
 import { runWithRequestContext, type RequestContext } from "../utils/requestStore.js";
 import { redactMethod, redactPath, redactQuery } from "../utils/redact.js";
 import { routeOf } from "../utils/routeTemplate.js";
@@ -17,7 +24,6 @@ const IGNORED_PATHS = new Set([
     .filter(Boolean),
 ]);
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Looser than UUID: upstream proxies mint their own ids. Still bounded.
 const REQUEST_ID_PATTERN = /^[\w.:-]{1,200}$/;
 
@@ -26,16 +32,13 @@ const header = (req: Request, name: string): string | undefined => {
   return typeof value === "string" ? value : undefined;
 };
 
-// Attacker-controlled and headed for logs, so only the exact shape the frontend
-// mints is accepted; anything else is dropped rather than half-sanitised.
-const acceptClientId = (value: string | undefined): string | undefined =>
-  value && UUID_PATTERN.test(value) ? value : undefined;
-
 export const requestContext = (req: Request, res: Response, next: NextFunction) => {
   const inbound = header(req, "x-request-id");
   const requestId = inbound && REQUEST_ID_PATTERN.test(inbound) ? inbound : generateRandomUUID();
-  const clientSessionId = acceptClientId(header(req, "x-client-session-id"));
-  const clientDeviceId = acceptClientId(header(req, "x-client-device-id"));
+  const clientSessionId = acceptClientSessionId(header(req, CLIENT_HEADERS.sessionId));
+  const clientDeviceId = acceptClientDeviceId(header(req, CLIENT_HEADERS.deviceId));
+  const clientPlatform = acceptClientPlatform(header(req, CLIENT_HEADERS.platform));
+  const clientAppVersion = acceptClientAppVersion(header(req, CLIENT_HEADERS.appVersion));
 
   res.setHeader("x-request-id", requestId);
 
@@ -49,6 +52,8 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
     requestId,
     clientSessionId,
     clientDeviceId,
+    clientPlatform,
+    clientAppVersion,
     method,
     path,
     query,
@@ -65,6 +70,8 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
       ...(query ? { "url.query": query } : {}),
       ...(clientSessionId ? { "client.session_id": clientSessionId } : {}),
       ...(clientDeviceId ? { "client.device_id": clientDeviceId } : {}),
+      ...(clientPlatform ? { "client.platform": clientPlatform } : {}),
+      ...(clientAppVersion ? { "client.app_version": clientAppVersion } : {}),
     });
     // Attributes cover logs; tags are what makes error events searchable.
     Sentry.setTag("request_id", requestId);

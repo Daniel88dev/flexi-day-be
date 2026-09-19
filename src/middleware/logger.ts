@@ -61,6 +61,8 @@ const requestContextFormat = format((info) => {
     ...(ctx.userId ? { "user.id": ctx.userId } : {}),
     ...(ctx.clientSessionId ? { "client.session_id": ctx.clientSessionId } : {}),
     ...(ctx.clientDeviceId ? { "client.device_id": ctx.clientDeviceId } : {}),
+    ...(ctx.clientPlatform ? { "client.platform": ctx.clientPlatform } : {}),
+    ...(ctx.clientAppVersion ? { "client.app_version": ctx.clientAppVersion } : {}),
   };
 });
 
