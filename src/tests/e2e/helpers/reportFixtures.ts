@@ -15,6 +15,7 @@ import { session } from "../../../db/schema/auth-schema.js";
 import { organizations } from "../../../db/schema/organization-schema.js";
 import { subscriptions } from "../../../db/schema/subscription-schema.js";
 import { attachments } from "../../../db/schema/attachment-schema.js";
+import { bankHolidays } from "../../../db/schema/bank-holiday-schema.js";
 import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 /**
@@ -36,7 +37,11 @@ export async function makeUser(name: string): Promise<{ id: string; name: string
   return { id, name };
 }
 
-export async function makeGroup(groupName: string, managerUserId: string): Promise<string> {
+export async function makeGroup(
+  groupName: string,
+  managerUserId: string,
+  options: { holidayCountry?: string } = {}
+): Promise<string> {
   const id = uuidv4();
   const organization = await ensureOrganizationForUser(managerUserId);
   await db.insert(groups).values({
@@ -44,6 +49,7 @@ export async function makeGroup(groupName: string, managerUserId: string): Promi
     organizationId: organization.id,
     groupName,
     managerUserId,
+    holidayCountry: options.holidayCountry ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
@@ -242,13 +248,17 @@ export async function ageEverything(): Promise<void> {
   await db.update(groupMirrors).set({ updatedAt: longAgo });
   await db.update(userYearQuotas).set({ updatedAt: longAgo });
   await db.update(vacation).set({ updatedAt: longAgo });
+  await db.update(bankHolidays).set({ updatedAt: longAgo });
 }
 
 /**
- * Wipes every table this suite writes to. `changes.changing_user_id` has no
- * cascade, so it must go before the users it points at.
+ * Wipes every table these suites write to, `bank_holidays` included: the sync
+ * pull fills it on the way past, so a case asserting on an unfilled country
+ * needs it empty. `changes.changing_user_id` has no cascade, so it must go
+ * before the users it points at.
  */
 export async function resetReportData(): Promise<void> {
+  await db.delete(bankHolidays);
   await db.delete(reportExports);
   await db.delete(attachments);
   await db.delete(changesSchema);

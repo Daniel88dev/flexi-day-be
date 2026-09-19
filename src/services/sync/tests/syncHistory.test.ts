@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sameHistoryWindow, syncHistoryWindow } from "../syncHistory.js";
+import { sameHistoryWindow, syncBankHolidayWindow, syncHistoryWindow } from "../syncHistory.js";
 
 describe("syncHistoryWindow", () => {
   it("starts on 1 January of the previous year", () => {
@@ -33,5 +33,24 @@ describe("sameHistoryWindow", () => {
     const thisYear = new Date("2027-01-01T00:00:00.000Z");
     expect(sameHistoryWindow(lastYear, thisYear)).toBe(false);
     expect(sameHistoryWindow(thisYear, lastYear)).toBe(false);
+  });
+});
+
+describe("syncBankHolidayWindow", () => {
+  it("spans the previous, current and next year of the cursor time", () => {
+    expect(syncBankHolidayWindow(new Date("2026-09-19T10:00:00.000Z"))).toEqual({
+      years: [2025, 2026, 2027],
+      firstDay: "2025-01-01",
+      lastDay: "2027-12-31",
+    });
+  });
+
+  it("reads the year in UTC, not the server's zone", () => {
+    expect(syncBankHolidayWindow(new Date("2026-12-31T23:30:00.000Z")).years).toEqual([
+      2025, 2026, 2027,
+    ]);
+    expect(syncBankHolidayWindow(new Date("2027-01-01T00:30:00.000Z")).years).toEqual([
+      2026, 2027, 2028,
+    ]);
   });
 });

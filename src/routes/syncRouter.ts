@@ -81,6 +81,22 @@ export const syncRouter = (): Router => {
    *       row until a sync reset drops it, and a quota row is rewritten rather
    *       than deleted.
    *
+   *       `bankHolidays` carries the public holidays of the holiday country of
+   *       every group the caller belongs to, so the phone's calendar marks them
+   *       without a call of its own. The span is the previous, current and next
+   *       calendar year of the position this pull was minted with, read in UTC,
+   *       and only rows with no region ship: a regional variant is not what a
+   *       group-wide calendar marks. A country held only by a group the caller
+   *       is not a member of is absent, and none of a group they have left, a
+   *       soft-deleted one a delta still tombstones, or the source group of a
+   *       mirror adds one. Before reading, the server
+   *       computes and stores any of those country-and-year pairs it has never
+   *       seen, so a first pull for a new country is never empty; those rows
+   *       are new, so they arrive on the pull that created them. The rows are
+   *       unpartitioned reference data: no `organizationId`, no `deletedAt`
+   *       and so no tombstones, and a holiday that leaves the window drops off
+   *       at the next sync reset like any other dated row.
+   *
    *       The two dated tables reach back to 1 January of the previous year on
    *       the server clock, read in UTC: `vacations` by `requestedDay`,
    *       `userYearQuotas` by `relatedYear`. A row dated before that boundary
@@ -151,9 +167,7 @@ export const syncRouter = (): Router => {
    *
    *       Tables arrive in dependency order across the loop, so a page that
    *       resumes inside one table carries the tables before it as empty
-   *       arrays: they landed on an earlier page. The one table this endpoint
-   *       does not fill yet — `bankHolidays` — arrives as an empty array
-   *       throughout.
+   *       arrays: they landed on an earlier page.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -373,8 +387,34 @@ export const syncRouter = (): Router => {
    *                         format: date-time
    *                 bankHolidays:
    *                   type: array
+   *                   description: |
+   *                     Public holidays of the caller's groups' countries,
+   *                     region-less, from 1 January of the previous year to 31
+   *                     December of the next. Unpartitioned, never tombstoned
    *                   items:
    *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       date:
+   *                         type: string
+   *                         format: date
+   *                       name:
+   *                         type: string
+   *                         description: In the country's own language, as the dataset names it
+   *                       country:
+   *                         type: string
+   *                         description: Alpha-2 country code
+   *                       region:
+   *                         type: string
+   *                         nullable: true
+   *                         description: Always null here; a regional holiday does not ship
+   *                       createdAt:
+   *                         type: string
+   *                         format: date-time
+   *                       updatedAt:
+   *                         type: string
+   *                         format: date-time
    *                 vacations:
    *                   type: array
    *                   description: |

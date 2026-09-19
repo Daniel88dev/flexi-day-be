@@ -188,19 +188,6 @@ describe("Sync pull E2E", () => {
       expect(res.body.cursor.length).toBeGreaterThan(0);
     });
 
-    it("leaves the table this endpoint does not fill yet as an empty array", async () => {
-      const manager = await makeUser("Manager");
-      const groupId = await makeGroup("Engineering", manager.id);
-      await addMember(groupId, manager.id, { adminAccess: true });
-
-      const res = await request(app)
-        .get("/api/sync/pull")
-        .set("Cookie", await authCookieFor(manager.id))
-        .expect(200);
-
-      expect(res.body.bankHolidays).toEqual([]);
-    });
-
     it("returns the full live member list of a group the caller sees in full", async () => {
       const manager = await makeUser("Manager");
       const viewer = await makeUser("Viewer");

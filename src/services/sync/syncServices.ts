@@ -16,18 +16,22 @@ import {
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
+import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
+import { ensureBankHolidays } from "../bankHoliday/bankHolidayServices.js";
 import { getScopeEntries } from "../report/reportServices.js";
 import type { ReportScopeEntry } from "../report/types.js";
 import { encodeSyncCursor, SYNC_OVERLAP_MS } from "./syncCursor.js";
-import { sameHistoryWindow, syncHistoryWindow } from "./syncHistory.js";
+import { sameHistoryWindow, syncBankHolidayWindow, syncHistoryWindow } from "./syncHistory.js";
 import { collectSyncPage } from "./syncPage.js";
 import type {
+  SyncBankHolidayRow,
+  SyncBankHolidayWindow,
   SyncCursor,
   SyncEnvelope,
   SyncGroupMirrorRow,
@@ -300,6 +304,8 @@ type SyncReadContext = {
   window: SyncWindow;
   /** How far back the dated tables reach, whatever their `updatedAt` says. */
   history: SyncHistoryWindow;
+  /** The three calendar years of bank holidays this pull carries. */
+  bankHolidayWindow: SyncBankHolidayWindow;
   /** A snapshot holds live membership rows only; a delta keeps the tombstones. */
   liveOnly: boolean;
 };
@@ -580,6 +586,95 @@ const readQuotasPage = async (
 };
 
 /**
+ * The countries whose bank holidays this pull carries: the holiday country of
+ * the live groups the caller belongs to. A group they have left, a soft-deleted
+ * one a delta still tombstones, and the source group of a mirror add none —
+ * each is carried only so the client can label a row, and none of them is a
+ * calendar the phone marks holidays on.
+ */
+const getScopedHolidayCountries = async (groupIds: string[]): Promise<string[]> => {
+  if (groupIds.length === 0) return [];
+
+  const rows = await db
+    .selectDistinct({ holidayCountry: groups.holidayCountry })
+    .from(groups)
+    .where(
+      and(inArray(groups.id, groupIds), isNull(groups.deletedAt), isNotNull(groups.holidayCountry))
+    );
+
+  return rows.map((row) => row.holidayCountry).filter((country) => country !== null);
+};
+
+/**
+ * The lazy fill, once per pull: a country the server has never computed would
+ * otherwise answer an empty first pull. It runs before any row is read and
+ * outside every transaction, one statement per country and year, and it is
+ * skipped on a resumed page — the first page of the loop already ran it.
+ */
+const fillScopedBankHolidays = async (
+  countries: () => Promise<string[]>,
+  window: SyncBankHolidayWindow,
+  resume: SyncPagePosition | null
+): Promise<void> => {
+  if (resume !== null) return;
+
+  await Promise.all(
+    (await countries()).flatMap((country) =>
+      window.years.map((year) => ensureBankHolidays(year, country))
+    )
+  );
+};
+
+/**
+ * Bank holidays are unpartitioned reference data: no `organizationId`, no
+ * `deletedAt` and so no tombstones. Only the lower half of the pull's window
+ * applies — the fill writes its rows after the cursor time was minted, so
+ * bounding the read by it would hide exactly the rows this pull just created.
+ * Those rows sit past the cursor this pull hands back, so the next delta
+ * carries them once more; the client upserts, as it does for every row the 60
+ * second overlap repeats.
+ */
+const readBankHolidaysPage = async (
+  context: SyncReadContext,
+  countries: string[],
+  after: SyncKeyset | null,
+  limit: number
+) => {
+  if (countries.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(bankHolidays)
+    .where(
+      and(
+        inArray(bankHolidays.country, countries),
+        isNull(bankHolidays.region),
+        gte(bankHolidays.date, context.bankHolidayWindow.firstDay),
+        lte(bankHolidays.date, context.bankHolidayWindow.lastDay),
+        context.window.since === null
+          ? undefined
+          : gt(bankHolidays.updatedAt, context.window.since),
+        afterKeyset(bankHolidays.updatedAt, bankHolidays.id, after)
+      )
+    )
+    .orderBy(asc(bankHolidays.updatedAt), asc(bankHolidays.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    key: { updatedAt: row.updatedAt, id: row.id },
+    row: {
+      id: row.id,
+      date: row.date,
+      name: row.name,
+      country: row.country,
+      region: row.region,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    } satisfies SyncBankHolidayRow,
+  }));
+};
+
+/**
  * Cancelled rows are not filtered by `liveOnly`: the web calendar keeps a
  * cancelled booking as history, so a snapshot that dropped it would have the
  * client sweep away history it is supposed to hold.
@@ -633,11 +728,14 @@ const readVacationsPage = async (
 };
 
 /**
- * One reader per table the endpoint fills, in dependency order. The tables
- * still to come have no reader yet and ship empty; adding one here is all the
- * paging walk needs to start splitting it.
+ * One reader per table, in dependency order, each resuming where the last page
+ * stopped. `holidayCountries` comes from the caller because the fill that ran
+ * before the walk asked the same question; one memo answers both.
  */
-const buildReaders = (context: SyncReadContext): SyncTableReader[] => {
+const buildReaders = (
+  context: SyncReadContext,
+  holidayCountries: () => Promise<string[]>
+): SyncTableReader[] => {
   const visibleGroupIds = memoize(async () => {
     const [former, mirroredSources] = await Promise.all([
       getFormerGroupIds(context),
@@ -683,6 +781,11 @@ const buildReaders = (context: SyncReadContext): SyncTableReader[] => {
         readQuotasPage(context, await organizationIdByGroupId(), after, limit),
     },
     {
+      table: "bankHolidays",
+      read: async (after, limit) =>
+        readBankHolidaysPage(context, await holidayCountries(), after, limit),
+    },
+    {
       table: "vacations",
       read: async (after, limit) =>
         readVacationsPage(context, await organizationIdByGroupId(), after, limit),
@@ -716,7 +819,7 @@ const buildEnvelope = (payload: {
   groupUsers: rowsOf<SyncGroupUserRow>(payload.page, "groupUsers"),
   groupMirrors: rowsOf<SyncGroupMirrorRow>(payload.page, "groupMirrors"),
   userYearQuotas: rowsOf<SyncUserYearQuotaRow>(payload.page, "userYearQuotas"),
-  bankHolidays: rowsOf(payload.page, "bankHolidays"),
+  bankHolidays: rowsOf<SyncBankHolidayRow>(payload.page, "bankHolidays"),
   vacations: rowsOf<SyncVacationRow>(payload.page, "vacations"),
 });
 
@@ -732,15 +835,22 @@ const buildSyncSnapshot = async (
   resume: SyncPagePosition | null = null
 ): Promise<SyncEnvelope> => {
   const scope = splitScope(await getScopeEntries(userId));
+  const bankHolidayWindow = syncBankHolidayWindow(cursorTime);
+  const holidayCountries = memoize(() => getScopedHolidayCountries(scope.groupIds));
+  await fillScopedBankHolidays(holidayCountries, bankHolidayWindow, resume);
 
   const page = await collectSyncPage(
-    buildReaders({
-      scope,
-      callerId: userId,
-      window: { since: null, until: cursorTime },
-      history: syncHistoryWindow(cursorTime),
-      liveOnly: true,
-    }),
+    buildReaders(
+      {
+        scope,
+        callerId: userId,
+        window: { since: null, until: cursorTime },
+        history: syncHistoryWindow(cursorTime),
+        bankHolidayWindow,
+        liveOnly: true,
+      },
+      holidayCountries
+    ),
     resume
   );
 
@@ -771,15 +881,22 @@ const buildSyncDelta = async (
 ): Promise<SyncEnvelope> => {
   const since = new Date(previousCursorTime.getTime() - SYNC_OVERLAP_MS);
   const scope = splitScope(await getScopeEntries(userId, { includeDeletedGroups: true }));
+  const bankHolidayWindow = syncBankHolidayWindow(cursorTime);
+  const holidayCountries = memoize(() => getScopedHolidayCountries(scope.groupIds));
+  await fillScopedBankHolidays(holidayCountries, bankHolidayWindow, resume);
 
   const page = await collectSyncPage(
-    buildReaders({
-      scope,
-      callerId: userId,
-      window: { since, until: cursorTime },
-      history: syncHistoryWindow(cursorTime),
-      liveOnly: false,
-    }),
+    buildReaders(
+      {
+        scope,
+        callerId: userId,
+        window: { since, until: cursorTime },
+        history: syncHistoryWindow(cursorTime),
+        bankHolidayWindow,
+        liveOnly: false,
+      },
+      holidayCountries
+    ),
     resume
   );
 

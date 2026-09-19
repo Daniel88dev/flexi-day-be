@@ -124,6 +124,29 @@ export type SyncHistoryWindow = {
   firstYear: string;
 };
 
+/**
+ * The three calendar years a pull's bank holidays cover. `years` drives the
+ * lazy fill, the two days bound the read, and both come from the cursor time.
+ */
+export type SyncBankHolidayWindow = {
+  years: number[];
+  /** `YYYY-MM-DD`, 1 January of the previous year. */
+  firstDay: string;
+  /** `YYYY-MM-DD`, 31 December of the next year. */
+  lastDay: string;
+};
+
+/** Unpartitioned reference data: no `organizationId`, no `deletedAt`, so no tombstones. */
+export type SyncBankHolidayRow = {
+  id: string;
+  date: string;
+  name: string;
+  country: string;
+  region: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 /** Four columns only: a pull names the people on its rows, it does not carry accounts. */
 export type SyncUserRow = {
   id: string;
@@ -172,8 +195,7 @@ export type SyncVacationRow = {
 
 /**
  * The tables arrive in dependency order so a client can apply a page as it
- * lands. Keys are the Drizzle export names; the one table this endpoint does
- * not fill yet ships as an empty array.
+ * lands. Keys are the Drizzle export names.
  */
 export type SyncEnvelope = {
   cursor: string;
@@ -185,6 +207,6 @@ export type SyncEnvelope = {
   groupUsers: SyncGroupUserRow[];
   groupMirrors: SyncGroupMirrorRow[];
   userYearQuotas: SyncUserYearQuotaRow[];
-  bankHolidays: unknown[];
+  bankHolidays: SyncBankHolidayRow[];
   vacations: SyncVacationRow[];
 };
