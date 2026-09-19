@@ -1,7 +1,22 @@
-import { and, asc, eq, gt, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
+import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
@@ -15,6 +30,7 @@ import { collectSyncPage } from "./syncPage.js";
 import type {
   SyncCursor,
   SyncEnvelope,
+  SyncGroupMirrorRow,
   SyncGroupRow,
   SyncGroupUserRow,
   SyncHistoryWindow,
@@ -82,14 +98,66 @@ const inQuotaScope = (scope: SyncScope, callerId: string): SQL | undefined =>
   });
 
 /**
+ * A mirror the pull may carry anything from: its owner still belongs to the
+ * target group. `getVacationsForGroup` re-checks the same thing before
+ * projecting, so somebody who left keeps leaking neither time off nor the
+ * mirror row that would label it.
+ */
+const mirrorOwnerStillInTarget = (): SQL =>
+  exists(
+    db
+      .select({ one: sql`1` })
+      .from(groupUsers)
+      .where(
+        and(
+          eq(groupUsers.userId, groupMirrors.userId),
+          eq(groupUsers.groupId, groupMirrors.targetGroupId),
+          isNull(groupUsers.deletedAt)
+        )
+      )
+  );
+
+/**
+ * A mirror projecting into a group the caller sees in full. Callers guard on
+ * an empty `fullGroupIds` themselves: `inArray` on an empty list is `false`,
+ * which is right here but hides the cheaper "read nothing at all".
+ */
+const liveMirrorIntoScope = (scope: SyncScope): SQL | undefined =>
+  and(
+    inArray(groupMirrors.targetGroupId, scope.fullGroupIds),
+    isNull(groupMirrors.deletedAt),
+    mirrorOwnerStillInTarget()
+  );
+
+/** A vacation row a live mirror projects into a group the caller sees in full. */
+const mirroredIntoScope = (scope: SyncScope): SQL =>
+  scope.fullGroupIds.length === 0
+    ? sql`false`
+    : exists(
+        db
+          .select({ one: sql`1` })
+          .from(groupMirrors)
+          .where(
+            and(
+              liveMirrorIntoScope(scope),
+              eq(groupMirrors.userId, vacation.userId),
+              eq(groupMirrors.sourceGroupId, vacation.groupId)
+            )
+          )
+      );
+
+/**
  * Vacations do not follow that split all the way: on top of every row of a
  * group seen in full, the caller's own rows arrive from any group at all,
- * including one they have left, because the personal calendar still shows them.
+ * including one they have left, because the personal calendar still shows
+ * them, and the rows mirrored into a group seen in full, which belong to
+ * another group entirely.
  */
 const inVacationScope = (scope: SyncScope, callerId: string): SQL | undefined =>
   or(
     scope.fullGroupIds.length > 0 ? inArray(vacation.groupId, scope.fullGroupIds) : sql`false`,
-    eq(vacation.userId, callerId)
+    eq(vacation.userId, callerId),
+    mirroredIntoScope(scope)
   );
 
 const inWindow = (updatedAt: PgColumn, window: SyncWindow): SQL | undefined =>
@@ -265,10 +333,72 @@ const readMembershipsPage = async (
 };
 
 /**
+ * A mirror is a row of its target group's pull. A removed one arrives as a
+ * tombstone in a delta, the way a membership does, and that tombstone is not
+ * held back when its owner has left the target group as well: the client has
+ * the row and needs to be told to drop it.
+ */
+const readMirrorsPage = async (
+  context: SyncReadContext,
+  organizationIdByGroupId: Map<string, string>,
+  after: SyncKeyset | null,
+  limit: number
+) => {
+  if (context.scope.fullGroupIds.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(groupMirrors)
+    .where(
+      and(
+        inArray(groupMirrors.targetGroupId, context.scope.fullGroupIds),
+        context.liveOnly
+          ? and(isNull(groupMirrors.deletedAt), mirrorOwnerStillInTarget())
+          : or(isNotNull(groupMirrors.deletedAt), mirrorOwnerStillInTarget()),
+        inWindow(groupMirrors.updatedAt, context.window),
+        afterKeyset(groupMirrors.updatedAt, groupMirrors.id, after)
+      )
+    )
+    .orderBy(asc(groupMirrors.updatedAt), asc(groupMirrors.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    key: { updatedAt: row.updatedAt, id: row.id },
+    row: {
+      id: row.id,
+      userId: row.userId,
+      sourceGroupId: row.sourceGroupId,
+      targetGroupId: row.targetGroupId,
+      organizationId: organizationIdByGroupId.get(row.targetGroupId)!,
+      deletedAt: toIso(row.deletedAt),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    } satisfies SyncGroupMirrorRow,
+  }));
+};
+
+/**
+ * The groups a live mirror projects from. They are outside the caller's own
+ * memberships as often as not, and both the mirror row and the bookings it
+ * brings are unlabelled without the group row.
+ */
+const getMirroredSourceGroupIds = async (context: SyncReadContext): Promise<string[]> => {
+  if (context.scope.fullGroupIds.length === 0) return [];
+
+  const rows = await db
+    .selectDistinct({ sourceGroupId: groupMirrors.sourceGroupId })
+    .from(groupMirrors)
+    .where(liveMirrorIntoScope(context.scope));
+
+  return rows.map((row) => row.sourceGroupId);
+};
+
+/**
  * Groups the pull must name beyond the caller's memberships: one they have
  * left still owns their own vacation rows, and the client needs the group row
- * to label them. Only the caller's own rows can widen the set — every other
- * visible row belongs to a group they are still in.
+ * to label them. Alongside the source groups above, that is the whole of what
+ * widens the set — every other visible row belongs to a group the caller is
+ * still in.
  */
 const getFormerGroupIds = async (context: SyncReadContext): Promise<string[]> => {
   const rows = await db
@@ -503,10 +633,13 @@ const readVacationsPage = async (
  * paging walk needs to start splitting it.
  */
 const buildReaders = (context: SyncReadContext): SyncTableReader[] => {
-  const visibleGroupIds = memoize(async () => [
-    ...context.scope.groupIds,
-    ...(await getFormerGroupIds(context)),
-  ]);
+  const visibleGroupIds = memoize(async () => {
+    const [former, mirroredSources] = await Promise.all([
+      getFormerGroupIds(context),
+      getMirroredSourceGroupIds(context),
+    ]);
+    return [...new Set([...context.scope.groupIds, ...former, ...mirroredSources])];
+  });
   const organizationIds = memoize(async () =>
     getScopedOrganizationIds(await visibleGroupIds(), context.window)
   );
@@ -533,6 +666,11 @@ const buildReaders = (context: SyncReadContext): SyncTableReader[] => {
       table: "groupUsers",
       read: async (after, limit) =>
         readMembershipsPage(context, await organizationIdByGroupId(), after, limit),
+    },
+    {
+      table: "groupMirrors",
+      read: async (after, limit) =>
+        readMirrorsPage(context, await organizationIdByGroupId(), after, limit),
     },
     {
       table: "userYearQuotas",
@@ -571,7 +709,7 @@ const buildEnvelope = (payload: {
   users: rowsOf<SyncUserRow>(payload.page, "users"),
   groups: rowsOf<SyncGroupRow>(payload.page, "groups"),
   groupUsers: rowsOf<SyncGroupUserRow>(payload.page, "groupUsers"),
-  groupMirrors: rowsOf(payload.page, "groupMirrors"),
+  groupMirrors: rowsOf<SyncGroupMirrorRow>(payload.page, "groupMirrors"),
   userYearQuotas: rowsOf<SyncUserYearQuotaRow>(payload.page, "userYearQuotas"),
   bankHolidays: rowsOf(payload.page, "bankHolidays"),
   vacations: rowsOf<SyncVacationRow>(payload.page, "vacations"),

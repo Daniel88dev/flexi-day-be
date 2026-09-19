@@ -94,6 +94,22 @@ export type SyncGroupUserRow = {
 };
 
 /**
+ * A mirror the pull carries, with the target group's organization: the row is
+ * what lets the client tell a mirrored booking from one of the target group's
+ * own.
+ */
+export type SyncGroupMirrorRow = {
+  id: string;
+  userId: string;
+  sourceGroupId: string;
+  targetGroupId: string;
+  organizationId: string;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
  * The far edge of the tables a pull bounds by date rather than by change:
  * vacations by requested day, quotas by related year.
  */
@@ -156,8 +172,8 @@ export type SyncVacationRow = {
 
 /**
  * The tables arrive in dependency order so a client can apply a page as it
- * lands. Keys are the Drizzle export names; the tables this endpoint does not
- * fill yet ship as empty arrays.
+ * lands. Keys are the Drizzle export names; the one table this endpoint does
+ * not fill yet ships as an empty array.
  */
 export type SyncEnvelope = {
   cursor: string;
@@ -167,7 +183,7 @@ export type SyncEnvelope = {
   users: SyncUserRow[];
   groups: SyncGroupRow[];
   groupUsers: SyncGroupUserRow[];
-  groupMirrors: unknown[];
+  groupMirrors: SyncGroupMirrorRow[];
   userYearQuotas: SyncUserYearQuotaRow[];
   bankHolidays: unknown[];
   vacations: SyncVacationRow[];

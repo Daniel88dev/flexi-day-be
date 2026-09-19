@@ -18,6 +18,7 @@ import {
   addLeave,
   addMember,
   addQuota,
+  ageEverything,
   cancelLeave,
   dayIn,
   makeGroup,
@@ -121,16 +122,6 @@ const membershipIdsOf = async (groupId: string): Promise<string[]> =>
     await db.select({ id: groupUsers.id }).from(groupUsers).where(eq(groupUsers.groupId, groupId))
   ).map((row) => row.id);
 
-/** Pushes every row of the fixture out of reach of any cursor the test mints. */
-const ageEverything = async (): Promise<void> => {
-  const longAgo = ago(365 * DAY);
-  await db.update(user).set({ updatedAt: longAgo });
-  await db.update(groups).set({ updatedAt: longAgo });
-  await db.update(groupUsers).set({ updatedAt: longAgo });
-  await db.update(userYearQuotas).set({ updatedAt: longAgo });
-  await db.update(vacation).set({ updatedAt: longAgo });
-};
-
 /**
  * One insert per table rather than a fixture call per row: the paging tests
  * need more rows than the page holds, and 1100 round trips would dominate the
@@ -197,7 +188,7 @@ describe("Sync pull E2E", () => {
       expect(res.body.cursor.length).toBeGreaterThan(0);
     });
 
-    it("leaves the tables this endpoint does not fill yet as empty arrays", async () => {
+    it("leaves the table this endpoint does not fill yet as an empty array", async () => {
       const manager = await makeUser("Manager");
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, manager.id, { adminAccess: true });
@@ -207,7 +198,6 @@ describe("Sync pull E2E", () => {
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
 
-      expect(res.body.groupMirrors).toEqual([]);
       expect(res.body.bankHolidays).toEqual([]);
     });
 

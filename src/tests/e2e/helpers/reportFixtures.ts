@@ -4,6 +4,7 @@ import { db } from "../../../db/db.js";
 import { user } from "../../../db/schema/auth-schema.js";
 import { groups } from "../../../db/schema/group-schema.js";
 import { groupUsers } from "../../../db/schema/group-users-schema.js";
+import { groupMirrors } from "../../../db/schema/group-mirror-schema.js";
 import { vacation, CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import { userYearQuotas } from "../../../db/schema/user-year-quotas-schema.js";
 import { changesSchema, changesType } from "../../../db/schema/changes-schema.js";
@@ -90,6 +91,32 @@ export async function removeMember(groupId: string, userId: string): Promise<voi
     .update(groupUsers)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(groupUsers.groupId, groupId), eq(groupUsers.userId, userId)));
+}
+
+/** Projects the user's records from a source group into a target group they belong to. */
+export async function addMirror(
+  userId: string,
+  sourceGroupId: string,
+  targetGroupId: string
+): Promise<string> {
+  const id = uuidv4();
+  await db.insert(groupMirrors).values({
+    id,
+    userId,
+    sourceGroupId,
+    targetGroupId,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
+}
+
+/** Soft-deletes a mirror, as removing one does. */
+export async function removeMirror(mirrorId: string, at: Date = new Date()): Promise<void> {
+  await db
+    .update(groupMirrors)
+    .set({ deletedAt: at, updatedAt: at })
+    .where(eq(groupMirrors.id, mirrorId));
 }
 
 export async function addQuota(
@@ -204,6 +231,20 @@ export async function addChange(
 }
 
 /**
+ * Pushes every row of the fixture out of reach of any cursor a sync test
+ * mints, so only the rows a test then restamps land in a delta.
+ */
+export async function ageEverything(): Promise<void> {
+  const longAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  await db.update(user).set({ updatedAt: longAgo });
+  await db.update(groups).set({ updatedAt: longAgo });
+  await db.update(groupUsers).set({ updatedAt: longAgo });
+  await db.update(groupMirrors).set({ updatedAt: longAgo });
+  await db.update(userYearQuotas).set({ updatedAt: longAgo });
+  await db.update(vacation).set({ updatedAt: longAgo });
+}
+
+/**
  * Wipes every table this suite writes to. `changes.changing_user_id` has no
  * cascade, so it must go before the users it points at.
  */
@@ -214,6 +255,7 @@ export async function resetReportData(): Promise<void> {
   await db.delete(vacationEvents);
   await db.delete(vacation);
   await db.delete(userYearQuotas);
+  await db.delete(groupMirrors);
   await db.delete(groupUsers);
   await db.delete(notifications);
   await db.delete(session);

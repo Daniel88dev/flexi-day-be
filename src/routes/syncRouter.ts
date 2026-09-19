@@ -41,6 +41,23 @@ export const syncRouter = (): Router => {
    *       booked or cancelled a returned booking, because the client cannot
    *       render the row without them.
    *
+   *       A group seen in full also carries the mirrors pointing into it:
+   *       `groupMirrors` holds every live mirror whose target is that group,
+   *       carrying the target group's `organizationId`. With each one come the
+   *       bookings it projects — the mirrored person's rows in the source
+   *       group, on the same history window and the same delta rules as any
+   *       other booking. Those rows stay rows of the source group, so they
+   *       carry that group's id and organization, not the target's, and the
+   *       source group and the mirrored person ship in `groups` and `users` so
+   *       the client can label them. A mirror is only followed while its owner
+   *       still belongs to the target group: once they leave, neither the
+   *       mirror row nor the bookings it projected arrive. A tombstone is the
+   *       exception — a removed mirror still arrives with `deletedAt` set,
+   *       whether or not its owner is still a member, because the client holds
+   *       a copy it has to be told to drop. A mirror into a
+   *       self-scoped group brings neither, because the mirror is a row of the
+   *       target group the caller does not see in full.
+   *
    *       Bookings are raw rows, `note` and `rejectionReason` included, with
    *       no per-row verdict — whether the caller may approve or cancel one
    *       stays on the action endpoints.
@@ -91,7 +108,8 @@ export const syncRouter = (): Router => {
    *       A soft-deleted row arrives in a delta as a tombstone: the whole row
    *       with `deletedAt` set, so the client can drop its copy. A delta
    *       tombstones a group the caller still belongs to and, in a group they
-   *       see in full, the membership of anyone who left it. The caller's own
+   *       see in full, the membership of anyone who left it and any mirror
+   *       removed from it. The caller's own
    *       removal takes the group out of scope instead of tombstoning it. A
    *       snapshot holds live membership rows only — the client sweeps whatever
    *       the snapshot did not re-send.
@@ -133,9 +151,9 @@ export const syncRouter = (): Router => {
    *
    *       Tables arrive in dependency order across the loop, so a page that
    *       resumes inside one table carries the tables before it as empty
-   *       arrays: they landed on an earlier page. The tables this endpoint does
-   *       not fill yet — `groupMirrors` and `bankHolidays` — arrive as empty
-   *       arrays throughout.
+   *       arrays: they landed on an earlier page. The one table this endpoint
+   *       does not fill yet — `bankHolidays` — arrives as an empty array
+   *       throughout.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -289,8 +307,37 @@ export const syncRouter = (): Router => {
    *                         format: date-time
    *                 groupMirrors:
    *                   type: array
+   *                   description: |
+   *                     Mirrors pointing into a group the caller sees in full,
+   *                     each carrying the target group's organization
    *                   items:
    *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       userId:
+   *                         type: string
+   *                         description: The person whose bookings the mirror projects
+   *                       sourceGroupId:
+   *                         type: string
+   *                         description: The group the projected bookings belong to
+   *                       targetGroupId:
+   *                         type: string
+   *                         description: The group they are shown in
+   *                       organizationId:
+   *                         type: string
+   *                         description: The target group's organization
+   *                       deletedAt:
+   *                         type: string
+   *                         format: date-time
+   *                         nullable: true
+   *                         description: Set on a tombstone; null on a live row
+   *                       createdAt:
+   *                         type: string
+   *                         format: date-time
+   *                       updatedAt:
+   *                         type: string
+   *                         format: date-time
    *                 userYearQuotas:
    *                   type: array
    *                   description: |
