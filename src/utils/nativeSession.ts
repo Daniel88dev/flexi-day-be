@@ -1,3 +1,4 @@
+import { APIError } from "better-auth/api";
 import { readNativeClient, type HeaderSource, type NativeClient } from "./clientHeaders.js";
 
 /**
@@ -42,3 +43,28 @@ export const nativeSessionStamp = (
 
   return { ...client, expiresAt: nativeSessionExpiresAt(now) };
 };
+
+/**
+ * The contract with the phone app: this code, and nothing else, is what tells
+ * it to wipe its cookie jar, session cache and local store.
+ */
+export const SESSION_DEVICE_MISMATCH = "SESSION_DEVICE_MISMATCH";
+
+export const SESSION_DEVICE_MISMATCH_MESSAGE = "Session is bound to another device";
+
+/** An unbound session — every web one — is false whatever the request carries. */
+export const isDeviceMismatch = (
+  sessionDeviceId: string | null | undefined,
+  requestDeviceId: string | null | undefined
+): boolean => Boolean(sessionDeviceId) && sessionDeviceId !== requestDeviceId;
+
+export const deviceMismatchError = (): APIError =>
+  new APIError("UNAUTHORIZED", {
+    message: SESSION_DEVICE_MISMATCH_MESSAGE,
+    code: SESSION_DEVICE_MISMATCH,
+  });
+
+/** The same error on the Express side, where `auth.api` rejected rather than answered. */
+export const isDeviceMismatchError = (error: unknown): boolean =>
+  error instanceof APIError &&
+  (error.body as { code?: string } | undefined)?.code === SESSION_DEVICE_MISMATCH;

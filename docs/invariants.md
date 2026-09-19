@@ -30,6 +30,23 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   cost is that a legitimate social-only user who never confirmed their address loses their provider
   link on reset; the reset email says so, and Settings → Sign-in methods reconnects it.
   `src/tests/e2e/passwordResetSettles.e2e.test.ts` covers this.
+- **A native session only answers to the device that opened it.** The path-agnostic `hooks.before`
+  in `auth.ts` reads the session row behind the request's cookie, and when that row carries a
+  `device_id` the request's `x-client-device-id` does not match — a different id, a malformed one
+  (the header helper drops it, so it reads as absent), or none at all — deletes the row, logs
+  `session.device_mismatch` with both ids, and answers 401 with code `SESSION_DEVICE_MISMATCH`.
+  Deleting rather than refusing is what protects a ten-year row: a bounced request could be retried
+  with the right id, so a stolen cookie would cost one guess. The code is the contract with the
+  phone app, which wipes its local store on it, so `authSession` translates the same error for the
+  app's own routes rather than letting `errorMiddleware` answer 500 — as `code` at the body root
+  from better-auth, under `errors[0].context.code` from `/api`. A null `device_id` — every web and
+  every dev-login session — ignores the header in every combination, so a stray header from a
+  browser can never sign anyone out. The columns are `input: false` session fields the create hook
+  alone writes, so no request body can set them. `src/tests/e2e/nativeSession.e2e.test.ts` fails if
+  the hook goes: "on every later request" covers the mismatch, both unusable headers, the protected
+  `/api` route, the untouched web and dev-login sessions and the warning, and "ignores a sign-in
+  body that tries to stamp the fields itself" covers the body.
+  `src/tests/utils/nativeSession.test.ts` ("the device check") pins the predicate on its own.
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 

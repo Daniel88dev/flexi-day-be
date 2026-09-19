@@ -7,6 +7,8 @@ import { base32 } from "@better-auth/utils/base32";
 import { db } from "../../db/db.js";
 import { session as sessionTable, user, verification } from "../../db/schema/auth-schema.js";
 import { auth } from "../../utils/auth.js";
+import { logger } from "../../middleware/logger.js";
+import { SESSION_DEVICE_MISMATCH } from "../../utils/nativeSession.js";
 import { createServer } from "../../server.js";
 import { WEB_TEST_PASSWORD, authCookieFor, createWebUser } from "./helpers/authHelper.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
@@ -292,6 +294,145 @@ describe("native session", () => {
       expect(rows[0]).toMatchObject({ deviceId: device });
       expect(yearsUntil(rows[0]!.expiresAt)).toBeGreaterThan(9.9);
       expectNoCookieExpiry(res, SESSION_COOKIE);
+    });
+  });
+
+  /**
+   * The check itself, driven over HTTP on both surfaces it has to hold on:
+   * better-auth's own endpoints and the app's routes behind `authSession`.
+   */
+  describe("on every later request", () => {
+    // Any route behind `authSession` would do; this one needs no fixtures.
+    const PROTECTED_ROUTE = "/api/notifications";
+
+    const MALFORMED_DEVICE_ID = "short";
+
+    const boundSession = async (device: string, name: string) => {
+      const { id, email } = await createWebUser(name);
+      const res = await signIn(email, nativeHeaders(device));
+      expect(res.status).toBe(200);
+      return { id, cookie: cookieHeaderOf(res) };
+    };
+
+    const getSession = (cookie: string, headers: Record<string, string> = {}) =>
+      request(app).get("/api/auth/get-session").set("Cookie", cookie).set(headers);
+
+    const protectedRoute = (cookie: string, headers: Record<string, string> = {}) =>
+      request(app).get(PROTECTED_ROUTE).set("Cookie", cookie).set(headers);
+
+    /** Every shape of the header a browser could send by mistake. */
+    const strayHeaders = () => [
+      {},
+      { "x-client-device-id": deviceId() },
+      { "x-client-device-id": MALFORMED_DEVICE_ID },
+    ];
+
+    /** An unbound session answers as it always did, on both surfaces, and survives. */
+    const expectUnaffected = async (id: string, cookie: string) => {
+      for (const headers of strayHeaders()) {
+        const session = await getSession(cookie, headers);
+        expect(session.status).toBe(200);
+        expect(session.body?.user?.id).toBe(id);
+
+        const route = await protectedRoute(cookie, headers);
+        expect(route.status).toBe(200);
+      }
+
+      expect(await sessionsOf(id)).toHaveLength(1);
+    };
+
+    it("answers the phone that opened it, on both surfaces", async () => {
+      const device = deviceId();
+      const { id, cookie } = await boundSession(device, "Device Match Subject");
+
+      const session = await getSession(cookie, { "x-client-device-id": device });
+      expect(session.status).toBe(200);
+      expect(session.body?.user?.id).toBe(id);
+
+      const route = await protectedRoute(cookie, { "x-client-device-id": device });
+      expect(route.status).toBe(200);
+
+      expect(await sessionsOf(id)).toHaveLength(1);
+    });
+
+    it("ends the session when another device presents its cookie", async () => {
+      const device = deviceId();
+      const { id, cookie } = await boundSession(device, "Device Mismatch Subject");
+      const warn = vi.spyOn(logger, "warn");
+      const intruder = deviceId();
+
+      const res = await getSession(cookie, { "x-client-device-id": intruder });
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe(SESSION_DEVICE_MISMATCH);
+      expect(await sessionsOf(id)).toHaveLength(0);
+      expect(warn).toHaveBeenCalledWith(
+        "session.device_mismatch",
+        expect.objectContaining({
+          "user.id": id,
+          "session.device_id": device,
+          "request.device_id": intruder,
+        })
+      );
+      warn.mockRestore();
+
+      // Deleted, not merely refused, so the right id cannot win it back.
+      const retry = await getSession(cookie, { "x-client-device-id": device });
+      expect(retry.status).toBe(200);
+      expect(retry.body?.user).toBeFalsy();
+    });
+
+    it("ends the session when the cookie arrives with no device id", async () => {
+      const device = deviceId();
+      const { id, cookie } = await boundSession(device, "Device Absent Subject");
+      const warn = vi.spyOn(logger, "warn");
+
+      const res = await getSession(cookie);
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe(SESSION_DEVICE_MISMATCH);
+      expect(await sessionsOf(id)).toHaveLength(0);
+      expect(warn).toHaveBeenCalledWith(
+        "session.device_mismatch",
+        expect.objectContaining({ "session.device_id": device, "request.device_id": null })
+      );
+      warn.mockRestore();
+    });
+
+    it("treats a malformed device id as no device id at all", async () => {
+      const device = deviceId();
+      const { id, cookie } = await boundSession(device, "Device Malformed Subject");
+
+      const res = await getSession(cookie, { "x-client-device-id": MALFORMED_DEVICE_ID });
+
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe(SESSION_DEVICE_MISMATCH);
+      expect(await sessionsOf(id)).toHaveLength(0);
+    });
+
+    it("answers a protected API route with the same code", async () => {
+      const device = deviceId();
+      const { id, cookie } = await boundSession(device, "Device Mismatch Route Subject");
+
+      const res = await protectedRoute(cookie, { "x-client-device-id": deviceId() });
+
+      expect(res.status).toBe(401);
+      expect(res.body.errors?.[0]?.context?.code).toBe(SESSION_DEVICE_MISMATCH);
+      expect(await sessionsOf(id)).toHaveLength(0);
+    });
+
+    it("leaves a web session alone whatever device id header it carries", async () => {
+      const { id, email } = await createWebUser("Web Stray Header Subject");
+      const signedIn = await signIn(email, { Origin: BROWSER_ORIGIN });
+      expect(signedIn.status).toBe(200);
+
+      await expectUnaffected(id, cookieHeaderOf(signedIn));
+    });
+
+    it("leaves a dev-login session alone the same way", async () => {
+      const { id } = await createWebUser("Dev Login Stray Header Subject");
+
+      await expectUnaffected(id, await authCookieFor(id));
     });
   });
 });

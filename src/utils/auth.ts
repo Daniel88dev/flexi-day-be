@@ -6,13 +6,22 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { setSessionCookie } from "better-auth/cookies";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db/db.js";
-import { account as accountTable, user as userTable } from "../db/schema/auth-schema.js";
+import {
+  account as accountTable,
+  session as sessionTable,
+  user as userTable,
+} from "../db/schema/auth-schema.js";
 import { customSession, haveIBeenPwned, openAPI, twoFactor } from "better-auth/plugins";
 import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
 import { buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
-import { nativeClientOf, nativeSessionStamp } from "./nativeSession.js";
+import {
+  deviceMismatchError,
+  isDeviceMismatch,
+  nativeClientOf,
+  nativeSessionStamp,
+} from "./nativeSession.js";
 
 // better-auth's default verification-token expiry is 3600 s. Keep this string
 // in sync if `emailVerification.expiresIn` is ever configured below.
@@ -186,6 +195,49 @@ export const auth = betterAuth({
     },
   },
   hooks: {
+    // Covers the app's own routes as well as better-auth's: `authSession`
+    // reaches better-auth through `auth.api`, which runs this same pipeline.
+    //
+    // It reads the one column it needs rather than calling `getSessionFromCtx`.
+    // That helper runs the whole /get-session endpoint, which refreshes the
+    // session, writes the cookie cache and appends `Set-Cookie` — side effects
+    // this check has no business causing on a sign-in or a password reset — and
+    // its memo saves nothing, because /get-session, the path `authSession`
+    // actually takes, re-reads the row regardless.
+    before: createAuthMiddleware(async (ctx) => {
+      const token = await ctx.getSignedCookie(
+        ctx.context.authCookies.sessionToken.name,
+        ctx.context.secret
+      );
+      if (!token) return;
+
+      const [row] = await db
+        .select({
+          id: sessionTable.id,
+          userId: sessionTable.userId,
+          deviceId: sessionTable.deviceId,
+        })
+        .from(sessionTable)
+        .where(eq(sessionTable.token, token))
+        .limit(1);
+
+      const requestDeviceId = nativeClientOf(ctx)?.deviceId ?? null;
+      if (!row || !isDeviceMismatch(row.deviceId, requestDeviceId)) return;
+
+      // Deleted, not just refused, so the mismatch cannot be retried with the
+      // right id. Both device ids are logged in full: neither is a secret —
+      // forging one buys nothing — and both are already bounded by
+      // `readNativeClient` before they reach a log line.
+      await db.delete(sessionTable).where(eq(sessionTable.id, row.id));
+      logger.warn("session.device_mismatch", {
+        "session.id": row.id,
+        "user.id": row.userId,
+        "session.device_id": row.deviceId,
+        "request.device_id": requestDeviceId,
+      });
+
+      throw deviceMismatchError();
+    }),
     // Path-agnostic on purpose: any endpoint that hands a native request a new
     // session gets the phone's cookie, which covers the email sign-in and all
     // three two-factor verify endpoints without a path list. better-auth's own

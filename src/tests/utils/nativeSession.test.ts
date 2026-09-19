@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
+import { APIError } from "better-auth/api";
 import {
   NATIVE_SESSION_TTL,
   NATIVE_SESSION_TTL_MS,
+  SESSION_DEVICE_MISMATCH,
+  deviceMismatchError,
+  isDeviceMismatch,
+  isDeviceMismatchError,
   nativeClientOf,
   nativeSessionExpiresAt,
   nativeSessionStamp,
@@ -98,5 +103,44 @@ describe("nativeSessionStamp", () => {
   it("leaves a web request alone, so better-auth's seven days stand", () => {
     expect(nativeSessionStamp({ headers: new Headers() }, now)).toBeNull();
     expect(nativeSessionStamp(null, now)).toBeNull();
+  });
+});
+
+describe("the device check", () => {
+  const OTHER_DEVICE_ID = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+
+  it("lets a bound session through from the phone that opened it", () => {
+    expect(isDeviceMismatch(DEVICE_ID, DEVICE_ID)).toBe(false);
+  });
+
+  it("catches a bound session called from another device", () => {
+    expect(isDeviceMismatch(DEVICE_ID, OTHER_DEVICE_ID)).toBe(true);
+  });
+
+  it("catches a bound session called with no device id at all", () => {
+    // Which is also what a malformed header looks like: `readNativeClient`
+    // drops it rather than half-accepting it.
+    expect(isDeviceMismatch(DEVICE_ID, null)).toBe(true);
+    expect(isDeviceMismatch(DEVICE_ID, undefined)).toBe(true);
+  });
+
+  it("ignores the header entirely on an unbound session", () => {
+    expect(isDeviceMismatch(null, DEVICE_ID)).toBe(false);
+    expect(isDeviceMismatch(null, null)).toBe(false);
+    expect(isDeviceMismatch(undefined, OTHER_DEVICE_ID)).toBe(false);
+  });
+
+  it("carries the code the phone keys its wipe on", () => {
+    const error = deviceMismatchError();
+
+    expect(error.statusCode).toBe(401);
+    expect(error.body).toMatchObject({ code: SESSION_DEVICE_MISMATCH });
+  });
+
+  it("recognises its own error and nothing else", () => {
+    expect(isDeviceMismatchError(deviceMismatchError())).toBe(true);
+    expect(isDeviceMismatchError(new APIError("UNAUTHORIZED", { message: "nope" }))).toBe(false);
+    expect(isDeviceMismatchError(new Error(SESSION_DEVICE_MISMATCH))).toBe(false);
+    expect(isDeviceMismatchError(null)).toBe(false);
   });
 });
