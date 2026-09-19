@@ -215,11 +215,13 @@ describe("Sync pull mirrors E2E", () => {
       );
     });
 
-    it("returns a removed mirror in full with deletedAt set on the next delta", async () => {
+    // A mirror into a group the caller sees in full is a reset trigger, so a
+    // removed one never reaches them as a delta tombstone: the snapshot simply
+    // stops carrying it, and the client sweeps what the snapshot left out.
+    it("drops a removed mirror and the bookings it projected from the reset that follows", async () => {
       const fixture = await seedMirror();
       await ageEverything();
-      const removedAt = ago(1 * MINUTE);
-      await removeMirror(fixture.mirrorId, removedAt);
+      await removeMirror(fixture.mirrorId, ago(1 * MINUTE));
 
       const res = await request(app)
         .get("/api/sync/pull")
@@ -227,44 +229,15 @@ describe("Sync pull mirrors E2E", () => {
         .set("Cookie", await authCookieFor(fixture.caller.id))
         .expect(200);
 
-      const [stored] = await db
-        .select()
-        .from(groupMirrors)
-        .where(eq(groupMirrors.id, fixture.mirrorId));
-      expect(res.body.reset).toBe(false);
-      expect(res.body.groupMirrors).toEqual([
-        {
-          id: fixture.mirrorId,
-          userId: fixture.dana.id,
-          sourceGroupId: fixture.sourceGroupId,
-          targetGroupId: fixture.targetGroupId,
-          organizationId: await organizationIdOf(fixture.manager.id),
-          deletedAt: removedAt.toISOString(),
-          createdAt: stored!.createdAt.toISOString(),
-          updatedAt: removedAt.toISOString(),
-        },
-      ]);
+      expect(res.body.reset).toBe(true);
+      expect(res.body.groupMirrors).toEqual([]);
+      expect((res.body.vacations as VacationRow[]).map((row) => row.id)).not.toContain(
+        fixture.mirroredVacationId
+      );
+      expect((res.body.groups as GroupRow[]).map((row) => row.id)).toEqual([fixture.targetGroupId]);
     });
 
-    it("returns the tombstone of a removed mirror whose owner also left the target group", async () => {
-      const fixture = await seedMirror();
-      await ageEverything();
-      const removedAt = ago(1 * MINUTE);
-      await removeMirror(fixture.mirrorId, removedAt);
-      await removeMember(fixture.targetGroupId, fixture.dana.id);
-
-      const res = await request(app)
-        .get("/api/sync/pull")
-        .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
-        .set("Cookie", await authCookieFor(fixture.caller.id))
-        .expect(200);
-
-      const rows = res.body.groupMirrors as MirrorRow[];
-      expect(rows.map((row) => row.id)).toEqual([fixture.mirrorId]);
-      expect(rows[0]!.deletedAt).toBe(removedAt.toISOString());
-    });
-
-    it("carries a mirror added since the cursor and leaves an untouched one out of the delta", async () => {
+    it("carries a mirror added since the cursor in the reset that follows", async () => {
       const fixture = await seedMirror();
       const secondSource = await makeGroup("Team B", fixture.manager.id);
       await addMember(secondSource, fixture.dana.id);
@@ -277,8 +250,12 @@ describe("Sync pull mirrors E2E", () => {
         .set("Cookie", await authCookieFor(fixture.caller.id))
         .expect(200);
 
-      expect(res.body.reset).toBe(false);
-      expect((res.body.groupMirrors as MirrorRow[]).map((row) => row.id)).toEqual([addedMirror]);
+      expect(res.body.reset).toBe(true);
+      // The snapshot carries the untouched mirror too: it is the whole of what
+      // the caller may see, not what changed.
+      expect((res.body.groupMirrors as MirrorRow[]).map((row) => row.id).sort()).toEqual(
+        [fixture.mirrorId, addedMirror].sort()
+      );
     });
   });
 });

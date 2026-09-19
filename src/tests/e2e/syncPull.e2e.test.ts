@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -25,6 +25,7 @@ import {
   makeUser,
   removeMember,
   resetReportData,
+  seedMembers,
 } from "./helpers/reportFixtures.js";
 
 const ENVELOPE_KEYS = [
@@ -117,40 +118,22 @@ const setMembershipUpdatedAt = async (
     .where(and(eq(groupUsers.groupId, groupId), eq(groupUsers.userId, userId)));
 };
 
+const setVacationUpdatedAt = async (vacationId: string, updatedAt: Date): Promise<void> => {
+  await db.update(vacation).set({ updatedAt }).where(eq(vacation.id, vacationId));
+};
+
+const membershipIdOf = async (groupId: string, userId: string): Promise<string> =>
+  (
+    await db
+      .select({ id: groupUsers.id })
+      .from(groupUsers)
+      .where(and(eq(groupUsers.groupId, groupId), eq(groupUsers.userId, userId)))
+  )[0]!.id;
+
 const membershipIdsOf = async (groupId: string): Promise<string[]> =>
   (
     await db.select({ id: groupUsers.id }).from(groupUsers).where(eq(groupUsers.groupId, groupId))
   ).map((row) => row.id);
-
-/**
- * One insert per table rather than a fixture call per row: the paging tests
- * need more rows than the page holds, and 1100 round trips would dominate the
- * suite's runtime.
- */
-const seedMembers = async (groupId: string, count: number): Promise<string[]> => {
-  const stamp = new Date();
-  const members = Array.from({ length: count }, (_, index) => ({
-    id: uuidv4(),
-    email: `bulk-${index.toString()}-${uuidv4()}@report-e2e.test`,
-    name: `Bulk ${index.toString()}`,
-    emailVerified: true,
-    createdAt: stamp,
-    updatedAt: stamp,
-  }));
-  await db.insert(user).values(members);
-
-  const memberships = members.map((member) => ({
-    id: uuidv4(),
-    groupId,
-    userId: member.id,
-    controlledUser: true,
-    createdAt: stamp,
-    updatedAt: stamp,
-  }));
-  await db.insert(groupUsers).values(memberships);
-
-  return memberships.map((row) => row.id);
-};
 
 describe("Sync pull E2E", () => {
   let app: Express;
@@ -337,14 +320,18 @@ describe("Sync pull E2E", () => {
   });
 
   describe("GET /api/sync/pull with a cursor", () => {
+    // Bookings rather than group rows: a scoped group changing is a reset
+    // trigger, so it is never what a delta carries.
     it("answers a delta carrying only the rows changed since the cursor", async () => {
       const manager = await makeUser("Manager");
-      const changed = await makeGroup("Engineering", manager.id);
-      const untouched = await makeGroup("Support", manager.id);
-      await addMember(changed, manager.id, { adminAccess: true });
-      await addMember(untouched, manager.id, { adminAccess: true });
+      const member = await makeUser("Member");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, manager.id, { adminAccess: true });
+      await addMember(groupId, member.id);
+      const changed = await addLeave(groupId, member.id, dayIn(THIS_YEAR, 5, 4));
+      const untouched = await addLeave(groupId, member.id, dayIn(THIS_YEAR, 5, 5));
       await ageEverything();
-      await setGroupUpdatedAt(changed, ago(1 * MINUTE));
+      await setVacationUpdatedAt(changed, ago(1 * MINUTE));
 
       const res = await request(app)
         .get("/api/sync/pull")
@@ -355,9 +342,10 @@ describe("Sync pull E2E", () => {
       expect(res.headers["cache-control"]).toBe("no-store");
       expect(res.body.reset).toBe(false);
       expect(res.body.hasMore).toBe(false);
-      const groupIds = (res.body.groups as GroupRow[]).map((row) => row.id);
-      expect(groupIds).toEqual([changed]);
-      expect(groupIds).not.toContain(untouched);
+      const vacationIds = (res.body.vacations as VacationRow[]).map((row) => row.id);
+      expect(vacationIds).toEqual([changed]);
+      expect(vacationIds).not.toContain(untouched);
+      expect(res.body.groups).toEqual([]);
       expect(res.body.groupUsers).toEqual([]);
       expect(Object.keys(res.body)).toEqual(ENVELOPE_KEYS);
     });
@@ -366,8 +354,9 @@ describe("Sync pull E2E", () => {
       const manager = await makeUser("Manager");
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, manager.id, { adminAccess: true });
+      const booking = await addLeave(groupId, manager.id, dayIn(THIS_YEAR, 5, 4));
       await ageEverything();
-      await setGroupUpdatedAt(groupId, ago(30 * MINUTE));
+      await setVacationUpdatedAt(booking, ago(30 * MINUTE));
       const cookie = await authCookieFor(manager.id);
 
       const first = await request(app)
@@ -382,9 +371,10 @@ describe("Sync pull E2E", () => {
         .set("Cookie", cookie)
         .expect(200);
 
-      expect((first.body.groups as GroupRow[]).map((row) => row.id)).toEqual([groupId]);
+      expect(first.body.reset).toBe(false);
+      expect((first.body.vacations as VacationRow[]).map((row) => row.id)).toEqual([booking]);
       expect(second.body.reset).toBe(false);
-      expect(second.body.groups).toEqual([]);
+      expect(second.body.vacations).toEqual([]);
       expect(typeof second.body.cursor).toBe("string");
     });
 
@@ -392,8 +382,9 @@ describe("Sync pull E2E", () => {
       const manager = await makeUser("Manager");
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, manager.id, { adminAccess: true });
+      const booking = await addLeave(groupId, manager.id, dayIn(THIS_YEAR, 5, 4));
       await ageEverything();
-      await setGroupUpdatedAt(groupId, ago(20 * SECOND));
+      await setVacationUpdatedAt(booking, ago(20 * SECOND));
       const cookie = await authCookieFor(manager.id);
 
       const first = await request(app)
@@ -408,29 +399,32 @@ describe("Sync pull E2E", () => {
         .set("Cookie", cookie)
         .expect(200);
 
-      expect((first.body.groups as GroupRow[]).map((row) => row.id)).toEqual([groupId]);
-      expect(second.body.groups).toEqual(first.body.groups);
+      expect(first.body.reset).toBe(false);
+      expect((first.body.vacations as VacationRow[]).map((row) => row.id)).toEqual([booking]);
+      expect(second.body.reset).toBe(false);
+      expect(second.body.vacations).toEqual(first.body.vacations);
     });
 
+    // Other members' rows throughout: any row of the caller's own would make
+    // the pull a sync reset, which has no delta ordering to assert on.
     it("orders each table by updatedAt then id", async () => {
       const manager = await makeUser("Manager");
-      const member = await makeUser("Member");
-      const first = await makeGroup("First", manager.id);
-      const second = await makeGroup("Second", manager.id);
-      const third = await makeGroup("Third", manager.id);
-      for (const groupId of [first, second, third]) {
-        await addMember(groupId, manager.id, { adminAccess: true });
-      }
-      await addMember(first, member.id);
+      const alice = await makeUser("Alice");
+      const bob = await makeUser("Bob");
+      const carol = await makeUser("Carol");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, manager.id, { adminAccess: true });
+      for (const member of [alice, bob, carol]) await addMember(groupId, member.id);
+      const tiedBooking = await addLeave(groupId, alice.id, dayIn(THIS_YEAR, 5, 4));
+      const laterBooking = await addLeave(groupId, bob.id, dayIn(THIS_YEAR, 5, 5));
       await ageEverything();
 
       const tie = ago(2 * MINUTE);
-      await setGroupUpdatedAt(first, tie);
-      await setGroupUpdatedAt(second, tie);
-      await setGroupUpdatedAt(third, ago(1 * MINUTE));
-      await setMembershipUpdatedAt(first, manager.id, tie);
-      await setMembershipUpdatedAt(first, member.id, tie);
-      await setMembershipUpdatedAt(second, manager.id, ago(1 * MINUTE));
+      await setMembershipUpdatedAt(groupId, alice.id, tie);
+      await setMembershipUpdatedAt(groupId, bob.id, tie);
+      await setMembershipUpdatedAt(groupId, carol.id, ago(1 * MINUTE));
+      await setVacationUpdatedAt(tiedBooking, tie);
+      await setVacationUpdatedAt(laterBooking, ago(1 * MINUTE));
 
       const res = await request(app)
         .get("/api/sync/pull")
@@ -438,27 +432,35 @@ describe("Sync pull E2E", () => {
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
 
-      const tiedGroups = [first, second].sort();
-      expect((res.body.groups as GroupRow[]).map((row) => row.id)).toEqual([...tiedGroups, third]);
-
-      const tiedMemberships = (await membershipIdsOf(first)).sort();
-      const [laterMembership] = await membershipIdsOf(second);
+      const tiedMemberships = [
+        await membershipIdOf(groupId, alice.id),
+        await membershipIdOf(groupId, bob.id),
+      ].sort();
       expect((res.body.groupUsers as GroupUserRow[]).map((row) => row.id)).toEqual([
         ...tiedMemberships,
-        laterMembership,
+        await membershipIdOf(groupId, carol.id),
+      ]);
+      expect((res.body.vacations as VacationRow[]).map((row) => row.id)).toEqual([
+        tiedBooking,
+        laterBooking,
       ]);
     });
 
+    // A group the caller belongs to changing is a reset trigger, so the only
+    // group row a delta ever carries is one of a group they have left and
+    // still hold bookings in.
     it("names the organization of every group in the delta and no other", async () => {
       const manager = await makeUser("Manager");
-      const otherManager = await makeUser("Other Manager");
+      const formerManager = await makeUser("Former Manager");
       const caller = await makeUser("Caller");
-      const changed = await makeGroup("Engineering", manager.id);
-      const untouched = await makeGroup("Finance", otherManager.id);
-      await addMember(changed, caller.id, { viewAccess: true });
-      await addMember(untouched, caller.id, { viewAccess: true });
+      const current = await makeGroup("Engineering", manager.id);
+      const former = await makeGroup("Finance", formerManager.id);
+      await addMember(current, caller.id, { viewAccess: true });
+      await addMember(former, caller.id);
+      await addLeave(former, caller.id, dayIn(THIS_YEAR, 5, 4));
+      await removeMember(former, caller.id);
       await ageEverything();
-      await setGroupUpdatedAt(changed, ago(1 * MINUTE));
+      await setGroupUpdatedAt(former, ago(1 * MINUTE));
 
       const res = await request(app)
         .get("/api/sync/pull")
@@ -466,11 +468,13 @@ describe("Sync pull E2E", () => {
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
 
+      expect(res.body.reset).toBe(false);
+      expect((res.body.groups as GroupRow[]).map((row) => row.id)).toEqual([former]);
       const organizations = res.body.organizations as { id: string; name: string }[];
-      expect(organizations.map((row) => row.id)).toEqual([await organizationIdOf(manager.id)]);
-      expect(organizations.map((row) => row.id)).not.toContain(
-        await organizationIdOf(otherManager.id)
-      );
+      expect(organizations.map((row) => row.id)).toEqual([
+        await organizationIdOf(formerManager.id),
+      ]);
+      expect(organizations.map((row) => row.id)).not.toContain(await organizationIdOf(manager.id));
     });
 
     it("keeps a membership of a group the caller only sees themselves in out of the delta", async () => {
@@ -495,34 +499,37 @@ describe("Sync pull E2E", () => {
       expect(rows[0]!.userId).toBe(plain.id);
     });
 
-    // Stamped by hand rather than through `deleteGroup`, whose employment sweep
-    // writes rows this suite does not clean up. What matters for the delta is
-    // the shape that service leaves behind: the group soft-deleted, its
-    // membership rows still live.
+    // A group the caller still belongs to being deleted is a reset trigger, so
+    // the only group tombstone a delta carries is one of a group they have
+    // left and still hold bookings in. Stamped by hand rather than through
+    // `deleteGroup`, whose employment sweep writes rows this suite does not
+    // clean up.
     it("returns a group soft-deleted since the cursor in full, with deletedAt set", async () => {
       const manager = await makeUser("Manager");
-      const groupId = await makeGroup("Engineering", manager.id);
-      await addMember(groupId, manager.id, { adminAccess: true });
+      const caller = await makeUser("Caller");
+      const current = await makeGroup("Engineering", manager.id);
+      const former = await makeGroup("Finance", manager.id);
+      await addMember(current, caller.id);
+      await addMember(former, caller.id);
+      await addLeave(former, caller.id, dayIn(THIS_YEAR, 5, 4));
+      await removeMember(former, caller.id);
       await ageEverything();
       const deletedAt = ago(1 * MINUTE);
-      await db
-        .update(groups)
-        .set({ deletedAt, updatedAt: deletedAt })
-        .where(eq(groups.id, groupId));
+      await db.update(groups).set({ deletedAt, updatedAt: deletedAt }).where(eq(groups.id, former));
 
       const res = await request(app)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
-        .set("Cookie", await authCookieFor(manager.id))
+        .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
 
-      const [stored] = await db.select().from(groups).where(eq(groups.id, groupId));
+      const [stored] = await db.select().from(groups).where(eq(groups.id, former));
       expect(res.body.reset).toBe(false);
       expect(res.body.groups).toEqual([
         {
-          id: groupId,
+          id: former,
           organizationId: stored!.organizationId,
-          groupName: "Engineering",
+          groupName: "Finance",
           defaultVacationDays: stored!.defaultVacationDays,
           defaultHomeOfficeDays: stored!.defaultHomeOfficeDays,
           defaultSickDays: stored!.defaultSickDays,
@@ -538,6 +545,8 @@ describe("Sync pull E2E", () => {
       ]);
     });
 
+    // Somebody else leaving a group the caller sees in full is not a reset
+    // trigger, so this is the one tombstone a delta still carries.
     it("returns a membership removed since the cursor in full, with deletedAt set", async () => {
       const manager = await makeUser("Manager");
       const leaver = await makeUser("Leaver");
@@ -668,17 +677,22 @@ describe("Sync pull E2E", () => {
     const seedOverflowingGroup = async (): Promise<{
       cookie: string;
       groupId: string;
+      managerId: string;
       membershipIds: string[];
+      /** Everyone but the caller, whose own membership changing is a reset trigger. */
+      bulkMembershipIds: string[];
     }> => {
       const manager = await makeUser("Manager");
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, manager.id, { adminAccess: true });
-      await seedMembers(groupId, 1100);
+      const bulkMembershipIds = await seedMembers(groupId, 1100);
       await ageEverything();
       return {
         cookie: await authCookieFor(manager.id),
         groupId,
+        managerId: manager.id,
         membershipIds: await membershipIdsOf(groupId),
+        bulkMembershipIds,
       };
     };
 
@@ -732,8 +746,11 @@ describe("Sync pull E2E", () => {
     });
 
     it("pages a delta too, keeping reset false and delivering every changed row once", async () => {
-      const { membershipIds, cookie } = await seedOverflowingGroup();
-      await db.update(groupUsers).set({ updatedAt: ago(5 * MINUTE) });
+      const { bulkMembershipIds, managerId, cookie } = await seedOverflowingGroup();
+      await db
+        .update(groupUsers)
+        .set({ updatedAt: ago(5 * MINUTE) })
+        .where(ne(groupUsers.userId, managerId));
 
       // Every changed membership brings its member's user row along, so the
       // loop spans more than two pages; follow it to the end.
@@ -750,14 +767,14 @@ describe("Sync pull E2E", () => {
       expect(pages.every((page) => page.reset === false)).toBe(true);
       const delivered = pages.flatMap((page) => page.groupUsers.map((row) => row.id));
       expect(new Set(delivered).size).toBe(delivered.length);
-      expect(delivered.sort()).toEqual([...membershipIds].sort());
+      expect(delivered.sort()).toEqual([...bulkMembershipIds].sort());
       const users = pages.flatMap((page) => page.users.map((row) => row.id));
       expect(new Set(users).size).toBe(users.length);
-      expect(users.length).toBe(membershipIds.length);
+      expect(users.length).toBe(bulkMembershipIds.length);
     });
 
     it("leaves a row changed mid-loop to the next delta rather than chasing it into a later page", async () => {
-      const { membershipIds, cookie } = await seedOverflowingGroup();
+      const { bulkMembershipIds, cookie } = await seedOverflowingGroup();
 
       const pages: SyncPageBody[] = [];
       let cursor: string | undefined;
@@ -768,7 +785,7 @@ describe("Sync pull E2E", () => {
         cursor = page.hasMore ? page.cursor : undefined;
         if (changedLater === undefined && page.groupUsers.length > 0) {
           const delivered = new Set(pages.flatMap((seen) => seen.groupUsers.map((row) => row.id)));
-          changedLater = membershipIds.find((id) => !delivered.has(id));
+          changedLater = bulkMembershipIds.find((id) => !delivered.has(id));
           if (changedLater !== undefined) {
             await db
               .update(groupUsers)

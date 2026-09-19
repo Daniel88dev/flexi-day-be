@@ -122,13 +122,13 @@ export const syncRouter = (): Router => {
    *       nothing.
    *
    *       A soft-deleted row arrives in a delta as a tombstone: the whole row
-   *       with `deletedAt` set, so the client can drop its copy. A delta
-   *       tombstones a group the caller still belongs to and, in a group they
-   *       see in full, the membership of anyone who left it and any mirror
-   *       removed from it. The caller's own
-   *       removal takes the group out of scope instead of tombstoning it. A
-   *       snapshot holds live membership rows only — the client sweeps whatever
-   *       the snapshot did not re-send.
+   *       with `deletedAt` set, so the client can drop its copy. In a group
+   *       the caller sees in full that is the membership of anybody else who
+   *       left it. Their own removal, a group of theirs being deleted and a
+   *       mirror removed from one are reset triggers instead, so the snapshot
+   *       that answers them stops carrying those rows rather than tombstoning
+   *       them. A snapshot holds live membership rows only, for the same
+   *       reason — the client sweeps whatever the snapshot did not re-send.
    *
    *       A cancelled booking arrives the same way, in full with `deletedAt`
    *       and `deletedByUserId` set, but the client keeps it rather than
@@ -148,6 +148,26 @@ export const syncRouter = (): Router => {
    *       else it cannot read as one cursor, such as the parameter repeated. A
    *       cursor is never rejected with an error, and an unusable one mid-loop
    *       restarts the loop as a fresh snapshot.
+   *
+   *       A pull also answers a sync reset when what the caller may see moved
+   *       under the cursor, which no set of changed rows can express. The
+   *       triggers are a row changed later than the cursor time minus 60
+   *       seconds and no later than the position this pull was minted with —
+   *       a soft delete counts, because it stamps `updatedAt` like any other
+   *       write — in one of three places:
+   *
+   *       - a `groupUsers` row of the caller, in any group: joining, gaining
+   *         or losing a flag, or being removed;
+   *       - a `groupMirrors` row whose target is a group the caller belongs
+   *         to, added or removed;
+   *       - a `groups` row of a group the caller belongs to: a manager
+   *         transfer, a rename, a holiday country change or a soft delete.
+   *
+   *       Anything else stays a delta carrying only the rows that changed:
+   *       another member's booking, a quota edit, a membership change in a
+   *       group the caller does not belong to, a mirror into one. The triggers
+   *       are read once per pull, for a fresh delta only: a pull resuming a
+   *       paged loop stays in the loop it belongs to, whichever kind that is.
    *
    *       A pull is paged at a fixed 1000 rows across all tables, and there is
    *       no `limit` parameter. When more rows are waiting, `hasMore` is `true`
@@ -216,7 +236,8 @@ export const syncRouter = (): Router => {
    *                   type: boolean
    *                   description: |
    *                     True when the payload is a full snapshot rather than a
-   *                     delta: no cursor, or one the server could not use
+   *                     delta: no cursor, one the server could not use, or a
+   *                     change since the cursor to what the caller may see
    *                 organizations:
    *                   type: array
    *                   items:

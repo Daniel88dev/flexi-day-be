@@ -80,6 +80,36 @@ export async function addMember(
 }
 
 /**
+ * Many members at once, one insert per table rather than a fixture call per
+ * row: the sync paging cases need more rows than a page holds, and a round
+ * trip each would dominate the suite's runtime. Returns the membership ids.
+ */
+export async function seedMembers(groupId: string, count: number): Promise<string[]> {
+  const stamp = new Date();
+  const members = Array.from({ length: count }, (_, index) => ({
+    id: uuidv4(),
+    email: `bulk-${index.toString()}-${uuidv4()}@report-e2e.test`,
+    name: `Bulk ${index.toString()}`,
+    emailVerified: true,
+    createdAt: stamp,
+    updatedAt: stamp,
+  }));
+  await db.insert(user).values(members);
+
+  const memberships = members.map((member) => ({
+    id: uuidv4(),
+    groupId,
+    userId: member.id,
+    controlledUser: true,
+    createdAt: stamp,
+    updatedAt: stamp,
+  }));
+  await db.insert(groupUsers).values(memberships);
+
+  return memberships.map((row) => row.id);
+}
+
+/**
  * Switches on the Sick day benefit for the manager's organization. Reporting
  * keys on the stored toggle alone, so no subscription row is needed here.
  */

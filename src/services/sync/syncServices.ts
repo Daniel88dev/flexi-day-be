@@ -170,6 +170,10 @@ const inWindow = (updatedAt: PgColumn, window: SyncWindow): SQL | undefined =>
     lte(updatedAt, window.until)
   );
 
+/** How far back a delta reaches: the cursor time, less the overlap window. */
+const deltaWindowStart = (previousCursorTime: Date): Date =>
+  new Date(previousCursorTime.getTime() - SYNC_OVERLAP_MS);
+
 /** The predicate that resumes a table ordered by id alone where the last page stopped. */
 const afterId = (id: PgColumn, after: SyncKeyset | null): SQL | undefined =>
   after === null ? undefined : gt(id, after.id);
@@ -879,7 +883,7 @@ const buildSyncDelta = async (
   cursorTime: Date,
   resume: SyncPagePosition | null = null
 ): Promise<SyncEnvelope> => {
-  const since = new Date(previousCursorTime.getTime() - SYNC_OVERLAP_MS);
+  const since = deltaWindowStart(previousCursorTime);
   const scope = splitScope(await getScopeEntries(userId, { includeDeletedGroups: true }));
   const bankHolidayWindow = syncBankHolidayWindow(cursorTime);
   const holidayCountries = memoize(() => getScopedHolidayCountries(scope.groupIds));
@@ -907,6 +911,78 @@ const buildSyncDelta = async (
   });
 };
 
+/** Whether any row of `table` matching `groupIds` changed inside the window. */
+const anyChangedInWindow = async (
+  table: typeof groupMirrors | typeof groups,
+  groupColumn: PgColumn,
+  groupIds: string[],
+  window: SyncWindow
+): Promise<boolean> => {
+  const rows = await db
+    .select({ one: sql`1` })
+    .from(table)
+    .where(and(inArray(groupColumn, groupIds), inWindow(table.updatedAt, window)))
+    .limit(1);
+
+  return rows.length > 0;
+};
+
+/**
+ * Whether what the caller may see changed inside the window a delta covers,
+ * which no set of changed rows can express: a membership row of their own in
+ * any group, a mirror row targeting one of their groups, or one of those
+ * group rows. Soft deletes count, because they bump `updatedAt` like any
+ * other write.
+ *
+ * Membership rows are read whatever their `deletedAt` says: the caller's own
+ * removal is the one trigger the live scope can no longer see. The groups
+ * checked after it are the ones the caller still belongs to — a group they
+ * left since the cursor changed their membership row too, so it has already
+ * triggered.
+ */
+const hasSyncResetTrigger = async (callerId: string, window: SyncWindow): Promise<boolean> => {
+  const memberships = await db
+    .select({
+      groupId: groupUsers.groupId,
+      deletedAt: groupUsers.deletedAt,
+      updatedAt: groupUsers.updatedAt,
+    })
+    .from(groupUsers)
+    .where(eq(groupUsers.userId, callerId));
+
+  const inside = (updatedAt: Date): boolean =>
+    (window.since === null || updatedAt > window.since) && updatedAt <= window.until;
+  if (memberships.some((row) => inside(row.updatedAt))) return true;
+
+  const groupIds = [
+    ...new Set(memberships.filter((row) => row.deletedAt === null).map((row) => row.groupId)),
+  ];
+  if (groupIds.length === 0) return false;
+
+  const [mirrors, scopedGroups] = await Promise.all([
+    anyChangedInWindow(groupMirrors, groupMirrors.targetGroupId, groupIds, window),
+    anyChangedInWindow(groups, groups.id, groupIds, window),
+  ]);
+
+  return mirrors || scopedGroups;
+};
+
+/**
+ * A delta, unless the caller's scope moved under it since the cursor. The
+ * check runs before any reader, and only for a fresh delta: a resumed page
+ * stays in the loop it belongs to, whichever kind that is.
+ */
+const buildFreshSyncPull = async (
+  userId: string,
+  previousCursorTime: Date,
+  cursorTime: Date
+): Promise<SyncEnvelope> => {
+  const window = { since: deltaWindowStart(previousCursorTime), until: cursorTime };
+  return (await hasSyncResetTrigger(userId, window))
+    ? buildSyncSnapshot(userId, cursorTime)
+    : buildSyncDelta(userId, previousCursorTime, cursorTime);
+};
+
 /**
  * Which pull a request is. A cursor carrying page state continues the loop it
  * belongs to, reusing the cursor time it was minted with, so the window does
@@ -926,7 +1002,7 @@ export const buildSyncPull = (
     // moves, and a delta has no tombstone for that; a snapshot lets the client
     // sweep them.
     return sameHistoryWindow(cursor.cursorTime, cursorTime)
-      ? buildSyncDelta(userId, cursor.cursorTime, cursorTime)
+      ? buildFreshSyncPull(userId, cursor.cursorTime, cursorTime)
       : buildSyncSnapshot(userId, cursorTime);
   }
 
