@@ -52,6 +52,7 @@
     "@sentry/node": "^10.74.0",
     "@sentry/profiling-node": "^10.74.0",
     "better-auth": "^1.7.4",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "croner": "^10.0.1",
     "date-holidays": "^3.36.1",
@@ -72,6 +73,7 @@
   "devDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1131.0",
     "@eslint/js": "^10.0.1",
+    "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/eslint-plugin-security": "^3.0.0",
     "@types/express": "^5.0.3",

@@ -4,6 +4,7 @@ import { db } from "../../../db/db.js";
 import { user } from "../../../db/schema/auth-schema.js";
 import { groups } from "../../../db/schema/group-schema.js";
 import { groupUsers } from "../../../db/schema/group-users-schema.js";
+import { groupMirrors } from "../../../db/schema/group-mirror-schema.js";
 import { vacation, CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import { userYearQuotas } from "../../../db/schema/user-year-quotas-schema.js";
 import { changesSchema, changesType } from "../../../db/schema/changes-schema.js";
@@ -14,6 +15,7 @@ import { session } from "../../../db/schema/auth-schema.js";
 import { organizations } from "../../../db/schema/organization-schema.js";
 import { subscriptions } from "../../../db/schema/subscription-schema.js";
 import { attachments } from "../../../db/schema/attachment-schema.js";
+import { bankHolidays } from "../../../db/schema/bank-holiday-schema.js";
 import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 /**
@@ -35,7 +37,11 @@ export async function makeUser(name: string): Promise<{ id: string; name: string
   return { id, name };
 }
 
-export async function makeGroup(groupName: string, managerUserId: string): Promise<string> {
+export async function makeGroup(
+  groupName: string,
+  managerUserId: string,
+  options: { holidayCountry?: string } = {}
+): Promise<string> {
   const id = uuidv4();
   const organization = await ensureOrganizationForUser(managerUserId);
   await db.insert(groups).values({
@@ -43,6 +49,7 @@ export async function makeGroup(groupName: string, managerUserId: string): Promi
     organizationId: organization.id,
     groupName,
     managerUserId,
+    holidayCountry: options.holidayCountry ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
@@ -73,6 +80,36 @@ export async function addMember(
 }
 
 /**
+ * Many members at once, one insert per table rather than a fixture call per
+ * row: the sync paging cases need more rows than a page holds, and a round
+ * trip each would dominate the suite's runtime. Returns the membership ids.
+ */
+export async function seedMembers(groupId: string, count: number): Promise<string[]> {
+  const stamp = new Date();
+  const members = Array.from({ length: count }, (_, index) => ({
+    id: uuidv4(),
+    email: `bulk-${index.toString()}-${uuidv4()}@report-e2e.test`,
+    name: `Bulk ${index.toString()}`,
+    emailVerified: true,
+    createdAt: stamp,
+    updatedAt: stamp,
+  }));
+  await db.insert(user).values(members);
+
+  const memberships = members.map((member) => ({
+    id: uuidv4(),
+    groupId,
+    userId: member.id,
+    controlledUser: true,
+    createdAt: stamp,
+    updatedAt: stamp,
+  }));
+  await db.insert(groupUsers).values(memberships);
+
+  return memberships.map((row) => row.id);
+}
+
+/**
  * Switches on the Sick day benefit for the manager's organization. Reporting
  * keys on the stored toggle alone, so no subscription row is needed here.
  */
@@ -90,6 +127,32 @@ export async function removeMember(groupId: string, userId: string): Promise<voi
     .update(groupUsers)
     .set({ deletedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(groupUsers.groupId, groupId), eq(groupUsers.userId, userId)));
+}
+
+/** Projects the user's records from a source group into a target group they belong to. */
+export async function addMirror(
+  userId: string,
+  sourceGroupId: string,
+  targetGroupId: string
+): Promise<string> {
+  const id = uuidv4();
+  await db.insert(groupMirrors).values({
+    id,
+    userId,
+    sourceGroupId,
+    targetGroupId,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
+}
+
+/** Soft-deletes a mirror, as removing one does. */
+export async function removeMirror(mirrorId: string, at: Date = new Date()): Promise<void> {
+  await db
+    .update(groupMirrors)
+    .set({ deletedAt: at, updatedAt: at })
+    .where(eq(groupMirrors.id, mirrorId));
 }
 
 export async function addQuota(
@@ -123,6 +186,11 @@ export type LeaveOptions = {
   approved?: boolean;
   rejected?: boolean;
   note?: string | null;
+  rejectionReason?: string | null;
+  /** The actor columns, for tests that assert who a row points at. */
+  approvedBy?: string;
+  rejectedBy?: string;
+  createdByUserId?: string;
 };
 
 /** Books one day. `approved` defaults to true so usage lands in "used". */
@@ -142,12 +210,28 @@ export async function addLeave(
     vacationType: options.type ?? CalendarRecordType.Vacation,
     halfDay: options.halfDay ?? false,
     approvedAt: options.approved === false ? null : new Date(),
+    approvedBy: options.approvedBy ?? null,
     rejectedAt: options.rejected ? new Date() : null,
+    rejectedBy: options.rejectedBy ?? null,
+    rejectionReason: options.rejectionReason ?? null,
     note: options.note ?? null,
+    createdByUserId: options.createdByUserId ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
   return id;
+}
+
+/** Cancels a booking the way the cancel transition does: soft-deleted, actor recorded. */
+export async function cancelLeave(
+  vacationId: string,
+  deletedByUserId: string,
+  at: Date = new Date()
+): Promise<void> {
+  await db
+    .update(vacation)
+    .set({ deletedAt: at, deletedByUserId, updatedAt: at })
+    .where(eq(vacation.id, vacationId));
 }
 
 export async function addLeaveRange(
@@ -183,16 +267,35 @@ export async function addChange(
 }
 
 /**
- * Wipes every table this suite writes to. `changes.changing_user_id` has no
- * cascade, so it must go before the users it points at.
+ * Pushes every row of the fixture out of reach of any cursor a sync test
+ * mints, so only the rows a test then restamps land in a delta.
+ */
+export async function ageEverything(): Promise<void> {
+  const longAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  await db.update(user).set({ updatedAt: longAgo });
+  await db.update(groups).set({ updatedAt: longAgo });
+  await db.update(groupUsers).set({ updatedAt: longAgo });
+  await db.update(groupMirrors).set({ updatedAt: longAgo });
+  await db.update(userYearQuotas).set({ updatedAt: longAgo });
+  await db.update(vacation).set({ updatedAt: longAgo });
+  await db.update(bankHolidays).set({ updatedAt: longAgo });
+}
+
+/**
+ * Wipes every table these suites write to, `bank_holidays` included: the sync
+ * pull fills it on the way past, so a case asserting on an unfilled country
+ * needs it empty. `changes.changing_user_id` has no cascade, so it must go
+ * before the users it points at.
  */
 export async function resetReportData(): Promise<void> {
+  await db.delete(bankHolidays);
   await db.delete(reportExports);
   await db.delete(attachments);
   await db.delete(changesSchema);
   await db.delete(vacationEvents);
   await db.delete(vacation);
   await db.delete(userYearQuotas);
+  await db.delete(groupMirrors);
   await db.delete(groupUsers);
   await db.delete(notifications);
   await db.delete(session);
