@@ -467,22 +467,26 @@ const getSyncUserIds = async (context: SyncReadContext): Promise<SyncUserIds> =>
   // The people on the rows this pull carries are owed whatever their own row
   // says; the people on every visible row are eligible when their own row
   // changed, or a renamed approver on an old booking would never arrive.
-  const actors = await getVacationActorIds(context, context.window);
+  const actors = new Set(await getVacationActorIds(context, context.window));
   const everyActor =
-    context.window.since === null ? actors : await getVacationActorIds(context, null);
+    context.window.since === null ? [...actors] : await getVacationActorIds(context, null);
   const ids = new Set<string>([context.callerId, ...everyActor]);
 
   if (context.scope.fullGroupIds.length > 0) {
-    const [members, managers] = await Promise.all([
-      db
-        .select({ userId: groupUsers.userId })
-        .from(groupUsers)
-        .where(
-          and(
-            inArray(groupUsers.groupId, context.scope.fullGroupIds),
-            context.liveOnly ? isNull(groupUsers.deletedAt) : undefined
-          )
-        ),
+    const membersWhere = and(
+      inArray(groupUsers.groupId, context.scope.fullGroupIds),
+      context.liveOnly ? isNull(groupUsers.deletedAt) : undefined
+    );
+    const [members, changedMembers, managers] = await Promise.all([
+      db.select({ userId: groupUsers.userId }).from(groupUsers).where(membersWhere),
+      // The membership rows this pull carries name people too, so a member
+      // added since the cursor must arrive with their row whatever it says.
+      context.window.since === null
+        ? []
+        : db
+            .select({ userId: groupUsers.userId })
+            .from(groupUsers)
+            .where(and(membersWhere, inWindow(groupUsers.updatedAt, context.window))),
       // A manager holds no membership row of their own in every group, so the
       // group row's own column is what keeps them nameable.
       db
@@ -492,10 +496,11 @@ const getSyncUserIds = async (context: SyncReadContext): Promise<SyncUserIds> =>
     ]);
 
     for (const row of members) ids.add(row.userId);
+    for (const row of changedMembers) actors.add(row.userId);
     for (const row of managers) ids.add(row.managerUserId);
   }
 
-  return { actors, all: [...ids] };
+  return { actors: [...actors], all: [...ids] };
 };
 
 /**

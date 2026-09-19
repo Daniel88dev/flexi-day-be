@@ -748,16 +748,25 @@ describe("Sync pull E2E", () => {
       const { membershipIds, cookie } = await seedOverflowingGroup();
       await db.update(groupUsers).set({ updatedAt: ago(5 * MINUTE) });
 
-      const first = await pull(cookie, encodeSyncCursor(ago(10 * MINUTE)));
-      const last = await pull(cookie, first.cursor);
+      // Every changed membership brings its member's user row along, so the
+      // loop spans more than two pages; follow it to the end.
+      const pages: SyncPageBody[] = [];
+      let cursor = encodeSyncCursor(ago(10 * MINUTE));
+      do {
+        const page = await pull(cookie, cursor);
+        pages.push(page);
+        cursor = page.cursor;
+      } while (pages.at(-1)!.hasMore && pages.length < 10);
 
-      expect(first.hasMore).toBe(true);
-      expect(first.reset).toBe(false);
-      expect(last.hasMore).toBe(false);
-      expect(last.reset).toBe(false);
-      const delivered = [...first.groupUsers, ...last.groupUsers].map((row) => row.id);
+      expect(pages.length).toBeGreaterThan(1);
+      expect(pages.at(-1)!.hasMore).toBe(false);
+      expect(pages.every((page) => page.reset === false)).toBe(true);
+      const delivered = pages.flatMap((page) => page.groupUsers.map((row) => row.id));
       expect(new Set(delivered).size).toBe(delivered.length);
       expect(delivered.sort()).toEqual([...membershipIds].sort());
+      const users = pages.flatMap((page) => page.users.map((row) => row.id));
+      expect(new Set(users).size).toBe(users.length);
+      expect(users.length).toBe(membershipIds.length);
     });
 
     it("leaves a row changed mid-loop to the next delta rather than chasing it into a later page", async () => {
@@ -1110,6 +1119,28 @@ describe("Sync pull E2E", () => {
   });
 
   describe("GET /api/sync/pull deltas over the new tables", () => {
+    it("carries the user row of a member added to a full group since the cursor", async () => {
+      const manager = await makeUser("Manager");
+      const caller = await makeUser("Caller");
+      const newcomer = await makeUser("Newcomer");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, caller.id, { viewAccess: true });
+      await ageEverything();
+      await addMember(groupId, newcomer.id);
+
+      const res = await request(app)
+        .get("/api/sync/pull")
+        .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
+        .set("Cookie", await authCookieFor(caller.id))
+        .expect(200);
+
+      expect(res.body.reset).toBe(false);
+      expect((res.body.groupUsers as GroupUserRow[]).map((row) => row.userId)).toEqual([
+        newcomer.id,
+      ]);
+      expect((res.body.users as UserRow[]).map((row) => row.id)).toEqual([newcomer.id]);
+    });
+
     it("carries a vacation changed since the cursor and leaves an untouched one out", async () => {
       const manager = await makeUser("Manager");
       const caller = await makeUser("Caller");
