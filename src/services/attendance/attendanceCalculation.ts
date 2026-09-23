@@ -25,6 +25,7 @@ export type CalculableSession = Span & {
   businessDate: DateString;
   closedBy: attendanceClosedBy | null;
   origin: attendanceSessionOrigin;
+  changedAfterDay: boolean;
   breaks: CalculableBreak[];
 };
 
@@ -82,7 +83,12 @@ export type AttendanceDay = {
   excludedClockIn: boolean;
   /** A session on it was entered after the fact. A permanent fact, never a flag. */
   entered: boolean;
-  /** {@link autoClosed}, {@link excludedClockIn}, or still open on a day that has passed. */
+  /** Its owner changed a session on it after the day, and no admin has looked since. */
+  changedAfterDay: boolean;
+  /**
+   * {@link autoClosed}, {@link excludedClockIn}, {@link changedAfterDay}, or still
+   * open on a day that has passed.
+   */
   flagged: boolean;
 };
 
@@ -181,6 +187,7 @@ export const computeAttendance = ({
     const outsideTheSpell = exclusion?.cause === AttendanceExclusionCause.NotEmployed;
     const excludedClockIn = fullyExcluded && !outsideTheSpell && presenceMinutes > 0;
 
+    const changedAfterDay = ofDate.some((session) => session.changedAfterDay);
     const upcoming = businessDate > today;
     const open = ofDate.some((session) => session.endedAt === null);
     const autoClosed = ofDate.some(
@@ -211,8 +218,9 @@ export const computeAttendance = ({
       exclusion: exclusion ?? null,
       excludedClockIn,
       entered: ofDate.some((session) => session.origin === attendanceSessionOrigin.Entered),
+      changedAfterDay,
       // An open session on today's date is somebody at work, not a mistake.
-      flagged: autoClosed || excludedClockIn || (open && businessDate < today),
+      flagged: autoClosed || excludedClockIn || changedAfterDay || (open && businessDate < today),
     };
   });
 

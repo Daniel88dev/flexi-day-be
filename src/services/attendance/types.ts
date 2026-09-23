@@ -42,6 +42,8 @@ export type AttendanceSessionType = {
   origin: attendanceSessionOrigin;
   /** Who entered it, from its `SESSION_CREATED` event; null for a clocked session. */
   enteredByUserId: string | null;
+  /** Its owner changed it after its business date, and no admin has looked since. */
+  changedAfterDay: boolean;
   startLatitude: number | null;
   startLongitude: number | null;
   startAccuracy: number | null;
@@ -65,6 +67,11 @@ export type AttendanceStateType = {
   active: boolean;
   locationEnabled: boolean;
   selfService: SelfServiceWindow;
+  /**
+   * The caller administers their own Employment, so their writes are an
+   * admin's: the window never applies and nothing they change is flagged.
+   */
+  administersOwnAttendance: boolean;
   /** The organization's zone, and today in it. Null when attendance was never set up. */
   timezone: string | null;
   businessDate: DateString | null;

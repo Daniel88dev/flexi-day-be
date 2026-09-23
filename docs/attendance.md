@@ -146,8 +146,11 @@ It must sit inside its session and not overlap another break.
 - Every change, by a person or by the sweep, appends an attendance event. A null changing user is
   the sweep. That includes entering a session and adding a break.
 - A session the employee changed after its business date, by editing it or by adding, moving or
-  removing one of its breaks, is flagged on the dashboard until an admin corrects it, the same way
-  a swept session is. A session they entered carries the entered mark instead.
+  removing one of its breaks, is flagged on the dashboard until an admin corrects it or marks it
+  checked, the same way a swept session is. Marking it checked moves no time and has its own
+  attendance event; it is for a change that was right, and a session that is not flagged has
+  nothing to check. A session they entered carries the entered mark instead, until they change
+  it after its day.
 - Every change to the attendance settings is logged with who made it, when, and the values before
   and after. Nothing in the product reads the log back; it answers "when was the window open, and
   who opened it".

@@ -142,6 +142,49 @@ export const overlappingBreak = <T extends BreakSpan>(
   });
 };
 
+/**
+ * Whether a session reads as changed by its owner after its business date once
+ * a write lands. An admin write is the review the flag asks for, so it clears it.
+ */
+export const nextChangedAfterDay = ({
+  right,
+  businessDate,
+  today,
+  wasFlagged,
+}: {
+  right: AttendanceCorrectionRight;
+  businessDate: DateString;
+  today: DateString;
+  wasFlagged: boolean;
+}): boolean =>
+  right === AttendanceCorrectionRight.Admin ? false : wasFlagged || businessDate < today;
+
+type FlaggableSubject = Pick<CorrectionSubject, "session" | "right" | "timezone">;
+
+const changedAfterDayOnWrite = ({ session, right, timezone }: FlaggableSubject, now: Date) =>
+  nextChangedAfterDay({
+    right,
+    businessDate: session.businessDate,
+    today: businessDateInZone(now, timezone),
+    wasFlagged: session.changedAfterDay,
+  });
+
+/** A break write moves the session's figures, so it settles the session's flag too. */
+const settleChangedAfterDay = async (
+  subject: FlaggableSubject,
+  tx: DbTransaction,
+  now: Date
+): Promise<void> => {
+  const { session } = subject;
+  const changedAfterDay = changedAfterDayOnWrite(subject, now);
+  if (changedAfterDay === session.changedAfterDay) return;
+
+  await tx
+    .update(attendanceSessions)
+    .set({ changedAfterDay })
+    .where(eq(attendanceSessions.id, session.id));
+};
+
 const assertNoBreakOverlap = (
   candidate: BreakSpan,
   breaks: AttendanceBreakType[],
@@ -374,7 +417,8 @@ export const correctAttendanceSession = async (
   tx: DbTransaction,
   now = new Date()
 ): Promise<AttendanceSessionView> => {
-  const { session, breaks, right } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const subject = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const { session, breaks, right } = subject;
 
   const next = applyCorrection(session, patch);
   assertCoherent(next, breaks);
@@ -389,10 +433,11 @@ export const correctAttendanceSession = async (
   await assertNoSessionOverlap(session.employmentId, next, { exceptSessionId: session.id }, tx);
 
   const closedBy = closedByAfter(session, next, patch, right);
+  const changedAfterDay = changedAfterDayOnWrite(subject, now);
 
   await tx
     .update(attendanceSessions)
-    .set({ startedAt: next.startedAt, endedAt: next.endedAt, closedBy })
+    .set({ startedAt: next.startedAt, endedAt: next.endedAt, closedBy, changedAfterDay })
     .where(eq(attendanceSessions.id, session.id));
 
   await appendAttendanceEvent(
@@ -449,7 +494,8 @@ export const correctAttendanceBreak = async (
   const named = await getBreakById(breakId, tx);
   if (!named) throw breakNotFound(breakId, viewerUserId);
 
-  const { session, breaks } = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const subject = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const { session, breaks } = subject;
 
   const entry = breaks.find((candidate) => candidate.id === breakId);
   if (!entry) throw breakNotFound(breakId, viewerUserId);
@@ -480,6 +526,7 @@ export const correctAttendanceBreak = async (
     .update(attendanceBreaks)
     .set({ startedAt: next.startedAt, endedAt: next.endedAt, autoClosed })
     .where(eq(attendanceBreaks.id, entry.id));
+  await settleChangedAfterDay(subject, tx, now);
 
   await appendAttendanceEvent(
     {
@@ -516,7 +563,8 @@ export const addAttendanceBreak = async (
   tx: DbTransaction,
   now = new Date()
 ): Promise<AttendanceSessionView> => {
-  const { session, breaks } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const subject = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const { session, breaks } = subject;
 
   if (session.endedAt === null) {
     throw attendanceConflict(
@@ -528,6 +576,7 @@ export const addAttendanceBreak = async (
   }
 
   await recordAddedBreak(viewerUserId, session, breaks, input, tx);
+  await settleChangedAfterDay(subject, tx, now);
 
   return sessionView(session.id, tx);
 };
@@ -584,13 +633,15 @@ export const deleteAttendanceBreak = async (
   const named = await getBreakById(breakId, tx);
   if (!named) throw breakNotFound(breakId, viewerUserId);
 
-  const { session, breaks } = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const subject = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const { session, breaks } = subject;
 
   // Behind the lock, so the payload records what was actually removed.
   const entry = breaks.find((candidate) => candidate.id === breakId);
   if (!entry) throw breakNotFound(breakId, viewerUserId);
 
   await tx.delete(attendanceBreaks).where(eq(attendanceBreaks.id, entry.id));
+  await settleChangedAfterDay(subject, tx, now);
 
   await appendAttendanceEvent(
     {
@@ -660,6 +711,50 @@ export const deleteAttendanceSession = async (
       changedByUserId: viewerUserId,
       before: { startedAt: session.startedAt, endedAt: session.endedAt, deletedAt: null },
       after: { deletedAt: now },
+    },
+    tx
+  );
+
+  return sessionView(session.id, tx);
+};
+
+export const markAttendanceSessionChecked = async (
+  viewerUserId: string,
+  sessionId: string,
+  tx: DbTransaction,
+  now = new Date()
+): Promise<AttendanceSessionView> => {
+  const { session, right } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+
+  if (right !== AttendanceCorrectionRight.Admin) {
+    throw forbidden(
+      "Only an admin can mark a session as checked",
+      { viewerUserId, sessionId: session.id },
+      "ADMIN_ONLY"
+    );
+  }
+
+  if (!session.changedAfterDay) {
+    throw attendanceConflict(
+      "SESSION_NOT_CHANGED",
+      "This session has no change after its day to check",
+      { sessionId: session.id },
+      { viewerUserId }
+    );
+  }
+
+  await tx
+    .update(attendanceSessions)
+    .set({ changedAfterDay: false })
+    .where(eq(attendanceSessions.id, session.id));
+
+  await appendAttendanceEvent(
+    {
+      sessionId: session.id,
+      eventType: attendanceEventType.SessionChecked,
+      changedByUserId: viewerUserId,
+      before: { changedAfterDay: true },
+      after: { changedAfterDay: false },
     },
     tx
   );

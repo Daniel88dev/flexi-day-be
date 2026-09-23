@@ -35,7 +35,10 @@ import {
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAttendanceActive, isAttendanceActive } from "../billing/guards.js";
 import { getEmployment, listEmploymentsForUser } from "../employment/employmentServices.js";
-import { assertEmploymentReadable } from "../employment/attendanceAccess.js";
+import {
+  assertEmploymentReadable,
+  canAdministerEmployment,
+} from "../employment/attendanceAccess.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { computeAttendance } from "./attendanceCalculation.js";
@@ -80,6 +83,7 @@ const SESSION_COLUMNS = {
       and "attendance_events"."event_type" = ${attendanceEventType.SessionCreated}
     limit 1
   )`,
+  changedAfterDay: attendanceSessions.changedAfterDay,
   startLatitude: attendanceSessions.startLatitude,
   startLongitude: attendanceSessions.startLongitude,
   startAccuracy: attendanceSessions.startAccuracy,
@@ -671,6 +675,7 @@ export const getAttendanceState = async (
     active: await isAttendanceActive(subject.organizationId, tx),
     locationEnabled: subject.settings?.locationEnabled ?? false,
     selfService: selfServiceWindowOf(subject.settings),
+    administersOwnAttendance: await canAdministerEmployment(userId, subject.employment, tx),
     timezone,
   };
 

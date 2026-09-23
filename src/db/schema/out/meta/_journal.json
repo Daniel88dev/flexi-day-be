@@ -120,6 +120,13 @@
       "when": 1790198548328,
       "tag": "0016_attendance_break_added",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790200805928,
+      "tag": "0017_attendance_changed_after_day",
+      "breakpoints": true
     }
   ]
 }

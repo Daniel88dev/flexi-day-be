@@ -24,6 +24,7 @@ import { handleDeleteAttendanceBreak } from "../controllers/attendance/handleDel
 import { handleGetAttendanceSessionEvents } from "../controllers/attendance/handleGetAttendanceSessionEvents.js";
 import { handleEnterAttendanceSession } from "../controllers/attendance/handleEnterAttendanceSession.js";
 import { handleAddAttendanceBreak } from "../controllers/attendance/handleAddAttendanceBreak.js";
+import { handleMarkAttendanceSessionChecked } from "../controllers/attendance/handleMarkAttendanceSessionChecked.js";
 
 export const attendanceRouter = (): Router => {
   const app = Router();
@@ -63,8 +64,12 @@ export const attendanceRouter = (): Router => {
    *       '200':
    *         description: |
    *           `{ organizationId, employmentId, employmentEnded, active,
-   *           locationEnabled, selfService, timezone, businessDate, openSession,
-   *           openBreak, sessions, autoClosedSession }`. `selfService` is the
+   *           locationEnabled, selfService, administersOwnAttendance, timezone,
+   *           businessDate, openSession, openBreak, sessions,
+   *           autoClosedSession }`. `administersOwnAttendance` is true when the
+   *           caller is an organization admin, or a group admin of a group they
+   *           belong to: their own corrections are then an admin's, outside the
+   *           window and never flagged `changedAfterDay`. `selfService` is the
    *           organization's self-service window, `{ enabled, days }`: `days`
    *           is how many days before today the employee may still correct
    *           their own attendance, null for no limit, and means nothing
@@ -76,12 +81,15 @@ export const attendanceRouter = (): Router => {
    *           `autoClosed: true` is a break closed inside a session that may
    *           still be open and may read `closedBy: "USER"`.
    *           A session is `{ id, businessDate, startedAt, endedAt,
-   *           timezone, closedBy, origin, enteredByUserId, open, startLatitude,
-   *           startLongitude, startAccuracy, endLatitude, endLongitude,
-   *           endAccuracy, breaks }`, `origin` being `CLOCKED` or `ENTERED`
-   *           (recorded after the fact through `POST /api/attendance/sessions`,
-   *           for good), `enteredByUserId` the user who entered it and null for
-   *           a clocked session, and the six
+   *           timezone, closedBy, origin, enteredByUserId, changedAfterDay,
+   *           open, startLatitude, startLongitude, startAccuracy, endLatitude,
+   *           endLongitude, endAccuracy, breaks }`, `origin` being `CLOCKED` or
+   *           `ENTERED` (recorded after the fact through
+   *           `POST /api/attendance/sessions`, for good), `enteredByUserId` the
+   *           user who entered it and null for a clocked session,
+   *           `changedAfterDay` true once its own user changed it after its
+   *           business date and until an admin corrects it or marks it checked
+   *           (`POST /api/attendance/sessions/{sessionId}/check`), and the six
    *           location fields null unless the organization records
    *           location and the browser's prompt was allowed; a break is
    *           `{ id, sessionId, startedAt, endedAt, autoClosed, open }`.
@@ -160,10 +168,14 @@ export const attendanceRouter = (): Router => {
    *           A day is `{ businessDate, presenceMinutes, breaksMinutes,
    *           deductedMinutes, workedMinutes, requiredMinutes, balanceMinutes,
    *           upcoming, open, autoClosed, exclusion, excludedClockIn, entered,
-   *           flagged, sessions }`, a session shaped as on
+   *           changedAfterDay, flagged, sessions }`, a session shaped as on
    *           `/api/attendance/current`. `entered` is true when a session on
    *           the date was entered after the fact; it is a fact about the day,
-   *           not a flag, and never counts toward `flagged`.
+   *           not a flag, and never counts toward `flagged`. `changedAfterDay`
+   *           is true while a session on the date carries `changedAfterDay`.
+   *           `flagged` is true when the day is `autoClosed`, is an
+   *           `excludedClockIn`, is `changedAfterDay`, or holds a session still
+   *           open on a date that has passed.
    *           `balanceMinutes` is null on an upcoming date, throughout
    *           `MONTHLY` mode, where the month carries the only balance, and on
    *           an excluded day nobody worked.
@@ -231,7 +243,7 @@ export const attendanceRouter = (): Router => {
    *         description: |
    *           `{ organizationId, employmentId, userId, businessDate, timezone,
    *           sessions }`, a session shaped as on `/api/attendance/current`,
-   *           `origin` included.
+   *           `origin` and `changedAfterDay` included.
    *       '403':
    *         description: No permission for that Employment
    *       '404':
@@ -313,7 +325,10 @@ export const attendanceRouter = (): Router => {
    *           sorted by name; `groups` is `[{ id, groupName }]` of the live
    *           groups they belong to. Each day and the totals read exactly as
    *           on `/api/attendance/month`, without `sessions` — `entered` still
-   *           says whether a session on the date was entered after the fact.
+   *           says whether a session on the date was entered after the fact,
+   *           and `changedAfterDay` whether one on it was changed by its own
+   *           user after the day and not yet corrected or checked by an admin.
+   *           The session behind it comes from `/api/attendance/day`.
    *           An entry of `inNow` is `{ employmentId, userId, sessionId,
    *           businessDate, startedAt, onBreak, breakStartedAt }`.
    *       '403':
@@ -734,6 +749,10 @@ export const attendanceRouter = (): Router => {
    *       Correcting an end records who closed the session, so a session the
    *       sweep closed stops being flagged once somebody has overruled it.
    *
+   *       The session's own user correcting it after its business date, in the
+   *       organization's timezone, sets `changedAfterDay`; any admin correction
+   *       clears it.
+   *
    *       One `SESSION_EDITED` event is appended in the same transaction,
    *       carrying the times and `closedBy` as they stood before and after.
    *     security:
@@ -857,6 +876,10 @@ export const attendanceRouter = (): Router => {
    *       Correcting the end clears `autoClosed`: the flag is the sweep's claim
    *       that nobody has checked the number, and somebody just has.
    *
+   *       The session's `changedAfterDay` follows the same rule as a session
+   *       correction: set by its own user after its business date, cleared by
+   *       any admin.
+   *
    *       Answers with the whole session, because the day's figures moved with
    *       the break. One `BREAK_EDITED` event is appended.
    *     security:
@@ -925,6 +948,10 @@ export const attendanceRouter = (): Router => {
    *       Deletes the break row outright, under the same authorization as its
    *       session. One `BREAK_DELETED` event carries what it was, which is all
    *       that is left of it.
+   *
+   *       The session's `changedAfterDay` is set when its own user removes the
+   *       break after the session's business date, and cleared when an admin
+   *       does.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -972,6 +999,10 @@ export const attendanceRouter = (): Router => {
    *       The break has to end after it starts, lie inside its session, and
    *       overlap no other break of it. Back to back is fine: a break may start
    *       exactly where another ends.
+   *
+   *       The session's `changedAfterDay` is set when its own user adds the
+   *       break after the session's business date, and cleared when an admin
+   *       does. Breaks saved with an entry leave it alone.
    *
    *       One `BREAK_ADDED` event is appended in the same transaction, with the
    *       caller as its user and `{ breakId, startedAt, endedAt }` as `after`.
@@ -1037,6 +1068,59 @@ export const attendanceRouter = (): Router => {
 
   /**
    * @openapi
+   * /api/attendance/sessions/{sessionId}/check:
+   *   post:
+   *     tags:
+   *       - Attendance
+   *     summary: Mark a session changed after its day as checked
+   *     description: |
+   *       Clears `changedAfterDay` when the owner's change was right and there
+   *       is nothing to correct (`docs/attendance.md`, "Corrections"). No time
+   *       moves and nothing else about the session changes.
+   *
+   *       Admins only: a group admin of any group that person belongs to and
+   *       the organization's admins, as for a correction. The session's own
+   *       user is refused whatever the self-service window says. Refused like a
+   *       correction while attendance is not active, and takes the same
+   *       Employment lock.
+   *
+   *       One `SESSION_CHECKED` event is appended in the same transaction, with
+   *       the caller as its user, `{ changedAfterDay: true }` as `before` and
+   *       `{ changedAfterDay: false }` as `after`. A session that is not flagged
+   *       is refused rather than given an empty event.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: |
+   *           The session as it now stands, with its breaks, shaped as on
+   *           `/api/attendance/current`, `changedAfterDay` false.
+   *       '402':
+   *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
+   *       '403':
+   *         description: |
+   *           No standing over this Employment. `context.reason` is
+   *           `ADMIN_ONLY` when the caller is the session's own user, or one of
+   *           the self-service refusals (`SELF_SERVICE_OFF`,
+   *           `SELF_SERVICE_WINDOW`, `EMPLOYMENT_ENDED`) when their own window
+   *           already rules the session out.
+   *       '404':
+   *         description: No such session, or it has been deleted
+   *       '409':
+   *         description: |
+   *           The session is not flagged. `context.reason` is
+   *           `SESSION_NOT_CHANGED`.
+   */
+  app.post("/sessions/:sessionId/check", tryCatch(handleMarkAttendanceSessionChecked));
+
+  /**
+   * @openapi
    * /api/attendance/sessions/{sessionId}/events:
    *   get:
    *     tags:
@@ -1070,13 +1154,16 @@ export const attendanceRouter = (): Router => {
    *           `{ id, sessionId, eventType, user, before, after, createdAt }`.
    *           `eventType` is one of `CLOCK_IN`, `CLOCK_OUT`, `BREAK_START`,
    *           `BREAK_END`, `LOCATION_UPDATED`, `SESSION_EDITED`, `BREAK_EDITED`,
-   *           `BREAK_DELETED`, `SESSION_DELETED`, `SESSION_CREATED` or
-   *           `BREAK_ADDED`. An entered session's timeline opens with
+   *           `BREAK_DELETED`, `SESSION_DELETED`, `SESSION_CREATED`,
+   *           `BREAK_ADDED` or `SESSION_CHECKED`. An entered session's timeline opens with
    *           `SESSION_CREATED`, whose `user` entered it and whose `after` is
    *           `{ businessDate, startedAt, endedAt, timezone, closedBy, origin }`.
    *           A `BREAK_ADDED`, whether saved with the entry or added to a
    *           closed session later, names who added it, with
-   *           `{ breakId, startedAt, endedAt }` as `after`.
+   *           `{ breakId, startedAt, endedAt }` as `after`. A `SESSION_CHECKED`
+   *           names the admin who marked the session checked, with
+   *           `{ changedAfterDay: true }` as `before` and
+   *           `{ changedAfterDay: false }` as `after`.
    *       '403':
    *         description: No permission for this Employment
    *       '404':

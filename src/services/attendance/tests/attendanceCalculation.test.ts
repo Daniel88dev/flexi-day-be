@@ -38,6 +38,7 @@ const session = (
   endedAt: endedAt === null ? null : new Date(endedAt),
   closedBy: endedAt === null ? null : attendanceClosedBy.User,
   origin: attendanceSessionOrigin.Clocked,
+  changedAfterDay: false,
   breaks: breaks.map(([from, to]) => ({
     startedAt: new Date(from),
     endedAt: to === null ? null : new Date(to),
@@ -257,6 +258,22 @@ describe("computeAttendance", () => {
       flaggedDays: 2,
     });
     expect(totals.balanceMinutes).toBe(930 + 2010 + 480 - 1440);
+  });
+
+  it("flags a day holding a session its owner changed after the day, and names why", () => {
+    const changed = session("2026-09-01", "2026-09-01T06:00:00Z", "2026-09-01T14:30:00Z", [], {
+      changedAfterDay: true,
+    });
+    const ordinary = session("2026-09-02", "2026-09-02T06:00:00Z", "2026-09-02T14:30:00Z");
+
+    const { days, totals } = compute({
+      dates: ["2026-09-01", "2026-09-02"],
+      sessions: [changed, ordinary],
+    });
+
+    expect(days[0]).toMatchObject({ changedAfterDay: true, autoClosed: false, flagged: true });
+    expect(days[1]).toMatchObject({ changedAfterDay: false, flagged: false });
+    expect(totals.flaggedDays).toBe(1);
   });
 });
 

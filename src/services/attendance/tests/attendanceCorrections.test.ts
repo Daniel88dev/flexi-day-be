@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { applyCorrection, assertCoherent, overlappingBreak } from "../attendanceCorrections.js";
+import {
+  applyCorrection,
+  assertCoherent,
+  nextChangedAfterDay,
+  overlappingBreak,
+} from "../attendanceCorrections.js";
+import { AttendanceCorrectionRight } from "../types.js";
 
 const at = (iso: string) => new Date(iso);
 
@@ -173,5 +179,55 @@ describe("overlappingBreak", () => {
     const candidate = entry("new", "2026-09-09T14:30:00Z", "2026-09-09T14:45:00Z");
 
     expect(overlappingBreak(candidate, [leftOpen], sessionEnd)?.id).toBe("open");
+  });
+});
+
+describe("nextChangedAfterDay", () => {
+  const today = "2026-09-10";
+
+  it("flags a session its owner changes after its business date", () => {
+    expect(
+      nextChangedAfterDay({
+        right: AttendanceCorrectionRight.Self,
+        businessDate: "2026-09-09",
+        today,
+        wasFlagged: false,
+      })
+    ).toBe(true);
+  });
+
+  it("leaves a session its owner changes on its own day unflagged", () => {
+    expect(
+      nextChangedAfterDay({
+        right: AttendanceCorrectionRight.Self,
+        businessDate: today,
+        today,
+        wasFlagged: false,
+      })
+    ).toBe(false);
+  });
+
+  it("keeps the flag when the owner changes it again on a later day", () => {
+    expect(
+      nextChangedAfterDay({
+        right: AttendanceCorrectionRight.Self,
+        businessDate: today,
+        today,
+        wasFlagged: true,
+      })
+    ).toBe(true);
+  });
+
+  it("clears the flag on any admin write, and never sets it", () => {
+    for (const wasFlagged of [true, false]) {
+      expect(
+        nextChangedAfterDay({
+          right: AttendanceCorrectionRight.Admin,
+          businessDate: "2026-09-01",
+          today,
+          wasFlagged,
+        })
+      ).toBe(false);
+    }
   });
 });

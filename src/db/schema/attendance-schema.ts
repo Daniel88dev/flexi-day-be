@@ -72,6 +72,8 @@ export const attendanceSessions = pgTable(
     origin: attendanceSessionOriginEnum("origin")
       .notNull()
       .default(attendanceSessionOrigin.Clocked),
+    // Set by its owner's write after the business date, cleared by any admin write.
+    changedAfterDay: boolean("changed_after_day").notNull().default(false),
     startLatitude: doublePrecision("start_latitude"),
     startLongitude: doublePrecision("start_longitude"),
     startAccuracy: doublePrecision("start_accuracy"),
@@ -156,6 +158,8 @@ export enum attendanceEventType {
   SessionCreated = "SESSION_CREATED",
   /** A break added to a closed session afterwards, or saved with an entered one. */
   BreakAdded = "BREAK_ADDED",
+  /** An admin cleared the changed-after-the-day flag without moving any time. */
+  SessionChecked = "SESSION_CHECKED",
 }
 
 export const attendanceEventTypeEnum = pgEnum(
