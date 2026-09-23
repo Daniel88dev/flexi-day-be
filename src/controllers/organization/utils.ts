@@ -102,6 +102,8 @@ export const presentAttendanceSettings = (settings: AttendanceSettingsType, acti
   balanceMode: settings.balanceMode,
   sessionCeilingMinutes: settings.sessionCeilingMinutes,
   breakCeilingMinutes: settings.breakCeilingMinutes,
+  selfServiceEnabled: settings.selfServiceEnabled,
+  selfServiceDays: settings.selfServiceDays,
   /** The toggle alone does not make attendance usable; this is the live answer. */
   active,
 });

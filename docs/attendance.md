@@ -14,7 +14,8 @@ an Employment if they own the organization, hold a delegated admin row, or manag
 
 - One open session per Employment at a time. A clock-in while one is open is refused and the caller
   is told when the open one started.
-- The clock-in instant is the server's, never the client's.
+- A clocked session's instants are the server's, never the client's. An entered session is the
+  one exception, and it says so for good (see below).
 - `businessDate` is fixed at clock-in from the organization's timezone and never moves, so a session
   that crosses midnight belongs wholly to the day it started.
 - A session left open past the organization's ceiling (default 16 h) is closed by the sweep at
@@ -92,13 +93,63 @@ through the stored table and its lazy fill, so the first ask for a year computes
 Clocking in on an excluded day is allowed. The day is flagged on the dashboard and its worked time
 counts in the month.
 
+## Self-service window
+
+An Org admin decides whether employees may enter and correct their own attendance, and how far
+back. Group admins cannot change it; the window is organization-wide, like the Employment it
+applies to.
+
+| Setting      | What the employee may do by hand                                             |
+| ------------ | ---------------------------------------------------------------------------- |
+| Off          | Nothing. Clock in and out, start and end breaks; every correction is admin's |
+| On, N days   | Today and the N calendar days before it, in the organization's timezone      |
+| On, no limit | Any business date inside their own spell                                     |
+
+N runs from 0 to 366, and 0 means today only. While the window is on, a session still open counts as
+inside it whatever its date, so a session running past midnight stays its owner's to fix. A new
+organization starts with the window off. Organizations that had attendance before the window existed
+start at on, 0 days, which is the rule they already had.
+
+Inside the window the employee may enter a session, add a break, correct either, and delete a
+break. They may delete only sessions they entered themselves: a clocked session from a past day can
+be corrected but never removed by its owner, so a real clock-in cannot vanish at their hand.
+Outside the window, and always for an ended Employment, only a Group admin (for a group member) or
+an Org admin (anyone) can write, and the refusal says so rather than reading as a bare "no".
+
+Changing the setting affects later writes only. Narrowing it or switching it off undoes nothing
+already written and flags nothing afresh.
+
+## Entered sessions
+
+A session recorded after the fact rather than clocked, by an admin for anyone they can see, or by
+the employee inside their window.
+
+- The person names the business date and both ends. The start falls on that date in the
+  organization's timezone; the end may cross midnight. The session is closed and wholly in the
+  past: "I forgot to clock in and I'm still here" is a clock-in now and a correction of its start,
+  which needs an admin when the window is off.
+- It obeys every rule a corrected session does: end after start, within the session ceiling, inside
+  the Employment's spell, and no overlap with another session.
+- An excluded day is allowed, as a clock-in on one is, and flagged the same way.
+- It carries no location fix.
+- It is marked as entered for good, whoever entered it, and its first attendance event records
+  that it was entered and by whom. Clocked sessions keep the promise that their times are the
+  server's.
+
+A break can be added to any closed session under the same rights, inside the entry or afterwards.
+It must sit inside its session and not overlap another break.
+
 ## Corrections
 
-- An employee may correct their own session only while it is open or belongs to today's business
-  date. Anything older goes through a Group admin (for a group member) or an Org admin (anyone),
-  and the refusal says so rather than reading as a bare "no".
+- Who may change a session is the self-service window's question, above.
 - Every change, by a person or by the sweep, appends an attendance event. A null changing user is
-  the sweep.
+  the sweep. That includes entering a session and adding a break.
+- A session the employee changed after its business date, by editing it or by adding, moving or
+  removing one of its breaks, is flagged on the dashboard until an admin corrects it, the same way
+  a swept session is. A session they entered carries the entered mark instead.
+- Every change to the attendance settings is logged with who made it, when, and the values before
+  and after. Nothing in the product reads the log back; it answers "when was the window open, and
+  who opened it".
 - No approval workflow: the admin is the authority.
 - A correction moves times, never days. `businessDate` is fixed at clock-in and is not recomputed
   from a corrected start, so an edit changes what a day holds rather than which day holds it.
@@ -115,9 +166,10 @@ counts in the month.
   Deleting a break is not soft — the event that records what it was is all that is left of it.
 - Reading a session's timeline follows the visibility table rather than the window: an employee
   reads their own history however old it is, and only changing it needs the window.
-- Corrections are writes, so the plan gate applies: a lapsed organization's history is readable and
-  not editable. An ended Employment is the exception a clock-in is not — its last day is the one
-  most likely to need fixing.
+- Corrections, entered sessions and added breaks are writes, so the plan gate applies: a lapsed
+  organization's history is readable and not editable. An ended Employment is the exception a
+  clock-in is not — an admin may still fix it, because its last day is the one most likely to need
+  fixing.
 
 ## Location
 

@@ -26,6 +26,8 @@ export const ATTENDANCE_SETTINGS_DEFAULTS = {
   balanceMode: balanceMode.Daily,
   sessionCeilingMinutes: 960,
   breakCeilingMinutes: 120,
+  selfServiceEnabled: false,
+  selfServiceDays: 0,
 };
 
 /**
@@ -77,6 +79,15 @@ export const organizationAttendanceSettings = pgTable("organization_attendance_s
   breakCeilingMinutes: integer("break_ceiling_minutes")
     .notNull()
     .default(ATTENDANCE_SETTINGS_DEFAULTS.breakCeilingMinutes),
+  // Rows that predate the window were moved to on, 0 days by the migration
+  // that added it — the rule they already had. These defaults are for new ones.
+  selfServiceEnabled: boolean("self_service_enabled")
+    .notNull()
+    .default(ATTENDANCE_SETTINGS_DEFAULTS.selfServiceEnabled),
+  // Days back from today the window reaches; null is no limit.
+  selfServiceDays: integer("self_service_days").default(
+    ATTENDANCE_SETTINGS_DEFAULTS.selfServiceDays
+  ),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

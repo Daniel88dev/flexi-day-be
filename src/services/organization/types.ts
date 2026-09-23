@@ -71,6 +71,9 @@ export type AttendanceSettingsType = {
   balanceMode: balanceMode;
   sessionCeilingMinutes: number;
   breakCeilingMinutes: number;
+  selfServiceEnabled: boolean;
+  /** Days back from today the self-service window reaches; null is no limit. */
+  selfServiceDays: number | null;
 };
 
 export type AttendanceSettingsValues = Omit<AttendanceSettingsType, "organizationId">;
@@ -150,6 +153,10 @@ export const validatePutAttendanceSettings = z
       .min(15)
       .max(1440)
       .default(ATTENDANCE_SETTINGS_DEFAULTS.breakCeilingMinutes),
+    // Unlike the rules above, an omitted window keeps what is stored: a client
+    // predating it would otherwise switch self-service off on every save.
+    selfServiceEnabled: z.boolean().optional(),
+    selfServiceDays: z.number().int().min(0).max(366).nullable().optional(),
   })
   // The timezone fixes the business date, so switching attendance on without
   // one would pick a day boundary nobody chose.

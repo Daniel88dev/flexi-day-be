@@ -3,6 +3,7 @@ import type { attendanceClosedBy, attendanceEventType } from "../../db/schema/at
 import type { balanceMode } from "../../db/schema/organization-attendance-settings-schema.js";
 import type { AttendanceDay, AttendanceTotals } from "./attendanceCalculation.js";
 import type { DateString } from "../../utils/dateFunc.js";
+import type { SelfServiceWindow } from "./selfServiceWindow.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 
 export type AttendanceBreakType = {
@@ -56,6 +57,7 @@ export type AttendanceStateType = {
   employmentEnded: boolean;
   active: boolean;
   locationEnabled: boolean;
+  selfService: SelfServiceWindow;
   /** The organization's zone, and today in it. Null when attendance was never set up. */
   timezone: string | null;
   businessDate: DateString | null;
@@ -271,6 +273,7 @@ export type AttendanceTeamType = {
   requiredMinutesPerDay: number;
   breakMinutes: number;
   breakThresholdMinutes: number;
+  selfService: SelfServiceWindow;
   scope: AttendanceTeamScope;
   /** The group the answer was narrowed to, null for the viewer's whole audience. */
   group: AttendanceTeamGroup | null;

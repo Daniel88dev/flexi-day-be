@@ -51,6 +51,7 @@ export const presentAttendanceState = (state: AttendanceStateType) => ({
   employmentEnded: state.employmentEnded,
   active: state.active,
   locationEnabled: state.locationEnabled,
+  selfService: state.selfService,
   timezone: state.timezone,
   businessDate: state.businessDate,
   openSession: state.openSession ? presentSession(state.openSession) : null,
@@ -100,6 +101,7 @@ export const presentAttendanceTeam = (team: AttendanceTeamType) => ({
   requiredMinutesPerDay: team.requiredMinutesPerDay,
   breakMinutes: team.breakMinutes,
   breakThresholdMinutes: team.breakThresholdMinutes,
+  selfService: team.selfService,
   scope: team.scope,
   group: team.group,
   people: team.people.map((person) => ({

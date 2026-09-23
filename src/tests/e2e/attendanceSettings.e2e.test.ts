@@ -7,6 +7,7 @@ import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
+import { attendanceSettingsChanges } from "../../db/schema/attendance-settings-change-schema.js";
 import { createTestUser, cleanupTestData } from "./helpers/testSetup.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import {
@@ -15,6 +16,7 @@ import {
 } from "../../services/organization/organizationServices.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
+import { asc, eq } from "drizzle-orm";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -115,8 +117,22 @@ describe("organization attendance settings", () => {
 
   beforeEach(async () => {
     await db.delete(organizationAttendanceSettings);
+    await db.delete(attendanceSettingsChanges);
     await free();
   });
+
+  const put = (cookie: string, body: unknown) =>
+    request(app)
+      .put(`/api/organization/attendance-settings?organizationId=${ORGANIZATION_ID}`)
+      .set("Cookie", cookie)
+      .send(body);
+
+  const logRows = () =>
+    db
+      .select()
+      .from(attendanceSettingsChanges)
+      .where(eq(attendanceSettingsChanges.organizationId, ORGANIZATION_ID))
+      .orderBy(asc(attendanceSettingsChanges.createdAt));
 
   describe("get", () => {
     it("answers the defaults with the feature off when nothing was ever saved", async () => {
@@ -138,6 +154,8 @@ describe("organization attendance settings", () => {
         balanceMode: "DAILY",
         sessionCeilingMinutes: 960,
         breakCeilingMinutes: 120,
+        selfServiceEnabled: false,
+        selfServiceDays: 0,
         active: false,
       });
     });
@@ -333,6 +351,107 @@ describe("organization attendance settings", () => {
         .send({ attendanceEnabled: false, timezone: "Europe/Prague" })
         .expect(200);
       expect(res.body).toMatchObject({ attendanceEnabled: false, active: false });
+    });
+  });
+
+  describe("the self-service window", () => {
+    it("saves a day limit and reads it back", async () => {
+      await proActive();
+
+      const res = await put(ownerCookie, {
+        attendanceEnabled: true,
+        timezone: "Europe/Prague",
+        selfServiceEnabled: true,
+        selfServiceDays: 7,
+      }).expect(200);
+      expect(res.body).toMatchObject({ selfServiceEnabled: true, selfServiceDays: 7 });
+
+      const reread = await request(app)
+        .get("/api/organization/attendance-settings")
+        .set("Cookie", ownerCookie)
+        .expect(200);
+      expect(reread.body).toMatchObject({ selfServiceEnabled: true, selfServiceDays: 7 });
+    });
+
+    it("takes null as no limit, and both ends of the range", async () => {
+      for (const days of [null, 0, 366]) {
+        const res = await put(ownerCookie, {
+          attendanceEnabled: false,
+          selfServiceEnabled: true,
+          selfServiceDays: days,
+        }).expect(200);
+        expect(res.body).toMatchObject({ selfServiceEnabled: true, selfServiceDays: days });
+      }
+    });
+
+    it("422s on a day limit that is not a whole number from 0 to 366", async () => {
+      for (const days of [-1, 367, 1.5, "7"]) {
+        await put(ownerCookie, {
+          attendanceEnabled: false,
+          selfServiceEnabled: true,
+          selfServiceDays: days,
+        }).expect(422);
+      }
+      expect(await logRows()).toHaveLength(0);
+    });
+
+    it("keeps the stored window when a body predating it leaves it out", async () => {
+      await put(ownerCookie, {
+        attendanceEnabled: false,
+        selfServiceEnabled: true,
+        selfServiceDays: null,
+      }).expect(200);
+
+      const res = await put(ownerCookie, { attendanceEnabled: false, breakMinutes: 45 }).expect(
+        200
+      );
+      expect(res.body).toMatchObject({
+        breakMinutes: 45,
+        selfServiceEnabled: true,
+        selfServiceDays: null,
+      });
+    });
+
+    it("refuses a group admin and an employee, and logs nothing for them", async () => {
+      await put(managerCookie, { attendanceEnabled: false, selfServiceEnabled: true }).expect(403);
+      await put(memberCookie, { attendanceEnabled: false, selfServiceEnabled: true }).expect(403);
+
+      expect(await logRows()).toHaveLength(0);
+    });
+  });
+
+  describe("the settings change log", () => {
+    it("leaves exactly one row per save, with the actor, before and after", async () => {
+      await proActive();
+
+      await put(ownerCookie, { attendanceEnabled: true, timezone: "Europe/Prague" }).expect(200);
+      await put(delegateCookie, {
+        attendanceEnabled: true,
+        timezone: "Europe/Prague",
+        selfServiceEnabled: true,
+        selfServiceDays: 7,
+      }).expect(200);
+
+      const rows = await logRows();
+      expect(rows).toHaveLength(2);
+
+      expect(rows[0]).toMatchObject({ changedByUserId: owner.id, before: null });
+      expect(rows[0]!.after).toMatchObject({
+        attendanceEnabled: true,
+        timezone: "Europe/Prague",
+        selfServiceEnabled: false,
+        selfServiceDays: 0,
+      });
+
+      expect(rows[1]).toMatchObject({ changedByUserId: delegate.id });
+      expect(rows[1]!.before).toMatchObject({ selfServiceEnabled: false, selfServiceDays: 0 });
+      expect(rows[1]!.after).toMatchObject({ selfServiceEnabled: true, selfServiceDays: 7 });
+    });
+
+    it("rolls its row back with a refused switch-on", async () => {
+      await put(ownerCookie, { attendanceEnabled: true, timezone: "Europe/Prague" }).expect(402);
+
+      expect(await logRows()).toHaveLength(0);
     });
   });
 

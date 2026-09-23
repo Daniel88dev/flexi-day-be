@@ -40,6 +40,7 @@ import { getAttendanceSettings } from "../organization/attendanceSettingsService
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { computeAttendance } from "./attendanceCalculation.js";
 import { getAttendanceExclusions } from "./attendanceExclusions.js";
+import { selfServiceWindowOf } from "./selfServiceWindow.js";
 import type { AttendanceSettingsType } from "../organization/types.js";
 import type { EmploymentType } from "../employment/types.js";
 import type {
@@ -657,6 +658,7 @@ export const getAttendanceState = async (
     employmentEnded: subject.employment.endedAt !== null,
     active: await isAttendanceActive(subject.organizationId, tx),
     locationEnabled: subject.settings?.locationEnabled ?? false,
+    selfService: selfServiceWindowOf(subject.settings),
     timezone,
   };
 

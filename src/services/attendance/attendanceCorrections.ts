@@ -9,7 +9,7 @@ import {
 } from "../../db/schema/attendance-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import AppError from "../../utils/appError.js";
-import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
+import { businessDateInZone } from "../../utils/dateFunc.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { assertAttendanceActive } from "../billing/guards.js";
 import {
@@ -38,6 +38,12 @@ import {
   type AttendanceSessionView,
   type ValidatedAttendanceCorrectionType,
 } from "./types.js";
+import {
+  selfServiceRefusal,
+  selfServiceWindowOf,
+  type SelfServiceRefusal,
+  type SelfServiceWindow,
+} from "./selfServiceWindow.js";
 
 /** A start and an end, which is all the shape rules below actually read. */
 type Span = { startedAt: Date; endedAt: Date | null };
@@ -51,6 +57,8 @@ type CorrectionSubject = {
   breaks: AttendanceBreakType[];
   employment: { id: string; organizationId: string; userId: string };
   right: AttendanceCorrectionRight;
+  /** The organization's zone now, which is what "today" is read in. */
+  timezone: string;
 };
 
 const invalid = (reason: string, message: string, context?: { [key: string]: unknown }) =>
@@ -61,18 +69,6 @@ const invalid = (reason: string, message: string, context?: { [key: string]: unk
     context,
     publicContext: { reason },
   });
-
-/**
- * Whether the person themselves may still change this: while the session is
- * open, or while it belongs to today (`docs/attendance.md`). Anything older is
- * an admin's, which is what the 403 below has to say rather than a bare refusal.
- */
-export const withinSelfServiceWindow = (
-  session: { endedAt: Date | null; businessDate: DateString },
-  timezone: string,
-  now: Date
-): boolean =>
-  session.endedAt === null || session.businessDate === businessDateInZone(now, timezone);
 
 /**
  * A patch over a span. An absent key leaves what is there; an explicit
@@ -158,9 +154,9 @@ const forbidden = (message: string, context: { [key: string]: unknown }, reason?
  * clock-in cannot both find nothing open.
  *
  * The plan gate applies: a correction is a write, and a lapsed organization's
- * history is readable rather than editable. An ended Employment is not refused,
- * unlike a clock-in — the last day somebody worked is exactly the one an admin
- * is most likely to be fixing.
+ * history is readable rather than editable. An ended Employment is refused only
+ * its owner — the last day somebody worked is exactly the one an admin is most
+ * likely to be fixing.
  */
 const loadCorrectable = async (
   viewerUserId: string,
@@ -176,7 +172,17 @@ const loadCorrectable = async (
 
   await assertAttendanceActive(employment.organizationId, tx);
 
-  const right = await resolveCorrectionRight(viewerUserId, employment, found, now, tx);
+  const settings = await getAttendanceSettings(employment.organizationId, tx);
+  // The organization's zone as it stands now, falling back to the one the
+  // session was clocked in under: today is a question about the organization,
+  // not about the session.
+  const timezone = settings?.timezone ?? found.timezone;
+
+  const right = await resolveCorrectionRight(viewerUserId, employment, found, tx, {
+    window: selfServiceWindowOf(settings),
+    timezone,
+    now,
+  });
 
   await lockEmployment(employment.id, tx);
 
@@ -192,15 +198,27 @@ const loadCorrectable = async (
     breaks: await listBreaksForSession(sessionId, tx),
     employment,
     right,
+    timezone,
   };
+};
+
+const selfServiceMessage = (refusal: SelfServiceRefusal): string => {
+  switch (refusal) {
+    case "EMPLOYMENT_ENDED":
+      return "Your employment here has ended. Your attendance stays readable, and only an admin can change it.";
+    case "SELF_SERVICE_OFF":
+      return "Your organization manages attendance corrections through an admin. Ask a group admin, or an organization admin.";
+    case "SELF_SERVICE_WINDOW":
+      return "Only an admin can change a day this old. Ask a group admin, or an organization admin.";
+  }
 };
 
 const resolveCorrectionRight = async (
   viewerUserId: string,
-  employment: { organizationId: string; userId: string },
+  employment: { organizationId: string; userId: string; endedAt: Date | null },
   session: AttendanceSessionType,
-  now: Date,
-  tx: DbTransaction
+  tx: DbTransaction,
+  selfService: { window: SelfServiceWindow; timezone: string; now: Date }
 ): Promise<AttendanceCorrectionRight> => {
   if (await canAdministerEmployment(viewerUserId, employment, tx)) {
     return AttendanceCorrectionRight.Admin;
@@ -214,17 +232,17 @@ const resolveCorrectionRight = async (
     });
   }
 
-  // The organization's zone as it stands now, falling back to the one the
-  // session was clocked in under: today is a question about the organization,
-  // not about the session.
-  const settings = await getAttendanceSettings(employment.organizationId, tx);
-  const timezone = settings?.timezone ?? session.timezone;
+  const refusal = selfServiceRefusal({
+    session,
+    employmentEnded: employment.endedAt !== null,
+    ...selfService,
+  });
 
-  if (!withinSelfServiceWindow(session, timezone, now)) {
+  if (refusal) {
     throw forbidden(
-      "Only an admin can change a day this old. Ask a group admin, or an organization admin.",
+      selfServiceMessage(refusal),
       { viewerUserId, sessionId: session.id, businessDate: session.businessDate },
-      "SELF_SERVICE_WINDOW"
+      refusal
     );
   }
 
@@ -461,7 +479,20 @@ export const deleteAttendanceSession = async (
   tx: DbTransaction,
   now = new Date()
 ): Promise<AttendanceSessionView> => {
-  const { session } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const { session, right, timezone } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+
+  // A clocked session from a past day can be corrected by its owner but not
+  // removed, so a real clock-in never vanishes at their hand.
+  if (
+    right === AttendanceCorrectionRight.Self &&
+    session.businessDate !== businessDateInZone(now, timezone)
+  ) {
+    throw forbidden(
+      "This session was clocked on an earlier day. You can correct its times, but only an admin can delete it.",
+      { viewerUserId, sessionId: session.id, businessDate: session.businessDate },
+      "SELF_SERVICE_DELETE"
+    );
+  }
 
   await tx
     .update(attendanceSessions)

@@ -59,8 +59,12 @@ export const attendanceRouter = (): Router => {
    *       '200':
    *         description: |
    *           `{ organizationId, employmentId, employmentEnded, active,
-   *           locationEnabled, timezone, businessDate, openSession, openBreak,
-   *           sessions, autoClosedSession }`. `autoClosedSession` is the most
+   *           locationEnabled, selfService, timezone, businessDate, openSession,
+   *           openBreak, sessions, autoClosedSession }`. `selfService` is the
+   *           organization's self-service window, `{ enabled, days }`: `days`
+   *           is how many days before today the employee may still correct
+   *           their own attendance, null for no limit, and means nothing
+   *           while `enabled` is false. `autoClosedSession` is the most
    *           recent session on this business date or the one before that the
    *           ceiling sweep touched, or null — what the widget asks to be
    *           corrected. Two cases, so read both markers: `closedBy: "SWEEP"`
@@ -284,7 +288,10 @@ export const attendanceRouter = (): Router => {
    *         description: |
    *           `{ organizationId, timezone, businessDate, from, to, balanceMode,
    *           requiredMinutesPerDay, breakMinutes, breakThresholdMinutes,
-   *           scope, group, people, inNow }`.
+   *           selfService, scope, group, people, inNow }`. `selfService` is
+   *           the organization's self-service window, `{ enabled, days }`, as
+   *           on `/api/attendance/current`, so a group admin can read what
+   *           their members may do.
    *           `scope` is `ORGANIZATION` when the caller sees the whole
    *           organization and `GROUPS` when they see only their groups'
    *           members, whether or not a group was named. `group` is
@@ -567,12 +574,13 @@ export const attendanceRouter = (): Router => {
    *       - Attendance
    *     summary: Correct a session's clock-in or clock-out
    *     description: |
-   *       Moves one end of a session or both. Who may: the session's own user
-   *       while it is open or belongs to today's business date, a group admin of
-   *       any group that person belongs to, and the organization's admins —
-   *       `docs/attendance.md`, the visibility table plus the self-service
-   *       window. Outside the window the employee is told to ask an admin
-   *       rather than simply refused.
+   *       Moves one end of a session or both. Who may: a group admin of any
+   *       group that person belongs to and the organization's admins, always;
+   *       the session's own user only inside the organization's self-service
+   *       window — off, today and N days back, or no limit, with a session
+   *       still open passing whatever its date while the window is on — and
+   *       never once their Employment has ended (`docs/attendance.md`). A
+   *       refused employee is told to ask an admin rather than simply refused.
    *
    *       Only the keys present are changed. `endedAt: null` reopens a closed
    *       session, which an absent `endedAt` never does.
@@ -616,8 +624,11 @@ export const attendanceRouter = (): Router => {
    *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
    *       '403':
    *         description: |
-   *           No standing over this Employment, or the employee's own window has
-   *           closed — `context.reason` is `SELF_SERVICE_WINDOW`.
+   *           No standing over this Employment, or the employee may not change
+   *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
+   *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
+   *           the session's business date is outside the window, and
+   *           `EMPLOYMENT_ENDED` when their Employment has ended.
    *       '404':
    *         description: No such session, or it has been deleted
    *       '409':
@@ -654,7 +665,10 @@ export const attendanceRouter = (): Router => {
    *       Deleting an open session frees the clock — the index behind "one open
    *       session per Employment" excludes deleted rows.
    *
-   *       Authorized exactly as the patch is, self-service window included.
+   *       Authorized as the patch is, self-service window included, with one
+   *       rule more: the employee may delete their own clocked session only
+   *       while it is dated today. An earlier one can be corrected, not
+   *       removed.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -670,8 +684,13 @@ export const attendanceRouter = (): Router => {
    *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
    *       '403':
    *         description: |
-   *           No standing over this Employment, or the window has closed
-   *           (`SELF_SERVICE_WINDOW`).
+   *           No standing over this Employment, or the employee may not change
+   *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
+   *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
+   *           the session's business date is outside the window, and
+   *           `EMPLOYMENT_ENDED` when their Employment has ended, and
+   *           `SELF_SERVICE_DELETE` when they try to delete their own clocked
+   *           session from an earlier day.
    *       '404':
    *         description: No such session, or it was already deleted
    */
@@ -725,8 +744,11 @@ export const attendanceRouter = (): Router => {
    *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
    *       '403':
    *         description: |
-   *           No standing over this Employment, or the window has closed
-   *           (`SELF_SERVICE_WINDOW`).
+   *           No standing over this Employment, or the employee may not change
+   *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
+   *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
+   *           the session's business date is outside the window, and
+   *           `EMPLOYMENT_ENDED` when their Employment has ended.
    *       '404':
    *         description: No such break, or its session has been deleted
    *       '409':
@@ -770,8 +792,11 @@ export const attendanceRouter = (): Router => {
    *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
    *       '403':
    *         description: |
-   *           No standing over this Employment, or the window has closed
-   *           (`SELF_SERVICE_WINDOW`).
+   *           No standing over this Employment, or the employee may not change
+   *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
+   *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
+   *           the session's business date is outside the window, and
+   *           `EMPLOYMENT_ENDED` when their Employment has ended.
    *       '404':
    *         description: No such break, or its session has been deleted
    */

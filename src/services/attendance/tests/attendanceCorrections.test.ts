@@ -1,11 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  applyCorrection,
-  assertCoherent,
-  withinSelfServiceWindow,
-} from "../attendanceCorrections.js";
-
-const PRAGUE = "Europe/Prague";
+import { applyCorrection, assertCoherent } from "../attendanceCorrections.js";
 
 const at = (iso: string) => new Date(iso);
 
@@ -141,45 +135,5 @@ describe("assertCoherent", () => {
         ])
       )
     ).toBe("BREAK_OUTSIDE_SESSION");
-  });
-});
-
-describe("withinSelfServiceWindow", () => {
-  const now = at("2026-09-10T08:00:00Z");
-
-  it("lets the person change a session that is still open, whatever day it started", () => {
-    expect(
-      withinSelfServiceWindow({ endedAt: null, businessDate: "2026-09-01" }, PRAGUE, now)
-    ).toBe(true);
-  });
-
-  it("lets the person change a closed session on today's business date", () => {
-    expect(
-      withinSelfServiceWindow(
-        { endedAt: at("2026-09-10T07:00:00Z"), businessDate: "2026-09-10" },
-        PRAGUE,
-        now
-      )
-    ).toBe(true);
-  });
-
-  it("closes the window on yesterday", () => {
-    expect(
-      withinSelfServiceWindow(
-        { endedAt: at("2026-09-09T15:00:00Z"), businessDate: "2026-09-09" },
-        PRAGUE,
-        now
-      )
-    ).toBe(false);
-  });
-
-  it("reads today in the organization's zone, not the server's", () => {
-    // 22:30 UTC is already the 11th in Prague, so a session dated the 11th is
-    // today there and yesterday in UTC.
-    const lateEvening = at("2026-09-10T22:30:00Z");
-    const session = { endedAt: at("2026-09-10T22:00:00Z"), businessDate: "2026-09-11" };
-
-    expect(withinSelfServiceWindow(session, PRAGUE, lateEvening)).toBe(true);
-    expect(withinSelfServiceWindow(session, "UTC", lateEvening)).toBe(false);
   });
 });

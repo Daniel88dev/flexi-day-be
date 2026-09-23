@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
 import type { Express } from "express";
@@ -34,6 +34,13 @@ const ZONE = "Europe/Prague";
 /** Today and yesterday in the organization's zone: the two sides of the self-service window. */
 const today = () => businessDateInZone(new Date(), ZONE);
 const yesterday = () => businessDateInZone(new Date(Date.now() - DAY_MS), ZONE);
+
+/** The calendar date a number of days before another, stepped as dates rather than as real time. */
+const daysBefore = (date: string, days: number) => {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - days);
+  return day.toISOString().slice(0, 10);
+};
 
 /** An instant a given number of hours back, so seeded times are always in the past. */
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -216,13 +223,228 @@ describe("attendance corrections", () => {
   beforeEach(async () => {
     await db.delete(attendanceSessions);
     await db.delete(organizationAttendanceSettings);
+    // On with 0 days, where every organization that had attendance before the
+    // window existed was moved to.
     await upsertAttendanceSettings(ORGANIZATION_ID, {
       ...ATTENDANCE_SETTINGS_DEFAULTS,
       balanceMode: ATTENDANCE_SETTINGS_DEFAULTS.balanceMode as balanceMode,
       attendanceEnabled: true,
       timezone: ZONE,
+      selfServiceEnabled: true,
+      selfServiceDays: 0,
     });
     await proActive();
+  });
+
+  const setWindow = (
+    selfServiceEnabled: boolean,
+    selfServiceDays: number | null,
+    timezone = ZONE
+  ) =>
+    db
+      .update(organizationAttendanceSettings)
+      .set({ selfServiceEnabled, selfServiceDays, timezone })
+      .where(eq(organizationAttendanceSettings.organizationId, ORGANIZATION_ID));
+
+  const setEmploymentEnded = (person: Person, endedAt: Date | null) =>
+    db
+      .update(employments)
+      .set({ endedAt })
+      .where(eq(employments.id, employmentIds.get(person.id)!));
+
+  /** A closed session on a business date some whole days before today in `zone`. */
+  const seedDaysBack = (person: Person, days: number, zone = ZONE) =>
+    seedSession({
+      person,
+      businessDate: daysBefore(businessDateInZone(new Date(), zone), days),
+      startedAt: hoursAgo(days * 24 + 6),
+      endedAt: hoursAgo(days * 24 + 1),
+      breaks: [{ startedAt: hoursAgo(days * 24 + 4), endedAt: hoursAgo(days * 24 + 3.5) }],
+    });
+
+  /** A correction that is always coherent for a session from {@link seedDaysBack}. */
+  const nudge = (days: number) => ({ endedAt: hoursAgo(days * 24 + 0.5).toISOString() });
+
+  describe("the self-service window", () => {
+    afterEach(async () => {
+      await setEmploymentEnded(member, null);
+    });
+
+    it("off refuses the employee today's session, saying corrections go through an admin", async () => {
+      await setWindow(false, 0);
+      const { id, breakIds } = await seedDaysBack(member, 0);
+
+      const { body } = await patchSession(member, id, nudge(0)).expect(403);
+      expect(body.errors[0].context.reason).toBe("SELF_SERVICE_OFF");
+      expect(body.errors[0].message).toBe(
+        "Your organization manages attendance corrections through an admin. Ask a group admin, or an organization admin."
+      );
+
+      await patchBreak(member, breakIds[0]!, {
+        endedAt: hoursAgo(3.4).toISOString(),
+      }).expect(403);
+      await deleteBreak(member, breakIds[0]!).expect(403);
+      await deleteSession(member, id).expect(403);
+      expect(await eventRows(id)).toHaveLength(0);
+    });
+
+    it("off still refuses an open session", async () => {
+      await setWindow(false, null);
+      const { id } = await seedSession({
+        person: member,
+        businessDate: today(),
+        startedAt: hoursAgo(2),
+        endedAt: null,
+      });
+
+      const { body } = await patchSession(member, id, {
+        startedAt: hoursAgo(3).toISOString(),
+      }).expect(403);
+      expect(body.errors[0].context.reason).toBe("SELF_SERVICE_OFF");
+    });
+
+    it("on with 0 allows today and refuses yesterday", async () => {
+      await setWindow(true, 0);
+
+      const todays = await seedDaysBack(member, 0);
+      await patchSession(member, todays.id, nudge(0)).expect(200);
+
+      const yesterdays = await seedDaysBack(member, 1);
+      const refused = await patchSession(member, yesterdays.id, nudge(1)).expect(403);
+      expect(refused.body.errors[0].context.reason).toBe("SELF_SERVICE_WINDOW");
+      expect(refused.body.errors[0].message).toBe(
+        "Only an admin can change a day this old. Ask a group admin, or an organization admin."
+      );
+    });
+
+    it("on with 0 allows a session still open from yesterday", async () => {
+      await setWindow(true, 0);
+
+      const open = await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(20),
+        endedAt: null,
+      });
+      await patchSession(member, open.id, { startedAt: hoursAgo(19).toISOString() }).expect(200);
+    });
+
+    it("on with 7 allows seven days back and refuses eight, by the organization's date", async () => {
+      // A zone whose date differs from UTC's right now: Kiritimati runs a day
+      // ahead from 10:00 UTC, Etc/GMT+12 a day behind until 12:00 UTC. Counting
+      // from UTC's date instead would get one side of the boundary wrong.
+      const zone = new Date().getUTCHours() >= 10 ? "Pacific/Kiritimati" : "Etc/GMT+12";
+      expect(businessDateInZone(new Date(), zone)).not.toBe(businessDateInZone(new Date(), "UTC"));
+      await setWindow(true, 7, zone);
+
+      const seven = await seedDaysBack(member, 7, zone);
+      await patchSession(member, seven.id, nudge(7)).expect(200);
+      await patchBreak(member, seven.breakIds[0]!, {
+        endedAt: hoursAgo(7 * 24 + 3.4).toISOString(),
+      }).expect(200);
+
+      const eight = await seedDaysBack(member, 8, zone);
+      const { body } = await patchSession(member, eight.id, nudge(8)).expect(403);
+      expect(body.errors[0].context.reason).toBe("SELF_SERVICE_WINDOW");
+      await deleteBreak(member, eight.breakIds[0]!).expect(403);
+    });
+
+    it("on with no limit allows a date months back", async () => {
+      await setWindow(true, null);
+      const { id, breakIds } = await seedDaysBack(member, 120);
+
+      await patchSession(member, id, nudge(120)).expect(200);
+      await deleteBreak(member, breakIds[0]!).expect(200);
+    });
+
+    it("refuses an ended Employment whatever the setting", async () => {
+      const { id } = await seedDaysBack(member, 0);
+      await setEmploymentEnded(member, new Date());
+
+      for (const [enabled, days] of [
+        [true, null],
+        [true, 7],
+        [false, 0],
+      ] as const) {
+        await setWindow(enabled, days);
+        const { body } = await patchSession(member, id, nudge(0)).expect(403);
+        expect(body.errors[0].context.reason).toBe("EMPLOYMENT_ENDED");
+        expect(body.errors[0].message).toBe(
+          "Your employment here has ended. Your attendance stays readable, and only an admin can change it."
+        );
+      }
+
+      // An admin may still fix its last days.
+      await patchSession(owner, id, nudge(0)).expect(200);
+    });
+
+    it("never consults the window for an admin", async () => {
+      for (const [enabled, days] of [
+        [false, 0],
+        [true, 0],
+        [true, 7],
+        [true, null],
+      ] as const) {
+        await setWindow(enabled, days);
+        const { id, breakIds } = await seedDaysBack(member, 30);
+
+        await patchSession(groupAdmin, id, nudge(30)).expect(200);
+        await patchBreak(owner, breakIds[0]!, {
+          endedAt: hoursAgo(30 * 24 + 3.4).toISOString(),
+        }).expect(200);
+        await deleteSession(owner, id).expect(200);
+      }
+    });
+
+    it("lets the employee correct a clocked session from yesterday but not delete it", async () => {
+      await setWindow(true, 7);
+      const { id, breakIds } = await seedDaysBack(member, 1);
+
+      const { body } = await deleteSession(member, id).expect(403);
+      expect(body.errors[0].context.reason).toBe("SELF_SERVICE_DELETE");
+      expect(body.errors[0].message).toBe(
+        "This session was clocked on an earlier day. You can correct its times, but only an admin can delete it."
+      );
+      expect((await sessionRow(id))!.deletedAt).toBeNull();
+
+      await patchSession(member, id, nudge(1)).expect(200);
+      await deleteBreak(member, breakIds[0]!).expect(200);
+    });
+
+    it("lets the employee delete a clocked session dated today", async () => {
+      await setWindow(true, 7);
+      const { id } = await seedDaysBack(member, 0);
+
+      await deleteSession(member, id).expect(200);
+    });
+  });
+
+  describe("the window on the state read", () => {
+    const current = (person: Person) =>
+      request(app)
+        .get("/api/attendance/current")
+        .query({ organizationId: ORGANIZATION_ID })
+        .set("Cookie", cookieOf(person));
+
+    it("carries the organization's setting to the employee", async () => {
+      await setWindow(true, 7);
+      expect((await current(member).expect(200)).body.selfService).toEqual({
+        enabled: true,
+        days: 7,
+      });
+
+      await setWindow(true, null);
+      expect((await current(member).expect(200)).body.selfService).toEqual({
+        enabled: true,
+        days: null,
+      });
+
+      await setWindow(false, 0);
+      expect((await current(member).expect(200)).body.selfService).toEqual({
+        enabled: false,
+        days: 0,
+      });
+    });
   });
 
   describe("an admin correcting somebody's day", () => {

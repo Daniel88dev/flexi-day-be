@@ -16,6 +16,7 @@ import {
 import {
   ATTENDANCE_SETTINGS_DEFAULTS,
   balanceMode,
+  organizationAttendanceSettings,
 } from "../../db/schema/organization-attendance-settings-schema.js";
 import { createTestUser, cleanupTestData } from "./helpers/testSetup.js";
 import { authCookieFor } from "./helpers/authHelper.js";
@@ -327,12 +328,34 @@ describe("team attendance", () => {
         requiredMinutesPerDay: 480,
         breakMinutes: 30,
         breakThresholdMinutes: 360,
+        selfService: { enabled: false, days: 0 },
       });
       for (const person of body.people) {
         expect(person.days).toHaveLength(7);
         expect(person.days[0].businessDate).toBe(businessDate(MONDAY));
         expect(person.days[5].exclusion).toMatchObject({ cause: "NON_WORKING_DAY" });
         expect(person.totals.requiredMinutes).toBe(5 * 480);
+      }
+    });
+  });
+
+  describe("the self-service window", () => {
+    it("reads the same for a group admin as for an org admin", async () => {
+      await db
+        .update(organizationAttendanceSettings)
+        .set({ selfServiceEnabled: true, selfServiceDays: 7 })
+        .where(eq(organizationAttendanceSettings.organizationId, ORGANIZATION_ID));
+
+      try {
+        for (const viewer of [owner, groupAdmin]) {
+          const { body } = await getTeam(viewer).expect(200);
+          expect(body.selfService).toEqual({ enabled: true, days: 7 });
+        }
+      } finally {
+        await db
+          .update(organizationAttendanceSettings)
+          .set({ selfServiceEnabled: false, selfServiceDays: 0 })
+          .where(eq(organizationAttendanceSettings.organizationId, ORGANIZATION_ID));
       }
     });
   });
