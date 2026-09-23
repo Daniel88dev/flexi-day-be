@@ -27,6 +27,18 @@ export const attendanceClosedByEnum = pgEnum(
   enumToPgEnum(attendanceClosedBy)
 );
 
+/** How a session came to exist. Set at creation and never changed. */
+export enum attendanceSessionOrigin {
+  Clocked = "CLOCKED",
+  /** Recorded after the fact with both ends, by an admin or the person themselves. */
+  Entered = "ENTERED",
+}
+
+export const attendanceSessionOriginEnum = pgEnum(
+  "attendance_session_origin",
+  enumToPgEnum(attendanceSessionOrigin)
+);
+
 /**
  * One spell of presence, hanging off an Employment rather than a group — a
  * person clocks in once however many groups they belong to
@@ -57,6 +69,9 @@ export const attendanceSessions = pgTable(
     timezone: text("timezone").notNull(),
     // Null while the session is open.
     closedBy: attendanceClosedByEnum("closed_by"),
+    origin: attendanceSessionOriginEnum("origin")
+      .notNull()
+      .default(attendanceSessionOrigin.Clocked),
     startLatitude: doublePrecision("start_latitude"),
     startLongitude: doublePrecision("start_longitude"),
     startAccuracy: doublePrecision("start_accuracy"),
@@ -137,6 +152,8 @@ export enum attendanceEventType {
   BreakDeleted = "BREAK_DELETED",
   /** The session was soft-deleted. The row stays, and so does everything before this. */
   SessionDeleted = "SESSION_DELETED",
+  /** An entered session's first event: who entered it, and the session as it was saved. */
+  SessionCreated = "SESSION_CREATED",
 }
 
 export const attendanceEventTypeEnum = pgEnum(

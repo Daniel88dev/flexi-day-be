@@ -5,11 +5,12 @@ import {
   attendanceClosedBy,
   attendanceEventType,
   attendanceEvents,
+  attendanceSessionOrigin,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import AppError from "../../utils/appError.js";
-import { businessDateInZone } from "../../utils/dateFunc.js";
+import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { assertAttendanceActive } from "../billing/guards.js";
 import {
@@ -18,6 +19,7 @@ import {
 } from "../employment/attendanceAccess.js";
 import { getEmploymentById } from "../employment/employmentServices.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
+import type { AttendanceSettingsType } from "../organization/types.js";
 import {
   appendAttendanceEvent,
   attendanceConflict,
@@ -26,7 +28,7 @@ import {
   getOpenSession,
   getSessionById,
   listBreaksForSession,
-  listSessionsOverlapping,
+  assertNoSessionOverlap,
   lockEmployment,
   sessionAlreadyOpen,
 } from "./attendanceServices.js";
@@ -170,19 +172,13 @@ const loadCorrectable = async (
   const employment = await getEmploymentById(found.employmentId, tx);
   if (!employment) throw employmentMissing(found.employmentId);
 
-  await assertAttendanceActive(employment.organizationId, tx);
-
-  const settings = await getAttendanceSettings(employment.organizationId, tx);
-  // The organization's zone as it stands now, falling back to the one the
-  // session was clocked in under: today is a question about the organization,
-  // not about the session.
-  const timezone = settings?.timezone ?? found.timezone;
-
-  const right = await resolveCorrectionRight(viewerUserId, employment, found, tx, {
-    window: selfServiceWindowOf(settings),
-    timezone,
-    now,
-  });
+  const { right, timezone } = await authorizeAttendanceWrite(
+    viewerUserId,
+    employment,
+    found,
+    tx,
+    now
+  );
 
   await lockEmployment(employment.id, tx);
 
@@ -216,7 +212,7 @@ const selfServiceMessage = (refusal: SelfServiceRefusal): string => {
 const resolveCorrectionRight = async (
   viewerUserId: string,
   employment: { organizationId: string; userId: string; endedAt: Date | null },
-  session: AttendanceSessionType,
+  session: { id?: string; businessDate: DateString; endedAt: Date | null },
   tx: DbTransaction,
   selfService: { window: SelfServiceWindow; timezone: string; now: Date }
 ): Promise<AttendanceCorrectionRight> => {
@@ -247,6 +243,48 @@ const resolveCorrectionRight = async (
   }
 
   return AttendanceCorrectionRight.Self;
+};
+
+/**
+ * What every write to an existing or entered session does before it takes the
+ * Employment lock: the plan gate, the organization's zone, and under whose
+ * authority the write is made.
+ */
+export const authorizeAttendanceWrite = async (
+  viewerUserId: string,
+  employment: { organizationId: string; userId: string; endedAt: Date | null },
+  session: { id?: string; businessDate: DateString; endedAt: Date | null; timezone?: string },
+  tx: DbTransaction,
+  now: Date
+): Promise<{
+  right: AttendanceCorrectionRight;
+  settings: AttendanceSettingsType | undefined;
+  timezone: string;
+}> => {
+  await assertAttendanceActive(employment.organizationId, tx);
+
+  const settings = await getAttendanceSettings(employment.organizationId, tx);
+  // The organization's zone as it stands now, falling back to the one the
+  // session was clocked in under: today is a question about the organization,
+  // not about the session.
+  const timezone = settings?.timezone ?? session.timezone;
+  // Attendance cannot be active without a zone, so this is a hand-edited row.
+  if (!timezone) {
+    throw new AppError({
+      message: "This organization has no attendance timezone",
+      logging: true,
+      code: 500,
+      context: { organizationId: employment.organizationId },
+    });
+  }
+
+  const right = await resolveCorrectionRight(viewerUserId, employment, session, tx, {
+    window: selfServiceWindowOf(settings),
+    timezone,
+    now,
+  });
+
+  return { right, settings, timezone };
 };
 
 /** The session as it now stands, with its breaks — what every correction answers with. */
@@ -295,21 +333,8 @@ export const correctAttendanceSession = async (
   }
 
   // Nothing in the schema stops two spans of one Employment covering the same
-  // minutes, and `presence` would count them twice. Only a correction can make
-  // that shape, so this is where it is refused.
-  const [overlap] = await listSessionsOverlapping(session.employmentId, next, session.id, tx);
-  if (overlap) {
-    throw attendanceConflict(
-      "SESSION_OVERLAPS",
-      "Another session of theirs already covers that time",
-      {
-        sessionId: overlap.id,
-        startedAt: overlap.startedAt.toISOString(),
-        endedAt: overlap.endedAt?.toISOString() ?? null,
-      },
-      { employmentId: session.employmentId }
-    );
-  }
+  // minutes, and `presence` would count them twice.
+  await assertNoSessionOverlap(session.employmentId, next, { exceptSessionId: session.id }, tx);
 
   const closedBy = closedByAfter(session, next, patch, right);
 
@@ -481,17 +506,25 @@ export const deleteAttendanceSession = async (
 ): Promise<AttendanceSessionView> => {
   const { session, right, timezone } = await loadCorrectable(viewerUserId, sessionId, tx, now);
 
-  // A clocked session from a past day can be corrected by its owner but not
-  // removed, so a real clock-in never vanishes at their hand.
+  // From a past day the owner may take back only what they entered themselves,
+  // so a real clock-in, or an admin's entry, never vanishes at their hand.
   if (
     right === AttendanceCorrectionRight.Self &&
-    session.businessDate !== businessDateInZone(now, timezone)
+    session.businessDate !== businessDateInZone(now, timezone) &&
+    session.enteredByUserId !== viewerUserId
   ) {
-    throw forbidden(
-      "This session was clocked on an earlier day. You can correct its times, but only an admin can delete it.",
-      { viewerUserId, sessionId: session.id, businessDate: session.businessDate },
-      "SELF_SERVICE_DELETE"
-    );
+    const context = { viewerUserId, sessionId: session.id, businessDate: session.businessDate };
+    throw session.origin === attendanceSessionOrigin.Entered
+      ? forbidden(
+          "An admin entered this session. You can correct its times, but only an admin can delete it.",
+          context,
+          "SELF_SERVICE_DELETE_ENTERED"
+        )
+      : forbidden(
+          "This session was clocked on an earlier day. You can correct its times, but only an admin can delete it.",
+          context,
+          "SELF_SERVICE_DELETE"
+        );
   }
 
   await tx

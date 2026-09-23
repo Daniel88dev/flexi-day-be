@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { balanceMode } from "../../../db/schema/organization-attendance-settings-schema.js";
-import { attendanceClosedBy } from "../../../db/schema/attendance-schema.js";
+import {
+  attendanceClosedBy,
+  attendanceSessionOrigin,
+} from "../../../db/schema/attendance-schema.js";
 import {
   AttendanceExclusionCause,
   AttendanceExclusionExtent,
@@ -34,6 +37,7 @@ const session = (
   startedAt: new Date(startedAt),
   endedAt: endedAt === null ? null : new Date(endedAt),
   closedBy: endedAt === null ? null : attendanceClosedBy.User,
+  origin: attendanceSessionOrigin.Clocked,
   breaks: breaks.map(([from, to]) => ({
     startedAt: new Date(from),
     endedAt: to === null ? null : new Date(to),

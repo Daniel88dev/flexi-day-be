@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { attendanceClosedBy, attendanceEventType } from "../../db/schema/attendance-schema.js";
+import type {
+  attendanceClosedBy,
+  attendanceEventType,
+  attendanceSessionOrigin,
+} from "../../db/schema/attendance-schema.js";
 import type { balanceMode } from "../../db/schema/organization-attendance-settings-schema.js";
 import type { AttendanceDay, AttendanceTotals } from "./attendanceCalculation.js";
 import type { DateString } from "../../utils/dateFunc.js";
@@ -35,6 +39,9 @@ export type AttendanceSessionType = {
   endedAt: Date | null;
   timezone: string;
   closedBy: attendanceClosedBy | null;
+  origin: attendanceSessionOrigin;
+  /** Who entered it, from its `SESSION_CREATED` event; null for a clocked session. */
+  enteredByUserId: string | null;
   startLatitude: number | null;
   startLongitude: number | null;
   startAccuracy: number | null;
@@ -300,6 +307,17 @@ export const validateAttendanceCorrection = z
   });
 
 export type ValidatedAttendanceCorrectionType = z.infer<typeof validateAttendanceCorrection>;
+
+export const validateAttendanceEntry = z.object({
+  organizationId: z.string().min(1),
+  // better-auth user ids are opaque non-UUID strings.
+  userId: z.string().min(1).optional(),
+  businessDate: z.iso.date(),
+  startedAt: z.iso.datetime({ offset: true }),
+  endedAt: z.iso.datetime({ offset: true }),
+});
+
+export type ValidatedAttendanceEntryType = z.infer<typeof validateAttendanceEntry>;
 
 /**
  * Whose authority a correction is being made under: an admin over somebody's

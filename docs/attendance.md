@@ -111,8 +111,9 @@ organization starts with the window off. Organizations that had attendance befor
 start at on, 0 days, which is the rule they already had.
 
 Inside the window the employee may enter a session, add a break, correct either, and delete a
-break. They may delete only sessions they entered themselves: a clocked session from a past day can
-be corrected but never removed by its owner, so a real clock-in cannot vanish at their hand.
+break. They may delete a session they entered themselves, or a clocked session dated today. A
+clocked session from a past day can be corrected but never removed by its owner, so a real clock-in
+cannot vanish at their hand.
 Outside the window, and always for an ended Employment, only a Group admin (for a group member) or
 an Org admin (anyone) can write, and the refusal says so rather than reading as a bare "no".
 

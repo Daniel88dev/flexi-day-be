@@ -3,6 +3,7 @@ import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
   validateAttendanceCorrection,
+  validateAttendanceEntry,
   validateAttendanceLocation,
   validateAttendanceScope,
 } from "../services/attendance/types.js";
@@ -20,6 +21,7 @@ import { handleDeleteAttendanceSession } from "../controllers/attendance/handleD
 import { handlePatchAttendanceBreak } from "../controllers/attendance/handlePatchAttendanceBreak.js";
 import { handleDeleteAttendanceBreak } from "../controllers/attendance/handleDeleteAttendanceBreak.js";
 import { handleGetAttendanceSessionEvents } from "../controllers/attendance/handleGetAttendanceSessionEvents.js";
+import { handleEnterAttendanceSession } from "../controllers/attendance/handleEnterAttendanceSession.js";
 
 export const attendanceRouter = (): Router => {
   const app = Router();
@@ -72,9 +74,13 @@ export const attendanceRouter = (): Router => {
    *           `autoClosed: true` is a break closed inside a session that may
    *           still be open and may read `closedBy: "USER"`.
    *           A session is `{ id, businessDate, startedAt, endedAt,
-   *           timezone, closedBy, open, startLatitude, startLongitude,
-   *           startAccuracy, endLatitude, endLongitude, endAccuracy, breaks }`,
-   *           the six location fields null unless the organization records
+   *           timezone, closedBy, origin, enteredByUserId, open, startLatitude,
+   *           startLongitude, startAccuracy, endLatitude, endLongitude,
+   *           endAccuracy, breaks }`, `origin` being `CLOCKED` or `ENTERED`
+   *           (recorded after the fact through `POST /api/attendance/sessions`,
+   *           for good), `enteredByUserId` the user who entered it and null for
+   *           a clocked session, and the six
+   *           location fields null unless the organization records
    *           location and the browser's prompt was allowed; a break is
    *           `{ id, sessionId, startedAt, endedAt, autoClosed, open }`.
    *       '404':
@@ -151,8 +157,11 @@ export const attendanceRouter = (): Router => {
    *           `requiredMinutesOverride` repeats and is otherwise null.
    *           A day is `{ businessDate, presenceMinutes, breaksMinutes,
    *           deductedMinutes, workedMinutes, requiredMinutes, balanceMinutes,
-   *           upcoming, open, autoClosed, exclusion, excludedClockIn, flagged,
-   *           sessions }`.
+   *           upcoming, open, autoClosed, exclusion, excludedClockIn, entered,
+   *           flagged, sessions }`, a session shaped as on
+   *           `/api/attendance/current`. `entered` is true when a session on
+   *           the date was entered after the fact; it is a fact about the day,
+   *           not a flag, and never counts toward `flagged`.
    *           `balanceMinutes` is null on an upcoming date, throughout
    *           `MONTHLY` mode, where the month carries the only balance, and on
    *           an excluded day nobody worked.
@@ -206,7 +215,7 @@ export const attendanceRouter = (): Router => {
    *       - in: query
    *         name: businessDate
    *         required: true
-   *         description: '`YYYY-MM-DD`, the organization's local day.'
+   *         description: The organization's local day, as `YYYY-MM-DD`.
    *         schema:
    *           type: string
    *           format: date
@@ -219,7 +228,8 @@ export const attendanceRouter = (): Router => {
    *       '200':
    *         description: |
    *           `{ organizationId, employmentId, userId, businessDate, timezone,
-   *           sessions }`, a session shaped as on `/api/attendance/current`.
+   *           sessions }`, a session shaped as on `/api/attendance/current`,
+   *           `origin` included.
    *       '403':
    *         description: No permission for that Employment
    *       '404':
@@ -300,7 +310,8 @@ export const attendanceRouter = (): Router => {
    *           requiredMinutesPerDay, requiredMinutesOverride, days, totals }`,
    *           sorted by name; `groups` is `[{ id, groupName }]` of the live
    *           groups they belong to. Each day and the totals read exactly as
-   *           on `/api/attendance/month`, without `sessions`.
+   *           on `/api/attendance/month`, without `sessions` — `entered` still
+   *           says whether a session on the date was entered after the fact.
    *           An entry of `inNow` is `{ employmentId, userId, sessionId,
    *           businessDate, startedAt, onBreak, breakStartedAt }`.
    *       '403':
@@ -568,6 +579,107 @@ export const attendanceRouter = (): Router => {
 
   /**
    * @openapi
+   * /api/attendance/sessions:
+   *   post:
+   *     tags:
+   *       - Attendance
+   *     summary: Enter a session after the fact
+   *     description: |
+   *       Records a session nobody clocked: a business date and both ends,
+   *       closed and wholly in the past. It is marked `origin: "ENTERED"` for
+   *       good, whoever entered it (`docs/attendance.md`, "Entered sessions").
+   *
+   *       Who may: a group admin of any group that person belongs to and the
+   *       organization's admins, for any day; the person themselves only inside
+   *       the organization's self-service window, and never once their
+   *       Employment has ended. `userId` defaults to the caller.
+   *
+   *       The start has to fall on `businessDate` in the organization's
+   *       timezone; the end may cross midnight, and the session stays on the
+   *       day it started. The end comes after the start and not after now, the
+   *       span is no longer than the organization's session ceiling, the date
+   *       lies inside the Employment's spell, and the span may not run across
+   *       another of that person's live sessions, an open one included. An
+   *       excluded day is allowed and flagged like a clock-in on one. No
+   *       location is taken.
+   *
+   *       Takes the same Employment lock a clock-in takes, so an entry racing
+   *       a clock-in cannot leave two sessions over the same minutes. Refused
+   *       like a correction while attendance is not active.
+   *
+   *       One `SESSION_CREATED` event is appended in the same transaction, with
+   *       the caller as its user and the session as saved as `after`:
+   *       `{ businessDate, startedAt, endedAt, timezone, closedBy, origin }`.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - organizationId
+   *               - businessDate
+   *               - startedAt
+   *               - endedAt
+   *             properties:
+   *               organizationId:
+   *                 type: string
+   *               userId:
+   *                 type: string
+   *                 description: Whose session it is. Defaults to the caller.
+   *               businessDate:
+   *                 type: string
+   *                 format: date
+   *                 description: The organization's local day the session belongs to, as `YYYY-MM-DD`.
+   *               startedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 description: With an offset. Has to fall on `businessDate` in the organization's zone.
+   *               endedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 description: With an offset. After `startedAt`, not after now.
+   *     responses:
+   *       '201':
+   *         description: |
+   *           The entered session, shaped as on `/api/attendance/current`, with
+   *           `origin: "ENTERED"`, `enteredByUserId` the caller, `closedBy`
+   *           `ADMIN` or `USER` by who entered it, and no breaks.
+   *       '402':
+   *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
+   *       '403':
+   *         description: |
+   *           No standing over this Employment, or the employee may not enter
+   *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
+   *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
+   *           the business date is outside the window, and `EMPLOYMENT_ENDED`
+   *           when their Employment has ended.
+   *       '404':
+   *         description: That person holds no Employment in that organization
+   *       '409':
+   *         description: |
+   *           `SESSION_OVERLAPS`: another of that person's sessions already
+   *           covers part of the span. `context` carries the other session's
+   *           `{ sessionId, startedAt, endedAt }`.
+   *       '422':
+   *         description: |
+   *           A missing or malformed field, or `context.reason` naming the rule:
+   *           `START_OFF_DATE` when the start is not on `businessDate` in the
+   *           organization's zone, `OUTSIDE_EMPLOYMENT` when the date is outside
+   *           the Employment's spell, `END_BEFORE_START`, `END_IN_FUTURE`, or
+   *           `OVER_CEILING` with `context.ceilingMinutes` when the span is
+   *           longer than the session ceiling.
+   */
+  app.post(
+    "/sessions",
+    bodyValidationMiddleware(validateAttendanceEntry),
+    tryCatch(handleEnterAttendanceSession)
+  );
+
+  /**
+   * @openapi
    * /api/attendance/sessions/{sessionId}:
    *   patch:
    *     tags:
@@ -666,9 +778,10 @@ export const attendanceRouter = (): Router => {
    *       session per Employment" excludes deleted rows.
    *
    *       Authorized as the patch is, self-service window included, with one
-   *       rule more: the employee may delete their own clocked session only
-   *       while it is dated today. An earlier one can be corrected, not
-   *       removed.
+   *       rule more: the employee may delete a session they entered
+   *       themselves (`enteredByUserId` is theirs), or a clocked session dated
+   *       today. A clocked session from an earlier day, or one an admin
+   *       entered for them, can be corrected, not removed.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -688,9 +801,10 @@ export const attendanceRouter = (): Router => {
    *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
    *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
    *           the session's business date is outside the window, and
-   *           `EMPLOYMENT_ENDED` when their Employment has ended, and
-   *           `SELF_SERVICE_DELETE` when they try to delete their own clocked
-   *           session from an earlier day.
+   *           `EMPLOYMENT_ENDED` when their Employment has ended,
+   *           `SELF_SERVICE_DELETE` when they try to delete a clocked session
+   *           from an earlier day, and `SELF_SERVICE_DELETE_ENTERED` when they
+   *           try to delete one an admin entered for them on an earlier day.
    *       '404':
    *         description: No such session, or it was already deleted
    */
@@ -837,7 +951,10 @@ export const attendanceRouter = (): Router => {
    *           `{ id, sessionId, eventType, user, before, after, createdAt }`.
    *           `eventType` is one of `CLOCK_IN`, `CLOCK_OUT`, `BREAK_START`,
    *           `BREAK_END`, `LOCATION_UPDATED`, `SESSION_EDITED`, `BREAK_EDITED`,
-   *           `BREAK_DELETED` or `SESSION_DELETED`.
+   *           `BREAK_DELETED`, `SESSION_DELETED` or `SESSION_CREATED`. An
+   *           entered session's timeline opens with `SESSION_CREATED`, whose
+   *           `user` entered it and whose `after` is
+   *           `{ businessDate, startedAt, endedAt, timezone, closedBy, origin }`.
    *       '403':
    *         description: No permission for this Employment
    *       '404':
