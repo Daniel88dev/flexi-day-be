@@ -373,6 +373,43 @@ describe("attendance corrections", () => {
       expect(await eventRows(open.id)).toHaveLength(0);
     });
 
+    it("refuses the employee an Employment that ended while the correction waited for its lock", async () => {
+      await setWindow(true, null);
+      const employmentId = employmentIds.get(member.id)!;
+      const { id } = await seedDaysBack(member, 0);
+
+      let settled = false;
+      let pending: Promise<request.Response> | undefined;
+
+      // Stands in for a membership change: it holds the Employment lock while the
+      // correction, which passed on the Employment as it stood, waits, then ends it.
+      await db.transaction(async (tx) => {
+        await tx
+          .select({ id: employments.id })
+          .from(employments)
+          .where(eq(employments.id, employmentId))
+          .for("update");
+
+        pending = patchSession(member, id, nudge(0)).then((response) => {
+          settled = true;
+          return response;
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        expect(settled).toBe(false);
+
+        await tx
+          .update(employments)
+          .set({ endedAt: new Date() })
+          .where(eq(employments.id, employmentId));
+      });
+
+      const response = await pending!;
+      expect(response.status).toBe(403);
+      expect(response.body.errors[0].context.reason).toBe("EMPLOYMENT_ENDED");
+      expect(await eventRows(id)).toHaveLength(0);
+    });
+
     it("on with 7 allows seven days back and refuses eight, by the organization's date", async () => {
       // A zone whose date differs from UTC's right now: Kiritimati runs a day
       // ahead from 10:00 UTC, Etc/GMT+12 a day behind until 12:00 UTC. Counting

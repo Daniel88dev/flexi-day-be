@@ -242,10 +242,17 @@ export const beginAttendanceWrite = async (
  * The ceiling sweep takes the same lock: it is the one thing that writes to a
  * clock without a person behind it, and it must queue with them rather than
  * race them.
+ *
+ * Returns the row as it stands once the lock is held. A membership change may
+ * have ended the Employment while this waited, so a write deciding the owner's
+ * rights reads them from this row, not from one read before the lock.
  */
-export const lockEmployment = async (employmentId: string, tx: DbTransaction): Promise<void> => {
+export const lockEmployment = async (
+  employmentId: string,
+  tx: DbTransaction
+): Promise<EmploymentType> => {
   const [row] = await tx
-    .select({ id: employments.id })
+    .select()
     .from(employments)
     .where(eq(employments.id, employmentId))
     .for("update");
@@ -258,6 +265,8 @@ export const lockEmployment = async (employmentId: string, tx: DbTransaction): P
       context: { employmentId },
     });
   }
+
+  return row;
 };
 
 export const getOpenSession = async (

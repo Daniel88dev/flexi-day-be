@@ -276,6 +276,41 @@ describe("entered attendance sessions", () => {
       expect(body.errors[0].context.reason).toBe("PLAN_LIMIT");
       expect(await sessionsOf(member)).toHaveLength(0);
     });
+
+    it("refuses the employee an Employment that ended while the entry waited for its lock", async () => {
+      const employmentId = employmentIds.get(member.id)!;
+
+      let settled = false;
+      let pending: Promise<request.Response> | undefined;
+
+      // Stands in for a membership change: it holds the Employment lock while the
+      // entry, which passed on the Employment as it stood, waits, then ends it.
+      await db.transaction(async (tx) => {
+        await tx
+          .select({ id: employments.id })
+          .from(employments)
+          .where(eq(employments.id, employmentId))
+          .for("update");
+
+        pending = enter(member, dayBack(1)).then((response) => {
+          settled = true;
+          return response;
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        expect(settled).toBe(false);
+
+        await tx
+          .update(employments)
+          .set({ endedAt: new Date() })
+          .where(eq(employments.id, employmentId));
+      });
+
+      const response = await pending!;
+      expect(response.status).toBe(403);
+      expect(response.body.errors[0].context.reason).toBe("EMPLOYMENT_ENDED");
+      expect(await sessionsOf(member)).toHaveLength(0);
+    });
   });
 
   describe("what an entry has to be", () => {

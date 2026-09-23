@@ -111,29 +111,45 @@ export const enterAttendanceSession = async (
 
   const ceilingMinutes =
     settings?.sessionCeilingMinutes ?? ATTENDANCE_SETTINGS_DEFAULTS.sessionCeilingMinutes;
-  const refusal = entryRefusal({
-    businessDate: input.businessDate,
-    startedAt,
-    endedAt,
-    timezone,
-    now,
-    ceilingMinutes,
-    spell: employment,
-  });
-  if (refusal) {
-    throw new AppError({
-      message: entryMessage(refusal, ceilingMinutes),
-      logging: true,
-      code: 422,
-      context: { viewerUserId, employmentId: employment.id, businessDate: input.businessDate },
-      publicContext: {
-        reason: refusal,
-        ...(refusal === "OVER_CEILING" ? { ceilingMinutes } : {}),
-      },
+  const assertEntryFits = (spell: { startedAt: Date; endedAt: Date | null }) => {
+    const refusal = entryRefusal({
+      businessDate: input.businessDate,
+      startedAt,
+      endedAt,
+      timezone,
+      now,
+      ceilingMinutes,
+      spell,
     });
-  }
+    if (refusal) {
+      throw new AppError({
+        message: entryMessage(refusal, ceilingMinutes),
+        logging: true,
+        code: 422,
+        context: { viewerUserId, employmentId: employment.id, businessDate: input.businessDate },
+        publicContext: {
+          reason: refusal,
+          ...(refusal === "OVER_CEILING" ? { ceilingMinutes } : {}),
+        },
+      });
+    }
+  };
+  assertEntryFits(employment);
 
-  await lockEmployment(employment.id, tx);
+  // A membership change may have ended or restarted the Employment while this
+  // waited for the lock, so the owner's right and the spell are decided again on
+  // the row as it now stands.
+  const locked = await lockEmployment(employment.id, tx);
+  if (right === AttendanceCorrectionRight.Self) {
+    await authorizeAttendanceWrite(
+      viewerUserId,
+      locked,
+      { businessDate: input.businessDate, endedAt },
+      tx,
+      now
+    );
+  }
+  assertEntryFits(locked);
 
   await assertNoSessionOverlap(employment.id, { startedAt, endedAt }, {}, tx);
 

@@ -267,7 +267,7 @@ const loadCorrectable = async (
   // Checked before the lock too, so nobody without standing ever holds it.
   const unlocked = await authorizeAttendanceWrite(viewerUserId, employment, found, tx, now);
 
-  await lockEmployment(employment.id, tx);
+  const locked = await lockEmployment(employment.id, tx);
 
   // Re-read behind the lock: a clock-out, the sweep or another admin may have
   // moved this session between the read above and the lock. Gone means gone —
@@ -278,16 +278,16 @@ const loadCorrectable = async (
 
   // An open session passes the window whatever its date, and the sweep may have
   // closed it while this waited, so the owner's right is decided again on the
-  // session as it now stands. An admin's does not depend on the session.
+  // session and the Employment as they now stand. An admin's depends on neither.
   const { right, timezone } =
     unlocked.right === AttendanceCorrectionRight.Admin
       ? unlocked
-      : await authorizeAttendanceWrite(viewerUserId, employment, session, tx, now);
+      : await authorizeAttendanceWrite(viewerUserId, locked, session, tx, now);
 
   return {
     session,
     breaks: await listBreaksForSession(sessionId, tx),
-    employment,
+    employment: locked,
     right,
     timezone,
   };
