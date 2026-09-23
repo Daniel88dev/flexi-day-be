@@ -10,7 +10,7 @@ import AppError from "../../utils/appError.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { getEmployment } from "../employment/employmentServices.js";
-import { authorizeAttendanceWrite } from "./attendanceCorrections.js";
+import { authorizeAttendanceWrite, recordAddedBreak } from "./attendanceCorrections.js";
 import {
   appendAttendanceEvent,
   assertNoSessionOverlap,
@@ -19,6 +19,7 @@ import {
 } from "./attendanceServices.js";
 import {
   AttendanceCorrectionRight,
+  type AttendanceBreakType,
   type AttendanceSessionView,
   type ValidatedAttendanceEntryType,
 } from "./types.js";
@@ -168,6 +169,17 @@ export const enterAttendanceSession = async (
     tx
   );
 
+  // Checked one by one against the ones already saved, inside the same
+  // transaction: a refused break takes the whole entry with it.
+  const breaks: AttendanceBreakType[] = [];
+  for (const entry of input.breaks ?? []) {
+    breaks.push(
+      await recordAddedBreak(viewerUserId, { id, startedAt, endedAt }, breaks, entry, tx, {
+        sameRequest: true,
+      })
+    );
+  }
+
   const session = await getSessionById(id, {}, tx);
   if (!session) {
     throw new AppError({
@@ -178,5 +190,8 @@ export const enterAttendanceSession = async (
     });
   }
 
-  return { ...session, breaks: [] };
+  return {
+    ...session,
+    breaks: breaks.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime()),
+  };
 };

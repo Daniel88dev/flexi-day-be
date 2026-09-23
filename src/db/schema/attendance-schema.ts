@@ -154,6 +154,8 @@ export enum attendanceEventType {
   SessionDeleted = "SESSION_DELETED",
   /** An entered session's first event: who entered it, and the session as it was saved. */
   SessionCreated = "SESSION_CREATED",
+  /** A break added to a closed session afterwards, or saved with an entered one. */
+  BreakAdded = "BREAK_ADDED",
 }
 
 export const attendanceEventTypeEnum = pgEnum(

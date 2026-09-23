@@ -11,6 +11,7 @@ import {
 import { user } from "../../db/schema/auth-schema.js";
 import AppError from "../../utils/appError.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { assertAttendanceActive } from "../billing/guards.js";
 import {
@@ -38,6 +39,7 @@ import {
   type AttendanceEventView,
   type AttendanceSessionType,
   type AttendanceSessionView,
+  type ValidatedAttendanceBreakType,
   type ValidatedAttendanceCorrectionType,
 } from "./types.js";
 import {
@@ -49,6 +51,8 @@ import {
 
 /** A start and an end, which is all the shape rules below actually read. */
 type Span = { startedAt: Date; endedAt: Date | null };
+
+type BreakSpan = Span & { id: string };
 
 /**
  * The session a correction acts on, everything the guards need, and under whose
@@ -91,7 +95,7 @@ export const applyCorrection = (span: Span, patch: ValidatedAttendanceCorrection
  * An open break under a closed session is left alone rather than refused: the
  * sweep makes them, and the calculation counts one to the session's close.
  */
-export const assertCoherent = (session: Span, breaks: (Span & { id: string })[]): void => {
+export const assertCoherent = (session: Span, breaks: BreakSpan[]): void => {
   if (session.endedAt !== null && session.endedAt <= session.startedAt) {
     throw invalid("END_BEFORE_START", "A session has to end after it starts");
   }
@@ -114,6 +118,51 @@ export const assertCoherent = (session: Span, breaks: (Span & { id: string })[])
       });
     }
   }
+};
+
+/**
+ * The other break of the session a break runs across, if any. Half-open, so
+ * breaks may sit back to back; one left open counts to the session's end.
+ */
+export const overlappingBreak = <T extends BreakSpan>(
+  candidate: BreakSpan,
+  breaks: T[],
+  sessionEnd: Date | null
+): T | undefined => {
+  const endOf = (entry: Span) => entry.endedAt ?? sessionEnd;
+  const candidateEnd = endOf(candidate);
+
+  return breaks.find((other) => {
+    if (other.id === candidate.id) return false;
+    const otherEnd = endOf(other);
+    return (
+      (candidateEnd === null || other.startedAt < candidateEnd) &&
+      (otherEnd === null || otherEnd > candidate.startedAt)
+    );
+  });
+};
+
+const assertNoBreakOverlap = (
+  candidate: BreakSpan,
+  breaks: AttendanceBreakType[],
+  session: { id: string; endedAt: Date | null },
+  options: { sameRequest?: boolean } = {}
+): void => {
+  const other = overlappingBreak(candidate, breaks, session.endedAt);
+  if (!other) return;
+
+  throw attendanceConflict(
+    "BREAK_OVERLAPS",
+    "Another break of this session already covers that time",
+    {
+      // A break written earlier in the same request rolls back with it, so its
+      // id would name nothing.
+      ...(options.sameRequest ? {} : { breakId: other.id }),
+      startedAt: other.startedAt.toISOString(),
+      endedAt: other.endedAt?.toISOString() ?? null,
+    },
+    { sessionId: session.id, breakId: other.id }
+  );
 };
 
 const sessionNotFound = (sessionId: string, viewerUserId: string) =>
@@ -420,6 +469,8 @@ export const correctAttendanceBreak = async (
     }
   }
 
+  assertNoBreakOverlap({ id: entry.id, ...next }, breaks, session);
+
   const autoClosed = "endedAt" in patch ? false : entry.autoClosed;
 
   await tx
@@ -449,6 +500,72 @@ export const correctAttendanceBreak = async (
   );
 
   return sessionView(session.id, tx);
+};
+
+/**
+ * Records a break somebody forgot to press, on a session that has already
+ * closed. An open session takes its breaks from the clock.
+ */
+export const addAttendanceBreak = async (
+  viewerUserId: string,
+  sessionId: string,
+  input: ValidatedAttendanceBreakType,
+  tx: DbTransaction,
+  now = new Date()
+): Promise<AttendanceSessionView> => {
+  const { session, breaks } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+
+  if (session.endedAt === null) {
+    throw attendanceConflict(
+      "SESSION_STILL_OPEN",
+      "A break can be added only to a session that has ended. Start one on the clock instead.",
+      { sessionId: session.id },
+      { viewerUserId }
+    );
+  }
+
+  await recordAddedBreak(viewerUserId, session, breaks, input, tx);
+
+  return sessionView(session.id, tx);
+};
+
+/**
+ * One added break, checked against its session and the breaks already on it,
+ * and its `BREAK_ADDED` event. Shared by the add-break write and an entry saved
+ * with its breaks.
+ */
+export const recordAddedBreak = async (
+  viewerUserId: string,
+  session: { id: string; startedAt: Date; endedAt: Date | null },
+  existing: AttendanceBreakType[],
+  input: ValidatedAttendanceBreakType,
+  tx: DbTransaction,
+  options: { sameRequest?: boolean } = {}
+): Promise<AttendanceBreakType> => {
+  const entry: AttendanceBreakType = {
+    id: generateRandomUUID(),
+    sessionId: session.id,
+    startedAt: new Date(input.startedAt),
+    endedAt: new Date(input.endedAt),
+    autoClosed: false,
+  };
+
+  assertCoherent(session, [entry]);
+  assertNoBreakOverlap(entry, existing, session, options);
+
+  await tx.insert(attendanceBreaks).values(entry);
+
+  await appendAttendanceEvent(
+    {
+      sessionId: session.id,
+      eventType: attendanceEventType.BreakAdded,
+      changedByUserId: viewerUserId,
+      after: { breakId: entry.id, startedAt: entry.startedAt, endedAt: entry.endedAt },
+    },
+    tx
+  );
+
+  return entry;
 };
 
 /**

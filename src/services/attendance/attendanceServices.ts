@@ -455,6 +455,9 @@ export const appendAttendanceEvent = async (
     changedByUserId: entry.changedByUserId,
     before: entry.before ?? null,
     after: entry.after ?? null,
+    // The statement's own instant rather than the transaction's, so the events
+    // one write appends (an entry and its breaks) keep their order on the timeline.
+    createdAt: sql`clock_timestamp()`,
   });
 };
 

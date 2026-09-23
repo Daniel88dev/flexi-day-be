@@ -63,7 +63,13 @@ describe("entered attendance sessions", () => {
 
   const enter = (
     person: Person,
-    body: { userId?: string; businessDate: string; startedAt: string; endedAt: string }
+    body: {
+      userId?: string;
+      businessDate: string;
+      startedAt: string;
+      endedAt: string;
+      breaks?: { startedAt: string; endedAt: string }[];
+    }
   ) =>
     request(app)
       .post("/api/attendance/sessions")
@@ -592,6 +598,80 @@ describe("entered attendance sessions", () => {
 
       const refused = await remove(member, body.id as string).expect(403);
       expect(refused.body.errors[0].context.reason).toBe("SELF_SERVICE_WINDOW");
+    });
+  });
+
+  describe("an entry saved with its breaks", () => {
+    it("saves the breaks with the session, each with its own BREAK_ADDED after the SESSION_CREATED", async () => {
+      const entry = dayBack(3);
+      const breaks = [
+        { startedAt: at(entry.businessDate, "13:00"), endedAt: at(entry.businessDate, "13:10") },
+        { startedAt: at(entry.businessDate, "10:00"), endedAt: at(entry.businessDate, "10:50") },
+      ];
+
+      const { body } = await enter(member, { ...entry, breaks }).expect(201);
+
+      expect(body.breaks).toMatchObject([
+        { startedAt: breaks[1]!.startedAt, endedAt: breaks[1]!.endedAt, open: false },
+        { startedAt: breaks[0]!.startedAt, endedAt: breaks[0]!.endedAt, open: false },
+      ]);
+
+      const written = await eventRows(body.id as string);
+      expect(written.map((event) => [event.eventType, event.changedByUserId])).toEqual([
+        ["SESSION_CREATED", member.id],
+        ["BREAK_ADDED", member.id],
+        ["BREAK_ADDED", member.id],
+      ]);
+      expect(written.slice(1).map((event) => event.after)).toEqual([
+        { breakId: expect.any(String), ...breaks[0] },
+        { breakId: expect.any(String), ...breaks[1] },
+      ]);
+
+      const timeline = await request(app)
+        .get(`/api/attendance/sessions/${body.id}/events`)
+        .set("Cookie", cookieOf(member))
+        .expect(200);
+      expect(timeline.body.events.map((event: { eventType: string }) => event.eventType)).toEqual([
+        "SESSION_CREATED",
+        "BREAK_ADDED",
+        "BREAK_ADDED",
+      ]);
+    });
+
+    it("leaves no session behind when a break lies outside it", async () => {
+      const entry = dayBack(3);
+
+      const { body } = await enter(member, {
+        ...entry,
+        breaks: [
+          { startedAt: at(entry.businessDate, "12:00"), endedAt: at(entry.businessDate, "12:30") },
+          { startedAt: at(entry.businessDate, "14:45"), endedAt: at(entry.businessDate, "15:15") },
+        ],
+      }).expect(422);
+
+      expect(body.errors[0].context.reason).toBe("BREAK_OUTSIDE_SESSION");
+      expect(await sessionsOf(member)).toHaveLength(0);
+    });
+
+    it("leaves no session behind when two of its breaks overlap", async () => {
+      const entry = dayBack(3);
+
+      const { body } = await enter(member, {
+        ...entry,
+        breaks: [
+          { startedAt: at(entry.businessDate, "12:00"), endedAt: at(entry.businessDate, "12:30") },
+          { startedAt: at(entry.businessDate, "12:15"), endedAt: at(entry.businessDate, "12:45") },
+        ],
+      }).expect(409);
+
+      expect(body.errors[0].context).toMatchObject({
+        reason: "BREAK_OVERLAPS",
+        startedAt: at(entry.businessDate, "12:00"),
+        endedAt: at(entry.businessDate, "12:30"),
+      });
+      // The break it ran into rolled back with the entry, so there is no id to name.
+      expect(body.errors[0].context).not.toHaveProperty("breakId");
+      expect(await sessionsOf(member)).toHaveLength(0);
     });
   });
 

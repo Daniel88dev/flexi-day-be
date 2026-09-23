@@ -2,6 +2,7 @@ import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
+  validateAttendanceBreak,
   validateAttendanceCorrection,
   validateAttendanceEntry,
   validateAttendanceLocation,
@@ -22,6 +23,7 @@ import { handlePatchAttendanceBreak } from "../controllers/attendance/handlePatc
 import { handleDeleteAttendanceBreak } from "../controllers/attendance/handleDeleteAttendanceBreak.js";
 import { handleGetAttendanceSessionEvents } from "../controllers/attendance/handleGetAttendanceSessionEvents.js";
 import { handleEnterAttendanceSession } from "../controllers/attendance/handleEnterAttendanceSession.js";
+import { handleAddAttendanceBreak } from "../controllers/attendance/handleAddAttendanceBreak.js";
 
 export const attendanceRouter = (): Router => {
   const app = Router();
@@ -607,9 +609,16 @@ export const attendanceRouter = (): Router => {
    *       a clock-in cannot leave two sessions over the same minutes. Refused
    *       like a correction while attendance is not active.
    *
+   *       `breaks` are saved with the session, each held to the rules of an
+   *       added break: it ends after it starts, lies inside the session, and
+   *       overlaps none of the others. One refused break refuses the whole
+   *       entry, so nothing is left half-saved.
+   *
    *       One `SESSION_CREATED` event is appended in the same transaction, with
    *       the caller as its user and the session as saved as `after`:
    *       `{ businessDate, startedAt, endedAt, timezone, closedBy, origin }`.
+   *       Each break follows it with its own `BREAK_ADDED`, `after` being
+   *       `{ breakId, startedAt, endedAt }`, in the order the breaks were sent.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -641,12 +650,28 @@ export const attendanceRouter = (): Router => {
    *                 type: string
    *                 format: date-time
    *                 description: With an offset. After `startedAt`, not after now.
+   *               breaks:
+   *                 type: array
+   *                 maxItems: 20
+   *                 description: Breaks taken inside the session. Optional.
+   *                 items:
+   *                   type: object
+   *                   required:
+   *                     - startedAt
+   *                     - endedAt
+   *                   properties:
+   *                     startedAt:
+   *                       type: string
+   *                       format: date-time
+   *                     endedAt:
+   *                       type: string
+   *                       format: date-time
    *     responses:
    *       '201':
    *         description: |
    *           The entered session, shaped as on `/api/attendance/current`, with
    *           `origin: "ENTERED"`, `enteredByUserId` the caller, `closedBy`
-   *           `ADMIN` or `USER` by who entered it, and no breaks.
+   *           `ADMIN` or `USER` by who entered it, and its breaks oldest first.
    *       '402':
    *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
    *       '403':
@@ -662,15 +687,20 @@ export const attendanceRouter = (): Router => {
    *         description: |
    *           `SESSION_OVERLAPS`: another of that person's sessions already
    *           covers part of the span. `context` carries the other session's
-   *           `{ sessionId, startedAt, endedAt }`.
+   *           `{ sessionId, startedAt, endedAt }`. `BREAK_OVERLAPS`: two of the
+   *           breaks cover the same minutes. `context` carries the earlier-sent
+   *           one's `{ startedAt, endedAt }` and no `breakId`, since nothing
+   *           was saved.
    *       '422':
    *         description: |
    *           A missing or malformed field, or `context.reason` naming the rule:
    *           `START_OFF_DATE` when the start is not on `businessDate` in the
    *           organization's zone, `OUTSIDE_EMPLOYMENT` when the date is outside
-   *           the Employment's spell, `END_BEFORE_START`, `END_IN_FUTURE`, or
-   *           `OVER_CEILING` with `context.ceilingMinutes` when the span is
-   *           longer than the session ceiling.
+   *           the Employment's spell, `END_BEFORE_START` for the session or a
+   *           break, `END_IN_FUTURE`, `OVER_CEILING` with
+   *           `context.ceilingMinutes` when the span is longer than the session
+   *           ceiling, or `BREAK_OUTSIDE_SESSION` when a break does not lie
+   *           inside the session.
    */
   app.post(
     "/sessions",
@@ -819,9 +849,10 @@ export const attendanceRouter = (): Router => {
    *     summary: Correct a break's times
    *     description: |
    *       Moves one end of a break or both, under the same authorization as the
-   *       session it belongs to. A break has to stay inside its session and end
-   *       after it starts; `endedAt: null` reopens it, and is refused when
-   *       another break on the session is already open.
+   *       session it belongs to. A break has to stay inside its session, end
+   *       after it starts, and overlap no other break of it; `endedAt: null`
+   *       reopens it, and is refused when another break on the session is
+   *       already open.
    *
    *       Correcting the end clears `autoClosed`: the flag is the sweep's claim
    *       that nobody has checked the number, and somebody just has.
@@ -869,6 +900,9 @@ export const attendanceRouter = (): Router => {
    *         description: |
    *           Reopening it would leave two breaks open on the session.
    *           `context` carries `{ reason: "BREAK_ALREADY_OPEN", breakId, startedAt }`.
+   *           Or `BREAK_OVERLAPS` when the corrected times run across another
+   *           break of the session, with that break's
+   *           `{ breakId, startedAt, endedAt }` in `context`.
    *       '422':
    *         description: |
    *           A patch that changes nothing, a malformed instant,
@@ -918,6 +952,91 @@ export const attendanceRouter = (): Router => {
 
   /**
    * @openapi
+   * /api/attendance/sessions/{sessionId}/breaks:
+   *   post:
+   *     tags:
+   *       - Attendance
+   *     summary: Add a break to a closed session
+   *     description: |
+   *       Records a break somebody forgot to press, with both ends, on a session
+   *       that has already ended, clocked or entered (`docs/attendance.md`,
+   *       "Entered sessions"). A session still open takes its breaks from the
+   *       clock instead.
+   *
+   *       Authorized as correcting the session is: a group admin of any group
+   *       that person belongs to and the organization's admins, always; the
+   *       session's own user only inside the organization's self-service
+   *       window, and never once their Employment has ended. Refused like a
+   *       correction while attendance is not active.
+   *
+   *       The break has to end after it starts, lie inside its session, and
+   *       overlap no other break of it. Back to back is fine: a break may start
+   *       exactly where another ends.
+   *
+   *       One `BREAK_ADDED` event is appended in the same transaction, with the
+   *       caller as its user and `{ breakId, startedAt, endedAt }` as `after`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: sessionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - startedAt
+   *               - endedAt
+   *             properties:
+   *               startedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 description: With an offset. Not before the session starts.
+   *               endedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 description: With an offset. After `startedAt`, not after the session ends.
+   *     responses:
+   *       '201':
+   *         description: |
+   *           The session as it now stands, with its breaks, shaped as on
+   *           `/api/attendance/current`.
+   *       '402':
+   *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
+   *       '403':
+   *         description: |
+   *           No standing over this Employment, or the employee may not change
+   *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
+   *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
+   *           the session's business date is outside the window, and
+   *           `EMPLOYMENT_ENDED` when their Employment has ended.
+   *       '404':
+   *         description: No such session, or it has been deleted
+   *       '409':
+   *         description: |
+   *           `context.reason` is `SESSION_STILL_OPEN` when the session has not
+   *           ended yet, or `BREAK_OVERLAPS` when another break of the session
+   *           covers part of the span, with that break's
+   *           `{ breakId, startedAt, endedAt }` beside it in `context`.
+   *       '422':
+   *         description: |
+   *           A missing or malformed instant, `END_BEFORE_START`, or
+   *           `BREAK_OUTSIDE_SESSION` when the break does not lie inside the
+   *           session.
+   */
+  app.post(
+    "/sessions/:sessionId/breaks",
+    bodyValidationMiddleware(validateAttendanceBreak),
+    tryCatch(handleAddAttendanceBreak)
+  );
+
+  /**
+   * @openapi
    * /api/attendance/sessions/{sessionId}/events:
    *   get:
    *     tags:
@@ -951,10 +1070,13 @@ export const attendanceRouter = (): Router => {
    *           `{ id, sessionId, eventType, user, before, after, createdAt }`.
    *           `eventType` is one of `CLOCK_IN`, `CLOCK_OUT`, `BREAK_START`,
    *           `BREAK_END`, `LOCATION_UPDATED`, `SESSION_EDITED`, `BREAK_EDITED`,
-   *           `BREAK_DELETED`, `SESSION_DELETED` or `SESSION_CREATED`. An
-   *           entered session's timeline opens with `SESSION_CREATED`, whose
-   *           `user` entered it and whose `after` is
+   *           `BREAK_DELETED`, `SESSION_DELETED`, `SESSION_CREATED` or
+   *           `BREAK_ADDED`. An entered session's timeline opens with
+   *           `SESSION_CREATED`, whose `user` entered it and whose `after` is
    *           `{ businessDate, startedAt, endedAt, timezone, closedBy, origin }`.
+   *           A `BREAK_ADDED`, whether saved with the entry or added to a
+   *           closed session later, names who added it, with
+   *           `{ breakId, startedAt, endedAt }` as `after`.
    *       '403':
    *         description: No permission for this Employment
    *       '404':

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyCorrection, assertCoherent } from "../attendanceCorrections.js";
+import { applyCorrection, assertCoherent, overlappingBreak } from "../attendanceCorrections.js";
 
 const at = (iso: string) => new Date(iso);
 
@@ -135,5 +135,43 @@ describe("assertCoherent", () => {
         ])
       )
     ).toBe("BREAK_OUTSIDE_SESSION");
+  });
+});
+
+describe("overlappingBreak", () => {
+  const sessionEnd = at("2026-09-09T15:00:00Z");
+  const lunch = entry("lunch", "2026-09-09T12:00:00Z", "2026-09-09T12:30:00Z");
+
+  it("finds the break a new one runs into", () => {
+    const candidate = entry("new", "2026-09-09T12:20:00Z", "2026-09-09T12:45:00Z");
+
+    expect(overlappingBreak(candidate, [lunch], sessionEnd)?.id).toBe("lunch");
+  });
+
+  it("finds a break the new one swallows whole", () => {
+    const candidate = entry("new", "2026-09-09T11:30:00Z", "2026-09-09T13:00:00Z");
+
+    expect(overlappingBreak(candidate, [lunch], sessionEnd)?.id).toBe("lunch");
+  });
+
+  it("lets breaks sit back to back", () => {
+    const after = entry("new", "2026-09-09T12:30:00Z", "2026-09-09T12:45:00Z");
+    const before = entry("new", "2026-09-09T11:45:00Z", "2026-09-09T12:00:00Z");
+
+    expect(overlappingBreak(after, [lunch], sessionEnd)).toBeUndefined();
+    expect(overlappingBreak(before, [lunch], sessionEnd)).toBeUndefined();
+  });
+
+  it("does not hold a break against itself", () => {
+    const moved = entry("lunch", "2026-09-09T12:10:00Z", "2026-09-09T12:40:00Z");
+
+    expect(overlappingBreak(moved, [lunch], sessionEnd)).toBeUndefined();
+  });
+
+  it("counts a break left open to the session's end", () => {
+    const leftOpen = entry("open", "2026-09-09T14:00:00Z", null);
+    const candidate = entry("new", "2026-09-09T14:30:00Z", "2026-09-09T14:45:00Z");
+
+    expect(overlappingBreak(candidate, [leftOpen], sessionEnd)?.id).toBe("open");
   });
 });

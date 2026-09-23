@@ -308,6 +308,13 @@ export const validateAttendanceCorrection = z
 
 export type ValidatedAttendanceCorrectionType = z.infer<typeof validateAttendanceCorrection>;
 
+export const validateAttendanceBreak = z.object({
+  startedAt: z.iso.datetime({ offset: true }),
+  endedAt: z.iso.datetime({ offset: true }),
+});
+
+export type ValidatedAttendanceBreakType = z.infer<typeof validateAttendanceBreak>;
+
 export const validateAttendanceEntry = z.object({
   organizationId: z.string().min(1),
   // better-auth user ids are opaque non-UUID strings.
@@ -315,6 +322,7 @@ export const validateAttendanceEntry = z.object({
   businessDate: z.iso.date(),
   startedAt: z.iso.datetime({ offset: true }),
   endedAt: z.iso.datetime({ offset: true }),
+  breaks: z.array(validateAttendanceBreak).max(20).optional(),
 });
 
 export type ValidatedAttendanceEntryType = z.infer<typeof validateAttendanceEntry>;
