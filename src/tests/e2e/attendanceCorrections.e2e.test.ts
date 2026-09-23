@@ -329,6 +329,50 @@ describe("attendance corrections", () => {
       await patchSession(member, open.id, { startedAt: hoursAgo(19).toISOString() }).expect(200);
     });
 
+    it("rechecks the window once the lock is held, after the sweep closed the session meanwhile", async () => {
+      await setWindow(true, 0);
+      const employmentId = employmentIds.get(member.id)!;
+      const open = await seedSession({
+        person: member,
+        businessDate: yesterday(),
+        startedAt: hoursAgo(20),
+        endedAt: null,
+      });
+
+      let settled = false;
+      let pending: Promise<request.Response> | undefined;
+
+      // Stands in for the ceiling sweep: it holds the Employment lock while the
+      // correction, which passed only because the session was open, waits for it.
+      await db.transaction(async (tx) => {
+        await tx
+          .select({ id: employments.id })
+          .from(employments)
+          .where(eq(employments.id, employmentId))
+          .for("update");
+
+        pending = patchSession(member, open.id, { startedAt: hoursAgo(19).toISOString() }).then(
+          (response) => {
+            settled = true;
+            return response;
+          }
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        expect(settled).toBe(false);
+
+        await tx
+          .update(attendanceSessions)
+          .set({ endedAt: hoursAgo(4), closedBy: attendanceClosedBy.Sweep })
+          .where(eq(attendanceSessions.id, open.id));
+      });
+
+      const response = await pending!;
+      expect(response.status).toBe(403);
+      expect(response.body.errors[0].context.reason).toBe("SELF_SERVICE_WINDOW");
+      expect(await eventRows(open.id)).toHaveLength(0);
+    });
+
     it("on with 7 allows seven days back and refuses eight, by the organization's date", async () => {
       // A zone whose date differs from UTC's right now: Kiritimati runs a day
       // ahead from 10:00 UTC, Etc/GMT+12 a day behind until 12:00 UTC. Counting

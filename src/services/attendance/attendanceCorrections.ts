@@ -221,13 +221,8 @@ const loadCorrectable = async (
   const employment = await getEmploymentById(found.employmentId, tx);
   if (!employment) throw employmentMissing(found.employmentId);
 
-  const { right, timezone } = await authorizeAttendanceWrite(
-    viewerUserId,
-    employment,
-    found,
-    tx,
-    now
-  );
+  // Checked before the lock too, so nobody without standing ever holds it.
+  const unlocked = await authorizeAttendanceWrite(viewerUserId, employment, found, tx, now);
 
   await lockEmployment(employment.id, tx);
 
@@ -237,6 +232,14 @@ const loadCorrectable = async (
   // over a session somebody deleted while it waited.
   const session = await getSessionById(sessionId, {}, tx);
   if (!session) throw sessionNotFound(sessionId, viewerUserId);
+
+  // An open session passes the window whatever its date, and the sweep may have
+  // closed it while this waited, so the owner's right is decided again on the
+  // session as it now stands. An admin's does not depend on the session.
+  const { right, timezone } =
+    unlocked.right === AttendanceCorrectionRight.Admin
+      ? unlocked
+      : await authorizeAttendanceWrite(viewerUserId, employment, session, tx, now);
 
   return {
     session,
@@ -623,13 +626,14 @@ export const deleteAttendanceSession = async (
 ): Promise<AttendanceSessionView> => {
   const { session, right, timezone } = await loadCorrectable(viewerUserId, sessionId, tx, now);
 
-  // From a past day the owner may take back only what they entered themselves,
-  // so a real clock-in, or an admin's entry, never vanishes at their hand.
-  if (
-    right === AttendanceCorrectionRight.Self &&
-    session.businessDate !== businessDateInZone(now, timezone) &&
-    session.enteredByUserId !== viewerUserId
-  ) {
+  // The owner may take back what they entered themselves, or a clocked session
+  // dated today — so a real clock-in from an earlier day, or an admin's entry on
+  // any day, never vanishes at their hand.
+  const ownDeletable =
+    session.origin === attendanceSessionOrigin.Entered
+      ? session.enteredByUserId === viewerUserId
+      : session.businessDate === businessDateInZone(now, timezone);
+  if (right === AttendanceCorrectionRight.Self && !ownDeletable) {
     const context = { viewerUserId, sessionId: session.id, businessDate: session.businessDate };
     throw session.origin === attendanceSessionOrigin.Entered
       ? forbidden(

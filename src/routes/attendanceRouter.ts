@@ -834,7 +834,7 @@ export const attendanceRouter = (): Router => {
    *           `EMPLOYMENT_ENDED` when their Employment has ended,
    *           `SELF_SERVICE_DELETE` when they try to delete a clocked session
    *           from an earlier day, and `SELF_SERVICE_DELETE_ENTERED` when they
-   *           try to delete one an admin entered for them on an earlier day.
+   *           try to delete one an admin entered for them, whatever its date.
    *       '404':
    *         description: No such session, or it was already deleted
    */

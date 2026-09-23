@@ -592,6 +592,23 @@ describe("entered attendance sessions", () => {
       );
     });
 
+    it("refuses the employee one an admin entered for them today", async () => {
+      // A minute that has already ended, which is today unless this runs in the
+      // first minute after midnight in Prague.
+      const endedAt = new Date(Date.now() - 1000);
+      const startedAt = new Date(endedAt.getTime() - 60 * 1000);
+      const { body } = await enter(owner, {
+        userId: member.id,
+        businessDate: businessDateInZone(startedAt, ZONE),
+        startedAt: startedAt.toISOString(),
+        endedAt: endedAt.toISOString(),
+      }).expect(201);
+
+      const refused = await remove(member, body.id as string).expect(403);
+      expect(refused.body.errors[0].context.reason).toBe("SELF_SERVICE_DELETE_ENTERED");
+      expect(await sessionsOf(member)).toHaveLength(1);
+    });
+
     it("refuses the employee one of theirs once the day has left the window", async () => {
       const { body } = await enter(member, dayBack(4)).expect(201);
       await setWindow(true, 2);
