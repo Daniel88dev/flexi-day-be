@@ -310,6 +310,19 @@ export const organizationRouter = (): Router => {
    *           type: integer
    *         breakCeilingMinutes:
    *           type: integer
+   *         selfServiceEnabled:
+   *           type: boolean
+   *           description: Whether employees may correct their own attendance at all.
+   *         selfServiceDays:
+   *           type: integer
+   *           nullable: true
+   *           minimum: 0
+   *           maximum: 366
+   *           description: |
+   *             How many calendar days before today the self-service window
+   *             reaches, in the organization's timezone; 0 is today only and
+   *             null is no limit. Meaningless while `selfServiceEnabled` is
+   *             false.
    *         active:
    *           type: boolean
    *           description: |
@@ -331,7 +344,13 @@ export const organizationRouter = (): Router => {
    *       Organization admins only. A full replacement: every rule but
    *       `attendanceEnabled` is optional and falls back to its default, so a
    *       body naming only the switch writes the documented defaults rather
-   *       than nulls.
+   *       than nulls. The self-service window is the exception: a body that
+   *       leaves `selfServiceEnabled` or `selfServiceDays` out keeps what is
+   *       stored, so a client that predates the window cannot switch it off.
+   *
+   *       Every successful save appends one row to the settings change log —
+   *       who, when, and the settings before and after — in the same
+   *       transaction. Nothing reads the log back.
    *
    *       Turning attendance on requires a timezone — it fixes the business
    *       date — and a live non-Free entitlement: a paid subscription, one
@@ -405,6 +424,17 @@ export const organizationRouter = (): Router => {
    *                 minimum: 15
    *                 maximum: 1440
    *                 default: 120
+   *               selfServiceEnabled:
+   *                 type: boolean
+   *                 description: Omitted keeps the stored value, false for a first save.
+   *               selfServiceDays:
+   *                 type: integer
+   *                 nullable: true
+   *                 minimum: 0
+   *                 maximum: 366
+   *                 description: |
+   *                   Days back from today; null is no limit. Omitted keeps the
+   *                   stored value, 0 for a first save.
    *     responses:
    *       '200':
    *         description: The saved attendance settings
@@ -426,7 +456,8 @@ export const organizationRouter = (): Router => {
    *         description: Organization not found
    *       '422':
    *         description: |
-   *           A rule outside its range, an unknown timezone or holiday country,
+   *           A rule outside its range (`selfServiceDays` must be a whole number
+   *           from 0 to 366, or null), an unknown timezone or holiday country,
    *           or `attendanceEnabled` true with no timezone.
    */
   app.put(

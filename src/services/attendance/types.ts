@@ -1,8 +1,13 @@
 import { z } from "zod";
-import type { attendanceClosedBy, attendanceEventType } from "../../db/schema/attendance-schema.js";
+import type {
+  attendanceClosedBy,
+  attendanceEventType,
+  attendanceSessionOrigin,
+} from "../../db/schema/attendance-schema.js";
 import type { balanceMode } from "../../db/schema/organization-attendance-settings-schema.js";
 import type { AttendanceDay, AttendanceTotals } from "./attendanceCalculation.js";
 import type { DateString } from "../../utils/dateFunc.js";
+import type { SelfServiceWindow } from "./selfServiceWindow.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 
 export type AttendanceBreakType = {
@@ -34,6 +39,11 @@ export type AttendanceSessionType = {
   endedAt: Date | null;
   timezone: string;
   closedBy: attendanceClosedBy | null;
+  origin: attendanceSessionOrigin;
+  /** Who entered it, from its `SESSION_CREATED` event; null for a clocked session. */
+  enteredByUserId: string | null;
+  /** Its owner changed it after its business date, and no admin has looked since. */
+  changedAfterDay: boolean;
   startLatitude: number | null;
   startLongitude: number | null;
   startAccuracy: number | null;
@@ -56,6 +66,12 @@ export type AttendanceStateType = {
   employmentEnded: boolean;
   active: boolean;
   locationEnabled: boolean;
+  selfService: SelfServiceWindow;
+  /**
+   * The caller administers their own Employment, so their writes are an
+   * admin's: the window never applies and nothing they change is flagged.
+   */
+  administersOwnAttendance: boolean;
   /** The organization's zone, and today in it. Null when attendance was never set up. */
   timezone: string | null;
   businessDate: DateString | null;
@@ -271,6 +287,7 @@ export type AttendanceTeamType = {
   requiredMinutesPerDay: number;
   breakMinutes: number;
   breakThresholdMinutes: number;
+  selfService: SelfServiceWindow;
   scope: AttendanceTeamScope;
   /** The group the answer was narrowed to, null for the viewer's whole audience. */
   group: AttendanceTeamGroup | null;
@@ -297,6 +314,25 @@ export const validateAttendanceCorrection = z
   });
 
 export type ValidatedAttendanceCorrectionType = z.infer<typeof validateAttendanceCorrection>;
+
+export const validateAttendanceBreak = z.object({
+  startedAt: z.iso.datetime({ offset: true }),
+  endedAt: z.iso.datetime({ offset: true }),
+});
+
+export type ValidatedAttendanceBreakType = z.infer<typeof validateAttendanceBreak>;
+
+export const validateAttendanceEntry = z.object({
+  organizationId: z.string().min(1),
+  // better-auth user ids are opaque non-UUID strings.
+  userId: z.string().min(1).optional(),
+  businessDate: z.iso.date(),
+  startedAt: z.iso.datetime({ offset: true }),
+  endedAt: z.iso.datetime({ offset: true }),
+  breaks: z.array(validateAttendanceBreak).max(20).optional(),
+});
+
+export type ValidatedAttendanceEntryType = z.infer<typeof validateAttendanceEntry>;
 
 /**
  * Whose authority a correction is being made under: an admin over somebody's

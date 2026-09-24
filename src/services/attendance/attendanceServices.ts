@@ -35,11 +35,15 @@ import {
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAttendanceActive, isAttendanceActive } from "../billing/guards.js";
 import { getEmployment, listEmploymentsForUser } from "../employment/employmentServices.js";
-import { assertEmploymentReadable } from "../employment/attendanceAccess.js";
+import {
+  assertEmploymentReadable,
+  canAdministerEmployment,
+} from "../employment/attendanceAccess.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { computeAttendance } from "./attendanceCalculation.js";
 import { getAttendanceExclusions } from "./attendanceExclusions.js";
+import { selfServiceWindowOf } from "./selfServiceWindow.js";
 import type { AttendanceSettingsType } from "../organization/types.js";
 import type { EmploymentType } from "../employment/types.js";
 import type {
@@ -70,6 +74,16 @@ const SESSION_COLUMNS = {
   endedAt: attendanceSessions.endedAt,
   timezone: attendanceSessions.timezone,
   closedBy: attendanceSessions.closedBy,
+  origin: attendanceSessions.origin,
+  // Qualified by hand: drizzle renders columns inside `sql` unqualified, and a
+  // bare "id" here would bind to the events table.
+  enteredByUserId: sql<string | null>`(
+    select "attendance_events"."changed_by_user_id" from "attendance_events"
+    where "attendance_events"."session_id" = "attendance_sessions"."id"
+      and "attendance_events"."event_type" = ${attendanceEventType.SessionCreated}
+    limit 1
+  )`,
+  changedAfterDay: attendanceSessions.changedAfterDay,
   startLatitude: attendanceSessions.startLatitude,
   startLongitude: attendanceSessions.startLongitude,
   startAccuracy: attendanceSessions.startAccuracy,
@@ -228,10 +242,17 @@ export const beginAttendanceWrite = async (
  * The ceiling sweep takes the same lock: it is the one thing that writes to a
  * clock without a person behind it, and it must queue with them rather than
  * race them.
+ *
+ * Returns the row as it stands once the lock is held. A membership change may
+ * have ended the Employment while this waited, so a write deciding the owner's
+ * rights reads them from this row, not from one read before the lock.
  */
-export const lockEmployment = async (employmentId: string, tx: DbTransaction): Promise<void> => {
+export const lockEmployment = async (
+  employmentId: string,
+  tx: DbTransaction
+): Promise<EmploymentType> => {
   const [row] = await tx
-    .select({ id: employments.id })
+    .select()
     .from(employments)
     .where(eq(employments.id, employmentId))
     .for("update");
@@ -244,6 +265,8 @@ export const lockEmployment = async (employmentId: string, tx: DbTransaction): P
       context: { employmentId },
     });
   }
+
+  return row;
 };
 
 export const getOpenSession = async (
@@ -445,6 +468,9 @@ export const appendAttendanceEvent = async (
     changedByUserId: entry.changedByUserId,
     before: entry.before ?? null,
     after: entry.after ?? null,
+    // The statement's own instant rather than the transaction's, so the events
+    // one write appends (an entry and its breaks) keep their order on the timeline.
+    createdAt: sql`clock_timestamp()`,
   });
 };
 
@@ -657,6 +683,8 @@ export const getAttendanceState = async (
     employmentEnded: subject.employment.endedAt !== null,
     active: await isAttendanceActive(subject.organizationId, tx),
     locationEnabled: subject.settings?.locationEnabled ?? false,
+    selfService: selfServiceWindowOf(subject.settings),
+    administersOwnAttendance: await canAdministerEmployment(userId, subject.employment, tx),
     timezone,
   };
 
@@ -738,18 +766,18 @@ export const getAttendanceDay = async (
 
 /**
  * The Employment's other live sessions that run across a span — the check a
- * correction needs and a clock-in does not: clocking in cannot overlap
- * anything, because the open-session index allows only one at a time and it
- * starts now. Moving a closed session can, and two overlapping spans would
- * count the same minutes twice in `presence`.
+ * correction or an entry needs and a clock-in does not: clocking in cannot
+ * overlap anything, because the open-session index allows only one at a time
+ * and it starts now. Moving a closed session or entering one can, and two
+ * overlapping spans would count the same minutes twice in `presence`.
  *
  * An open session is treated as running to the end of time, which is what
  * "still clocked in" means for an overlap.
  */
-export const listSessionsOverlapping = async (
+const listSessionsOverlapping = async (
   employmentId: string,
   span: { startedAt: Date; endedAt: Date | null },
-  exceptSessionId: string,
+  options: { exceptSessionId?: string },
   tx?: DbTransaction
 ): Promise<AttendanceSessionType[]> =>
   (tx ?? db)
@@ -759,7 +787,9 @@ export const listSessionsOverlapping = async (
       and(
         eq(attendanceSessions.employmentId, employmentId),
         isNull(attendanceSessions.deletedAt),
-        ne(attendanceSessions.id, exceptSessionId),
+        options.exceptSessionId === undefined
+          ? undefined
+          : ne(attendanceSessions.id, options.exceptSessionId),
         // Half-open on both sides, so a session that ends exactly where the
         // next one starts is back to back rather than overlapping.
         span.endedAt === null
@@ -771,6 +801,28 @@ export const listSessionsOverlapping = async (
       )
     )
     .orderBy(asc(attendanceSessions.startedAt));
+
+/** 409 `SESSION_OVERLAPS` when another live session of the Employment covers part of the span. */
+export const assertNoSessionOverlap = async (
+  employmentId: string,
+  span: { startedAt: Date; endedAt: Date | null },
+  options: { exceptSessionId?: string },
+  tx: DbTransaction
+): Promise<void> => {
+  const [overlap] = await listSessionsOverlapping(employmentId, span, options, tx);
+  if (!overlap) return;
+
+  throw attendanceConflict(
+    "SESSION_OVERLAPS",
+    "Another session of theirs already covers that time",
+    {
+      sessionId: overlap.id,
+      startedAt: overlap.startedAt.toISOString(),
+      endedAt: overlap.endedAt?.toISOString() ?? null,
+    },
+    { employmentId }
+  );
+};
 
 /** Every session of an inclusive business-date range, oldest first. */
 export const listSessionsForRange = async (

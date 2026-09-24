@@ -5,11 +5,13 @@ import {
   attendanceClosedBy,
   attendanceEventType,
   attendanceEvents,
+  attendanceSessionOrigin,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import AppError from "../../utils/appError.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { assertAttendanceActive } from "../billing/guards.js";
 import {
@@ -18,6 +20,7 @@ import {
 } from "../employment/attendanceAccess.js";
 import { getEmploymentById } from "../employment/employmentServices.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
+import type { AttendanceSettingsType } from "../organization/types.js";
 import {
   appendAttendanceEvent,
   attendanceConflict,
@@ -26,7 +29,7 @@ import {
   getOpenSession,
   getSessionById,
   listBreaksForSession,
-  listSessionsOverlapping,
+  assertNoSessionOverlap,
   lockEmployment,
   sessionAlreadyOpen,
 } from "./attendanceServices.js";
@@ -36,11 +39,20 @@ import {
   type AttendanceEventView,
   type AttendanceSessionType,
   type AttendanceSessionView,
+  type ValidatedAttendanceBreakType,
   type ValidatedAttendanceCorrectionType,
 } from "./types.js";
+import {
+  selfServiceRefusal,
+  selfServiceWindowOf,
+  type SelfServiceRefusal,
+  type SelfServiceWindow,
+} from "./selfServiceWindow.js";
 
 /** A start and an end, which is all the shape rules below actually read. */
 type Span = { startedAt: Date; endedAt: Date | null };
+
+type BreakSpan = Span & { id: string };
 
 /**
  * The session a correction acts on, everything the guards need, and under whose
@@ -51,6 +63,8 @@ type CorrectionSubject = {
   breaks: AttendanceBreakType[];
   employment: { id: string; organizationId: string; userId: string };
   right: AttendanceCorrectionRight;
+  /** The organization's zone now, which is what "today" is read in. */
+  timezone: string;
 };
 
 const invalid = (reason: string, message: string, context?: { [key: string]: unknown }) =>
@@ -61,18 +75,6 @@ const invalid = (reason: string, message: string, context?: { [key: string]: unk
     context,
     publicContext: { reason },
   });
-
-/**
- * Whether the person themselves may still change this: while the session is
- * open, or while it belongs to today (`docs/attendance.md`). Anything older is
- * an admin's, which is what the 403 below has to say rather than a bare refusal.
- */
-export const withinSelfServiceWindow = (
-  session: { endedAt: Date | null; businessDate: DateString },
-  timezone: string,
-  now: Date
-): boolean =>
-  session.endedAt === null || session.businessDate === businessDateInZone(now, timezone);
 
 /**
  * A patch over a span. An absent key leaves what is there; an explicit
@@ -93,7 +95,7 @@ export const applyCorrection = (span: Span, patch: ValidatedAttendanceCorrection
  * An open break under a closed session is left alone rather than refused: the
  * sweep makes them, and the calculation counts one to the session's close.
  */
-export const assertCoherent = (session: Span, breaks: (Span & { id: string })[]): void => {
+export const assertCoherent = (session: Span, breaks: BreakSpan[]): void => {
   if (session.endedAt !== null && session.endedAt <= session.startedAt) {
     throw invalid("END_BEFORE_START", "A session has to end after it starts");
   }
@@ -116,6 +118,94 @@ export const assertCoherent = (session: Span, breaks: (Span & { id: string })[])
       });
     }
   }
+};
+
+/**
+ * The other break of the session a break runs across, if any. Half-open, so
+ * breaks may sit back to back; one left open counts to the session's end.
+ */
+export const overlappingBreak = <T extends BreakSpan>(
+  candidate: BreakSpan,
+  breaks: T[],
+  sessionEnd: Date | null
+): T | undefined => {
+  const endOf = (entry: Span) => entry.endedAt ?? sessionEnd;
+  const candidateEnd = endOf(candidate);
+
+  return breaks.find((other) => {
+    if (other.id === candidate.id) return false;
+    const otherEnd = endOf(other);
+    return (
+      (candidateEnd === null || other.startedAt < candidateEnd) &&
+      (otherEnd === null || otherEnd > candidate.startedAt)
+    );
+  });
+};
+
+/**
+ * Whether a session reads as changed by its owner after its business date once
+ * a write lands. An admin write is the review the flag asks for, so it clears it.
+ */
+export const nextChangedAfterDay = ({
+  right,
+  businessDate,
+  today,
+  wasFlagged,
+}: {
+  right: AttendanceCorrectionRight;
+  businessDate: DateString;
+  today: DateString;
+  wasFlagged: boolean;
+}): boolean =>
+  right === AttendanceCorrectionRight.Admin ? false : wasFlagged || businessDate < today;
+
+type FlaggableSubject = Pick<CorrectionSubject, "session" | "right" | "timezone">;
+
+const changedAfterDayOnWrite = ({ session, right, timezone }: FlaggableSubject, now: Date) =>
+  nextChangedAfterDay({
+    right,
+    businessDate: session.businessDate,
+    today: businessDateInZone(now, timezone),
+    wasFlagged: session.changedAfterDay,
+  });
+
+/** A break write moves the session's figures, so it settles the session's flag too. */
+const settleChangedAfterDay = async (
+  subject: FlaggableSubject,
+  tx: DbTransaction,
+  now: Date
+): Promise<void> => {
+  const { session } = subject;
+  const changedAfterDay = changedAfterDayOnWrite(subject, now);
+  if (changedAfterDay === session.changedAfterDay) return;
+
+  await tx
+    .update(attendanceSessions)
+    .set({ changedAfterDay })
+    .where(eq(attendanceSessions.id, session.id));
+};
+
+const assertNoBreakOverlap = (
+  candidate: BreakSpan,
+  breaks: AttendanceBreakType[],
+  session: { id: string; endedAt: Date | null },
+  options: { sameRequest?: boolean } = {}
+): void => {
+  const other = overlappingBreak(candidate, breaks, session.endedAt);
+  if (!other) return;
+
+  throw attendanceConflict(
+    "BREAK_OVERLAPS",
+    "Another break of this session already covers that time",
+    {
+      // A break written earlier in the same request rolls back with it, so its
+      // id would name nothing.
+      ...(options.sameRequest ? {} : { breakId: other.id }),
+      startedAt: other.startedAt.toISOString(),
+      endedAt: other.endedAt?.toISOString() ?? null,
+    },
+    { sessionId: session.id, breakId: other.id }
+  );
 };
 
 const sessionNotFound = (sessionId: string, viewerUserId: string) =>
@@ -158,9 +248,9 @@ const forbidden = (message: string, context: { [key: string]: unknown }, reason?
  * clock-in cannot both find nothing open.
  *
  * The plan gate applies: a correction is a write, and a lapsed organization's
- * history is readable rather than editable. An ended Employment is not refused,
- * unlike a clock-in — the last day somebody worked is exactly the one an admin
- * is most likely to be fixing.
+ * history is readable rather than editable. An ended Employment is refused only
+ * its owner — the last day somebody worked is exactly the one an admin is most
+ * likely to be fixing.
  */
 const loadCorrectable = async (
   viewerUserId: string,
@@ -174,11 +264,10 @@ const loadCorrectable = async (
   const employment = await getEmploymentById(found.employmentId, tx);
   if (!employment) throw employmentMissing(found.employmentId);
 
-  await assertAttendanceActive(employment.organizationId, tx);
+  // Checked before the lock too, so nobody without standing ever holds it.
+  const unlocked = await authorizeAttendanceWrite(viewerUserId, employment, found, tx, now);
 
-  const right = await resolveCorrectionRight(viewerUserId, employment, found, now, tx);
-
-  await lockEmployment(employment.id, tx);
+  const locked = await lockEmployment(employment.id, tx);
 
   // Re-read behind the lock: a clock-out, the sweep or another admin may have
   // moved this session between the read above and the lock. Gone means gone —
@@ -187,20 +276,40 @@ const loadCorrectable = async (
   const session = await getSessionById(sessionId, {}, tx);
   if (!session) throw sessionNotFound(sessionId, viewerUserId);
 
+  // An open session passes the window whatever its date, and the sweep may have
+  // closed it while this waited, so the owner's right is decided again on the
+  // session and the Employment as they now stand. An admin's depends on neither.
+  const { right, timezone } =
+    unlocked.right === AttendanceCorrectionRight.Admin
+      ? unlocked
+      : await authorizeAttendanceWrite(viewerUserId, locked, session, tx, now);
+
   return {
     session,
     breaks: await listBreaksForSession(sessionId, tx),
-    employment,
+    employment: locked,
     right,
+    timezone,
   };
+};
+
+const selfServiceMessage = (refusal: SelfServiceRefusal): string => {
+  switch (refusal) {
+    case "EMPLOYMENT_ENDED":
+      return "Your employment here has ended. Your attendance stays readable, and only an admin can change it.";
+    case "SELF_SERVICE_OFF":
+      return "Your organization manages attendance corrections through an admin. Ask a group admin, or an organization admin.";
+    case "SELF_SERVICE_WINDOW":
+      return "Only an admin can change a day this old. Ask a group admin, or an organization admin.";
+  }
 };
 
 const resolveCorrectionRight = async (
   viewerUserId: string,
-  employment: { organizationId: string; userId: string },
-  session: AttendanceSessionType,
-  now: Date,
-  tx: DbTransaction
+  employment: { organizationId: string; userId: string; endedAt: Date | null },
+  session: { id?: string; businessDate: DateString; endedAt: Date | null },
+  tx: DbTransaction,
+  selfService: { window: SelfServiceWindow; timezone: string; now: Date }
 ): Promise<AttendanceCorrectionRight> => {
   if (await canAdministerEmployment(viewerUserId, employment, tx)) {
     return AttendanceCorrectionRight.Admin;
@@ -214,21 +323,63 @@ const resolveCorrectionRight = async (
     });
   }
 
-  // The organization's zone as it stands now, falling back to the one the
-  // session was clocked in under: today is a question about the organization,
-  // not about the session.
-  const settings = await getAttendanceSettings(employment.organizationId, tx);
-  const timezone = settings?.timezone ?? session.timezone;
+  const refusal = selfServiceRefusal({
+    session,
+    employmentEnded: employment.endedAt !== null,
+    ...selfService,
+  });
 
-  if (!withinSelfServiceWindow(session, timezone, now)) {
+  if (refusal) {
     throw forbidden(
-      "Only an admin can change a day this old. Ask a group admin, or an organization admin.",
+      selfServiceMessage(refusal),
       { viewerUserId, sessionId: session.id, businessDate: session.businessDate },
-      "SELF_SERVICE_WINDOW"
+      refusal
     );
   }
 
   return AttendanceCorrectionRight.Self;
+};
+
+/**
+ * What every write to an existing or entered session does before it takes the
+ * Employment lock: the plan gate, the organization's zone, and under whose
+ * authority the write is made.
+ */
+export const authorizeAttendanceWrite = async (
+  viewerUserId: string,
+  employment: { organizationId: string; userId: string; endedAt: Date | null },
+  session: { id?: string; businessDate: DateString; endedAt: Date | null; timezone?: string },
+  tx: DbTransaction,
+  now: Date
+): Promise<{
+  right: AttendanceCorrectionRight;
+  settings: AttendanceSettingsType | undefined;
+  timezone: string;
+}> => {
+  await assertAttendanceActive(employment.organizationId, tx);
+
+  const settings = await getAttendanceSettings(employment.organizationId, tx);
+  // The organization's zone as it stands now, falling back to the one the
+  // session was clocked in under: today is a question about the organization,
+  // not about the session.
+  const timezone = settings?.timezone ?? session.timezone;
+  // Attendance cannot be active without a zone, so this is a hand-edited row.
+  if (!timezone) {
+    throw new AppError({
+      message: "This organization has no attendance timezone",
+      logging: true,
+      code: 500,
+      context: { organizationId: employment.organizationId },
+    });
+  }
+
+  const right = await resolveCorrectionRight(viewerUserId, employment, session, tx, {
+    window: selfServiceWindowOf(settings),
+    timezone,
+    now,
+  });
+
+  return { right, settings, timezone };
 };
 
 /** The session as it now stands, with its breaks — what every correction answers with. */
@@ -266,7 +417,8 @@ export const correctAttendanceSession = async (
   tx: DbTransaction,
   now = new Date()
 ): Promise<AttendanceSessionView> => {
-  const { session, breaks, right } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const subject = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const { session, breaks, right } = subject;
 
   const next = applyCorrection(session, patch);
   assertCoherent(next, breaks);
@@ -277,27 +429,15 @@ export const correctAttendanceSession = async (
   }
 
   // Nothing in the schema stops two spans of one Employment covering the same
-  // minutes, and `presence` would count them twice. Only a correction can make
-  // that shape, so this is where it is refused.
-  const [overlap] = await listSessionsOverlapping(session.employmentId, next, session.id, tx);
-  if (overlap) {
-    throw attendanceConflict(
-      "SESSION_OVERLAPS",
-      "Another session of theirs already covers that time",
-      {
-        sessionId: overlap.id,
-        startedAt: overlap.startedAt.toISOString(),
-        endedAt: overlap.endedAt?.toISOString() ?? null,
-      },
-      { employmentId: session.employmentId }
-    );
-  }
+  // minutes, and `presence` would count them twice.
+  await assertNoSessionOverlap(session.employmentId, next, { exceptSessionId: session.id }, tx);
 
   const closedBy = closedByAfter(session, next, patch, right);
+  const changedAfterDay = changedAfterDayOnWrite(subject, now);
 
   await tx
     .update(attendanceSessions)
-    .set({ startedAt: next.startedAt, endedAt: next.endedAt, closedBy })
+    .set({ startedAt: next.startedAt, endedAt: next.endedAt, closedBy, changedAfterDay })
     .where(eq(attendanceSessions.id, session.id));
 
   await appendAttendanceEvent(
@@ -354,7 +494,8 @@ export const correctAttendanceBreak = async (
   const named = await getBreakById(breakId, tx);
   if (!named) throw breakNotFound(breakId, viewerUserId);
 
-  const { session, breaks } = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const subject = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const { session, breaks } = subject;
 
   const entry = breaks.find((candidate) => candidate.id === breakId);
   if (!entry) throw breakNotFound(breakId, viewerUserId);
@@ -377,12 +518,15 @@ export const correctAttendanceBreak = async (
     }
   }
 
+  assertNoBreakOverlap({ id: entry.id, ...next }, breaks, session);
+
   const autoClosed = "endedAt" in patch ? false : entry.autoClosed;
 
   await tx
     .update(attendanceBreaks)
     .set({ startedAt: next.startedAt, endedAt: next.endedAt, autoClosed })
     .where(eq(attendanceBreaks.id, entry.id));
+  await settleChangedAfterDay(subject, tx, now);
 
   await appendAttendanceEvent(
     {
@@ -409,6 +553,74 @@ export const correctAttendanceBreak = async (
 };
 
 /**
+ * Records a break somebody forgot to press, on a session that has already
+ * closed. An open session takes its breaks from the clock.
+ */
+export const addAttendanceBreak = async (
+  viewerUserId: string,
+  sessionId: string,
+  input: ValidatedAttendanceBreakType,
+  tx: DbTransaction,
+  now = new Date()
+): Promise<AttendanceSessionView> => {
+  const subject = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const { session, breaks } = subject;
+
+  if (session.endedAt === null) {
+    throw attendanceConflict(
+      "SESSION_STILL_OPEN",
+      "A break can be added only to a session that has ended. Start one on the clock instead.",
+      { sessionId: session.id },
+      { viewerUserId }
+    );
+  }
+
+  await recordAddedBreak(viewerUserId, session, breaks, input, tx);
+  await settleChangedAfterDay(subject, tx, now);
+
+  return sessionView(session.id, tx);
+};
+
+/**
+ * One added break, checked against its session and the breaks already on it,
+ * and its `BREAK_ADDED` event. Shared by the add-break write and an entry saved
+ * with its breaks.
+ */
+export const recordAddedBreak = async (
+  viewerUserId: string,
+  session: { id: string; startedAt: Date; endedAt: Date | null },
+  existing: AttendanceBreakType[],
+  input: ValidatedAttendanceBreakType,
+  tx: DbTransaction,
+  options: { sameRequest?: boolean } = {}
+): Promise<AttendanceBreakType> => {
+  const entry: AttendanceBreakType = {
+    id: generateRandomUUID(),
+    sessionId: session.id,
+    startedAt: new Date(input.startedAt),
+    endedAt: new Date(input.endedAt),
+    autoClosed: false,
+  };
+
+  assertCoherent(session, [entry]);
+  assertNoBreakOverlap(entry, existing, session, options);
+
+  await tx.insert(attendanceBreaks).values(entry);
+
+  await appendAttendanceEvent(
+    {
+      sessionId: session.id,
+      eventType: attendanceEventType.BreakAdded,
+      changedByUserId: viewerUserId,
+      after: { breakId: entry.id, startedAt: entry.startedAt, endedAt: entry.endedAt },
+    },
+    tx
+  );
+
+  return entry;
+};
+
+/**
  * Takes a break off its session. The row goes; the event that says it was there
  * and who removed it stays, which is the only record left of it.
  */
@@ -421,13 +633,15 @@ export const deleteAttendanceBreak = async (
   const named = await getBreakById(breakId, tx);
   if (!named) throw breakNotFound(breakId, viewerUserId);
 
-  const { session, breaks } = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const subject = await loadCorrectable(viewerUserId, named.sessionId, tx, now);
+  const { session, breaks } = subject;
 
   // Behind the lock, so the payload records what was actually removed.
   const entry = breaks.find((candidate) => candidate.id === breakId);
   if (!entry) throw breakNotFound(breakId, viewerUserId);
 
   await tx.delete(attendanceBreaks).where(eq(attendanceBreaks.id, entry.id));
+  await settleChangedAfterDay(subject, tx, now);
 
   await appendAttendanceEvent(
     {
@@ -461,7 +675,29 @@ export const deleteAttendanceSession = async (
   tx: DbTransaction,
   now = new Date()
 ): Promise<AttendanceSessionView> => {
-  const { session } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+  const { session, right, timezone } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+
+  // The owner may take back what they entered themselves, or a clocked session
+  // dated today — so a real clock-in from an earlier day, or an admin's entry on
+  // any day, never vanishes at their hand.
+  const ownDeletable =
+    session.origin === attendanceSessionOrigin.Entered
+      ? session.enteredByUserId === viewerUserId
+      : session.businessDate === businessDateInZone(now, timezone);
+  if (right === AttendanceCorrectionRight.Self && !ownDeletable) {
+    const context = { viewerUserId, sessionId: session.id, businessDate: session.businessDate };
+    throw session.origin === attendanceSessionOrigin.Entered
+      ? forbidden(
+          "An admin entered this session. You can correct its times, but only an admin can delete it.",
+          context,
+          "SELF_SERVICE_DELETE_ENTERED"
+        )
+      : forbidden(
+          "This session was clocked on an earlier day. You can correct its times, but only an admin can delete it.",
+          context,
+          "SELF_SERVICE_DELETE"
+        );
+  }
 
   await tx
     .update(attendanceSessions)
@@ -475,6 +711,50 @@ export const deleteAttendanceSession = async (
       changedByUserId: viewerUserId,
       before: { startedAt: session.startedAt, endedAt: session.endedAt, deletedAt: null },
       after: { deletedAt: now },
+    },
+    tx
+  );
+
+  return sessionView(session.id, tx);
+};
+
+export const markAttendanceSessionChecked = async (
+  viewerUserId: string,
+  sessionId: string,
+  tx: DbTransaction,
+  now = new Date()
+): Promise<AttendanceSessionView> => {
+  const { session, right } = await loadCorrectable(viewerUserId, sessionId, tx, now);
+
+  if (right !== AttendanceCorrectionRight.Admin) {
+    throw forbidden(
+      "Only an admin can mark a session as checked",
+      { viewerUserId, sessionId: session.id },
+      "ADMIN_ONLY"
+    );
+  }
+
+  if (!session.changedAfterDay) {
+    throw attendanceConflict(
+      "SESSION_NOT_CHANGED",
+      "This session has no change after its day to check",
+      { sessionId: session.id },
+      { viewerUserId }
+    );
+  }
+
+  await tx
+    .update(attendanceSessions)
+    .set({ changedAfterDay: false })
+    .where(eq(attendanceSessions.id, session.id));
+
+  await appendAttendanceEvent(
+    {
+      sessionId: session.id,
+      eventType: attendanceEventType.SessionChecked,
+      changedByUserId: viewerUserId,
+      before: { changedAfterDay: true },
+      after: { changedAfterDay: false },
     },
     tx
   );

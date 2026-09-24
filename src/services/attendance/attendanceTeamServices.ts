@@ -15,6 +15,7 @@ import {
   listOpenSessionsForEmployments,
   listSessionsForEmploymentsInRange,
 } from "./attendanceServices.js";
+import { selfServiceWindowOf } from "./selfServiceWindow.js";
 import {
   AttendanceTeamScope,
   type AttendanceSessionView,
@@ -139,6 +140,7 @@ export const getTeamAttendance = async (
     requiredMinutesPerDay: settings.requiredMinutesPerDay,
     breakMinutes: settings.breakMinutes,
     breakThresholdMinutes: settings.breakThresholdMinutes,
+    selfService: selfServiceWindowOf(settings),
     scope: audience.everyone ? AttendanceTeamScope.Organization : AttendanceTeamScope.Groups,
     group: audience.group,
     people,

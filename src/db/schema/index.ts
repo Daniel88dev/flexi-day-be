@@ -20,6 +20,7 @@ import { attachments } from "./attachment-schema.js";
 import { employments } from "./employment-schema.js";
 import { organizationAttendanceSettings } from "./organization-attendance-settings-schema.js";
 import { attendanceBreaks, attendanceEvents, attendanceSessions } from "./attendance-schema.js";
+import { attendanceSettingsChanges } from "./attendance-settings-change-schema.js";
 
 export const schema = {
   account,
@@ -52,4 +53,5 @@ export const schema = {
   attendanceSessions,
   attendanceBreaks,
   attendanceEvents,
+  attendanceSettingsChanges,
 };

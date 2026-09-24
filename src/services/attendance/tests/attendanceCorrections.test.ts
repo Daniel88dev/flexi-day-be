@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   applyCorrection,
   assertCoherent,
-  withinSelfServiceWindow,
+  nextChangedAfterDay,
+  overlappingBreak,
 } from "../attendanceCorrections.js";
-
-const PRAGUE = "Europe/Prague";
+import { AttendanceCorrectionRight } from "../types.js";
 
 const at = (iso: string) => new Date(iso);
 
@@ -144,42 +144,90 @@ describe("assertCoherent", () => {
   });
 });
 
-describe("withinSelfServiceWindow", () => {
-  const now = at("2026-09-10T08:00:00Z");
+describe("overlappingBreak", () => {
+  const sessionEnd = at("2026-09-09T15:00:00Z");
+  const lunch = entry("lunch", "2026-09-09T12:00:00Z", "2026-09-09T12:30:00Z");
 
-  it("lets the person change a session that is still open, whatever day it started", () => {
+  it("finds the break a new one runs into", () => {
+    const candidate = entry("new", "2026-09-09T12:20:00Z", "2026-09-09T12:45:00Z");
+
+    expect(overlappingBreak(candidate, [lunch], sessionEnd)?.id).toBe("lunch");
+  });
+
+  it("finds a break the new one swallows whole", () => {
+    const candidate = entry("new", "2026-09-09T11:30:00Z", "2026-09-09T13:00:00Z");
+
+    expect(overlappingBreak(candidate, [lunch], sessionEnd)?.id).toBe("lunch");
+  });
+
+  it("lets breaks sit back to back", () => {
+    const after = entry("new", "2026-09-09T12:30:00Z", "2026-09-09T12:45:00Z");
+    const before = entry("new", "2026-09-09T11:45:00Z", "2026-09-09T12:00:00Z");
+
+    expect(overlappingBreak(after, [lunch], sessionEnd)).toBeUndefined();
+    expect(overlappingBreak(before, [lunch], sessionEnd)).toBeUndefined();
+  });
+
+  it("does not hold a break against itself", () => {
+    const moved = entry("lunch", "2026-09-09T12:10:00Z", "2026-09-09T12:40:00Z");
+
+    expect(overlappingBreak(moved, [lunch], sessionEnd)).toBeUndefined();
+  });
+
+  it("counts a break left open to the session's end", () => {
+    const leftOpen = entry("open", "2026-09-09T14:00:00Z", null);
+    const candidate = entry("new", "2026-09-09T14:30:00Z", "2026-09-09T14:45:00Z");
+
+    expect(overlappingBreak(candidate, [leftOpen], sessionEnd)?.id).toBe("open");
+  });
+});
+
+describe("nextChangedAfterDay", () => {
+  const today = "2026-09-10";
+
+  it("flags a session its owner changes after its business date", () => {
     expect(
-      withinSelfServiceWindow({ endedAt: null, businessDate: "2026-09-01" }, PRAGUE, now)
+      nextChangedAfterDay({
+        right: AttendanceCorrectionRight.Self,
+        businessDate: "2026-09-09",
+        today,
+        wasFlagged: false,
+      })
     ).toBe(true);
   });
 
-  it("lets the person change a closed session on today's business date", () => {
+  it("leaves a session its owner changes on its own day unflagged", () => {
     expect(
-      withinSelfServiceWindow(
-        { endedAt: at("2026-09-10T07:00:00Z"), businessDate: "2026-09-10" },
-        PRAGUE,
-        now
-      )
-    ).toBe(true);
-  });
-
-  it("closes the window on yesterday", () => {
-    expect(
-      withinSelfServiceWindow(
-        { endedAt: at("2026-09-09T15:00:00Z"), businessDate: "2026-09-09" },
-        PRAGUE,
-        now
-      )
+      nextChangedAfterDay({
+        right: AttendanceCorrectionRight.Self,
+        businessDate: today,
+        today,
+        wasFlagged: false,
+      })
     ).toBe(false);
   });
 
-  it("reads today in the organization's zone, not the server's", () => {
-    // 22:30 UTC is already the 11th in Prague, so a session dated the 11th is
-    // today there and yesterday in UTC.
-    const lateEvening = at("2026-09-10T22:30:00Z");
-    const session = { endedAt: at("2026-09-10T22:00:00Z"), businessDate: "2026-09-11" };
+  it("keeps the flag when the owner changes it again on a later day", () => {
+    expect(
+      nextChangedAfterDay({
+        right: AttendanceCorrectionRight.Self,
+        businessDate: today,
+        today,
+        wasFlagged: true,
+      })
+    ).toBe(true);
+  });
 
-    expect(withinSelfServiceWindow(session, PRAGUE, lateEvening)).toBe(true);
-    expect(withinSelfServiceWindow(session, "UTC", lateEvening)).toBe(false);
+  it("clears the flag on any admin write, and never sets it", () => {
+    for (const wasFlagged of [true, false]) {
+      expect(
+        nextChangedAfterDay({
+          right: AttendanceCorrectionRight.Admin,
+          businessDate: "2026-09-01",
+          today,
+          wasFlagged,
+        })
+      ).toBe(false);
+    }
   });
 });

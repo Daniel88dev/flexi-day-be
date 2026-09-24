@@ -1,0 +1,1 @@
+ALTER TYPE "public"."attendance_event_type" ADD VALUE 'BREAK_ADDED';
