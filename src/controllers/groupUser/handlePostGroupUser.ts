@@ -55,6 +55,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
         message: "Verify your email address before joining a team",
         logging: true,
         code: 403,
+        publicContext: { code: "EMAIL_NOT_VERIFIED_USE_INVITE_LINK" },
         context: {
           url: req.url,
           userId: auth.userId,

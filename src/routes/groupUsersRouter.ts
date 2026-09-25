@@ -82,8 +82,10 @@ export const groupUsersRouter = (): Router => {
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: >-
-   *           The caller's email address is unverified, or the invite was
-   *           issued for a different address. Distinguish by `message`.
+   *           The caller's email address is unverified, and
+   *           `errors[0].context.code` is `EMAIL_NOT_VERIFIED_USE_INVITE_LINK`;
+   *           or the invite was issued for a different address, with no
+   *           `context`.
    *       '404':
    *         description: Invalid, revoked or expired code
    *       '409':

@@ -357,11 +357,14 @@ describe("invite link", () => {
       expect(await groupIdsOf(invitee.cookie)).toContain(groupId);
     });
 
-    it("still refuses a bare code from an unverified address", async () => {
+    it("still refuses a bare code from an unverified address, with a stable code", async () => {
       const invitee = await makeUser(false);
       const { code } = await issueInvite(invitee.email);
 
-      expect((await redeemCode(code, invitee.cookie)).status).toBe(403);
+      const res = await redeemCode(code, invitee.cookie);
+      expect(res.status).toBe(403);
+      expect(errorCode(res)).toBe("EMAIL_NOT_VERIFIED_USE_INVITE_LINK");
+      expect(await groupIdsOf(invitee.cookie)).not.toContain(groupId);
     });
   });
 });
