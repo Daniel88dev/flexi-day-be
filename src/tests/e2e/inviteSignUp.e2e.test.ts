@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import { createHash } from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
@@ -27,18 +26,18 @@ vi.mock("../../services/email/index.js", () => ({
 }));
 
 const PASSWORD = "sturdy-passphrase-42";
+// SHA-1 of PASSWORD, as the range API expects. Precomputed so the test hashes no passwords.
+const PASSWORD_SHA1 = "8C2C7E829BFC6E992C58179559CFF9C50435765B";
 
 // Sign-up runs the Have I Been Pwned check, an outbound call. Answered here so
 // the suite runs offline and a breached password can be staged.
-const breachedPasswords = new Set<string>();
-const sha1 = (value: string) => createHash("sha1").update(value).digest("hex").toUpperCase();
+const breachedHashes = new Set<string>();
 const realFetch = globalThis.fetch;
 vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
   const url = input instanceof Request ? input.url : input.toString();
   if (!url.startsWith("https://api.pwnedpasswords.com/range/")) return realFetch(input, init);
   const prefix = url.slice(-5);
-  const body = [...breachedPasswords]
-    .map(sha1)
+  const body = [...breachedHashes]
     .filter((hash) => hash.startsWith(prefix))
     .map((hash) => `${hash.slice(5)}:1234`)
     .join("\r\n");
@@ -121,7 +120,7 @@ describe("sign up with invite", () => {
   });
 
   beforeEach(() => {
-    breachedPasswords.clear();
+    breachedHashes.clear();
   });
 
   afterAll(async () => {
@@ -246,7 +245,7 @@ describe("sign up with invite", () => {
   it("applies the breached-password check of a normal sign-up", async () => {
     const email = freshEmail();
     const { token } = await issueInvite(email);
-    breachedPasswords.add(PASSWORD);
+    breachedHashes.add(PASSWORD_SHA1);
 
     const res = await signUp({ email, token });
 
