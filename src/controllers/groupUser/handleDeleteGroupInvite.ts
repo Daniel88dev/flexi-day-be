@@ -8,7 +8,7 @@ import {
   revokeInviteLink,
 } from "../../services/groupUser/inviteLinkServices.js";
 
-/** Revokes an outstanding invite so its code stops working. */
+/** Revokes an outstanding invite so its code and link stop working. */
 export const handleDeleteGroupInvite = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 

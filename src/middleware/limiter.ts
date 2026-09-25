@@ -152,6 +152,9 @@ export const CREDENTIAL_GUESSING_PATHS = [
   // answers 302 either way, and this limiter skips anything under 400.
   "/api/auth/reset-password",
   "/api/auth/two-factor",
+  // The invite link endpoints are public or near enough, and an unknown
+  // secret answers 404, so a prober burns this budget like a password guesser.
+  "/api/auth/invite",
 ];
 
 /**

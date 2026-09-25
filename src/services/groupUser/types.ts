@@ -57,9 +57,28 @@ export type InviteLinkInsertType = {
   groupId: string;
   code: string;
   email?: string | null;
+  linkSecretHash?: string | null;
   invitedByUserId?: string | null;
   expiresAt: Date;
 };
+
+export type InviteStatus = "open" | "used" | "expired" | "revoked";
+
+/** What the invite link's holder may see before signing in. */
+export type InvitePreview = {
+  groupId: string;
+  groupName: string;
+  inviterName: string | null;
+  invitedEmail: string;
+  status: InviteStatus;
+  expiresAt: Date;
+};
+
+export const validateInviteLinkToken = z.object({
+  token: z.string().min(32).max(128),
+});
+
+export type ValidatedInviteLinkTokenType = z.infer<typeof validateInviteLinkToken>;
 
 /** An invite plus who sent it, for the group's pending-invites list. */
 export type InviteLinkListItem = InviteLink & {

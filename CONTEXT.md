@@ -19,7 +19,9 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Calendar record type** | The classification of a vacation row. Nine types, each with its own conditions — see [`docs/calendar-record-types.md`](docs/calendar-record-types.md). Avoid: leave type, vacation type, vacation kind.                     |
 | **Sick day benefit**     | Paid-plan organization toggle that makes Sick day a requestable, metered type — see [`docs/calendar-record-types.md`](docs/calendar-record-types.md).                                                                       |
 | **Mirror**               | A read-side projection of a user's records from one group into another.                                                                                                                                                     |
-| **Invite link**          | Single-use code binding one email address to one group.                                                                                                                                                                     |
+| **Invite**               | A single-use, expiring offer for one email address to join one group.                                                                                                                                                       |
+| **Invite code**          | The short code of an invite, shown to the admin so they can pass it on. Avoid: validation code.                                                                                                                             |
+| **Invite link**          | The URL in the invite email. Following it proves control of the mailbox.                                                                                                                                                    |
 | **Request**              | The set of Vacation rows created by one submission, sharing a `request_id`. Attachments and retention hang off it, not the day.                                                                                             |
 | **Attachment**           | An image or PDF bound to one Request. Seen by the record owner, the group's approvers and group admins; nobody else. Bytes live in S3, or on disk without a bucket (`docs/adr/0003`).                                       |
 | **Live row**             | A vacation row a reader returned under `deleted_at IS NULL`. `LiveVacationType` is its type.                                                                                                                                |
@@ -81,12 +83,27 @@ convention — see [`docs/invariants.md`](docs/invariants.md#organization-admin-
 
 ## Joining a group (`invite_link`)
 
-An admin issues a single-use code with `POST /api/group-user/{groupId}/invites`; it is emailed via
-the `group-invite` SES template and also returned so the admin can pass it on when the mail fails
-(`emailDelivered: false`). A code is **bound to the address it was issued to** —
-`handlePostGroupUser` refuses a redeemer whose session email differs. Rows with a null `email`
-predate email invites and stay unrestricted. Single-use is enforced by the `usedAt IS NULL`
-predicate in the redeeming UPDATE, so concurrent redemptions cannot both win.
+An admin issues an invite with `POST /api/group-user/{groupId}/invites`. It is emailed via the
+`group-invite` SES template, and its code comes back in the response so the admin can pass it on
+when the mail fails (`emailDelivered: false`). An invite is **bound to the address it was issued
+to**, and has two ways in:
+
+- **Invite code**, `POST /api/group-user/code/{code}` (`handlePostGroupUser`). The session's
+  address must match the invite and be verified already. The admin knows the code, so it proves
+  nothing about the mailbox.
+- **Invite link**, `{appUrl}/join/?token=<secret>`, only in the email. The frontend's `/join/` page
+  describes it through the public `POST /api/auth/invite/preview` and joins through
+  `POST /api/auth/invite/join` (`handlePostInviteJoin`) when the user presses Join, never on load.
+  The session's address must match, and the join verifies it if it was not, because following the
+  link is itself the proof — see [`docs/invariants.md`](docs/invariants.md). The secret is stored
+  only as a hash, in `link_secret_hash`, and no API returns it.
+
+Both paths go through `redeemInvite`: the same member defaults, seat-cap check and quota opening,
+and either one uses up the invite for both. Re-inviting an address revokes the open invite, code and
+link together. Single use is enforced by the `usedAt IS NULL` predicate in the redeeming UPDATE, so
+concurrent redemptions cannot both win. Rows with a null `email` predate email invites and stay
+redeemable by anyone holding the code; rows with a null `link_secret_hash` predate invite links and
+redeem by code only.
 
 ## Mirroring (`group_mirrors`)
 

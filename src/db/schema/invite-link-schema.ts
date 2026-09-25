@@ -15,6 +15,9 @@ export const inviteLink = pgTable(
     // an account with this email, so a forwarded code is useless to a stranger.
     // Nullable only for rows predating email invites — those stay unrestricted.
     email: text("email"),
+    // SHA-256 of the invite link secret. The secret itself only ever travels in
+    // the invite email. Null on invites issued before links existed.
+    linkSecretHash: text("link_secret_hash").unique(),
     invitedByUserId: text("invited_by_user_id").references(() => user.id, { onDelete: "set null" }),
     usedAt: timestamp("used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),

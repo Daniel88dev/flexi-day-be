@@ -114,6 +114,8 @@ export interface GroupInviteData {
   signUpUrl: string;
   /** Where an existing account redeems the code. */
   joinUrl: string;
+  /** The invite link, `{appUrl}/join/?token=<secret>`. Only ever sent to the invited address. */
+  inviteUrl: string;
   invitedEmail: string;
   expiresIn: string;
 }

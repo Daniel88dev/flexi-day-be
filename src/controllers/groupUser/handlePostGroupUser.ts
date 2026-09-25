@@ -2,15 +2,10 @@ import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { z } from "zod";
 import { db } from "../../db/db.js";
-import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { normalizeInviteCode } from "../../utils/inviteCode.js";
 import AppError from "../../utils/appError.js";
-import { currentYear } from "../../utils/dateFunc.js";
-import { assertCanAddMember } from "../../services/billing/guards.js";
-import { getGroup } from "../../services/group/groupServices.js";
-import { createGroupUser, getGroupUser } from "../../services/groupUser/groupUserServices.js";
-import { getInviteLinkByCode, useInviteLink } from "../../services/groupUser/inviteLinkServices.js";
-import { openQuotaFromGroupDefaults } from "../../services/userYearQuotas/userYearQuotasServices.js";
+import { getInviteLinkByCode, inviteStatus } from "../../services/groupUser/inviteLinkServices.js";
+import { redeemInvite } from "../../services/groupUser/inviteRedemption.js";
 
 export const handlePostGroupUser = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -34,12 +29,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
   const result = await db.transaction(async (tx) => {
     const validateLink = await getInviteLinkByCode(validationCode, tx);
 
-    if (
-      !validateLink ||
-      Boolean(validateLink.usedAt) ||
-      Boolean(validateLink.revokedAt) ||
-      validateLink.expiresAt <= new Date()
-    ) {
+    if (!validateLink || inviteStatus(validateLink) !== "open") {
       throw new AppError({
         message: "Invalid or expired validation code",
         logging: true,
@@ -58,6 +48,8 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
     // string, and better-auth then marks the account unverified rather than
     // refusing it. Without this, someone controlling their own Entra tenant
     // could claim a colleague's address and redeem an invite issued to them.
+    // An unverified invitee joins through the invite link instead, which is
+    // itself the proof (`handlePostInviteJoin`).
     if (validateLink.email && !auth.emailVerified) {
       throw new AppError({
         message: "Verify your email address before joining a team",
@@ -88,83 +80,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
       });
     }
 
-    const existingMembership = await getGroupUser(auth.userId, validateLink.groupId, tx);
-
-    if (existingMembership) {
-      throw new AppError({
-        message: "You are already a member of this group",
-        logging: true,
-        code: 409,
-        context: { url: req.url, userId: auth.userId, groupId: validateLink.groupId },
-      });
-    }
-
-    // The authoritative member-cap gate: runs inside the single-use redemption
-    // transaction, where the invite being redeemed still counts as open.
-    await assertCanAddMember(validateLink.groupId, tx, { redeemingOpenInvite: true });
-
-    const membership = await createGroupUser(
-      {
-        id: generateRandomUUID(),
-        userId: auth.userId,
-        groupId: validateLink.groupId,
-        viewAccess: true,
-        adminAccess: false,
-        approverAccess: false,
-        controlledUser: true,
-      },
-      tx
-    );
-
-    if (!membership) {
-      throw new AppError({
-        message: "Failed to create group user",
-        logging: true,
-        code: 500,
-        context: {
-          url: req.url,
-          userId: auth.userId,
-          groupId: validateLink.groupId,
-          validateLink: validateLink,
-        },
-      });
-    }
-
-    // MUST take `tx`: checking out a second pool connection while this
-    // transaction holds one deadlocks the pool at concurrency >= pool size.
-    const group = await getGroup(validateLink.groupId, tx);
-    await openQuotaFromGroupDefaults(
-      {
-        id: generateRandomUUID(),
-        userId: auth.userId,
-        groupId: validateLink.groupId,
-        relatedYear: currentYear().toString(),
-        vacationDays: group?.defaultVacationDays ?? 0,
-        homeOfficeDays: group?.defaultHomeOfficeDays ?? 0,
-        sickDays: group?.defaultSickDays ?? 0,
-      },
-      tx
-    );
-
-    // `usedAt IS NULL` in the update is what makes the code single-use: a
-    // concurrent second redemption matches no row and rolls this back.
-    const updateInviteLink = await useInviteLink(validationCode, tx);
-
-    if (!updateInviteLink) {
-      throw new AppError({
-        message: "Failed to update invite link",
-        logging: true,
-        code: 409,
-        context: {
-          url: req.url,
-          userId: auth.userId,
-          groupId: validateLink.groupId,
-          validateLink: validateLink,
-        },
-      });
-    }
-
-    return membership;
+    return redeemInvite(validateLink, auth.userId, tx, { url: req.url });
   });
 
   return res.status(201).json(result);

@@ -72,6 +72,7 @@ export const createServer = () => {
   // them. They need JSON body parsing, scoped tightly so the raw body that
   // better-auth itself needs is left untouched on its own paths.
   app.use("/api/auth/sign-up-with-team", express.json());
+  app.use("/api/auth/invite", express.json());
   app.use("/api/auth", authExtRouter());
 
   // Paddle webhook. Registered BEFORE the global `express.json()` so it gets

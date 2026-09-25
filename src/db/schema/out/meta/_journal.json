@@ -127,6 +127,13 @@
       "when": 1790200805928,
       "tag": "0017_attendance_changed_after_day",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790360858397,
+      "tag": "0018_invite_link_secret",
+      "breakpoints": true
     }
   ]
 }

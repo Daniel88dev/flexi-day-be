@@ -50,3 +50,10 @@ export const getUsersByIds = async (userIds: string[]): Promise<UserContact[]> =
     .from(user)
     .where(inArray(user.id, userIds));
 };
+
+export const markEmailVerified = async (userId: string, tx?: DbTransaction): Promise<void> => {
+  await (tx ?? db)
+    .update(user)
+    .set({ emailVerified: true, updatedAt: new Date() })
+    .where(eq(user.id, userId));
+};
