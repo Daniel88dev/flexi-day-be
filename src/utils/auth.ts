@@ -16,6 +16,7 @@ import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
 import { buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
+import { confirmationEmailSuppressed } from "./confirmationEmail.js";
 import {
   deviceMismatchError,
   isDeviceMismatch,
@@ -166,6 +167,7 @@ export const auth = betterAuth({
   },
   emailVerification: {
     sendVerificationEmail: async ({ user, url }, _request) => {
+      if (confirmationEmailSuppressed()) return;
       try {
         const confirmationUrl = new URL(url);
         confirmationUrl.searchParams.set(

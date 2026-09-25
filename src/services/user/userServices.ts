@@ -57,3 +57,8 @@ export const markEmailVerified = async (userId: string, tx?: DbTransaction): Pro
     .set({ emailVerified: true, updatedAt: new Date() })
     .where(eq(user.id, userId));
 };
+
+/** Sessions and provider accounts go with the row, through their cascading foreign keys. */
+export const deleteUser = async (userId: string): Promise<void> => {
+  await db.delete(user).where(eq(user.id, userId));
+};

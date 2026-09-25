@@ -86,7 +86,7 @@ convention — see [`docs/invariants.md`](docs/invariants.md#organization-admin-
 An admin issues an invite with `POST /api/group-user/{groupId}/invites`. It is emailed via the
 `group-invite` SES template, and its code comes back in the response so the admin can pass it on
 when the mail fails (`emailDelivered: false`). An invite is **bound to the address it was issued
-to**, and has two ways in:
+to**, and has three ways in:
 
 - **Invite code**, `POST /api/group-user/code/{code}` (`handlePostGroupUser`). The session's
   address must match the invite and be verified already. The admin knows the code, so it proves
@@ -97,9 +97,12 @@ to**, and has two ways in:
   The session's address must match, and the join verifies it if it was not, because following the
   link is itself the proof — see [`docs/invariants.md`](docs/invariants.md). The secret is stored
   only as a hash, in `link_secret_hash`, and no API returns it.
+- **Sign up with invite**, `POST /api/auth/invite/sign-up` (`handlePostInviteSignUp`): the invite
+  link for an invitee with no account, creating a verified account already in the group — see
+  [`docs/invariants.md`](docs/invariants.md).
 
-Both paths go through `redeemInvite`: the same member defaults, seat-cap check and quota opening,
-and either one uses up the invite for both. Re-inviting an address revokes the open invite, code and
+All three go through `redeemInvite`: the same member defaults, seat-cap check and quota opening,
+and any one of them uses up the invite for all. Re-inviting an address revokes the open invite, code and
 link together. Single use is enforced by the `usedAt IS NULL` predicate in the redeeming UPDATE, so
 concurrent redemptions cannot both win. Rows with a null `email` predate email invites and stay
 redeemable by anyone holding the code; rows with a null `link_secret_hash` predate invite links and

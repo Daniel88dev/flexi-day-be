@@ -6,8 +6,52 @@ import { assertCanAddMember } from "../billing/guards.js";
 import { getGroup } from "../group/groupServices.js";
 import { openQuotaFromGroupDefaults } from "../userYearQuotas/userYearQuotasServices.js";
 import { createGroupUser, getGroupUser } from "./groupUserServices.js";
-import { useInviteLink } from "./inviteLinkServices.js";
+import { inviteStatus, useInviteLink } from "./inviteLinkServices.js";
 import type { GroupUser, InviteLink } from "./types.js";
+
+/**
+ * The checks every invite link redemption makes before anything is written: a
+ * known secret, an open invite, and the invited address. `email` must already
+ * be lower-cased.
+ */
+export const assertOpenInviteFor = (
+  invite: InviteLink | undefined,
+  email: string,
+  logContext: Record<string, unknown>
+): InviteLink => {
+  if (!invite?.email) {
+    throw new AppError({
+      message: "Invite not found",
+      logging: true,
+      code: 404,
+      context: logContext,
+      publicContext: { code: "INVITE_NOT_FOUND" },
+    });
+  }
+
+  const status = inviteStatus(invite);
+  if (status !== "open") {
+    throw new AppError({
+      message: `This invite is ${status}`,
+      logging: true,
+      code: 410,
+      context: { ...logContext, inviteId: invite.id },
+      publicContext: { code: `INVITE_${status.toUpperCase()}` },
+    });
+  }
+
+  if (invite.email !== email) {
+    throw new AppError({
+      message: "This invite was issued for a different email address",
+      logging: true,
+      code: 403,
+      context: { ...logContext, inviteId: invite.id },
+      publicContext: { code: "INVITE_EMAIL_MISMATCH" },
+    });
+  }
+
+  return invite;
+};
 
 /**
  * What redeeming an open invite does, whichever way it arrived — by code or by

@@ -6,9 +6,10 @@ import {
   validateSignUpWithTeam,
 } from "../controllers/auth/handleSignUpWithTeam.js";
 import { authSession } from "../middleware/authSession.js";
-import { validateInviteLinkToken } from "../services/groupUser/types.js";
+import { validateInviteLinkToken, validateInviteSignUp } from "../services/groupUser/types.js";
 import { handlePostInvitePreview } from "../controllers/groupUser/handlePostInvitePreview.js";
 import { handlePostInviteJoin } from "../controllers/groupUser/handlePostInviteJoin.js";
+import { handlePostInviteSignUp } from "../controllers/groupUser/handlePostInviteSignUp.js";
 
 /**
  * Routes that extend better-auth's `/api/auth/*` namespace with project-specific
@@ -183,6 +184,111 @@ export const authExtRouter = (): Router => {
     authSession,
     bodyValidationMiddleware(validateInviteLinkToken),
     tryCatch(handlePostInviteJoin)
+  );
+
+  /**
+   * @openapi
+   * /api/auth/invite/sign-up:
+   *   post:
+   *     tags:
+   *       - Auth
+   *     summary: Create an account from the invite link and join the group
+   *     description: |
+   *       Public. For an invitee with no account. The address must be the
+   *       invited one (any letter case). Runs better-auth's own email sign-up,
+   *       so the password policy and the breached-password check are the same
+   *       as a normal sign-up. Following the link proves the mailbox, so the
+   *       account is verified in the same transaction as the join and no
+   *       confirmation email is sent. The join itself is the same as the other
+   *       redemption paths: same membership defaults, seat cap and quota, and
+   *       it uses up the invite. On success the response signs the user in with
+   *       the same session cookie as `POST /api/auth/sign-in/email`.
+   *
+   *       Every invite check runs before the account check, so only the holder
+   *       of the secret learns whether the address already has an account.
+   *       Behind the failures-only credential limiter.
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - token
+   *               - name
+   *               - email
+   *               - password
+   *             properties:
+   *               token:
+   *                 type: string
+   *                 minLength: 32
+   *                 maxLength: 128
+   *                 description: The `token` query parameter of the invite link.
+   *               name:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 120
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 description: Must be the invited address.
+   *               password:
+   *                 type: string
+   *                 description: better-auth's password policy applies (8 to 128 characters, not breached).
+   *     responses:
+   *       '201':
+   *         description: >-
+   *           Account created, verified, joined and signed in. `Set-Cookie`
+   *           carries the session. `user` and `token` are null in the rare case
+   *           the account joined but the session could not be started; a normal
+   *           sign-in then works.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 user:
+   *                   type: object
+   *                   nullable: true
+   *                 token:
+   *                   type: string
+   *                   nullable: true
+   *                 membership:
+   *                   type: object
+   *                   description: The created membership
+   *       '400':
+   *         description: >-
+   *           The password breaks the sign-up policy. `errors[0].context.code`
+   *           is better-auth's code, e.g. `PASSWORD_TOO_SHORT`,
+   *           `PASSWORD_TOO_LONG` or `PASSWORD_COMPROMISED`.
+   *       '402':
+   *         description: |
+   *           Plan limit reached. `errors[].context` carries
+   *           `{ reason: "PLAN_LIMIT", limit, current }`. No account is created.
+   *       '403':
+   *         description: >-
+   *           The invite was issued for a different address.
+   *           `errors[0].context.code` is `INVITE_EMAIL_MISMATCH`.
+   *       '404':
+   *         description: No invite has this secret. `errors[0].context.code` is `INVITE_NOT_FOUND`.
+   *       '409':
+   *         description: A concurrent redemption used the invite first. No account is left behind.
+   *       '410':
+   *         description: >-
+   *           The invite can no longer be redeemed. `errors[0].context.code` is
+   *           `INVITE_USED`, `INVITE_EXPIRED` or `INVITE_REVOKED`.
+   *       '422':
+   *         description: >-
+   *           Missing or malformed fields, or the address already has an
+   *           account (`errors[0].context.code` is
+   *           `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`).
+   *       '429':
+   *         description: Too many failed attempts from this address
+   */
+  app.post(
+    "/invite/sign-up",
+    bodyValidationMiddleware(validateInviteSignUp),
+    tryCatch(handlePostInviteSignUp)
   );
 
   return app;

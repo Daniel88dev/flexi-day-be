@@ -80,6 +80,16 @@ export const validateInviteLinkToken = z.object({
 
 export type ValidatedInviteLinkTokenType = z.infer<typeof validateInviteLinkToken>;
 
+// Password length is left to better-auth, so this route answers with the same
+// policy and error codes as a normal sign-up.
+export const validateInviteSignUp = validateInviteLinkToken.extend({
+  name: z.string().trim().min(1).max(120),
+  email: z.email().transform((value) => value.toLowerCase()),
+  password: z.string().min(1).max(256),
+});
+
+export type ValidatedInviteSignUpType = z.infer<typeof validateInviteSignUp>;
+
 /** An invite plus who sent it, for the group's pending-invites list. */
 export type InviteLinkListItem = InviteLink & {
   invitedByName: string | null;

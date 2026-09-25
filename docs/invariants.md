@@ -17,7 +17,11 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   mailbox. The **invite link** is different: its secret is generated at issue time, stored only as a
   SHA-256 hash, returned by no API and sent only to the invited address, so holding it is the proof.
   `handlePostInviteJoin` therefore requires a session whose address matches the invite, and marks
-  that address verified in the same transaction as the join. Without this split, an
+  that address verified in the same transaction as the join. `handlePostInviteSignUp` is the same
+  proof for an invitee with no account: it creates the password account through better-auth's own
+  sign-up, then verifies it in the join's transaction. The confirmation email is switched off by
+  `withoutConfirmationEmail` (`src/utils/confirmationEmail.ts`), an async-context flag only that
+  handler sets, never a header or body field a client could send. Without this split, an
   identity-provider administrator who asserts a colleague's address could join that colleague's
   team with the code, and a legitimately invited Google or Microsoft user could not join at all.
 
@@ -27,7 +31,18 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   since implicit linking is off (next entry). That same session has now also presented the
   mailbox's secret, so both proofs point at one person and there is nobody to evict. A reset is
   different because it proves the mailbox _without_ a session, so the links it finds may belong to
-  someone else. `src/tests/e2e/inviteLink.e2e.test.ts` covers the link and
+  someone else. Sign-up with invite needs no such step at all: the account is new, so it has no
+  provider links.
+
+  better-auth cannot join our transaction, so sign-up with invite checks everything that can refuse
+  first: an open invite for this address, no existing account, a free seat. The account is created
+  unverified, and a join that still fails deletes it. The residual race is a concurrent redemption
+  landing between those checks and the join; the join then refuses and the account goes. If that
+  delete fails as well, what is left is an ordinary unconfirmed sign-up, never a verified account
+  outside the group. Refusing an existing address with a real error, where normal sign-up answers a
+  made-up success, reveals nothing, because every invite check runs first and only the secret's
+  holder gets that far. `src/tests/e2e/inviteLink.e2e.test.ts` covers the link,
+  `src/tests/e2e/inviteSignUp.e2e.test.ts` sign-up with invite and
   `src/tests/e2e/inviteRedemption.e2e.test.ts` the code.
 
 - **Account linking is explicit only.** `accountLinking` trusts both providers — needed at all,
@@ -164,7 +179,9 @@ under-protects the endpoints that matter:
   per source and **not** per address; a distributed flood at one address is still open.
 - **The invite link endpoints ride `credentialsLimiter`.** `/api/auth/invite/*` is our own router,
   not better-auth's, so better-auth's 50/10s rule never sees it. The failures-only budget is what
-  bounds a prober: an unknown secret answers 404, and a real one is 256 bits.
+  bounds a prober: an unknown secret answers 404, and a real one is 256 bits. Sign-up with invite
+  calls better-auth's sign-up and sign-in through `auth.api`, which skips better-auth's limiter too,
+  so this budget is the only one on it.
 - **`credentialsLimiter` sets `skipSuccessfulRequests`.** Only failures count, so a whole team
   signing in at 9am is unaffected while a password guesser burns the budget.
 - **`calendarFeedLimiter` keys on the token.** Google polls every subscribed feed from a handful of
