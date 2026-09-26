@@ -71,7 +71,9 @@ export const usersRouter = (): Router => {
    *     summary: The caller's preferences
    *     description: |
    *       Users without a stored row are on the defaults
-   *       (`emailNotifications: true`, `dashboardScope: MINE`).
+   *       (`emailNotifications: true`, `dashboardScope: MINE`,
+   *       `dashboardGroupId: null`, `dashboardCalendarView: LANES`,
+   *       `attendanceLocationNoticeDismissed: false`).
    *     security:
    *       - bearerAuth: []
    *     responses:
@@ -81,6 +83,8 @@ export const usersRouter = (): Router => {
    *           application/json:
    *             schema:
    *               $ref: '#/components/schemas/UserSettings'
+   *       '401':
+   *         description: Not signed in
    *   put:
    *     tags:
    *       - Users
@@ -96,7 +100,14 @@ export const usersRouter = (): Router => {
    *       `dashboardScope: GROUP` makes the dashboard calendar show
    *       `dashboardGroupId`'s records instead of only the caller's own. That
    *       group must already be selected or supplied in the same request, and
-   *       the caller must have view access on it.
+   *       the caller must have view access on it. That check runs only when
+   *       the request sends `dashboardScope` or `dashboardGroupId`, so saving
+   *       any other field succeeds even if the stored group is no longer
+   *       viewable.
+   *
+   *       `dashboardCalendarView` picks how the dashboard month calendar draws
+   *       leave: `LANES` (one bar per person, the default) or `STRIPES`
+   *       (compact stripes with a day list). Every client reads the same value.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -104,14 +115,25 @@ export const usersRouter = (): Router => {
    *       content:
    *         application/json:
    *           schema:
-   *             $ref: '#/components/schemas/UserSettings'
+   *             allOf:
+   *               - $ref: '#/components/schemas/UserSettings'
+   *             minProperties: 1
    *     responses:
    *       '200':
    *         description: The stored preferences
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/UserSettings'
+   *       '401':
+   *         description: Not signed in
    *       '403':
    *         description: No access to view the selected group's records
    *       '422':
-   *         description: Group scope requested without a group
+   *         description: |
+   *           The body failed validation (no field supplied, or a value outside
+   *           its enum, such as a `dashboardCalendarView` other than `LANES` or
+   *           `STRIPES`), or group scope was requested without a group
    * components:
    *   schemas:
    *     UserSettings:
@@ -124,8 +146,12 @@ export const usersRouter = (): Router => {
    *           enum: [MINE, GROUP]
    *         dashboardGroupId:
    *           type: string
-   *           format: uuid
    *           nullable: true
+   *         dashboardCalendarView:
+   *           type: string
+   *           enum: [LANES, STRIPES]
+   *           default: LANES
+   *           description: How the dashboard month calendar draws leave.
    *         attendanceLocationNoticeDismissed:
    *           type: boolean
    *           description: |

@@ -26,35 +26,41 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
   if (data.emailNotifications !== undefined) patch.emailNotifications = data.emailNotifications;
   if (data.dashboardScope !== undefined) patch.dashboardScope = data.dashboardScope;
   if (data.dashboardGroupId !== undefined) patch.dashboardGroupId = data.dashboardGroupId;
+  if (data.dashboardCalendarView !== undefined)
+    patch.dashboardCalendarView = data.dashboardCalendarView;
   if (data.attendanceLocationNoticeDismissed !== undefined)
     patch.attendanceLocationNoticeDismissed = data.attendanceLocationNoticeDismissed;
 
-  // The patch is validated against the settings it produces, not against
-  // itself: switching to GROUP scope may rely on a group chosen earlier.
-  const nextScope =
-    patch.dashboardScope ?? current?.dashboardScope ?? DEFAULT_USER_SETTINGS.dashboardScope;
-  const nextGroupId =
-    patch.dashboardGroupId !== undefined
-      ? patch.dashboardGroupId
-      : (current?.dashboardGroupId ?? DEFAULT_USER_SETTINGS.dashboardGroupId);
+  // Only a save that touches the scope or the group re-checks the group, so
+  // another field still saves after the stored group has lost its view access.
+  // The check runs against the settings the patch produces: switching to GROUP
+  // scope may rely on a group chosen earlier.
+  if (patch.dashboardScope !== undefined || patch.dashboardGroupId !== undefined) {
+    const nextScope =
+      patch.dashboardScope ?? current?.dashboardScope ?? DEFAULT_USER_SETTINGS.dashboardScope;
+    const nextGroupId =
+      patch.dashboardGroupId !== undefined
+        ? patch.dashboardGroupId
+        : (current?.dashboardGroupId ?? DEFAULT_USER_SETTINGS.dashboardGroupId);
 
-  if (nextScope === dashboardScope.Group && !nextGroupId) {
-    throw new AppError({
-      code: 422,
-      message: "A group must be selected for group scope",
-      logging: false,
-    });
-  }
-
-  if (nextGroupId) {
-    const scope = await getScopeEntries(auth.userId);
-    if (!canViewWholeGroup(scope, nextGroupId)) {
+    if (nextScope === dashboardScope.Group && !nextGroupId) {
       throw new AppError({
-        code: 403,
-        message: "No access to view this group's records",
-        logging: true,
-        context: { userId: auth.userId, groupId: nextGroupId },
+        code: 422,
+        message: "A group must be selected for group scope",
+        logging: false,
       });
+    }
+
+    if (nextGroupId) {
+      const scope = await getScopeEntries(auth.userId);
+      if (!canViewWholeGroup(scope, nextGroupId)) {
+        throw new AppError({
+          code: 403,
+          message: "No access to view this group's records",
+          logging: true,
+          context: { userId: auth.userId, groupId: nextGroupId },
+        });
+      }
     }
   }
 
@@ -73,6 +79,7 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
     emailNotifications: updated.emailNotifications,
     dashboardScope: updated.dashboardScope,
     dashboardGroupId: updated.dashboardGroupId,
+    dashboardCalendarView: updated.dashboardCalendarView,
     attendanceLocationNoticeDismissed: updated.attendanceLocationNoticeDismissed,
   });
 };
