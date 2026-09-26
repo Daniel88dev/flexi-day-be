@@ -16,6 +16,15 @@ export const formatDateToISOString = (date: Date): DateString => {
   return `${year}-${month}-${day}`;
 };
 
+/** "12 Aug 2026", the way a day reads in a notification or an email. */
+export const formatDay = (isoDay: DateString): string =>
+  new Date(`${isoDay}T00:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
 // UTC everywhere, so opening a quota and validating a booking against it
 // cannot disagree about the year on a server that is not on UTC.
 export const currentYear = (): number => new Date().getUTCFullYear();

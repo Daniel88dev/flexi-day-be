@@ -31,6 +31,10 @@ an Employment if they own the organization, hold a delegated admin row, or manag
   began _after_ the session's ceiling, in the window before the sweep ran, closes at its own start:
   the session still ends where the ceiling is, so the break collapses rather than ending before it
   began.
+- Once a swept session's close commits, its owner gets one in-app `session_auto_closed` notice
+  linking to `/my-attendance/?date=<business date>`. It stands for any break auto-closed inside the
+  session too. A break closed under a session still running raises none: the session is closed by a
+  later sweep or by its owner. No email goes with it.
 - A break may start only inside an open session; an open break is closed at clock-out and counted
   to that instant.
 

@@ -3,6 +3,7 @@ import { logger } from "../../middleware/logger.js";
 import { emailSender } from "../email/index.js";
 import type { TemplatedEmail } from "../email/index.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { formatDay } from "../../utils/dateFunc.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { VacationType } from "./types.js";
@@ -27,14 +28,6 @@ const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
   [CalendarRecordType.StudyLeave]: "Study leave",
   [CalendarRecordType.Other]: "Other",
 };
-
-const formatDay = (isoDay: string): string =>
-  new Date(`${isoDay}T00:00:00Z`).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
 
 /** "12 Aug 2026" for a single day, "12 – 16 Aug 2026" for a span. */
 export const formatDateRange = (isoDays: string[]): string => {
