@@ -884,6 +884,30 @@ describe("Sync pull E2E", () => {
       expect(userIds).not.toContain(other.id);
     });
 
+    it("keeps a removed member's bookings and quotas in a group seen in full, as the web does", async () => {
+      const manager = await makeUser("Manager");
+      const viewer = await makeUser("Viewer");
+      const leaver = await makeUser("Leaver");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, viewer.id, { viewAccess: true });
+      await addMember(groupId, leaver.id);
+      const booking = await addLeave(groupId, leaver.id, dayIn(THIS_YEAR, 5, 4));
+      await addQuota(groupId, leaver.id, THIS_YEAR);
+      await removeMember(groupId, leaver.id);
+
+      const res = await request(app)
+        .get("/api/sync/pull")
+        .set("Cookie", await authCookieFor(viewer.id))
+        .expect(200);
+
+      // The group calendar and the report both keep a leaver's history, so
+      // only the membership row goes.
+      expect((res.body.groupUsers as GroupUserRow[]).map((row) => row.userId)).toEqual([viewer.id]);
+      expect((res.body.vacations as VacationRow[]).map((row) => row.id)).toEqual([booking]);
+      expect((res.body.userYearQuotas as QuotaRow[]).map((row) => row.userId)).toEqual([leaver.id]);
+      expect((res.body.users as UserRow[]).map((row) => row.id)).toContain(leaver.id);
+    });
+
     it("gives a manager every member's vacations and quotas without a flag of their own", async () => {
       const manager = await makeUser("Manager");
       const member = await makeUser("Member");
