@@ -44,16 +44,16 @@ there, an org admin of the owning organization or the group's own manager. A del
 report scope drops, so a group soft-deleted before the window the delta covers still counts as one
 of the caller's while their membership row lives.
 
-| Table            | Seen in full (`all`)                                       | Self-scoped (`self`)  | Beyond those groups                                                              |
-| ---------------- | ---------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------- |
-| `organizations`  | the organization of the group, id and name only            | the same              | the organization of any other group the pull names                               |
-| `users`          | every member and the manager                               | the caller            | every actor on a visible booking                                                 |
-| `groups`         | the group row                                              | the group row         | a group the caller has left but still holds bookings in; a mirror's source group |
-| `groupUsers`     | the full live member list                                  | the caller's own row  | nothing                                                                          |
-| `groupMirrors`   | every live mirror whose target is this group               | nothing               | nothing                                                                          |
-| `userYearQuotas` | every member's rows                                        | the caller's own rows | nothing, not even from a group the caller has left                               |
-| `bankHolidays`   | the group's holiday country                                | the group's country   | nothing                                                                          |
-| `vacations`      | every member's rows, plus the rows mirrored into the group | the caller's own rows | the caller's own rows in any group at all, a group they have left included       |
+| Table            | Seen in full (`all`)                                                                       | Self-scoped (`self`)  | Beyond those groups                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------- |
+| `organizations`  | the organization of the group, id and name only                                            | the same              | the organization of any other group the pull names                               |
+| `users`          | every member and the manager                                                               | the caller            | every actor on a visible booking                                                 |
+| `groups`         | the group row                                                                              | the group row         | a group the caller has left but still holds bookings in; a mirror's source group |
+| `groupUsers`     | the full live member list                                                                  | the caller's own row  | nothing                                                                          |
+| `groupMirrors`   | every live mirror whose target is this group                                               | nothing               | nothing                                                                          |
+| `userYearQuotas` | every row of the group, a removed member's included                                        | the caller's own rows | nothing, not even from a group the caller has left                               |
+| `bankHolidays`   | the group's holiday country                                                                | the group's country   | nothing                                                                          |
+| `vacations`      | every row of the group, a removed member's included, plus the rows mirrored into the group | the caller's own rows | the caller's own rows in any group at all, a group they have left included       |
 
 Detail the table cannot hold:
 
@@ -64,6 +64,11 @@ Detail the table cannot hold:
   names somebody the client cannot resolve. Everybody else in the set arrives only when their own
   row changed in the window, which is how an approver renamed long after a booking settled reaches
   the client.
+- **A removed member** stays visible in a group seen in full. Their bookings and quota rows are
+  still rows of that group, and the web keeps showing them: the group calendar filters only mirrored
+  bookings by membership, and the report gives a leaver a summary line. So removal drops their
+  `groupUsers` row and nothing else, and their `users` row keeps arriving as the actor on their
+  bookings. Mirrors are the exception, below.
 - **`organizations`** is read off the groups, not off itself: a row ships only while the group row
   that named it falls in the pull's window, so a rename on its own reaches the client on the next
   pull that carries one of that organization's groups. It is also the one table paged by `id`
