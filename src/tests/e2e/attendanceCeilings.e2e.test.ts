@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
 import type { Express } from "express";
@@ -20,6 +20,7 @@ import {
   type balanceMode,
 } from "../../db/schema/organization-attendance-settings-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
+import { notifications } from "../../db/schema/notification-schema.js";
 import { createTestUser, cleanupTestData } from "./helpers/testSetup.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
@@ -28,6 +29,16 @@ import { upsertAttendanceSettings } from "../../services/organization/attendance
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { sweepAttendanceCeilings } from "../../services/attendance/attendanceCeilings.js";
+
+const { sentEmails } = vi.hoisted(() => ({ sentEmails: [] as unknown[] }));
+vi.mock("../../services/email/index.js", () => ({
+  emailSender: {
+    sendTemplated: (email: unknown) => {
+      sentEmails.push(email);
+      return Promise.resolve();
+    },
+  },
+}));
 
 const MINUTE_MS = 60 * 1000;
 const ZONE = "Europe/Prague";
@@ -60,6 +71,9 @@ describe("attendance ceilings", () => {
   let memberCookie: string;
   let memberEmploymentId: string;
 
+  let colleagueCookie: string;
+  let colleagueEmploymentId: string;
+
   const clockIn = () => request(app).post("/api/attendance/clock-in").set("Cookie", memberCookie);
   const current = () => request(app).get("/api/attendance/current").set("Cookie", memberCookie);
 
@@ -70,17 +84,22 @@ describe("attendance ceilings", () => {
    * out. The business date follows the instant, except where a test needs the
    * session on today's date so the widget's day list picks it up.
    */
-  const openSession = async (minutes: number, businessDate?: string) => {
+  const openSession = async (
+    minutes: number,
+    onDate?: string,
+    employmentId = memberEmploymentId
+  ) => {
     const id = uuidv4();
     const startedAt = minutesAgo(minutes);
+    const businessDate = onDate ?? businessDateInZone(startedAt, ZONE);
     await db.insert(attendanceSessions).values({
       id,
-      employmentId: memberEmploymentId,
-      businessDate: businessDate ?? businessDateInZone(startedAt, ZONE),
+      employmentId,
+      businessDate,
       startedAt,
       timezone: ZONE,
     });
-    return { id, startedAt };
+    return { id, startedAt, businessDate };
   };
 
   /** An open break inside a session, started `minutes` ago. */
@@ -117,12 +136,33 @@ describe("attendance ceilings", () => {
       .where(eq(attendanceEvents.sessionId, sessionId))
       .orderBy(asc(attendanceEvents.createdAt));
 
+  const noticesFor = async (cookie: string) =>
+    (await request(app).get("/api/notifications").set("Cookie", cookie).expect(200)).body as {
+      type: string;
+      title: string;
+      body: string;
+      href: string | null;
+    }[];
+
+  const employmentOf = async (userId: string) => {
+    const [employment] = await db
+      .select({ id: employments.id })
+      .from(employments)
+      .where(and(eq(employments.organizationId, ORGANIZATION_ID), eq(employments.userId, userId)));
+    return employment!.id;
+  };
+
   beforeAll(async () => {
     await cleanupTestData();
     app = createServer();
 
     owner = await createTestUser("ceiling-owner@test.com", "Olivia Owner", "password123");
     member = await createTestUser("ceiling-member@test.com", "Milo Member", "password123");
+    const colleague = await createTestUser(
+      "ceiling-colleague@test.com",
+      "Cora Colleague",
+      "password123"
+    );
 
     ORGANIZATION_ID = (await ensureOrganizationForUser(owner.id)).id;
 
@@ -143,17 +183,23 @@ describe("attendance ceilings", () => {
       approverAccess: false,
       controlledUser: true,
     });
+    await db.insert(groupUsers).values({
+      id: uuidv4(),
+      userId: colleague.id,
+      groupId,
+      viewAccess: true,
+      adminAccess: false,
+      approverAccess: false,
+      controlledUser: true,
+    });
     await syncEmployment(ORGANIZATION_ID, member.id);
+    await syncEmployment(ORGANIZATION_ID, colleague.id);
 
-    const [employment] = await db
-      .select({ id: employments.id })
-      .from(employments)
-      .where(
-        and(eq(employments.organizationId, ORGANIZATION_ID), eq(employments.userId, member.id))
-      );
-    memberEmploymentId = employment!.id;
+    memberEmploymentId = await employmentOf(member.id);
+    colleagueEmploymentId = await employmentOf(colleague.id);
 
     memberCookie = await authCookieFor(member.id);
+    colleagueCookie = await authCookieFor(colleague.id);
 
     await upsertSubscription(ORGANIZATION_ID, {
       plan: subscriptionPlan.Pro,
@@ -168,6 +214,8 @@ describe("attendance ceilings", () => {
 
   beforeEach(async () => {
     await db.delete(attendanceSessions);
+    await db.delete(notifications);
+    sentEmails.length = 0;
     await db.update(employments).set({ endedAt: null });
     await settings();
   });
@@ -478,6 +526,67 @@ describe("attendance ceilings", () => {
       await sweepAttendanceCeilings();
 
       expect((await current().expect(200)).body.autoClosedSession).toBeNull();
+    });
+  });
+
+  describe("the notice to the session's owner", () => {
+    it("tells the owner once, in-app only, linking to the session's day", async () => {
+      const overdue = await openSession(SESSION_CEILING + 120);
+
+      await sweepAttendanceCeilings();
+
+      const notices = await noticesFor(memberCookie);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({
+        type: "session_auto_closed",
+        title: "Clock closed automatically",
+        href: `/my-attendance/?date=${overdue.businessDate}`,
+      });
+      expect(notices[0]!.body).toMatch(
+        /^Your clock on .+ was closed automatically at \d{2}:\d{2}, check and correct it\.$/
+      );
+      expect(sentEmails).toEqual([]);
+    });
+
+    it("covers a break auto-closed inside the session with the same notice", async () => {
+      const session = await openSession(SESSION_CEILING + 100);
+      await openBreak(session.id, BREAK_CEILING + 60);
+
+      expect(await sweepAttendanceCeilings()).toMatchObject({ sessions: 1, breaks: 1 });
+
+      expect(await noticesFor(memberCookie)).toHaveLength(1);
+    });
+
+    it("sends nothing for a break closed under a session still running", async () => {
+      const session = await openSession(BREAK_CEILING + 60);
+      await openBreak(session.id, BREAK_CEILING + 30);
+
+      expect(await sweepAttendanceCeilings()).toMatchObject({ sessions: 0, breaks: 1 });
+
+      expect(await noticesFor(memberCookie)).toEqual([]);
+    });
+
+    it("tells each owner about their own session when several close in one sweep", async () => {
+      const mine = await openSession(SESSION_CEILING + 60);
+      const theirs = await openSession(SESSION_CEILING + 60 * 24, undefined, colleagueEmploymentId);
+
+      expect(await sweepAttendanceCeilings()).toMatchObject({ sessions: 2 });
+
+      const memberNotices = await noticesFor(memberCookie);
+      const colleagueNotices = await noticesFor(colleagueCookie);
+      expect(memberNotices).toHaveLength(1);
+      expect(memberNotices[0]!.href).toBe(`/my-attendance/?date=${mine.businessDate}`);
+      expect(colleagueNotices).toHaveLength(1);
+      expect(colleagueNotices[0]!.href).toBe(`/my-attendance/?date=${theirs.businessDate}`);
+    });
+
+    it("sends nothing more on a second pass", async () => {
+      await openSession(SESSION_CEILING + 60);
+
+      await sweepAttendanceCeilings();
+      await sweepAttendanceCeilings();
+
+      expect(await noticesFor(memberCookie)).toHaveLength(1);
     });
   });
 

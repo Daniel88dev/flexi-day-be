@@ -7,6 +7,7 @@
 import {
   businessDateInZone,
   formatDateToISOString,
+  formatDay,
   formatStartAndEndDate,
   isWorkingDay,
   monthEnd,
@@ -34,6 +35,12 @@ describe("formatDateToISOString", () => {
   test("handles leap day correctly (2020-02-29)", () => {
     const d = new Date(Date.UTC(2020, 1, 29));
     expect(formatDateToISOString(d)).toBe("2020-02-29");
+  });
+});
+
+describe("formatDay", () => {
+  it("reads a calendar day as day, short month and year", () => {
+    expect(formatDay("2026-08-12")).toBe("12 Aug 2026");
   });
 });
 

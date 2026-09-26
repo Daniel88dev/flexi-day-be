@@ -141,6 +141,13 @@
       "when": 1790442822438,
       "tag": "0019_dashboard_calendar_view",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790455154166,
+      "tag": "0020_session_auto_closed_notice",
+      "breakpoints": true
     }
   ]
 }

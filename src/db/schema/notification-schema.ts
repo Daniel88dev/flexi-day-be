@@ -8,6 +8,7 @@ export enum notificationType {
   CalendarConflict = "calendar_conflict",
   BalanceLow = "balance_low",
   Comment = "comment",
+  SessionAutoClosed = "session_auto_closed",
 }
 
 export const notificationTypeEnum = pgEnum("notification_type", enumToPgEnum(notificationType));

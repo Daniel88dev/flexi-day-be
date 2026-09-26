@@ -1,0 +1,1 @@
+ALTER TYPE "public"."notification_type" ADD VALUE 'session_auto_closed';
