@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import {
   setupTestEnvironment,
@@ -22,6 +22,8 @@ import { authCookieFor } from "./helpers/authHelper.js";
 import { db } from "../../db/db.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
+import { groups } from "../../db/schema/group-schema.js";
+import { computePublicHolidays } from "../../services/bankHoliday/holidayDataset.js";
 import { session } from "../../db/schema/auth-schema.js";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
@@ -46,6 +48,29 @@ const FRI = isoDay(shift(MONDAY_OF_WEEK, 4));
 const SAT = isoDay(shift(MONDAY_OF_WEEK, 5));
 const SUN = isoDay(shift(MONDAY_OF_WEEK, 6));
 const NEXT_MON = isoDay(shift(MONDAY_OF_WEEK, 7));
+
+// A Czech public holiday falling Tuesday to Thursday whose neighbours are both bookable
+// working days: inside the booking window and holidays of their own.
+const midweekCzechHoliday = () => {
+  const year = new Date().getUTCFullYear();
+  const dates = new Set(
+    [...computePublicHolidays("CZ", year), ...computePublicHolidays("CZ", year + 1)].map(
+      (row) => row.date
+    )
+  );
+  const holiday = [...dates]
+    .sort()
+    .map((date) => new Date(`${date}T00:00:00Z`))
+    .find(
+      (date) =>
+        [2, 3, 4].includes(date.getUTCDay()) &&
+        isoDay(shift(date, -1)) >= `${year.toString()}-01-01` &&
+        !dates.has(isoDay(shift(date, -1))) &&
+        !dates.has(isoDay(shift(date, 1)))
+    );
+  if (!holiday) throw new Error("No midweek Czech holiday in range");
+  return holiday;
+};
 
 describe("Vacation API E2E Tests", () => {
   let context: TestContext;
@@ -300,6 +325,49 @@ describe("Vacation API E2E Tests", () => {
   // Uniqueness only covers live rows, so a day whose only rows are rejected or
   // cancelled is free again. Before that was a partial index, the leftover row
   // kept the day booked forever.
+  describe("POST /api/vacation/create-vacation — public holidays", () => {
+    const HOLIDAY = midweekCzechHoliday();
+    const DAY_BEFORE = isoDay(shift(HOLIDAY, -1));
+    const DAY_AFTER = isoDay(shift(HOLIDAY, 1));
+
+    beforeEach(async () => {
+      await db.update(groups).set({ holidayCountry: "CZ" }).where(eq(groups.id, context.group.id));
+      await addToGroup(context.user1.id, context.group.id);
+    });
+
+    afterEach(async () => {
+      await db.update(groups).set({ holidayCountry: null }).where(eq(groups.id, context.group.id));
+    });
+
+    it("skips a holiday of the group's country inside a range", async () => {
+      const cookie = await authCookieFor(context.user1.id);
+
+      const response = await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: DAY_BEFORE, to: DAY_AFTER })
+        .expect(201);
+
+      const days = (response.body as { requestedDay: string }[])
+        .map((row) => row.requestedDay)
+        .sort();
+      expect(days).toEqual([DAY_BEFORE, DAY_AFTER]);
+    });
+
+    it("returns 422 for a single day that is a holiday", async () => {
+      const cookie = await authCookieFor(context.user1.id);
+
+      const response = await request(context.app)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: isoDay(HOLIDAY), to: isoDay(HOLIDAY) })
+        .expect(422);
+
+      expect(JSON.stringify(response.body)).toContain("Selected day is a public holiday");
+      expect(await db.select().from(vacation)).toHaveLength(0);
+    });
+  });
+
   describe("POST /api/vacation/create-vacation — re-requesting a day", () => {
     const bookDay = (cookie: string, day = WED) =>
       request(context.app)

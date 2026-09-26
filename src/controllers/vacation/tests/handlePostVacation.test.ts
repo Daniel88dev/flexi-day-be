@@ -24,6 +24,7 @@ const {
   mockAssertGroupAdmin,
   mockGetUserById,
   mockAssertSickDayRequestable,
+  mockEnsureBankHolidays,
 } = vi.hoisted(() => ({
   mockPostVacationBulk: vi.fn(),
   mockGetGroupUser: vi.fn(),
@@ -38,6 +39,11 @@ const {
   mockAssertGroupAdmin: vi.fn(),
   mockGetUserById: vi.fn(),
   mockAssertSickDayRequestable: vi.fn(),
+  mockEnsureBankHolidays: vi.fn(),
+}));
+
+vi.mock("../../../services/bankHoliday/bankHolidayServices.js", () => ({
+  ensureBankHolidays: mockEnsureBankHolidays,
 }));
 
 vi.mock("../../../services/groupUser/groupAccess.js", () => ({
@@ -115,6 +121,7 @@ describe("handlePostVacation", () => {
 
     vi.clearAllMocks();
     mockAssertRequestWithinQuota.mockResolvedValue(undefined);
+    mockEnsureBankHolidays.mockResolvedValue([]);
 
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
 
@@ -130,6 +137,7 @@ describe("handlePostVacation", () => {
     mockGetGroup.mockResolvedValue({
       id: "group_123",
       workingDays: [0, 1, 2, 3, 4, 5, 6],
+      holidayCountry: null,
     });
   });
 
@@ -336,7 +344,11 @@ describe("handlePostVacation", () => {
       groupId: "group_123",
       controlledUser: true,
     });
-    mockGetGroup.mockResolvedValue({ id: "group_123", workingDays: [1, 2, 3, 4, 5] });
+    mockGetGroup.mockResolvedValue({
+      id: "group_123",
+      workingDays: [1, 2, 3, 4, 5],
+      holidayCountry: null,
+    });
     mockPostVacationBulk.mockImplementation(async (records: unknown[]) => records);
 
     await handlePostVacation(req, res);
@@ -360,7 +372,11 @@ describe("handlePostVacation", () => {
       groupId: "group_123",
       controlledUser: true,
     });
-    mockGetGroup.mockResolvedValue({ id: "group_123", workingDays: [1, 2, 3, 4, 5] });
+    mockGetGroup.mockResolvedValue({
+      id: "group_123",
+      workingDays: [1, 2, 3, 4, 5],
+      holidayCountry: null,
+    });
 
     await expect(handlePostVacation(req, res)).rejects.toThrow("Selected day is not a working day");
     expect(mockPostVacationBulk).not.toHaveBeenCalled();
@@ -380,12 +396,155 @@ describe("handlePostVacation", () => {
       groupId: "group_123",
       controlledUser: true,
     });
-    mockGetGroup.mockResolvedValue({ id: "group_123", workingDays: [1, 2, 3, 4, 5] });
+    mockGetGroup.mockResolvedValue({
+      id: "group_123",
+      workingDays: [1, 2, 3, 4, 5],
+      holidayCountry: null,
+    });
 
     await expect(handlePostVacation(req, res)).rejects.toThrow(
       "Selected range contains no working days"
     );
     expect(mockPostVacationBulk).not.toHaveBeenCalled();
+  });
+
+  describe("public holidays", () => {
+    const holiday = (date: string) => ({
+      id: date,
+      date,
+      name: "Holiday",
+      country: "CZ",
+      region: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    beforeEach(() => {
+      mockGetGroupUser.mockResolvedValue({
+        userId: "user_123",
+        groupId: "group_123",
+        controlledUser: true,
+      });
+      mockGetGroup.mockResolvedValue({
+        id: "group_123",
+        workingDays: [1, 2, 3, 4, 5],
+        holidayCountry: "CZ",
+      });
+      mockPostVacationBulk.mockImplementation(async (records: unknown[]) => records);
+    });
+
+    it("skips a holiday of the group's country inside the range", async () => {
+      // Tue 2024-05-07 .. Thu 2024-05-09, with Wed 2024-05-08 a holiday.
+      const { req, res } = makeReqRes({
+        body: baseBody({
+          from: new Date("2024-05-07T00:00:00Z"),
+          to: new Date("2024-05-09T00:00:00Z"),
+        }),
+      });
+      mockEnsureBankHolidays.mockResolvedValue([holiday("2024-05-08")]);
+
+      await handlePostVacation(req, res);
+
+      expect(mockEnsureBankHolidays).toHaveBeenCalledWith(2024, "CZ", undefined, undefined);
+      const [records] = mockPostVacationBulk.mock.calls[0] as [{ requestedDay: string }[], unknown];
+      expect(records.map((r) => r.requestedDay)).toEqual(["2024-05-07", "2024-05-09"]);
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it("counts only the booked days against the allowance", async () => {
+      const { req, res } = makeReqRes({
+        body: baseBody({
+          from: new Date("2024-05-07T00:00:00Z"),
+          to: new Date("2024-05-09T00:00:00Z"),
+        }),
+      });
+      mockEnsureBankHolidays.mockResolvedValue([holiday("2024-05-08")]);
+
+      await handlePostVacation(req, res);
+
+      const [quotaRows] = mockAssertRequestWithinQuota.mock.calls[0] as [
+        { requestedDay: string }[],
+        unknown,
+      ];
+      expect(quotaRows.map((r) => r.requestedDay)).toEqual(["2024-05-07", "2024-05-09"]);
+    });
+
+    it("looks up every year a range crosses", async () => {
+      // Mon 2024-12-30 .. Thu 2025-01-02, with 2025-01-01 a holiday.
+      const { req, res } = makeReqRes({
+        body: baseBody({
+          from: new Date("2024-12-30T00:00:00Z"),
+          to: new Date("2025-01-02T00:00:00Z"),
+        }),
+      });
+      mockEnsureBankHolidays.mockImplementation(async (year: number) =>
+        year === 2025 ? [holiday("2025-01-01")] : []
+      );
+
+      await handlePostVacation(req, res);
+
+      const [records] = mockPostVacationBulk.mock.calls[0] as [{ requestedDay: string }[], unknown];
+      expect(records.map((r) => r.requestedDay)).toEqual([
+        "2024-12-30",
+        "2024-12-31",
+        "2025-01-02",
+      ]);
+    });
+
+    it("rejects a single day that is a holiday", async () => {
+      const { req, res } = makeReqRes({
+        body: baseBody({
+          from: new Date("2024-05-08T00:00:00Z"),
+          to: new Date("2024-05-08T00:00:00Z"),
+        }),
+      });
+      mockEnsureBankHolidays.mockResolvedValue([holiday("2024-05-08")]);
+
+      await expect(handlePostVacation(req, res)).rejects.toThrow(
+        "Selected day is a public holiday"
+      );
+      expect(mockPostVacationBulk).not.toHaveBeenCalled();
+    });
+
+    it("rejects a range made only of holidays and non-working days", async () => {
+      // Wed 2024-05-08 (holiday) .. Sun 2024-05-12, with Thu and Fri holidays too.
+      const { req, res } = makeReqRes({
+        body: baseBody({
+          from: new Date("2024-05-08T00:00:00Z"),
+          to: new Date("2024-05-12T00:00:00Z"),
+        }),
+      });
+      mockEnsureBankHolidays.mockResolvedValue([
+        holiday("2024-05-08"),
+        holiday("2024-05-09"),
+        holiday("2024-05-10"),
+      ]);
+
+      await expect(handlePostVacation(req, res)).rejects.toThrow(
+        "Selected range contains no working days"
+      );
+      expect(mockPostVacationBulk).not.toHaveBeenCalled();
+    });
+
+    it("books every working day when the group names no holiday country", async () => {
+      mockGetGroup.mockResolvedValue({
+        id: "group_123",
+        workingDays: [1, 2, 3, 4, 5],
+        holidayCountry: null,
+      });
+      const { req, res } = makeReqRes({
+        body: baseBody({
+          from: new Date("2024-05-07T00:00:00Z"),
+          to: new Date("2024-05-09T00:00:00Z"),
+        }),
+      });
+
+      await handlePostVacation(req, res);
+
+      expect(mockEnsureBankHolidays).not.toHaveBeenCalled();
+      const [records] = mockPostVacationBulk.mock.calls[0] as [{ requestedDay: string }[], unknown];
+      expect(records).toHaveLength(3);
+    });
   });
 
   describe("booking on behalf of a member", () => {
