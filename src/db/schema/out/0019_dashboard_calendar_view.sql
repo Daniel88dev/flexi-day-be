@@ -1,0 +1,2 @@
+CREATE TYPE "public"."dashboard_calendar_view" AS ENUM('LANES', 'STRIPES');--> statement-breakpoint
+ALTER TABLE "user_settings" ADD COLUMN "dashboard_calendar_view" "dashboard_calendar_view" DEFAULT 'LANES' NOT NULL;

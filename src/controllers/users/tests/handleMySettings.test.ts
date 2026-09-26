@@ -23,12 +23,13 @@ import { handleGetMySettings } from "../handleGetMySettings.js";
 import { handlePutMySettings } from "../handlePutMySettings.js";
 import { getAuth } from "../../../middleware/authSession.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
-import { dashboardScope } from "../../../db/schema/user-settings-schema.js";
+import { dashboardCalendarView, dashboardScope } from "../../../db/schema/user-settings-schema.js";
 
 const DEFAULTS = {
   emailNotifications: true,
   dashboardScope: dashboardScope.Mine,
   dashboardGroupId: null,
+  dashboardCalendarView: dashboardCalendarView.Lanes,
   attendanceLocationNoticeDismissed: false,
 };
 
@@ -46,7 +47,7 @@ describe("user settings endpoints", () => {
     mockGetUserSettings.mockResolvedValue(undefined);
   });
 
-  it("defaults email notifications to on when the user has no stored settings", async () => {
+  it("defaults email notifications to on and the calendar to lanes when the user has no stored settings", async () => {
     const { req, res } = makeReqRes();
 
     await handleGetMySettings(req, res);
@@ -60,6 +61,7 @@ describe("user settings endpoints", () => {
       emailNotifications: false,
       dashboardScope: dashboardScope.Group,
       dashboardGroupId: "group_1",
+      dashboardCalendarView: dashboardCalendarView.Stripes,
       attendanceLocationNoticeDismissed: true,
     });
 
@@ -69,6 +71,7 @@ describe("user settings endpoints", () => {
       emailNotifications: false,
       dashboardScope: dashboardScope.Group,
       dashboardGroupId: "group_1",
+      dashboardCalendarView: dashboardCalendarView.Stripes,
       attendanceLocationNoticeDismissed: true,
     });
   });
@@ -84,6 +87,63 @@ describe("user settings endpoints", () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ ...DEFAULTS, emailNotifications: false });
+  });
+
+  it("saves the calendar view without touching the dashboard scope", async () => {
+    const { req, res } = makeReqRes({
+      body: { dashboardCalendarView: dashboardCalendarView.Stripes },
+    });
+    mockUpsertUserSettings.mockResolvedValue({
+      ...DEFAULTS,
+      dashboardCalendarView: dashboardCalendarView.Stripes,
+    });
+
+    await handlePutMySettings(req, res);
+
+    expect(mockUpsertUserSettings).toHaveBeenCalledWith(mockAuthData.userId, {
+      dashboardCalendarView: dashboardCalendarView.Stripes,
+    });
+    expect(res.json).toHaveBeenCalledWith({
+      ...DEFAULTS,
+      dashboardCalendarView: dashboardCalendarView.Stripes,
+    });
+  });
+
+  it.each([
+    { dashboardCalendarView: dashboardCalendarView.Stripes },
+    { emailNotifications: false },
+  ])(
+    "saves %j for a user whose stored group is no longer viewable, without re-checking the group",
+    async (body) => {
+      const { req, res } = makeReqRes({ body });
+      mockGetUserSettings.mockResolvedValue({
+        ...DEFAULTS,
+        dashboardScope: dashboardScope.Group,
+        dashboardGroupId: "group_1",
+      });
+      mockGetScopeEntries.mockResolvedValue([scopeEntry("self")]);
+      mockUpsertUserSettings.mockResolvedValue({
+        ...DEFAULTS,
+        dashboardScope: dashboardScope.Group,
+        dashboardGroupId: "group_1",
+        ...body,
+      });
+
+      await handlePutMySettings(req, res);
+
+      expect(mockGetScopeEntries).not.toHaveBeenCalled();
+      expect(mockUpsertUserSettings).toHaveBeenCalledWith(mockAuthData.userId, body);
+      expect(res.status).toHaveBeenCalledWith(200);
+    }
+  );
+
+  it("still re-checks a stored group when the scope is switched to it", async () => {
+    const { req, res } = makeReqRes({ body: { dashboardScope: dashboardScope.Group } });
+    mockGetUserSettings.mockResolvedValue({ ...DEFAULTS, dashboardGroupId: "group_1" });
+    mockGetScopeEntries.mockResolvedValue([scopeEntry("self")]);
+
+    await expect(handlePutMySettings(req, res)).rejects.toMatchObject({ code: 403 });
+    expect(mockUpsertUserSettings).not.toHaveBeenCalled();
   });
 
   it("only sends the supplied fields to the store, leaving the rest untouched", async () => {
