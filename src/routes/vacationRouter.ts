@@ -268,7 +268,8 @@ export const vacationRouter = (): Router => {
    *       user already has a vacation for (unique on user + day). Days outside
    *       the group's `workingDays` and public holidays of the group's
    *       `holidayCountry` are skipped too, so they never count against an
-   *       allowance. A request with no day left to book is rejected with 422.
+   *       allowance. A range in which every day is a non-working day or a
+   *       public holiday is rejected with 422; days already booked are a 409.
    *
    *       Admins may book on behalf of a member by passing `userId`: the caller
    *       must hold group admin access, manage the group, or administer the
