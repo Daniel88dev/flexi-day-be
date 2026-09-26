@@ -588,7 +588,8 @@ describe("handlePostVacation", () => {
       expect(mockNotifyVacationRequested).toHaveBeenCalledWith(
         expect.any(Array),
         { id: "member_456", name: "Member Name" },
-        null
+        null,
+        mockAuthData.userId
       );
       expect(mockNotifyVacationBookedOnBehalf).toHaveBeenCalledWith(expect.any(Array), {
         id: mockAuthData.userId,

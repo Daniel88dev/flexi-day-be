@@ -194,6 +194,9 @@ type GroupApprovalUsersType = {
   tempApprovalUserId: string | null;
   tempApprovalUserName: string | null;
   tempApprovalUserEmail: string | null;
+  managerUserId: string | null;
+  managerUserName: string | null;
+  managerUserEmail: string | null;
 };
 
 /**
@@ -241,6 +244,7 @@ export const getApprovalUsers = async (
 ): Promise<GroupApprovalUsersType | undefined> => {
   const mainApprovalUser = alias(user, "mainApprovalUser");
   const tempApprovalUser = alias(user, "tempApprovalUser");
+  const managerUser = alias(user, "managerUser");
 
   const [row] = await (tx ?? db)
     .select({
@@ -252,11 +256,15 @@ export const getApprovalUsers = async (
       tempApprovalUserId: tempApprovalUser.id,
       tempApprovalUserName: tempApprovalUser.name,
       tempApprovalUserEmail: tempApprovalUser.email,
+      managerUserId: managerUser.id,
+      managerUserName: managerUser.name,
+      managerUserEmail: managerUser.email,
     })
     .from(groups)
     .where(and(eq(groups.id, groupId), isNull(groups.deletedAt)))
     .leftJoin(mainApprovalUser, eq(groups.mainApprovalUser, mainApprovalUser.id))
-    .leftJoin(tempApprovalUser, eq(groups.tempApprovalUser, tempApprovalUser.id));
+    .leftJoin(tempApprovalUser, eq(groups.tempApprovalUser, tempApprovalUser.id))
+    .leftJoin(managerUser, eq(groups.managerUserId, managerUser.id));
 
   return row ?? undefined;
 };
