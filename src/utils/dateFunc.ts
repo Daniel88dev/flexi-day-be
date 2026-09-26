@@ -33,9 +33,6 @@ export const isWorkingDay = (iso: DateString, workingDays: number[]): boolean =>
   return workingDays.includes(date.getUTCDay());
 };
 
-export const filterWorkingDays = (days: DateString[], workingDays: number[]): DateString[] =>
-  days.filter((day) => isWorkingDay(day, workingDays));
-
 /**
  * Counts the number of business days (Mon-Fri) between two inclusive ISO
  * dates. Returns 0 when end < start.

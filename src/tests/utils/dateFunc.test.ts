@@ -6,7 +6,6 @@
 
 import {
   businessDateInZone,
-  filterWorkingDays,
   formatDateToISOString,
   formatStartAndEndDate,
   isWorkingDay,
@@ -90,25 +89,6 @@ describe("isWorkingDay", () => {
 
   test("returns false for an invalid date string", () => {
     expect(isWorkingDay("not-a-date", monToFri)).toBe(false);
-  });
-});
-
-describe("filterWorkingDays", () => {
-  const monToFri = [1, 2, 3, 4, 5];
-
-  test("keeps only working days and preserves order", () => {
-    // Fri 2024-07-26 .. Mon 2024-07-29 → drops Sat/Sun.
-    const days = ["2024-07-26", "2024-07-27", "2024-07-28", "2024-07-29"];
-    expect(filterWorkingDays(days, monToFri)).toEqual(["2024-07-26", "2024-07-29"]);
-  });
-
-  test("returns an empty array when no day is a working day", () => {
-    expect(filterWorkingDays(["2024-07-27", "2024-07-28"], monToFri)).toEqual([]);
-  });
-
-  test("returns all days when every day is a working day", () => {
-    const days = ["2024-07-24", "2024-07-25"];
-    expect(filterWorkingDays(days, monToFri)).toEqual(days);
   });
 });
 

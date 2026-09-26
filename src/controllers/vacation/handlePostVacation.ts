@@ -3,11 +3,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import type { ValidatedPostVacationType } from "../../services/vacation/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import {
-  expandDateRangeInclusive,
-  filterWorkingDays,
-  formatDateToISOString,
-} from "../../utils/dateFunc.js";
+import { expandDateRangeInclusive, formatDateToISOString } from "../../utils/dateFunc.js";
 import { db } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import {
@@ -24,6 +20,8 @@ import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
 import { getUserById } from "../../services/user/userServices.js";
 import { postVacationBulk } from "../../services/vacation/vacationServices.js";
 import { createVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
+import { getNonWorkingDays } from "../../services/workingDays/workingDaysServices.js";
+import { NonWorkingDayCause } from "../../services/workingDays/types.js";
 
 // One full year. Caps the per-day fan-out so a pathological `from`/`to` pair
 // can't allocate tens of thousands of rows or stall a bulk insert.
@@ -130,18 +128,28 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     });
   }
 
-  // Non-working days inside a range are dropped; an all-non-working request is rejected below.
-  const workingDays = filterWorkingDays(days, group.workingDays);
+  // Non-working days and the public holidays of the group's country are dropped from a range;
+  // a request left with nothing to book is rejected below.
+  const nonWorking = await getNonWorkingDays(group, fromIso, toIso);
+  const workingDays = days.filter((day) => !nonWorking.has(day));
 
   if (workingDays.length === 0) {
+    const singleDayIsHoliday =
+      days.length === 1 && nonWorking.get(fromIso)?.cause === NonWorkingDayCause.Holiday;
     throw new AppError({
-      message:
-        days.length === 1
+      message: singleDayIsHoliday
+        ? "Selected day is a public holiday"
+        : days.length === 1
           ? "Selected day is not a working day"
           : "Selected range contains no working days",
       logging: true,
       code: 422,
-      context: { from: fromIso, to: toIso, groupWorkingDays: group.workingDays },
+      context: {
+        from: fromIso,
+        to: toIso,
+        groupWorkingDays: group.workingDays,
+        holidayCountry: group.holidayCountry,
+      },
     });
   }
 

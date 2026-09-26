@@ -265,7 +265,10 @@ export const vacationRouter = (): Router => {
    *     description: |
    *       Creates a vacation request that spans an inclusive `from`/`to` range. The
    *       server fans the range out into one row per day, skipping any days the
-   *       user already has a vacation for (unique on user + day).
+   *       user already has a vacation for (unique on user + day). Days outside
+   *       the group's `workingDays` and public holidays of the group's
+   *       `holidayCountry` are skipped too, so they never count against an
+   *       allowance. A request with no day left to book is rejected with 422.
    *
    *       Admins may book on behalf of a member by passing `userId`: the caller
    *       must hold group admin access, manage the group, or administer the
@@ -309,9 +312,10 @@ export const vacationRouter = (): Router => {
    *         description: No access for related group
    *       '422':
    *         description: |
-   *           Validation error, the allowance would be exceeded, or `SICK_DAY`
-   *           was requested without an active Sick day benefit
-   *           (`errors[].context.reason: "SICK_DAY_BENEFIT_DISABLED"`).
+   *           Validation error, the range holds no working day (every day is a
+   *           non-working day or a public holiday), the allowance would be
+   *           exceeded, or `SICK_DAY` was requested without an active Sick day
+   *           benefit (`errors[].context.reason: "SICK_DAY_BENEFIT_DISABLED"`).
    *       '500':
    *         description: Failed to create vacation
    * components:
