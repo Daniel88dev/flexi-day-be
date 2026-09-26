@@ -90,7 +90,10 @@ describe("invite redemption email binding", () => {
     // domain: the address matches the invite, but nobody vouched for it.
     await expect(
       redeem(code, { userId: invited.id, userEmail: invited.email, emailVerified: false })
-    ).rejects.toMatchObject({ code: 403 });
+    ).rejects.toMatchObject({
+      code: 403,
+      errors: [{ publicContext: { code: "EMAIL_NOT_VERIFIED_USE_INVITE_LINK" } }],
+    });
 
     const members = await db.select().from(groupUsers).where(eq(groupUsers.groupId, groupId));
     expect(members).toHaveLength(0);

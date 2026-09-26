@@ -244,6 +244,10 @@ describe("CREDENTIAL_GUESSING_PATHS", () => {
     expect(CREDENTIAL_GUESSING_PATHS).toContain("/api/auth/two-factor");
   });
 
+  it("keeps the invite link endpoints behind the same budget as sign-in", () => {
+    expect(CREDENTIAL_GUESSING_PATHS).toContain("/api/auth/invite");
+  });
+
   it("keeps the original credential endpoints covered", () => {
     expect(CREDENTIAL_GUESSING_PATHS).toEqual(
       expect.arrayContaining([

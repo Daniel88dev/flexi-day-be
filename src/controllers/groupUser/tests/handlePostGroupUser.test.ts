@@ -39,7 +39,8 @@ vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
 }));
 
-vi.mock("../../../services/groupUser/inviteLinkServices.js", () => ({
+vi.mock("../../../services/groupUser/inviteLinkServices.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../services/groupUser/inviteLinkServices.js")>()),
   getInviteLinkByCode: mockGetInviteLinkByCode,
   useInviteLink: mockUseInviteLink,
 }));

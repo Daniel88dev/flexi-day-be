@@ -24,7 +24,7 @@ export const groupUsersRouter = (): Router => {
    *       - Group members
    *     summary: Revoke an outstanding invite
    *     description: |
-   *       Stops the invite's code from working. Requires admin access on the
+   *       Stops the invite's code and link from working. Requires admin access on the
    *       group the invite belongs to. Already used or already revoked invites
    *       return 409.
    *     security:
@@ -59,7 +59,9 @@ export const groupUsersRouter = (): Router => {
    *       Redeems a single-use invite code for the signed-in user. Codes are
    *       accepted case-insensitively and with or without their dashes. An
    *       invite issued to an email address may only be redeemed by an account
-   *       with that address.
+   *       with that address, and only once that address is verified; an
+   *       unverified invitee joins through the invite link instead
+   *       (`POST /api/auth/invite/join`).
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -80,12 +82,17 @@ export const groupUsersRouter = (): Router => {
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: >-
-   *           The caller's email address is unverified, or the invite was
-   *           issued for a different address. Distinguish by `message`.
+   *           The caller's email address is unverified, and
+   *           `errors[0].context.code` is `EMAIL_NOT_VERIFIED_USE_INVITE_LINK`;
+   *           or the invite was issued for a different address, with no
+   *           `context`.
    *       '404':
    *         description: Invalid, revoked or expired code
    *       '409':
-   *         description: Already a member, or the code was just redeemed
+   *         description: >-
+   *           Already a member (`errors[0].context` carries
+   *           `{ code: "ALREADY_MEMBER", groupId }`), or the code was just
+   *           redeemed.
    */
   app.post("/code/:validationCode", tryCatch(handlePostGroupUser));
 
@@ -120,10 +127,12 @@ export const groupUsersRouter = (): Router => {
    *       - Group members
    *     summary: Invite someone to the group by email
    *     description: |
-   *       Issues a single-use code, emails it to the address with instructions,
-   *       and returns it so the admin can also share it directly. Any earlier
-   *       open invite for the same address is revoked. `emailDelivered` is
-   *       false when the code was created but the mail could not be sent.
+   *       Issues a single-use invite and emails it to the address: its code,
+   *       and its invite link, whose secret is sent only there and stored only
+   *       as a hash. The code comes back so the admin can also share it
+   *       directly; the link never does. Any earlier open invite for the same
+   *       address is revoked, code and link alike. `emailDelivered` is false
+   *       when the invite was created but the mail could not be sent.
    *     security:
    *       - bearerAuth: []
    *     parameters:

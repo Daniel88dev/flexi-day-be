@@ -9,10 +9,42 @@ Better Auth with email/password, mandatory email verification, password reset by
 (`password-reset` SES template), Have I Been Pwned checks, a Drizzle session adapter, and its own
 rate limit (50 requests / 10s) on top of `credentialsLimiter`.
 
-- **Social sign-in never confers a verified address.** `buildSocialProviders` maps every Google and
-  Microsoft profile to `emailVerified: false`, because both providers' claims attest the _domain_,
-  not the mailbox, and a verified address unlocks invite redemption in `handlePostGroupUser`.
-  Verification comes from our own confirmation email, exactly as for a password sign-up.
+- **Social sign-in never confers a verified address; an invite link does.** `buildSocialProviders`
+  maps every Google and Microsoft profile to `emailVerified: false`, because both providers' claims
+  attest the _domain_, not the mailbox. Two things verify an address: our own confirmation email,
+  and following an invite link. Redeeming an email-bound **invite code** requires a verified address
+  (`handlePostGroupUser`), because the admin knows the code and knowing it proves nothing about the
+  mailbox. The **invite link** is different: its secret is generated at issue time, stored only as a
+  SHA-256 hash, returned by no API and sent only to the invited address, so holding it is the proof.
+  `handlePostInviteJoin` therefore requires a session whose address matches the invite, and marks
+  that address verified in the same transaction as the join. `handlePostInviteSignUp` is the same
+  proof for an invitee with no account: it creates the password account through better-auth's own
+  sign-up, then verifies it in the join's transaction. The confirmation email is switched off by
+  `withoutConfirmationEmail` (`src/utils/confirmationEmail.ts`), an async-context flag only that
+  handler sets, never a header or body field a client could send. Without this split, an
+  identity-provider administrator who asserts a colleague's address could join that colleague's
+  team with the code, and a legitimately invited Google or Microsoft user could not join at all.
+
+  Verifying by link deliberately has **no settle step**: unlike a password reset, it leaves the
+  account's provider links in place. On an unverified account every provider link was attached by
+  whoever holds its session, either by the sign-in that created it or from inside that session,
+  since implicit linking is off (next entry). That same session has now also presented the
+  mailbox's secret, so both proofs point at one person and there is nobody to evict. A reset is
+  different because it proves the mailbox _without_ a session, so the links it finds may belong to
+  someone else. Sign-up with invite needs no such step at all: the account is new, so it has no
+  provider links.
+
+  better-auth cannot join our transaction, so sign-up with invite checks everything that can refuse
+  first: an open invite for this address, no existing account, a free seat. The account is created
+  unverified, and a join that still fails deletes it. The residual race is a concurrent redemption
+  landing between those checks and the join; the join then refuses and the account goes. If that
+  delete fails as well, what is left is an ordinary unconfirmed sign-up, never a verified account
+  outside the group. Refusing an existing address with a real error, where normal sign-up answers a
+  made-up success, reveals nothing, because every invite check runs first and only the secret's
+  holder gets that far. `src/tests/e2e/inviteLink.e2e.test.ts` covers the link,
+  `src/tests/e2e/inviteSignUp.e2e.test.ts` sign-up with invite and
+  `src/tests/e2e/inviteRedemption.e2e.test.ts` the code.
+
 - **Account linking is explicit only.** `accountLinking` trusts both providers — needed at all,
   since the false `emailVerified` above would otherwise block every link — and then sets
   `disableImplicitLinking`, so a provider can only be attached from a signed-in session via
@@ -116,16 +148,16 @@ read-only) to debug customer reports.
 Several limiters, not one, because a single per-IP bucket both throttles real users and
 under-protects the endpoints that matter:
 
-| Limiter                | Mounted on                                           | Key                            | Budget                   |
-| ---------------------- | ---------------------------------------------------- | ------------------------------ | ------------------------ |
-| `floodLimiter`         | everything                                           | IP                             | 5000 / 5 min             |
-| `apiFailureLimiter`    | `/api` (before session validation)                   | IP                             | 100 **failures** / 5 min |
-| `apiLimiter`           | `/api` (after the auth and dev routes)               | validated user id, IP fallback | 1000 / 5 min             |
-| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor      | IP                             | 20 **failures** / 15 min |
-| `passwordResetLimiter` | `request-password-reset`                             | IP                             | 5 / 15 min               |
-| `otpSendLimiter`       | `two-factor/send-otp`                                | challenge cookie, IP fallback  | 10 / 15 min              |
-| `calendarFeedLimiter`  | `/calendars/:token.ics`                              | feed token                     | 120 / hour               |
-| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed` | IP                             | 5000 / 5 min             |
+| Limiter                | Mounted on                                                    | Key                            | Budget                   |
+| ---------------------- | ------------------------------------------------------------- | ------------------------------ | ------------------------ |
+| `floodLimiter`         | everything                                                    | IP                             | 5000 / 5 min             |
+| `apiFailureLimiter`    | `/api` (before session validation)                            | IP                             | 100 **failures** / 5 min |
+| `apiLimiter`           | `/api` (after the auth and dev routes)                        | validated user id, IP fallback | 1000 / 5 min             |
+| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link | IP                             | 20 **failures** / 15 min |
+| `passwordResetLimiter` | `request-password-reset`                                      | IP                             | 5 / 15 min               |
+| `otpSendLimiter`       | `two-factor/send-otp`                                         | challenge cookie, IP fallback  | 10 / 15 min              |
+| `calendarFeedLimiter`  | `/calendars/:token.ics`                                       | feed token                     | 120 / hour               |
+| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed`          | IP                             | 5000 / 5 min             |
 
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs
@@ -145,6 +177,11 @@ under-protects the endpoints that matter:
   exist), and `credentialsLimiter` counts only failures — so nothing would ever increment. What
   needs bounding there is the email it sends, not guessing. It keys on the IP, so it bounds volume
   per source and **not** per address; a distributed flood at one address is still open.
+- **The invite link endpoints ride `credentialsLimiter`.** `/api/auth/invite/*` is our own router,
+  not better-auth's, so better-auth's 50/10s rule never sees it. The failures-only budget is what
+  bounds a prober: an unknown secret answers 404, and a real one is 256 bits. Sign-up with invite
+  calls better-auth's sign-up and sign-in through `auth.api`, which skips better-auth's limiter too,
+  so this budget is the only one on it.
 - **`credentialsLimiter` sets `skipSuccessfulRequests`.** Only failures count, so a whole team
   signing in at 9am is unaffected while a password guesser burns the budget.
 - **`calendarFeedLimiter` keys on the token.** Google polls every subscribed feed from a handful of

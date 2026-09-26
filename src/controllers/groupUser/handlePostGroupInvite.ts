@@ -6,6 +6,7 @@ import type { ValidatedPostGroupInviteType } from "../../services/groupUser/type
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { generateInviteCode } from "../../utils/inviteCode.js";
+import { generateInviteLinkSecret, hashInviteLinkSecret } from "../../utils/inviteLinkSecret.js";
 import { db } from "../../db/db.js";
 import { inviteExpiryFrom, notifyGroupInvited } from "../../services/groupUser/inviteNotifier.js";
 import { assertCanAddMember, assertGroupWritable } from "../../services/billing/guards.js";
@@ -19,9 +20,10 @@ import {
 import { getUserByEmail } from "../../services/user/userServices.js";
 
 /**
- * Issues a single-use invite code for a group and emails it to the invited
- * address. The code is bound to that address — see `handlePostGroupUser` — so
- * a forwarded email does not let a third party into the group.
+ * Issues a single-use invite for a group and emails it to the invited address.
+ * The invite is bound to that address — see `handlePostGroupUser` — so a
+ * forwarded email does not let a third party into the group. The code comes
+ * back to the admin; the link secret goes into the email and nowhere else.
  */
 export const handlePostGroupInvite = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -61,6 +63,8 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
     }
   }
 
+  const linkSecret = generateInviteLinkSecret();
+
   const invite = await db.transaction(async (tx) => {
     // Lock the organization FIRST, before touching invite_link. The redemption
     // path (handlePostGroupUser) locks organization → invite_link; taking them
@@ -85,6 +89,7 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
         groupId,
         code: generateInviteCode(),
         email: data.email,
+        linkSecretHash: hashInviteLinkSecret(linkSecret),
         invitedByUserId: auth.userId,
         expiresAt: inviteExpiryFrom(new Date()),
       },
@@ -110,6 +115,7 @@ export const handlePostGroupInvite = async (req: Request, res: Response) => {
     groupName: group.groupName,
     inviterName: auth.userName,
     code: invite.code,
+    linkSecret,
   });
 
   return res.status(201).json({ invite, emailDelivered });

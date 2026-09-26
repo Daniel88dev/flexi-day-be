@@ -1,21 +1,52 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { and, count, desc, eq, gt, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type { InviteLink, InviteLinkInsertType, InviteLinkListItem } from "./types.js";
+import type {
+  InviteLink,
+  InviteLinkInsertType,
+  InviteLinkListItem,
+  InvitePreview,
+  InviteStatus,
+} from "./types.js";
 import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
+import { groups } from "../../db/schema/group-schema.js";
+
+// Every column but `linkSecretHash`, which no reader outside the link lookup
+// has any use for and no response may carry.
+const inviteColumns = {
+  id: inviteLink.id,
+  groupId: inviteLink.groupId,
+  code: inviteLink.code,
+  email: inviteLink.email,
+  invitedByUserId: inviteLink.invitedByUserId,
+  usedAt: inviteLink.usedAt,
+  revokedAt: inviteLink.revokedAt,
+  expiresAt: inviteLink.expiresAt,
+  createdAt: inviteLink.createdAt,
+  updatedAt: inviteLink.updatedAt,
+};
+
+export const inviteStatus = (
+  invite: Pick<InviteLink, "usedAt" | "revokedAt" | "expiresAt">
+): InviteStatus => {
+  if (invite.usedAt) return "used";
+  if (invite.revokedAt) return "revoked";
+  if (invite.expiresAt <= new Date()) return "expired";
+  return "open";
+};
 
 export const createInviteLink = async (
   data: InviteLinkInsertType,
   tx?: DbTransaction
 ): Promise<InviteLink | undefined> => {
-  const [row] = await (tx ?? db).insert(inviteLink).values(data).returning();
+  const [row] = await (tx ?? db).insert(inviteLink).values(data).returning(inviteColumns);
 
   return row;
 };
 
 export const getInviteLinksForGroup = async (groupId: string): Promise<InviteLink[]> => {
-  return db.select().from(inviteLink).where(eq(inviteLink.groupId, groupId));
+  return db.select(inviteColumns).from(inviteLink).where(eq(inviteLink.groupId, groupId));
 };
 
 /**
@@ -27,19 +58,7 @@ export const getOpenInvitesForGroup = async (groupId: string): Promise<InviteLin
   const inviter = alias(user, "invitedByUser");
 
   const rows = await db
-    .select({
-      id: inviteLink.id,
-      groupId: inviteLink.groupId,
-      code: inviteLink.code,
-      email: inviteLink.email,
-      invitedByUserId: inviteLink.invitedByUserId,
-      usedAt: inviteLink.usedAt,
-      revokedAt: inviteLink.revokedAt,
-      expiresAt: inviteLink.expiresAt,
-      createdAt: inviteLink.createdAt,
-      updatedAt: inviteLink.updatedAt,
-      invitedByName: inviter.name,
-    })
+    .select({ ...inviteColumns, invitedByName: inviter.name })
     .from(inviteLink)
     .leftJoin(inviter, eq(inviteLink.invitedByUserId, inviter.id))
     .where(
@@ -56,7 +75,11 @@ export const getOpenInvitesForGroup = async (groupId: string): Promise<InviteLin
 };
 
 export const getInviteLinkById = async (inviteId: string): Promise<InviteLink | undefined> => {
-  const [row] = await db.select().from(inviteLink).where(eq(inviteLink.id, inviteId)).limit(1);
+  const [row] = await db
+    .select(inviteColumns)
+    .from(inviteLink)
+    .where(eq(inviteLink.id, inviteId))
+    .limit(1);
 
   return row;
 };
@@ -91,7 +114,7 @@ export const revokeInviteLink = async (inviteId: string): Promise<InviteLink | u
     .where(
       and(eq(inviteLink.id, inviteId), isNull(inviteLink.usedAt), isNull(inviteLink.revokedAt))
     )
-    .returning();
+    .returning(inviteColumns);
 
   return row;
 };
@@ -101,12 +124,60 @@ export const getInviteLinkByCode = async (
   tx?: DbTransaction
 ): Promise<InviteLink | undefined> => {
   const [row] = await (tx ?? db)
-    .select()
+    .select(inviteColumns)
     .from(inviteLink)
     .where(eq(inviteLink.code, code))
     .limit(1);
 
   return row;
+};
+
+export const getInviteLinkBySecretHash = async (
+  linkSecretHash: string,
+  tx?: DbTransaction
+): Promise<InviteLink | undefined> => {
+  const [row] = await (tx ?? db)
+    .select(inviteColumns)
+    .from(inviteLink)
+    .where(eq(inviteLink.linkSecretHash, linkSecretHash))
+    .limit(1);
+
+  return row;
+};
+
+export const getInvitePreviewBySecretHash = async (
+  linkSecretHash: string
+): Promise<InvitePreview | undefined> => {
+  const inviter = alias(user, "invitedByUser");
+
+  const [row] = await db
+    .select({
+      groupId: inviteLink.groupId,
+      groupName: groups.groupName,
+      inviterName: inviter.name,
+      invitedEmail: inviteLink.email,
+      usedAt: inviteLink.usedAt,
+      revokedAt: inviteLink.revokedAt,
+      expiresAt: inviteLink.expiresAt,
+    })
+    .from(inviteLink)
+    .innerJoin(groups, eq(inviteLink.groupId, groups.id))
+    .leftJoin(inviter, eq(inviteLink.invitedByUserId, inviter.id))
+    .where(eq(inviteLink.linkSecretHash, linkSecretHash))
+    .limit(1);
+
+  // Only email-bound invites carry a link, so a null address cannot occur;
+  // the check keeps the type honest.
+  if (!row?.invitedEmail) return undefined;
+
+  return {
+    groupId: row.groupId,
+    groupName: row.groupName,
+    inviterName: row.inviterName,
+    invitedEmail: row.invitedEmail,
+    status: inviteStatus(row),
+    expiresAt: row.expiresAt,
+  };
 };
 
 /**
@@ -122,7 +193,7 @@ export const useInviteLink = async (
     .update(inviteLink)
     .set({ usedAt: new Date() })
     .where(and(eq(inviteLink.code, code), isNull(inviteLink.usedAt), isNull(inviteLink.revokedAt)))
-    .returning();
+    .returning(inviteColumns);
 
   return row;
 };

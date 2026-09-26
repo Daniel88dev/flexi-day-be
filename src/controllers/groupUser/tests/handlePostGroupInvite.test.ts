@@ -112,6 +112,7 @@ describe("handlePostGroupInvite", () => {
       groupName: "Platform",
       inviterName: mockAuthData.userName,
       code: created.code,
+      linkSecret: expect.any(String) as unknown,
     });
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ emailDelivered: true }));
   });

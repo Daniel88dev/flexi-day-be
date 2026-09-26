@@ -15,6 +15,13 @@ export const buildSignUpUrl = (): string => new URL("/sign-up/", config.email.ap
 /** Where an account that already exists pastes the code. */
 export const buildJoinUrl = (): string => new URL("/groups/", config.email.appUrl).toString();
 
+/** The invite link. Carries the secret, so it goes into the invite email only. */
+export const buildInviteUrl = (linkSecret: string): string => {
+  const url = new URL("/join/", config.email.appUrl);
+  url.searchParams.set("token", linkSecret);
+  return url.toString();
+};
+
 /**
  * Sends the invite email. Returns whether it went out rather than throwing:
  * the invite row is already committed and the code is handed back to the
@@ -26,6 +33,7 @@ export const notifyGroupInvited = async (input: {
   groupName: string;
   inviterName: string;
   code: string;
+  linkSecret: string;
 }): Promise<boolean> => {
   try {
     await emailSender.sendTemplated({
@@ -37,6 +45,7 @@ export const notifyGroupInvited = async (input: {
         inviteCode: input.code,
         signUpUrl: buildSignUpUrl(),
         joinUrl: buildJoinUrl(),
+        inviteUrl: buildInviteUrl(input.linkSecret),
         invitedEmail: input.email,
         expiresIn: INVITE_EXPIRES_IN,
       },
