@@ -257,7 +257,8 @@ export const handlePostVacation = async (req: Request, res: Response) => {
       await notifyVacationRequested(
         created,
         { id: member.id, name: member.name },
-        data.note ?? null
+        data.note ?? null,
+        actor.id
       );
     }
     // No fallback to the admin: a mail naming the wrong requester is worse

@@ -49,6 +49,7 @@ import {
   notifyVacationCancelled,
   notifyVacationDecision,
   notifyVacationRequested,
+  notifyVacationsCancelled,
 } from "../vacationNotifier.js";
 import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 
@@ -63,7 +64,7 @@ const row = (overrides: Partial<Record<string, unknown>> = {}) => ({
   ...overrides,
 });
 
-const group = {
+const mainApproverGroup = {
   groupId,
   groupName: "Platform",
   mainApprovalUserId: "approver-1",
@@ -73,6 +74,26 @@ const group = {
   tempApprovalUserName: null,
   tempApprovalUserEmail: null,
 };
+
+// The main approver doubles as the manager, so the base fixture has one recipient.
+const group = {
+  ...mainApproverGroup,
+  managerUserId: mainApproverGroup.mainApprovalUserId,
+  managerUserName: mainApproverGroup.mainApprovalUserName,
+  managerUserEmail: mainApproverGroup.mainApprovalUserEmail,
+};
+
+const manager = {
+  managerUserId: "manager-1",
+  managerUserName: "Mia Novak",
+  managerUserEmail: "mia@example.com",
+};
+
+const sentTo = () =>
+  mockSendTemplated.mock.calls.map(([email]) => (email as { to: string }).to).sort();
+
+const notifiedUserIds = () =>
+  mockCreateNotification.mock.calls.map(([n]) => (n as { userId: string }).userId).sort();
 
 const employee = { id: "employee-1", name: "Dana Holt", email: "dana@example.com" };
 
@@ -156,6 +177,44 @@ describe("vacation notifier", () => {
 
     const recipients = mockSendTemplated.mock.calls.map(([email]) => (email as { to: string }).to);
     expect(recipients.sort()).toEqual(["ada@example.com", "grace@example.com"]);
+  });
+
+  it("reaches the group's manager even when they hold no approver role", async () => {
+    mockGetApprovalUsers.mockResolvedValue({ ...group, ...manager });
+
+    await notifyVacationRequested([row()], { id: "employee-1", name: "Dana Holt" }, null);
+
+    expect(sentTo()).toEqual(["ada@example.com", "mia@example.com"]);
+    expect(notifiedUserIds()).toEqual(["approver-1", "manager-1"]);
+  });
+
+  it("asks the manager of a group with no main or temp approver", async () => {
+    mockGetApprovalUsers.mockResolvedValue({
+      ...group,
+      mainApprovalUserId: null,
+      mainApprovalUserName: null,
+      mainApprovalUserEmail: null,
+      ...manager,
+    });
+
+    await notifyVacationRequested([row()], { id: "employee-1", name: "Dana Holt" }, null);
+
+    expect(sentTo()).toEqual(["mia@example.com"]);
+    expect(notifiedUserIds()).toEqual(["manager-1"]);
+  });
+
+  it("never tells the person who booked on the member's behalf about their own filing", async () => {
+    mockGetApprovalUsers.mockResolvedValue({ ...group, ...manager });
+
+    await notifyVacationRequested(
+      [row()],
+      { id: "employee-1", name: "Dana Holt" },
+      null,
+      "manager-1"
+    );
+
+    expect(sentTo()).toEqual(["ada@example.com"]);
+    expect(notifiedUserIds()).toEqual(["approver-1"]);
   });
 
   it("substitutes a dash for an empty note so SES never renders a blank", async () => {
@@ -245,5 +304,31 @@ describe("vacation notifier", () => {
         data: expect.objectContaining({ recipientName: "Ada Lovelace", reason: "Plans changed" }),
       })
     );
+  });
+
+  it("tells every approver, the manager included, when an employee bulk-cancels approved days", async () => {
+    mockGetUsersByIds.mockResolvedValue([employee]);
+    mockGetApprovalUsers.mockResolvedValue({ ...group, ...manager });
+    mockGetGroupUsers.mockResolvedValue([
+      {
+        userId: "approver-2",
+        approverAccess: true,
+        email: "grace@example.com",
+        user: { name: "Grace Hopper" },
+      },
+    ]);
+    const approvedAt = new Date("2026-08-01T00:00:00Z");
+
+    await notifyVacationsCancelled(
+      [
+        { ...row(), approvedAt },
+        { ...row({ id: "vac-2", requestedDay: "2026-08-13" }), approvedAt },
+      ],
+      { id: "employee-1", name: "Dana Holt" },
+      null
+    );
+
+    expect(sentTo()).toEqual(["ada@example.com", "grace@example.com", "mia@example.com"]);
+    expect(notifiedUserIds()).toEqual(["approver-1", "approver-2", "manager-1"]);
   });
 });
