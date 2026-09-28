@@ -115,6 +115,36 @@ haveIBeenPwned check (an outbound call that fails offline) and fires a verificat
 The frontend half is gated too: `/dev-sign-in/` only builds when `NEXT_PUBLIC_DEV_TOOLS=1`, and
 `pageExtensions` in `next.config.ts` keeps `page.dev.tsx` files out of production output entirely.
 
+### Dev sign-in ticket (`src/services/dev/signInTicketServices.ts`, `src/utils/devSignInTicket.ts`)
+
+The phone app signs in locally with a ticket instead of a password. `POST /api/dev/sign-in-ticket`
+mints one for any user in the local database: a random 256-bit string, bound to that user,
+redeemable once, dead after 60 seconds, held only in the backend's memory. A restart voids every
+outstanding ticket, which costs nothing at that lifetime. The phone redeems it at
+`POST /api/auth/dev/redeem-sign-in-ticket`.
+
+- **Mint keeps all five gates.** It is an ordinary `/api/dev` route behind `devGuard`.
+- **Redeem keeps gates 1–3 and skips 4–5.** It is a better-auth plugin endpoint, added to
+  `betterAuth({ plugins })` only when `config.dev` is defined, so it does not exist in production or
+  against a remote database. It does not sit behind `devGuard`, and that is deliberate: the
+  simulator's app reaches the backend over the Mac's LAN address, which is not a loopback peer, and
+  the app must never hold `DEV_TOOLS_TOKEN`, because a Release build made from the same checkout
+  would ship it. The ticket is the credential in their place: single-use and short-lived, so one
+  seen on the LAN is worth nothing once redeemed or a minute old. Do not put redeem behind
+  `devGuard`, which breaks it on the phone, and do not relax its `config.dev` gate or lengthen the
+  ticket's life, which turns it into a sign-in anyone on the network can replay.
+- **Redeem refuses a request without a valid `x-client-device-id`** (400 `DEVICE_ID_REQUIRED`), so
+  every session it opens is device-bound. An unknown, spent or expired ticket gets one answer, 401
+  `INVALID_SIGN_IN_TICKET`, that does not say which.
+- **Redeem creates the session through better-auth** (`internalAdapter.createSession` and
+  `setSessionCookie`), never by inserting a row. That is what lets the path-agnostic hooks from
+  "A native session only answers to the device that opened it" and "One phone holds one session"
+  stamp the device id and ten-year expiry, evict the phone's previous session and re-issue the
+  cookie without `Max-Age`. It carries no binding logic of its own, so a change to those hooks
+  shows up here. `src/tests/e2e/devSignInTicket.e2e.test.ts` pins the result against a native
+  password sign-in, and `src/tests/config.devSignInTicket.test.ts` pins the endpoint's absence
+  with dev tools off.
+
 ## Platform-support surface (`src/routes/supportRouter.ts`, `src/middleware/supportGuard.ts`, `src/services/support/`)
 
 `/api/support/*` lets the platform owner inspect any organization or group (cross-tenant,

@@ -17,6 +17,7 @@ import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
 import { buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
 import { confirmationEmailSuppressed } from "./confirmationEmail.js";
+import { devSignInTicketPlugin } from "./devSignInTicket.js";
 import {
   deviceMismatchError,
   isDeviceMismatch,
@@ -345,6 +346,8 @@ export const auth = betterAuth({
     }),
     // After `twoFactor`, so it sees the redirect body that plugin returns.
     nativeSessionEvictionPlugin,
+    // `config.dev` cannot exist in production — config startup throws.
+    ...(config.dev ? [devSignInTicketPlugin] : []),
     // Last on purpose (better-auth infers session fields added by earlier
     // plugins into this callback). Rides on the session fetch the client
     // already makes, so the frontend learns whether to render the support UI
