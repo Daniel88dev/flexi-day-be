@@ -61,6 +61,7 @@ const row = (overrides: Partial<Record<string, unknown>> = {}) => ({
   groupId,
   requestedDay: "2026-08-12",
   vacationType: CalendarRecordType.Vacation,
+  halfDay: false,
   ...overrides,
 });
 
@@ -111,6 +112,11 @@ describe("date formatting", () => {
   it("pluralises the day count", () => {
     expect(formatDayCount(1)).toBe("1 day");
     expect(formatDayCount(3)).toBe("3 days");
+  });
+
+  it("renders fractional day counts in the plural", () => {
+    expect(formatDayCount(0.5)).toBe("0.5 days");
+    expect(formatDayCount(1.5)).toBe("1.5 days");
   });
 });
 
@@ -247,6 +253,35 @@ describe("vacation notifier", () => {
     expect(mockSendTemplated).toHaveBeenCalledTimes(2);
     expect(mockSendTemplated).toHaveBeenCalledWith(
       expect.objectContaining({ to: "dana@example.com", template: "vacation-approved" })
+    );
+  });
+
+  it("counts a half-day booking as half a day in the approval email", async () => {
+    mockGetUsersByIds.mockResolvedValue([employee]);
+
+    await notifyVacationDecision([row({ halfDay: true })], "approved", {
+      id: "approver-1",
+      name: "Ada Lovelace",
+    });
+
+    expect(mockSendTemplated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: "vacation-approved",
+        data: expect.objectContaining({ dayCount: "0.5 days" }),
+      })
+    );
+  });
+
+  it("shows a half-day booking as half a day in the in-app notification", async () => {
+    mockGetUsersByIds.mockResolvedValue([employee]);
+
+    await notifyVacationDecision([row({ halfDay: true })], "approved", {
+      id: "approver-1",
+      name: "Ada Lovelace",
+    });
+
+    expect(mockCreateNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "Vacation · 12 Aug 2026 (0.5 days)" })
     );
   });
 
