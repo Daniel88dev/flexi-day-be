@@ -21,7 +21,7 @@ import { ensureOrganizationForUser } from "../../services/organization/organizat
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { businessDateInZone } from "../../utils/dateFunc.js";
+import { businessDateInZone, isWorkingDay, previousDay } from "../../utils/dateFunc.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ZONE = "Europe/Prague";
@@ -33,6 +33,15 @@ const daysBefore = (date: string, days: number) => {
   const day = new Date(`${date}T00:00:00Z`);
   day.setUTCDate(day.getUTCDate() - days);
   return day.toISOString().slice(0, 10);
+};
+
+const WORKING_DAYS = [1, 2, 3, 4, 5];
+
+// Weekend sessions get flagged as a clock-in on a day off, so past dates must be working days.
+const workingDayBefore = (date: string, days: number) => {
+  let day = daysBefore(date, days);
+  while (!isWorkingDay(day, WORKING_DAYS)) day = previousDay(day);
+  return day;
 };
 
 /**
@@ -68,13 +77,13 @@ describe("attendance sessions changed after the day", () => {
       .set("Cookie", cookieOf(person))
       .send(body);
 
-  /** A clocked session from 07:00 to 15:00 UTC, some whole days back. */
+  /** A clocked session from 07:00 to 15:00 UTC, today or on a weekday some whole days back. */
   const clocked = async (
     person: Person,
     daysBack: number,
     options: { open?: boolean; entered?: boolean } = {}
   ) => {
-    const businessDate = daysBefore(today(), daysBack);
+    const businessDate = daysBack === 0 ? today() : workingDayBefore(today(), daysBack);
     const id = uuidv4();
     await db.insert(attendanceSessions).values({
       id,
@@ -229,7 +238,7 @@ describe("attendance sessions changed after the day", () => {
       balanceMode: ATTENDANCE_SETTINGS_DEFAULTS.balanceMode as balanceMode,
       attendanceEnabled: true,
       timezone: ZONE,
-      workingDays: [1, 2, 3, 4, 5],
+      workingDays: WORKING_DAYS,
       holidayCountry: null,
       selfServiceEnabled: true,
       selfServiceDays: 7,
@@ -327,7 +336,7 @@ describe("attendance sessions changed after the day", () => {
     });
 
     it("is the employee entering a past day, which carries the entered marker instead", async () => {
-      const businessDate = daysBefore(today(), 2);
+      const businessDate = workingDayBefore(today(), 2);
 
       const { body } = await request(app)
         .post("/api/attendance/sessions")
