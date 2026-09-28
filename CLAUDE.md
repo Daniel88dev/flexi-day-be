@@ -129,6 +129,8 @@ response — throw `AppError` rather than writing error responses by hand.
 **API docs are generated, so `@openapi` JSDoc on every route stays complete and current** — request
 and response schemas, auth requirements, error codes, parameter validation. Follow
 `src/routes/vacationRouter.ts`.
+The one exception is the local dev surface (`/api/dev/*` and `/api/auth/dev/*`), which is
+deliberately absent from the API docs.
 
 ## Testing
 

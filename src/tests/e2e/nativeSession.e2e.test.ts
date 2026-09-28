@@ -12,27 +12,21 @@ import { SESSION_DEVICE_MISMATCH } from "../../utils/nativeSession.js";
 import { createServer } from "../../server.js";
 import { WEB_TEST_PASSWORD, authCookieFor, createWebUser } from "./helpers/authHelper.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import {
+  cookieHeaderOf,
+  lastCookie,
+  nativeHeaders,
+  sessionsOf,
+  yearsUntil,
+} from "./helpers/nativeSessionHelpers.js";
 
 vi.mock("../../services/email/index.js", () => ({
   emailSender: { sendTemplated: () => Promise.resolve() },
 }));
 
-const APP_SCHEME = "flexiday://";
 const BROWSER_ORIGIN = "http://localhost:3000";
 const SESSION_COOKIE = "better-auth.session_token";
 const TRUST_DEVICE_COOKIE = "better-auth.trust_device";
-
-const setCookiesOf = (res: request.Response): string[] =>
-  (res.headers["set-cookie"] as unknown as string[] | undefined) ?? [];
-
-/**
- * The last `Set-Cookie` entry for a name wins in every client, which is what
- * lets the after hook re-issue the session cookie the endpoint already wrote.
- */
-const lastCookie = (res: request.Response, name: string): string | undefined =>
-  setCookiesOf(res)
-    .filter((entry) => entry.startsWith(`${name}=`))
-    .at(-1);
 
 /**
  * No `Max-Age` and no `Expires` is what a phone's session cookie looks like: a
@@ -44,22 +38,6 @@ const expectNoCookieExpiry = (res: request.Response, name: string) => {
   expect(cookie).not.toMatch(/max-age=/i);
   expect(cookie).not.toMatch(/expires=/i);
 };
-
-/** A `Cookie` header from a response, last value per name, as a client sends. */
-const cookieHeaderOf = (res: request.Response): string => {
-  const jar = new Map<string, string>();
-  for (const entry of setCookiesOf(res)) {
-    const [pair] = entry.split(";");
-    const name = pair?.split("=")[0];
-    if (name && pair) jar.set(name, pair);
-  }
-  return [...jar.values()].join("; ");
-};
-
-const sessionsOf = (userId: string) =>
-  db.select().from(sessionTable).where(eq(sessionTable.userId, userId));
-
-const yearsUntil = (date: Date) => (date.getTime() - Date.now()) / (365 * 24 * 60 * 60 * 1000);
 
 /**
  * A ten-year session stamped with the phone that opened it, and a web sign-in
@@ -84,12 +62,6 @@ describe("native session", () => {
     for (const [name, value] of Object.entries(headers)) req.set(name, value);
     return req.send({ email, password: WEB_TEST_PASSWORD });
   };
-
-  const nativeHeaders = (device: string, extra: Record<string, string> = {}) => ({
-    "expo-origin": APP_SCHEME,
-    "x-client-device-id": device,
-    ...extra,
-  });
 
   it("stamps the phone on the row and hands it a cookie that never expires", async () => {
     const device = deviceId();

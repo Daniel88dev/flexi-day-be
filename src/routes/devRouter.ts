@@ -9,6 +9,10 @@ import {
   validatePostDevSession,
 } from "../controllers/dev/handlePostDevSession.js";
 import {
+  handlePostDevSignInTicket,
+  validatePostDevSignInTicket,
+} from "../controllers/dev/handlePostDevSignInTicket.js";
+import {
   handlePostDevScenario,
   validatePostDevScenario,
 } from "../controllers/dev/handlePostDevScenario.js";
@@ -37,6 +41,12 @@ export const devRouter = (): Router => {
     "/session",
     bodyValidationMiddleware(validatePostDevSession),
     tryCatch(handlePostDevSession)
+  );
+
+  app.post(
+    "/sign-in-ticket",
+    bodyValidationMiddleware(validatePostDevSignInTicket),
+    tryCatch(handlePostDevSignInTicket)
   );
 
   app.post(
