@@ -53,8 +53,11 @@ export const buildRequestUrl = (vacationId: string): string => {
 
 type VacationRow = Pick<
   VacationType,
-  "id" | "userId" | "groupId" | "requestedDay" | "vacationType"
+  "id" | "userId" | "groupId" | "requestedDay" | "vacationType" | "halfDay"
 >;
+
+// Must match dayWeight() in SQL and quotaGuard's weightOf.
+const weightOf = (row: VacationRow): number => (row.halfDay ? 0.5 : 1);
 
 type RowSummary = {
   rows: VacationRow[];
@@ -70,7 +73,7 @@ const summarize = (rows: VacationRow[]): RowSummary | null => {
   return {
     rows,
     dateRange: formatDateRange(rows.map((r) => r.requestedDay)),
-    dayCount: formatDayCount(rows.length),
+    dayCount: formatDayCount(rows.reduce((sum, row) => sum + weightOf(row), 0)),
     calendarRecordTypeLabel: CALENDAR_RECORD_TYPE_LABELS[first.vacationType],
     requestUrl: buildRequestUrl(first.id),
   };
