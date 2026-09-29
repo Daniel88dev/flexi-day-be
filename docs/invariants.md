@@ -78,6 +78,11 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   the hook goes: "on every later request" covers the mismatch, both unusable headers, the protected
   `/api` route, the untouched web and dev-login sessions and the warning, and "ignores a sign-in
   body that tries to stamp the fields itself" covers the body.
+  "changing the password" fails if a password change from the phone stops leaving one new row
+  stamped with its device id and ten-year expiry behind a re-issued cookie, or one from the web
+  stops ending the phone's session: `/change-password` with `revokeOtherSessions` deletes every row
+  and creates one new session, and only the create hook and the path-agnostic `hooks.after` keep
+  the phone signed in.
   `src/tests/utils/nativeSession.test.ts` ("the device check") pins the predicate on its own.
 - **One phone holds one session.** A completed native sign-in deletes every other session row
   carrying the same `device_id` — keyed on the device and not the user, so signing in as someone
