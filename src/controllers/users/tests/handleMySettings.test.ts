@@ -1,3 +1,4 @@
+import type { Response } from "express";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { mockGetUserSettings, mockUpsertUserSettings, mockGetScopeEntries } = vi.hoisted(() => ({
@@ -33,6 +34,35 @@ const DEFAULTS = {
   attendanceLocationNoticeDismissed: false,
 };
 
+const STORED_ROW = {
+  userId: mockAuthData.userId,
+  emailNotifications: false,
+  dashboardScope: dashboardScope.Group,
+  dashboardGroupId: "group_1",
+  dashboardCalendarView: dashboardCalendarView.Stripes,
+  attendanceLocationNoticeDismissed: true,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+};
+
+const STORED_PREFERENCES = {
+  emailNotifications: false,
+  dashboardScope: dashboardScope.Group,
+  dashboardGroupId: "group_1",
+  dashboardCalendarView: dashboardCalendarView.Stripes,
+  attendanceLocationNoticeDismissed: true,
+};
+
+const PREFERENCE_KEYS = [
+  "emailNotifications",
+  "dashboardScope",
+  "dashboardGroupId",
+  "dashboardCalendarView",
+  "attendanceLocationNoticeDismissed",
+];
+
+const sentBody = (res: Response): unknown => vi.mocked(res.json).mock.calls[0]?.[0];
+
 const scopeEntry = (access: "all" | "self") => ({
   groupId: "group_1",
   groupName: "Team A",
@@ -45,6 +75,26 @@ describe("user settings endpoints", () => {
     vi.clearAllMocks();
     (getAuth as ReturnType<typeof vi.fn>).mockReturnValue(mockAuthData);
     mockGetUserSettings.mockResolvedValue(undefined);
+  });
+
+  it("answers GET with only the five preferences, never the row's user id or timestamps", async () => {
+    const { req, res } = makeReqRes();
+    mockGetUserSettings.mockResolvedValue(STORED_ROW);
+
+    await handleGetMySettings(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(STORED_PREFERENCES);
+    expect(Object.keys(sentBody(res) as object)).toEqual(PREFERENCE_KEYS);
+  });
+
+  it("answers PUT with only the five preferences, never the row's user id or timestamps", async () => {
+    const { req, res } = makeReqRes({ body: { emailNotifications: false } });
+    mockUpsertUserSettings.mockResolvedValue(STORED_ROW);
+
+    await handlePutMySettings(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(STORED_PREFERENCES);
+    expect(Object.keys(sentBody(res) as object)).toEqual(PREFERENCE_KEYS);
   });
 
   it("defaults email notifications to on and the calendar to lanes when the user has no stored settings", async () => {
