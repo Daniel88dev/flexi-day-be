@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi, type MockInstance } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
@@ -209,8 +209,7 @@ describe("native session", () => {
     expect(await sessionsOf(id)).toHaveLength(1);
 
     // The endpoint as a plain function, which skips the hooks — the same seam
-    // the settle suite uses, and the only way past the haveIBeenPwned check's
-    // outbound call. `revokeSessionsOnPasswordReset` lives in the handler.
+    // the settle suite uses. `revokeSessionsOnPasswordReset` lives in the handler.
     const token = `tok-${uuidv4()}`;
     await db.insert(verification).values({
       id: uuidv4(),
@@ -228,6 +227,122 @@ describe("native session", () => {
       .get("/api/auth/get-session")
       .set("Cookie", cookieHeaderOf(signedIn));
     expect(after.body?.user).toBeFalsy();
+  });
+
+  /**
+   * Over HTTP, because the phone survives only through the create hook and the
+   * after hook running on the session better-auth recreates here.
+   */
+  describe("changing the password", () => {
+    const NEW_PASSWORD = "another-sturdy-passphrase-73";
+    const PWNED_RANGE = "https://api.pwnedpasswords.com/range/";
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    let pwnedFetch: MockInstance<typeof fetch>;
+    let pwnedRangeCalls = 0;
+
+    // The Have I Been Pwned check on `/change-password` is an outbound call.
+    // Answered here with no breaches, so the suite runs offline.
+    beforeAll(() => {
+      const realFetch = globalThis.fetch;
+      pwnedFetch = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+        const url = input instanceof Request ? input.url : input.toString();
+        if (!url.startsWith(PWNED_RANGE)) return realFetch(input, init);
+        pwnedRangeCalls++;
+        return Promise.resolve(
+          new Response("", { status: 200, headers: { "content-type": "text/plain" } })
+        );
+      });
+    });
+
+    afterAll(() => {
+      pwnedFetch.mockRestore();
+    });
+
+    const changePassword = (cookie: string, headers: Record<string, string>) =>
+      request(app).post("/api/auth/change-password").set(headers).set("Cookie", cookie).send({
+        currentPassword: WEB_TEST_PASSWORD,
+        newPassword: NEW_PASSWORD,
+        revokeOtherSessions: true,
+      });
+
+    const getSession = (cookie: string, headers: Record<string, string> = {}) =>
+      request(app).get("/api/auth/get-session").set("Cookie", cookie).set(headers);
+
+    it("keeps the phone signed in on a new ten-year session when it changes the password", async () => {
+      const device = deviceId();
+      const client = { "x-client-platform": "ios", "x-client-app-version": "1.2.3+45" };
+      const { id, email } = await createWebUser("Phone Password Change Subject");
+
+      const phone = await signIn(email, nativeHeaders(device, client));
+      const web = await signIn(email, { Origin: BROWSER_ORIGIN });
+      expect(phone.status).toBe(200);
+      expect(web.status).toBe(200);
+      const phoneRow = (await sessionsOf(id)).find((row) => row.deviceId === device);
+      expect(phoneRow).toBeDefined();
+      const callsBefore = pwnedRangeCalls;
+
+      const res = await changePassword(cookieHeaderOf(phone), nativeHeaders(device, client));
+
+      expect(res.status).toBe(200);
+      expect(pwnedRangeCalls).toBeGreaterThan(callsBefore);
+      expect(res.body.token).toEqual(expect.any(String));
+
+      const rows = await sessionsOf(id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.id).not.toBe(phoneRow!.id);
+      expect(rows[0]).toMatchObject({
+        token: res.body.token,
+        deviceId: device,
+        platform: "ios",
+        appVersion: "1.2.3+45",
+      });
+      expect(yearsUntil(rows[0]!.expiresAt)).toBeGreaterThan(9.9);
+      expectNoCookieExpiry(res, SESSION_COOKIE);
+
+      const renewed = await getSession(cookieHeaderOf(res), { "x-client-device-id": device });
+      expect(renewed.status).toBe(200);
+      expect(renewed.body?.user?.id).toBe(id);
+
+      const oldPhone = await getSession(cookieHeaderOf(phone), { "x-client-device-id": device });
+      expect(oldPhone.body?.user).toBeFalsy();
+      const oldWeb = await getSession(cookieHeaderOf(web));
+      expect(oldWeb.body?.user).toBeFalsy();
+    });
+
+    it("ends the phone's session when the password is changed on the web", async () => {
+      const device = deviceId();
+      const { id, email } = await createWebUser("Web Password Change Subject");
+
+      const phone = await signIn(email, nativeHeaders(device));
+      const web = await signIn(email, { Origin: BROWSER_ORIGIN });
+      expect(phone.status).toBe(200);
+      expect(web.status).toBe(200);
+      const webRow = (await sessionsOf(id)).find((row) => row.deviceId === null);
+      expect(webRow).toBeDefined();
+      const callsBefore = pwnedRangeCalls;
+
+      const res = await changePassword(cookieHeaderOf(web), { Origin: BROWSER_ORIGIN });
+
+      expect(res.status).toBe(200);
+      expect(pwnedRangeCalls).toBeGreaterThan(callsBefore);
+
+      const rows = await sessionsOf(id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.id).not.toBe(webRow!.id);
+      expect(rows[0]).toMatchObject({
+        token: res.body.token,
+        deviceId: null,
+        platform: null,
+        appVersion: null,
+      });
+      expect((rows[0]!.expiresAt.getTime() - Date.now()) / DAY_MS).toBeCloseTo(7, 1);
+      expect(lastCookie(res, SESSION_COOKIE)).toContain("Max-Age=604800");
+
+      const oldPhone = await getSession(cookieHeaderOf(phone), { "x-client-device-id": device });
+      expect(oldPhone.status).toBe(200);
+      expect(oldPhone.body?.user).toBeFalsy();
+    });
   });
 
   describe("with two-factor in the way", () => {
