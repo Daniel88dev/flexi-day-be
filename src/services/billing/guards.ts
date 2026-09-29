@@ -12,6 +12,8 @@ import { countActiveMembersInGroup } from "../groupUser/groupUserServices.js";
 import { countOpenInvitesForGroup } from "../groupUser/inviteLinkServices.js";
 import { getOrganizationById, lockOrganization } from "../organization/organizationServices.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
+import type { AttendanceSettingsType } from "../organization/types.js";
+import type { Subscription } from "./types.js";
 
 const planLimitError = (params: {
   message: string;
@@ -329,9 +331,16 @@ export const isAttendanceActive = async (
   const settings = await getAttendanceSettings(organizationId, tx);
   if (!settings?.attendanceEnabled) return false;
 
-  const entitlements = await entitlementsForOrganization(organizationId, tx);
-  return entitlements.plan !== "FREE";
+  return isAttendanceActiveFor(settings, await getSubscriptionForOrganization(organizationId, tx));
 };
+
+/** {@link isAttendanceActive} for a caller that already holds both rows. */
+export const isAttendanceActiveFor = (
+  settings: Pick<AttendanceSettingsType, "attendanceEnabled"> | undefined,
+  subscription: Subscription | undefined
+): boolean =>
+  settings?.attendanceEnabled === true &&
+  resolveEntitlements(subscription ?? null, new Date()).plan !== "FREE";
 
 /**
  * Throws 402 unless {@link isAttendanceActive}. Guards switching the feature

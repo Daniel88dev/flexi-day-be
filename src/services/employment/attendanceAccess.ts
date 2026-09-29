@@ -1,11 +1,8 @@
 import type { DbTransaction } from "../../db/db.js";
 import AppError from "../../utils/appError.js";
 import { isOrganizationAdmin } from "../organization/organizationServices.js";
-import { getAdministrableGroupIds } from "../groupUser/groupAccess.js";
-import {
-  getActiveGroupIdsInOrganization,
-  getActiveMemberIdsForGroups,
-} from "../groupUser/groupUserServices.js";
+import { administersGroupOfMember, getAdministrableGroupIds } from "../groupUser/groupAccess.js";
+import { getActiveMemberIdsForGroups } from "../groupUser/groupUserServices.js";
 import { getGroup } from "../group/groupServices.js";
 
 /**
@@ -56,21 +53,7 @@ export const canAdministerEmployment = async (
 ): Promise<boolean> => {
   if (await isOrganizationAdmin(viewerUserId, employment.organizationId, tx)) return true;
 
-  const subjectGroupIds = await getActiveGroupIdsInOrganization(
-    employment.userId,
-    employment.organizationId,
-    tx
-  );
-  if (subjectGroupIds.length === 0) return false;
-
-  const administrable = await getAdministrableGroupIds(
-    viewerUserId,
-    { organizationId: employment.organizationId },
-    tx
-  );
-  const administrableSet = new Set(administrable);
-
-  return subjectGroupIds.some((groupId) => administrableSet.has(groupId));
+  return administersGroupOfMember(viewerUserId, employment.userId, employment.organizationId, tx);
 };
 
 export const canReadEmployment = async (
