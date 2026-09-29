@@ -1,5 +1,6 @@
 import type { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { ReportBooking } from "./types.js";
+import { dayWeightOf } from "../vacation/dayWeight.js";
 
 export type BookingRow = {
   userId: string;
@@ -43,7 +44,7 @@ export const collapseBookings = (rows: BookingRow[]): ReportBooking[] => {
 
   for (const row of rows) {
     const status = statusOf(row);
-    const weight = row.halfDay ? 0.5 : 1;
+    const weight = dayWeightOf(row);
     const last = result[result.length - 1];
 
     if (

@@ -6,6 +6,7 @@ import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { changesSchema, changesType } from "../../db/schema/changes-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { sumDays } from "../vacation/dayWeight.js";
 import { logger } from "../../middleware/logger.js";
 import { computeRolloverRow, describeRollover, type RolloverCandidate } from "./computeRollover.js";
 
@@ -47,9 +48,7 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
     .select({
       userId: vacation.userId,
       groupId: vacation.groupId,
-      usedDays: sql<string>`
-        COALESCE(SUM(CASE WHEN ${vacation.halfDay} THEN 0.5 ELSE 1 END), 0)
-      `.as("used_days"),
+      usedDays: sql<string>`${sumDays()}`.as("used_days"),
     })
     .from(vacation)
     .where(
