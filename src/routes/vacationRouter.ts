@@ -264,12 +264,12 @@ export const vacationRouter = (): Router => {
    *     summary: Create a vacation request for a date range
    *     description: |
    *       Creates a vacation request that spans an inclusive `from`/`to` range. The
-   *       server fans the range out into one row per day, skipping any days the
-   *       user already has a vacation for (unique on user + day). Days outside
-   *       the group's `workingDays` and public holidays of the group's
-   *       `holidayCountry` are skipped too, so they never count against an
-   *       allowance. A range in which every day is a non-working day or a
-   *       public holiday is rejected with 422; days already booked are a 409.
+   *       server fans the range out into one row per day. A requested working day
+   *       that already holds a live vacation (unique on user + day) rejects the
+   *       whole request with 409. Days outside the group's `workingDays` and
+   *       public holidays of the group's `holidayCountry` are skipped, so they
+   *       never count against an allowance. A range in which every day is a
+   *       non-working day or a public holiday is rejected with 422.
    *
    *       Admins may book on behalf of a member by passing `userId`: the caller
    *       must hold group admin access, manage the group, or administer the
@@ -311,6 +311,13 @@ export const vacationRouter = (): Router => {
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No access for related group
+   *       '409':
+   *         description: |
+   *           One or more requested days are already booked (a day held only
+   *           by cancelled or rejected rows is free). Nothing from the request
+   *           is created. `errors[].context` carries `{ conflictingDays }`, the
+   *           requested dates that conflict, as an array of `YYYY-MM-DD` date
+   *           strings.
    *       '422':
    *         description: |
    *           Validation error, the range holds no working day (every day is a
