@@ -40,6 +40,10 @@ vi.mock("../../../services/group/groupServices.js", () => ({
   getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
 }));
 
+vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
+  notifyVacationDecision: vi.fn(async () => {}),
+}));
+
 vi.mock("../../../services/groupMirror/groupMirrorServices.js", () => ({
   hasMirrorIntoGroup: mockHasMirrorIntoGroup,
 }));
