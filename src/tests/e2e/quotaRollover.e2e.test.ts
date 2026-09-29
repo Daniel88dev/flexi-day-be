@@ -119,6 +119,19 @@ describe("Quota rollover E2E", () => {
     expect((await quotaFor(manager.id, groupId, YEAR))?.carriedOverDays).toBe(9);
   });
 
+  it("counts two half days as one day of usage", async () => {
+    const manager = await makeUser("Manager");
+    const groupId = await makeGroup("Engineering", manager.id);
+    await addMember(groupId, manager.id);
+    await addQuota(groupId, manager.id, PREVIOUS, { vacationDays: 10 });
+    await addLeave(groupId, manager.id, dayIn(PREVIOUS, 3, 10), { halfDay: true });
+    await addLeave(groupId, manager.id, dayIn(PREVIOUS, 3, 11), { halfDay: true });
+
+    await rolloverQuotasForYear(YEAR);
+
+    expect((await quotaFor(manager.id, groupId, YEAR))?.carriedOverDays).toBe(9);
+  });
+
   it("treats pending days as spent but ignores rejected ones", async () => {
     const manager = await makeUser("Manager");
     const groupId = await makeGroup("Engineering", manager.id);

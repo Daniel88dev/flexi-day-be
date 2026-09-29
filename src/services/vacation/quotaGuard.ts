@@ -8,6 +8,7 @@ import { getGroup } from "../group/groupServices.js";
 import { getSickDayEnabledGroupIds } from "../organization/organizationServices.js";
 import { getUserYearGroupQuotas } from "../userYearQuotas/userYearQuotasServices.js";
 import { sumCountedDaysForQuota } from "./vacationServices.js";
+import { dayWeightOf } from "./dayWeight.js";
 
 type QuotaRow = {
   userId: string;
@@ -28,8 +29,6 @@ type QuotaCheck = {
 
 const isQuotaBearing = (recordType: CalendarRecordType): boolean =>
   (QUOTA_BEARING_TYPES as readonly CalendarRecordType[]).includes(recordType);
-
-const weightOf = (row: { halfDay: boolean }): number => (row.halfDay ? 0.5 : 1);
 
 const yearOf = (isoDay: string): number => Number(isoDay.slice(0, 4));
 
@@ -141,7 +140,7 @@ const assertGrouped = async (
       requestedDays: 0,
       excludeVacationIds,
     };
-    bucket.requestedDays = Number((bucket.requestedDays + weightOf(row)).toFixed(2));
+    bucket.requestedDays = Number((bucket.requestedDays + dayWeightOf(row)).toFixed(2));
     buckets.set(key, bucket);
   }
 

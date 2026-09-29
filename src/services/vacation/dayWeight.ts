@@ -5,9 +5,12 @@ import { vacation } from "../../db/schema/vacation-schema.js";
  * How much one vacation row counts against an allowance. Every aggregation
  * that reports "days used" must go through here — the dashboard balance
  * widget and the report would otherwise disagree about the same person.
+ * `dayWeightOf` is the same rule for rows already in memory; change both.
  */
 export const dayWeight = (): SQL<number> =>
   sql<number>`(CASE WHEN ${vacation.halfDay} THEN 0.5 ELSE 1 END)`;
+
+export const dayWeightOf = (row: { halfDay: boolean }): number => (row.halfDay ? 0.5 : 1);
 
 /** Weighted day total over the rows matching `predicate`. */
 export const sumDaysWhere = (predicate: SQL): SQL<number> =>

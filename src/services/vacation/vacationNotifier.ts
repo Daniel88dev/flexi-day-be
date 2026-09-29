@@ -7,6 +7,7 @@ import { formatDay } from "../../utils/dateFunc.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { VacationType } from "./types.js";
+import { dayWeightOf } from "./dayWeight.js";
 import type { UserContact } from "../user/userServices.js";
 import { getApprovalUsers } from "../group/groupServices.js";
 import { getGroupUsers } from "../groupUser/groupUserServices.js";
@@ -56,9 +57,6 @@ type VacationRow = Pick<
   "id" | "userId" | "groupId" | "requestedDay" | "vacationType" | "halfDay"
 >;
 
-// Must match dayWeight() in SQL and quotaGuard's weightOf.
-const weightOf = (row: VacationRow): number => (row.halfDay ? 0.5 : 1);
-
 type RowSummary = {
   rows: VacationRow[];
   dateRange: string;
@@ -73,7 +71,7 @@ const summarize = (rows: VacationRow[]): RowSummary | null => {
   return {
     rows,
     dateRange: formatDateRange(rows.map((r) => r.requestedDay)),
-    dayCount: formatDayCount(rows.reduce((sum, row) => sum + weightOf(row), 0)),
+    dayCount: formatDayCount(rows.reduce((sum, row) => sum + dayWeightOf(row), 0)),
     calendarRecordTypeLabel: CALENDAR_RECORD_TYPE_LABELS[first.vacationType],
     requestUrl: buildRequestUrl(first.id),
   };
