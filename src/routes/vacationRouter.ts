@@ -311,6 +311,13 @@ export const vacationRouter = (): Router => {
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
    *         description: No access for related group
+   *       '409':
+   *         description: |
+   *           One or more requested days are already booked (a day held only
+   *           by cancelled or rejected rows is free). Nothing from the request
+   *           is created. `errors[].context` carries `{ conflictingDays }`, the
+   *           requested dates that conflict, as an array of `YYYY-MM-DD` date
+   *           strings.
    *       '422':
    *         description: |
    *           Validation error, the range holds no working day (every day is a
