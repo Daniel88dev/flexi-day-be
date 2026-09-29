@@ -96,6 +96,78 @@ export const groupUsersRouter = (): Router => {
    */
   app.post("/code/:validationCode", tryCatch(handlePostGroupUser));
 
+  /**
+   * @openapi
+   * /api/group-user/{groupId}:
+   *   get:
+   *     tags:
+   *       - Group members
+   *     summary: List a group's members
+   *     description: |
+   *       Returns every current member of the group with their four membership
+   *       flags, ordered by name. The caller needs View or Admin on their
+   *       membership, to be the group's manager, or to be an admin of the
+   *       group's organization; Admin implies View here as on every other group
+   *       read.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: The group's members
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                     format: uuid
+   *                   groupId:
+   *                     type: string
+   *                     format: uuid
+   *                   userId:
+   *                     type: string
+   *                   viewAccess:
+   *                     type: boolean
+   *                   adminAccess:
+   *                     type: boolean
+   *                   approverAccess:
+   *                     type: boolean
+   *                   controlledUser:
+   *                     type: boolean
+   *                   deletedAt:
+   *                     type: string
+   *                     format: date-time
+   *                     nullable: true
+   *                   createdAt:
+   *                     type: string
+   *                     format: date-time
+   *                   updatedAt:
+   *                     type: string
+   *                     format: date-time
+   *                   email:
+   *                     type: string
+   *                   user:
+   *                     $ref: '#/components/schemas/UserSummary'
+   *       '400':
+   *         description: Malformed groupId
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: >-
+   *           The caller has neither View nor Admin in the group, does not
+   *           manage it and does not administer its organization. Body:
+   *           `{ "message": "No access for related group" }`.
+   */
   app.get("/:groupId", tryCatch(handleGetGroupUsers));
 
   /**
@@ -231,7 +303,7 @@ export const groupUsersRouter = (): Router => {
    *       days, mirroring) but does not decide on leave, and `approverAccess`
    *       decides on leave but manages nothing. `controlledUser` marks a member
    *       whose time off is tracked; `viewAccess` lets them see the group's
-   *       records.
+   *       records, which `adminAccess` grants as well.
    *     security:
    *       - bearerAuth: []
    *     requestBody:

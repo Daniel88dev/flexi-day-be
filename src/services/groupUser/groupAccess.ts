@@ -18,7 +18,7 @@ export const validateUserGroupAccess = async (
   tx?: DbTransaction
 ): Promise<boolean> => {
   const groupUser = await getGroupUser(userId, groupId, tx);
-  if (groupUser?.viewAccess) return true;
+  if (groupUser?.viewAccess || groupUser?.adminAccess) return true;
   const group = await getGroup(groupId, tx);
   if (!group) return false;
   if (group.managerUserId === userId) return true;
