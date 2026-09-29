@@ -42,6 +42,10 @@ vi.mock("../../../services/group/groupServices.js", () => ({
   getGroupsWhereUserCanApprove: mockGetGroupsWhereUserCanApprove,
 }));
 
+vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
+  notifyVacationCancelled: vi.fn(async () => {}),
+}));
+
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
 }));
