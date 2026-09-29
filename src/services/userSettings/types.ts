@@ -1,26 +1,14 @@
 import { z } from "zod";
-import { dashboardCalendarView, dashboardScope } from "../../db/schema/user-settings-schema.js";
+import {
+  dashboardCalendarView,
+  dashboardScope,
+  type userSettings,
+} from "../../db/schema/user-settings-schema.js";
 
-export type UserSettingsRecord = {
-  userId: string;
-  emailNotifications: boolean;
-  dashboardScope: dashboardScope;
-  dashboardGroupId: string | null;
-  dashboardCalendarView: dashboardCalendarView;
-  attendanceLocationNoticeDismissed: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-};
+export type UserSettingsRecord = typeof userSettings.$inferSelect;
 
-/** What the settings endpoints expose — defaults applied, no timestamps. */
-export type UserSettingsResponse = {
-  emailNotifications: boolean;
-  dashboardScope: dashboardScope;
-  dashboardGroupId: string | null;
-  dashboardCalendarView: dashboardCalendarView;
-  /** True once the person has dismissed the clock's location notice. */
-  attendanceLocationNoticeDismissed: boolean;
-};
+/** What the settings endpoints expose: every preference column, no row id or timestamps. */
+export type UserSettingsResponse = Omit<UserSettingsRecord, "userId" | "createdAt" | "updatedAt">;
 
 export const DEFAULT_USER_SETTINGS: UserSettingsResponse = {
   emailNotifications: true,
@@ -48,10 +36,4 @@ export const validatePutUserSettings = z
 
 export type ValidatedPutUserSettingsType = z.infer<typeof validatePutUserSettings>;
 
-export type UserSettingsPatch = {
-  emailNotifications?: boolean;
-  dashboardScope?: dashboardScope;
-  dashboardGroupId?: string | null;
-  dashboardCalendarView?: dashboardCalendarView;
-  attendanceLocationNoticeDismissed?: boolean;
-};
+export type UserSettingsPatch = ValidatedPutUserSettingsType;

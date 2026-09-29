@@ -25,4 +25,27 @@ describe("validatePutUserSettings", () => {
       dashboardGroupId: groupId,
     });
   });
+
+  it("strips keys that are not settings, such as the row's user id and timestamps", () => {
+    expect(
+      validatePutUserSettings.parse({
+        emailNotifications: false,
+        userId: "someone_else",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })
+    ).toStrictEqual({ emailNotifications: false });
+  });
+
+  it("rejects a body that carries only keys that are not settings", () => {
+    const result = validatePutUserSettings.safeParse({
+      userId: "someone_else",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toContain(
+      "At least one setting must be supplied"
+    );
+  });
 });

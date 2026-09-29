@@ -3,8 +3,8 @@ import { getAuth } from "../../middleware/authSession.js";
 import {
   DEFAULT_USER_SETTINGS,
   type UserSettingsPatch,
-  type ValidatedPutUserSettingsType,
 } from "../../services/userSettings/types.js";
+import { toUserSettingsResponse } from "../../services/userSettings/userSettingsResponse.js";
 import { dashboardScope } from "../../db/schema/user-settings-schema.js";
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
 import AppError from "../../utils/appError.js";
@@ -17,19 +17,12 @@ import {
 export const handlePutMySettings = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
+  // bodyValidationMiddleware replaced req.body with the parsed output, so keys
+  // that are not settings are already stripped and absent ones stay absent.
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const data: ValidatedPutUserSettingsType = req.body;
+  const patch: UserSettingsPatch = req.body;
 
   const current = await getUserSettings(auth.userId);
-
-  const patch: UserSettingsPatch = {};
-  if (data.emailNotifications !== undefined) patch.emailNotifications = data.emailNotifications;
-  if (data.dashboardScope !== undefined) patch.dashboardScope = data.dashboardScope;
-  if (data.dashboardGroupId !== undefined) patch.dashboardGroupId = data.dashboardGroupId;
-  if (data.dashboardCalendarView !== undefined)
-    patch.dashboardCalendarView = data.dashboardCalendarView;
-  if (data.attendanceLocationNoticeDismissed !== undefined)
-    patch.attendanceLocationNoticeDismissed = data.attendanceLocationNoticeDismissed;
 
   // Only a save that touches the scope or the group re-checks the group, so
   // another field still saves after the stored group has lost its view access.
@@ -71,15 +64,9 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
       message: "Failed to save settings",
       logging: true,
       code: 500,
-      context: { userId: auth.userId, data },
+      context: { userId: auth.userId, data: patch },
     });
   }
 
-  return res.status(200).json({
-    emailNotifications: updated.emailNotifications,
-    dashboardScope: updated.dashboardScope,
-    dashboardGroupId: updated.dashboardGroupId,
-    dashboardCalendarView: updated.dashboardCalendarView,
-    attendanceLocationNoticeDismissed: updated.attendanceLocationNoticeDismissed,
-  });
+  return res.status(200).json(toUserSettingsResponse(updated));
 };
