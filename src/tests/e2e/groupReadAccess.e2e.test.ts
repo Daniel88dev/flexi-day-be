@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import type { Express } from "express";
 import { createServer } from "../../server.js";
 import { db } from "../../db/db.js";
+import { user } from "../../db/schema/auth-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { createTestGroup, createTestUser, cleanupTestData } from "./helpers/testSetup.js";
@@ -14,6 +16,20 @@ import {
 } from "../../services/organization/organizationServices.js";
 
 type Caller = "manager" | "viewMember" | "adminMember" | "orgAdmin" | "plainMember" | "outsider";
+
+// createTestUser hands out UUIDs, which a UUID-only filter accepts, so they cannot catch it.
+async function createUserWithBetterAuthId(email: string, name: string): Promise<string> {
+  const id = generateId();
+  await db.insert(user).values({
+    id,
+    email,
+    name,
+    emailVerified: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
+}
 
 describe("who may read a group's members and quotas", () => {
   let app: Express;
@@ -34,9 +50,11 @@ describe("who may read a group's members and quotas", () => {
       outsider: "Otis Outsider",
     };
     for (const caller of Object.keys(names) as Caller[]) {
-      ids[caller] = (
-        await createTestUser(`reads-${caller.toLowerCase()}@test.com`, names[caller], "password123")
-      ).id;
+      const email = `reads-${caller.toLowerCase()}@test.com`;
+      ids[caller] =
+        caller === "plainMember"
+          ? await createUserWithBetterAuthId(email, names[caller])
+          : (await createTestUser(email, names[caller], "password123")).id;
     }
 
     const group = await createTestGroup("Reads", ids.manager);
@@ -106,6 +124,24 @@ describe("who may read a group's members and quotas", () => {
         [ids.viewMember, ids.plainMember].sort()
       );
     });
+
+    it("narrows the quotas to one member by their better-auth id", async () => {
+      expect(ids.plainMember).toMatch(/^[A-Za-z0-9]{32}$/);
+
+      const res = await request(app)
+        .get(`/api/quotas/${groupId}?year=2026&userId=${ids.plainMember}`)
+        .set("Cookie", cookies[caller])
+        .expect(200);
+
+      expect(res.body.map((row: { userId: string }) => row.userId)).toEqual([ids.plainMember]);
+    });
+  });
+
+  it("rejects an empty userId filter", async () => {
+    await request(app)
+      .get(`/api/quotas/${groupId}?year=2026&userId=`)
+      .set("Cookie", cookies.manager)
+      .expect(400);
   });
 
   describe.each(["plainMember", "outsider"] as const)("%s", (caller) => {

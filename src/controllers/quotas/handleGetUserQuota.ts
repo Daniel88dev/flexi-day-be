@@ -13,7 +13,7 @@ const queryParams = z.object({
     .min(2023)
     .max(2050)
     .default(() => new Date().getFullYear()),
-  userId: z.uuid().optional(),
+  userId: z.string().min(1).optional(),
 });
 
 export const handleGetUserQuota = async (req: Request, res: Response) => {
