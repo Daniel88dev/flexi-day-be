@@ -9,6 +9,90 @@ import { handleGetCarryOverSuggestion } from "../controllers/quotas/handleGetCar
 export const quotasRouter = (): Router => {
   const app = Router();
 
+  /**
+   * @openapi
+   * /api/quotas/{groupId}:
+   *   get:
+   *     tags:
+   *       - Quotas
+   *     summary: Read the group's allowances for a year
+   *     description: |
+   *       Returns the `user_year_quotas` rows of the group for one year, every
+   *       member's unless `userId` narrows it. The caller needs View or Admin on
+   *       their membership, to be the group's manager, or to be an admin of the
+   *       group's organization; Admin implies View here as on every other group
+   *       read.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *       - name: year
+   *         in: query
+   *         required: false
+   *         description: Defaults to the current year.
+   *         schema:
+   *           type: integer
+   *           minimum: 2023
+   *           maximum: 2050
+   *       - name: userId
+   *         in: query
+   *         required: false
+   *         description: |
+   *           Only this member's row. Currently validated as a UUID, so a
+   *           better-auth user id is rejected with 400.
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The quota rows, possibly empty
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   userId:
+   *                     type: string
+   *                   groupId:
+   *                     type: string
+   *                     format: uuid
+   *                   relatedYear:
+   *                     type: string
+   *                     example: "2026"
+   *                   vacationDays:
+   *                     type: integer
+   *                   homeOfficeDays:
+   *                     type: integer
+   *                   sickDays:
+   *                     type: integer
+   *                   carriedOverDays:
+   *                     type: integer
+   *                   createdAt:
+   *                     type: string
+   *                     format: date-time
+   *                   updatedAt:
+   *                     type: string
+   *                     format: date-time
+   *       '400':
+   *         description: Invalid `year` or `userId`
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: >-
+   *           The caller has neither View nor Admin in the group, does not
+   *           manage it and does not administer its organization. Body:
+   *           `{ "errors": [{ "message": "No permission for related group" }] }`.
+   *       '422':
+   *         description: Malformed groupId
+   */
   app.get("/:groupId", tryCatch(handleGetUserQuota));
 
   /**

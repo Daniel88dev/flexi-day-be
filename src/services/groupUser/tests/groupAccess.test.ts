@@ -131,6 +131,18 @@ describe("groupAccess", () => {
     it("rejects someone with no standing", async () => {
       expect(await validateUserGroupAccess(strangerId, group.id)).toBe(false);
     });
+
+    it("accepts a member with Admin but not View", async () => {
+      mockGetGroupUser.mockResolvedValue({ viewAccess: false, adminAccess: true });
+
+      expect(await validateUserGroupAccess(strangerId, group.id)).toBe(true);
+    });
+
+    it("rejects a member with neither View nor Admin", async () => {
+      mockGetGroupUser.mockResolvedValue({ viewAccess: false, adminAccess: false });
+
+      expect(await validateUserGroupAccess(strangerId, group.id)).toBe(false);
+    });
   });
 
   describe("assertGroupAdmin", () => {
