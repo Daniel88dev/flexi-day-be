@@ -103,7 +103,6 @@ export const vacationRouter = (): Router => {
    *       properties:
    *         id:
    *           type: string
-   *           format: uuid
    *         name:
    *           type: string
    *         initials:
@@ -379,7 +378,6 @@ export const vacationRouter = (): Router => {
    *           format: uuid
    *         userId:
    *           type: string
-   *           format: uuid
    *         groupId:
    *           type: string
    *           format: uuid

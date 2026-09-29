@@ -181,7 +181,6 @@ export const quotasRouter = (): Router => {
    *             properties:
    *               userId:
    *                 type: string
-   *                 format: uuid
    *               year:
    *                 type: integer
    *               vacationDays:
