@@ -23,6 +23,8 @@ import {
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
+import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
+import { subscriptions } from "../../db/schema/subscription-schema.js";
 import AppError from "../../utils/appError.js";
 import {
   businessDateInZone,
@@ -33,8 +35,8 @@ import {
   type DateString,
 } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { assertAttendanceActive, isAttendanceActive } from "../billing/guards.js";
-import { getEmployment, listEmploymentsForUser } from "../employment/employmentServices.js";
+import { assertAttendanceActive, isAttendanceActiveFor } from "../billing/guards.js";
+import { getEmployment } from "../employment/employmentServices.js";
 import {
   assertEmploymentReadable,
   canAdministerEmployment,
@@ -64,6 +66,8 @@ export type AttendanceSubject = {
   employment: EmploymentType;
   organizationId: string;
   settings: AttendanceSettingsType | undefined;
+  /** `isAttendanceActive` for the organization, as of the read that found the Employment. */
+  active: boolean;
 };
 
 const SESSION_COLUMNS = {
@@ -133,34 +137,46 @@ export const resolveAttendanceSubject = async (
   organizationId: string | undefined,
   tx?: DbTransaction
 ): Promise<AttendanceSubject | undefined> => {
-  if (organizationId) {
-    const employment = await getEmployment(organizationId, userId, tx);
-    if (!employment) return undefined;
-    return {
-      employment,
-      organizationId,
-      settings: await getAttendanceSettings(organizationId, tx),
-    };
-  }
+  const all = await listSubjects(userId, organizationId, tx);
 
-  const all = await listEmploymentsForUser(userId, tx);
-  if (all.length === 0) return undefined;
+  const live = all.filter((subject) => subject.employment.endedAt === null);
+  const ordered = live.length > 0 ? live : all;
 
-  const candidates = all.filter((employment) => employment.endedAt === null);
-  const ordered = candidates.length > 0 ? candidates : all;
+  return ordered.find((subject) => subject.active) ?? ordered[0];
+};
 
-  let fallback: AttendanceSubject | undefined;
-  for (const employment of ordered) {
-    const subject: AttendanceSubject = {
-      employment,
-      organizationId: employment.organizationId,
-      settings: await getAttendanceSettings(employment.organizationId, tx),
-    };
-    fallback ??= subject;
-    if (await isAttendanceActive(employment.organizationId, tx)) return subject;
-  }
+/** The caller's Employments with each organization's settings and plan, in one round trip. */
+const listSubjects = async (
+  userId: string,
+  organizationId: string | undefined,
+  tx?: DbTransaction
+): Promise<AttendanceSubject[]> => {
+  const rows = await (tx ?? db)
+    .select({
+      employment: employments,
+      settings: organizationAttendanceSettings,
+      subscription: subscriptions,
+    })
+    .from(employments)
+    .leftJoin(
+      organizationAttendanceSettings,
+      eq(organizationAttendanceSettings.organizationId, employments.organizationId)
+    )
+    .leftJoin(subscriptions, eq(subscriptions.organizationId, employments.organizationId))
+    .where(
+      and(
+        eq(employments.userId, userId),
+        organizationId ? eq(employments.organizationId, organizationId) : undefined
+      )
+    )
+    .orderBy(asc(employments.startedAt));
 
-  return fallback;
+  return rows.map(({ employment, settings, subscription }) => ({
+    employment,
+    organizationId: employment.organizationId,
+    settings: settings ?? undefined,
+    active: isAttendanceActiveFor(settings ?? undefined, subscription ?? undefined),
+  }));
 };
 
 /** {@link resolveAttendanceSubject}, 404 when the caller has no Employment to clock against. */
@@ -676,32 +692,43 @@ export const getAttendanceState = async (
 ): Promise<AttendanceStateType> => {
   const subject = await requireSubject(userId, organizationId, tx);
   const timezone = subject.settings?.timezone ?? null;
+  const businessDate = timezone ? businessDateInZone(new Date(), timezone) : null;
 
-  const base = {
+  const [administersOwnAttendance, day] = await readTogether(
+    tx,
+    () => canAdministerEmployment(userId, subject.employment, tx),
+    () =>
+      businessDate
+        ? readClockDay(subject.employment.id, businessDate, tx)
+        : Promise.resolve(undefined)
+  );
+
+  return {
     organizationId: subject.organizationId,
     employmentId: subject.employment.id,
     employmentEnded: subject.employment.endedAt !== null,
-    active: await isAttendanceActive(subject.organizationId, tx),
+    active: subject.active,
     locationEnabled: subject.settings?.locationEnabled ?? false,
     selfService: selfServiceWindowOf(subject.settings),
-    administersOwnAttendance: await canAdministerEmployment(userId, subject.employment, tx),
+    administersOwnAttendance,
     timezone,
+    businessDate,
+    openSession: day?.openSession ?? null,
+    openBreak: day?.openBreak ?? null,
+    sessions: day?.sessions ?? [],
+    autoClosedSession: day?.autoClosedSession ?? null,
   };
+};
 
-  if (!timezone) {
-    return {
-      ...base,
-      businessDate: null,
-      openSession: null,
-      openBreak: null,
-      sessions: [],
-      autoClosedSession: null,
-    };
-  }
+/** Today's sessions, the open session and break, and the auto-closed session the widget flags. */
+const readClockDay = async (employmentId: string, businessDate: DateString, tx?: DbTransaction) => {
+  const [sessions, open, autoClosedSession] = await readTogether(
+    tx,
+    () => listSessionsForDate(employmentId, businessDate, tx),
+    () => getOpenSession(employmentId, tx),
+    () => getAutoClosedSession(employmentId, [previousDay(businessDate), businessDate], tx)
+  );
 
-  const businessDate = businessDateInZone(new Date(), timezone);
-  const sessions = await listSessionsForDate(subject.employment.id, businessDate, tx);
-  const open = await getOpenSession(subject.employment.id, tx);
   // The open session belongs to today only when it started today: one left
   // running across midnight keeps yesterday's business date and so is not in
   // `sessions`, but it is still the thing the button acts on.
@@ -712,18 +739,27 @@ export const getAttendanceState = async (
     : null;
 
   return {
-    ...base,
-    businessDate,
-    openSession,
-    openBreak: open ? ((await getOpenBreak(open.id, tx)) ?? null) : null,
     sessions,
-    autoClosedSession:
-      (await getAutoClosedSession(
-        subject.employment.id,
-        [previousDay(businessDate), businessDate],
-        tx
-      )) ?? null,
+    openSession,
+    // A partial unique index allows one open break per session.
+    openBreak: openSession?.breaks.find((entry) => entry.endedAt === null) ?? null,
+    autoClosedSession: autoClosedSession ?? null,
   };
+};
+
+/**
+ * Independent reads, side by side on the pool. A transaction has a single
+ * client, so under one they run in turn.
+ */
+const readTogether = async <T extends unknown[]>(
+  tx: DbTransaction | undefined,
+  ...reads: { [K in keyof T]: () => Promise<T[K]> }
+): Promise<T> => {
+  if (!tx) return (await Promise.all(reads.map((read) => read()))) as T;
+
+  const results: unknown[] = [];
+  for (const read of reads) results.push(await read());
+  return results as T;
 };
 
 /**

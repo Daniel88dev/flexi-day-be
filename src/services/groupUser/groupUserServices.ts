@@ -154,28 +154,6 @@ export const countActiveMembershipsInOrganization = async (
   return Number(row?.value ?? 0);
 };
 
-/** The organization's live groups this user actively belongs to. */
-export const getActiveGroupIdsInOrganization = async (
-  userId: string,
-  organizationId: string,
-  tx?: DbTransaction
-): Promise<string[]> => {
-  const rows = await (tx ?? db)
-    .select({ groupId: groupUsers.groupId })
-    .from(groupUsers)
-    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
-    .where(
-      and(
-        eq(groupUsers.userId, userId),
-        eq(groups.organizationId, organizationId),
-        isNull(groupUsers.deletedAt),
-        isNull(groups.deletedAt)
-      )
-    );
-
-  return rows.map((row) => row.groupId);
-};
-
 /** The distinct people actively belonging to any of these groups. */
 export const getActiveMemberIdsForGroups = async (
   groupIds: string[],

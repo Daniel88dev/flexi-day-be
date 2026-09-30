@@ -9,7 +9,11 @@ import {
   getAdminOrganizationsForUser,
   isOrganizationAdmin,
 } from "../organization/organizationServices.js";
-import type { DbTransaction } from "../../db/db.js";
+import { and, eq, exists, isNull, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { db, type DbTransaction } from "../../db/db.js";
+import { groups } from "../../db/schema/group-schema.js";
+import { groupUsers } from "../../db/schema/group-users-schema.js";
 import AppError from "../../utils/appError.js";
 
 export const validateUserGroupAccess = async (
@@ -110,6 +114,55 @@ export const getAdministrableGroupIds = async (
     : direct;
 
   return [...new Set([...directScoped, ...fromOrganizations])];
+};
+
+/**
+ * Whether the viewer administers a live group of the organization that the
+ * member actively belongs to, by managing it or through a membership carrying
+ * `adminAccess`; org admins are the caller's to credit first. It inlines the
+ * rule {@link getAdministrableGroupIds} states, so a new route to group
+ * administration belongs in both.
+ */
+export const administersGroupOfMember = async (
+  viewerUserId: string,
+  memberUserId: string,
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const client = tx ?? db;
+  const viewerMembership = alias(groupUsers, "viewer_membership");
+
+  const [row] = await client
+    .select({ id: groups.id })
+    .from(groupUsers)
+    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
+    .where(
+      and(
+        eq(groupUsers.userId, memberUserId),
+        isNull(groupUsers.deletedAt),
+        eq(groups.organizationId, organizationId),
+        isNull(groups.deletedAt),
+        or(
+          eq(groups.managerUserId, viewerUserId),
+          exists(
+            client
+              .select({ one: sql`1` })
+              .from(viewerMembership)
+              .where(
+                and(
+                  eq(viewerMembership.groupId, groups.id),
+                  eq(viewerMembership.userId, viewerUserId),
+                  eq(viewerMembership.adminAccess, true),
+                  isNull(viewerMembership.deletedAt)
+                )
+              )
+          )
+        )
+      )
+    )
+    .limit(1);
+
+  return row !== undefined;
 };
 
 /** Throws 403 unless the caller's membership carries `adminAccess`, they manage the group, or they administer its organization. */
