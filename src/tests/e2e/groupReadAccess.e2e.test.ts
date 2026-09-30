@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import { generateId } from "better-auth";
 import type { Express } from "express";
 import { createServer } from "../../server.js";
 import { db } from "../../db/db.js";
-import { user } from "../../db/schema/auth-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { createTestGroup, createTestUser, cleanupTestData } from "./helpers/testSetup.js";
@@ -16,20 +14,6 @@ import {
 } from "../../services/organization/organizationServices.js";
 
 type Caller = "manager" | "viewMember" | "adminMember" | "orgAdmin" | "plainMember" | "outsider";
-
-// createTestUser hands out UUIDs, which a UUID-only filter accepts, so they cannot catch it.
-async function createUserWithBetterAuthId(email: string, name: string): Promise<string> {
-  const id = generateId();
-  await db.insert(user).values({
-    id,
-    email,
-    name,
-    emailVerified: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  return id;
-}
 
 describe("who may read a group's members and quotas", () => {
   let app: Express;
@@ -51,10 +35,7 @@ describe("who may read a group's members and quotas", () => {
     };
     for (const caller of Object.keys(names) as Caller[]) {
       const email = `reads-${caller.toLowerCase()}@test.com`;
-      ids[caller] =
-        caller === "plainMember"
-          ? await createUserWithBetterAuthId(email, names[caller])
-          : (await createTestUser(email, names[caller], "password123")).id;
+      ids[caller] = (await createTestUser(email, names[caller], "password123")).id;
     }
 
     const group = await createTestGroup("Reads", ids.manager);

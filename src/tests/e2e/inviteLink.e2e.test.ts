@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -39,8 +40,8 @@ describe("invite link", () => {
   let groupId: string;
 
   const makeUser = async (emailVerified: boolean) => {
-    const id = uuidv4();
-    const email = `invitee-${id}@invite-link.test`;
+    const id = generateId();
+    const email = `invitee-${id.toLowerCase()}@invite-link.test`;
     await db.insert(user).values({
       id,
       email,

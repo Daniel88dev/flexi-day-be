@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vites
 import request from "supertest";
 import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -222,7 +223,7 @@ describe("sign up with invite", () => {
 
   it("refuses an address that already has an account and leaves both alone", async () => {
     const email = freshEmail();
-    const id = uuidv4();
+    const id = generateId();
     await db.insert(user).values({
       id,
       email,
@@ -277,7 +278,7 @@ describe("sign up with invite", () => {
     const cappedGroupId = (await createTestGroup("Signup Capped", cappedOwner.id)).id;
     const email = freshEmail();
     const { token } = await issueInvite(email, cappedGroupId, cappedCookie);
-    const occupantId = uuidv4();
+    const occupantId = generateId();
     await db.insert(user).values({
       id: occupantId,
       email: freshEmail(),

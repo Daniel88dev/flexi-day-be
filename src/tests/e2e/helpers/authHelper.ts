@@ -1,6 +1,7 @@
 import request from "supertest";
 import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { hashPassword } from "better-auth/crypto";
 import { db } from "../../../db/db.js";
 import { account, user } from "../../../db/schema/auth-schema.js";
@@ -40,8 +41,8 @@ export const WEB_TEST_PASSWORD = "sturdy-passphrase-42";
  * email through SES.
  */
 export async function createWebUser(name: string): Promise<{ id: string; email: string }> {
-  const id = uuidv4();
-  const email = `web-${id}@report-e2e.test`;
+  const id = generateId();
+  const email = `web-${id.toLowerCase()}@report-e2e.test`;
   await db.insert(user).values({
     id,
     email,
