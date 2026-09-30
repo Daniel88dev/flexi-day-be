@@ -1,5 +1,4 @@
 import express from "express";
-import * as Sentry from "@sentry/node";
 import { serverCors } from "./middleware/cors.js";
 import { helmetHeaders } from "./middleware/headers.js";
 import {
@@ -148,10 +147,7 @@ export const createServer = () => {
     res.status(200).json({ ok: true, environment: config.api.env });
   });
 
-  // Must come after all routes and before errorMiddleware. Reports 5xx; 4xx
-  // CustomErrors fall through to errorMiddleware.
-  Sentry.setupExpressErrorHandler(app);
-
+  // Sentry's expressIntegration reports 5xx on its own; 4xx CustomErrors are left to errorMiddleware.
   app.use(errorMiddleware);
 
   return app;
