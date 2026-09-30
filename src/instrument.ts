@@ -21,8 +21,22 @@ if (enabled) {
     // Must match the release used for `sentry-cli sourcemaps upload` (APP_VERSION, see Dockerfile).
     release: process.env.SENTRY_RELEASE ?? process.env.APP_VERSION,
     integrations: [nodeProfilingIntegration()],
-    // Required for the winston -> Sentry Logs bridge in middleware/logger.ts.
-    enableLogs: true,
+    // The v10 baseline, spelled out: left unset, v11 collects request bodies (passwords on
+    // sign-in), cookies and database query data.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: { deny: ["forwarded", "-ip", "remote-", "via", "-user"] },
+        response: { deny: ["forwarded", "-ip", "remote-", "via", "-user"] },
+      },
+      httpBodies: [],
+      urlQueryParams: { deny: ["forwarded", "-ip", "remote-", "via", "-user"] },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      graphQL: { document: false, variables: false },
+    },
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0.2),
     // Profiling is trace-lifecycle-bound: it runs for the duration of every sampled
     // trace. Keep this low or an always-on server burns through the profile-hours
