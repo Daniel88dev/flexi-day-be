@@ -42,11 +42,10 @@ export const quotasRouter = (): Router => {
    *       - name: userId
    *         in: query
    *         required: false
-   *         description: |
-   *           Only this member's row. Currently validated as a UUID, so a
-   *           better-auth user id is rejected with 400.
+   *         description: Only this member's rows.
    *         schema:
    *           type: string
+   *           minLength: 1
    *     responses:
    *       '200':
    *         description: The quota rows, possibly empty
