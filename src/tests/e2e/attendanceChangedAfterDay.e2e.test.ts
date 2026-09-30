@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -55,7 +55,7 @@ let ORGANIZATION_ID: string;
 type Person = { id: string; name: string };
 
 describe("attendance sessions changed after the day", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: Person;
   let groupAdmin: Person;
@@ -72,7 +72,7 @@ describe("attendance sessions changed after the day", () => {
     sessionId: string,
     body: { startedAt: string; endedAt: string }
   ) =>
-    request(app)
+    request(server.url)
       .post(`/api/attendance/sessions/${sessionId}/breaks`)
       .set("Cookie", cookieOf(person))
       .send(body);
@@ -111,13 +111,13 @@ describe("attendance sessions changed after the day", () => {
       .orderBy(asc(attendanceEvents.createdAt));
 
   const patchSession = (person: Person, sessionId: string, body: object) =>
-    request(app)
+    request(server.url)
       .patch(`/api/attendance/sessions/${sessionId}`)
       .set("Cookie", cookieOf(person))
       .send(body);
 
   const sessionOnDay = async (person: Person, businessDate: string, sessionId: string) => {
-    const { body } = await request(app)
+    const { body } = await request(server.url)
       .get("/api/attendance/day")
       .query({ organizationId: ORGANIZATION_ID, businessDate, userId: person.id })
       .set("Cookie", cookieOf(owner))
@@ -126,7 +126,7 @@ describe("attendance sessions changed after the day", () => {
   };
 
   const teamDay = async (person: Person, businessDate: string) => {
-    const { body } = await request(app)
+    const { body } = await request(server.url)
       .get("/api/attendance/team")
       .query({ organizationId: ORGANIZATION_ID, from: businessDate, to: businessDate })
       .set("Cookie", cookieOf(owner))
@@ -164,7 +164,7 @@ describe("attendance sessions changed after the day", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     const make = async (email: string, name: string): Promise<Person> => {
       const user = await createTestUser(email, name, "password123");
@@ -223,6 +223,7 @@ describe("attendance sessions changed after the day", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -273,7 +274,7 @@ describe("attendance sessions changed after the day", () => {
       const session = await clocked(member, 2);
       const breakId = await breakBy(owner, session);
 
-      await request(app)
+      await request(server.url)
         .patch(`/api/attendance/breaks/${breakId}`)
         .set("Cookie", cookieOf(member))
         .send({ endedAt: at(session.businessDate, "12:45") })
@@ -286,7 +287,7 @@ describe("attendance sessions changed after the day", () => {
       const session = await clocked(member, 2);
       const breakId = await breakBy(owner, session);
 
-      await request(app)
+      await request(server.url)
         .delete(`/api/attendance/breaks/${breakId}`)
         .set("Cookie", cookieOf(member))
         .expect(200);
@@ -303,12 +304,12 @@ describe("attendance sessions changed after the day", () => {
         startedAt: at(session.businessDate, "06:30"),
       }).expect(200);
       const breakId = await breakBy(member, session);
-      await request(app)
+      await request(server.url)
         .patch(`/api/attendance/breaks/${breakId}`)
         .set("Cookie", cookieOf(member))
         .send({ endedAt: at(session.businessDate, "12:45") })
         .expect(200);
-      await request(app)
+      await request(server.url)
         .delete(`/api/attendance/breaks/${breakId}`)
         .set("Cookie", cookieOf(member))
         .expect(200);
@@ -325,7 +326,7 @@ describe("attendance sessions changed after the day", () => {
           endedAt: at(session.businessDate, "16:00"),
         }).expect(200);
         const breakId = await breakBy(owner, session);
-        await request(app)
+        await request(server.url)
           .delete(`/api/attendance/breaks/${breakId}`)
           .set("Cookie", cookieOf(owner))
           .expect(200);
@@ -338,7 +339,7 @@ describe("attendance sessions changed after the day", () => {
     it("is the employee entering a past day, which carries the entered marker instead", async () => {
       const businessDate = workingDayBefore(today(), 2);
 
-      const { body } = await request(app)
+      const { body } = await request(server.url)
         .post("/api/attendance/sessions")
         .set("Cookie", cookieOf(member))
         .send({
@@ -397,7 +398,7 @@ describe("attendance sessions changed after the day", () => {
       const session = await flagged();
       const [year, month] = session.businessDate.split("-").map(Number);
 
-      const { body } = await request(app)
+      const { body } = await request(server.url)
         .get("/api/attendance/month")
         .query({ organizationId: ORGANIZATION_ID, year, month })
         .set("Cookie", cookieOf(member))
@@ -438,7 +439,7 @@ describe("attendance sessions changed after the day", () => {
       const session = await flagged();
       const breakId = await breakBy(member, session);
 
-      await request(app)
+      await request(server.url)
         .patch(`/api/attendance/breaks/${breakId}`)
         .set("Cookie", cookieOf(groupAdmin))
         .send({ endedAt: at(session.businessDate, "12:45") })
@@ -450,7 +451,7 @@ describe("attendance sessions changed after the day", () => {
 
   describe("marking a session as checked", () => {
     const markChecked = (person: Person, sessionId: string) =>
-      request(app)
+      request(server.url)
         .post(`/api/attendance/sessions/${sessionId}/check`)
         .set("Cookie", cookieOf(person));
 
@@ -531,7 +532,7 @@ describe("attendance sessions changed after the day", () => {
 
     it("answers 404 for a deleted session", async () => {
       const session = await flagged();
-      await request(app)
+      await request(server.url)
         .delete(`/api/attendance/sessions/${session.id}`)
         .set("Cookie", cookieOf(owner))
         .expect(200);
@@ -542,7 +543,7 @@ describe("attendance sessions changed after the day", () => {
 
   describe("the caller's standing over their own attendance", () => {
     const standing = async (person: Person) => {
-      const { body } = await request(app)
+      const { body } = await request(server.url)
         .get("/api/attendance/current")
         .query({ organizationId: ORGANIZATION_ID })
         .set("Cookie", cookieOf(person))

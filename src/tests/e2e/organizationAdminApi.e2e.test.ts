@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -24,7 +24,7 @@ import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscripti
  * fail here.
  */
 describe("organization admin over the API", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: { id: string };
   /** Org admin, deliberately never a member of the group. */
@@ -41,7 +41,7 @@ describe("organization admin over the API", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await createTestUser("api-owner@test.com", "Olivia Owner", "password123");
     delegate = await createTestUser("api-delegate@test.com", "Dana Delegate", "password123");
@@ -101,12 +101,13 @@ describe("organization admin over the API", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
   describe("reaching a group they do not belong to", () => {
     it("returns the group with organization authority flagged", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/group/${groupId}`)
         .set("Cookie", delegateCookie)
         .expect(200);
@@ -123,13 +124,16 @@ describe("organization admin over the API", () => {
     it("keeps the group out of their own group list", async () => {
       // `GET /api/group` also drives the dashboard and the request dialog, so a
       // group they merely administer must not appear there.
-      const res = await request(app).get("/api/group").set("Cookie", delegateCookie).expect(200);
+      const res = await request(server.url)
+        .get("/api/group")
+        .set("Cookie", delegateCookie)
+        .expect(200);
 
       expect(res.body).toEqual([]);
     });
 
     it("lists the group's members", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/group-user/${groupId}`)
         .set("Cookie", delegateCookie)
         .expect(200);
@@ -138,14 +142,14 @@ describe("organization admin over the API", () => {
     });
 
     it("reads the group's quotas", async () => {
-      await request(app)
+      await request(server.url)
         .get(`/api/quotas/${groupId}?year=2026`)
         .set("Cookie", delegateCookie)
         .expect(200);
     });
 
     it("changes a member's permissions", async () => {
-      await request(app)
+      await request(server.url)
         .put("/api/group-user")
         .set("Cookie", delegateCookie)
         .send({
@@ -164,7 +168,7 @@ describe("organization admin over the API", () => {
     });
 
     it("edits the group's default quotas", async () => {
-      await request(app)
+      await request(server.url)
         .put(`/api/group/${groupId}/quotas`)
         .set("Cookie", delegateCookie)
         .send({ defaultVacationDays: 25, defaultHomeOfficeDays: 5 })
@@ -172,7 +176,7 @@ describe("organization admin over the API", () => {
     });
 
     it("preserves the sick day default when a legacy body omits it", async () => {
-      const withSickDays = await request(app)
+      const withSickDays = await request(server.url)
         .put(`/api/group/${groupId}/quotas`)
         .set("Cookie", delegateCookie)
         .send({ defaultVacationDays: 25, defaultHomeOfficeDays: 5, defaultSickDays: 4 })
@@ -180,7 +184,7 @@ describe("organization admin over the API", () => {
       expect(withSickDays.body.defaultSickDays).toBe(4);
 
       // A client predating the Sick day benefit re-saves the other values.
-      const legacySave = await request(app)
+      const legacySave = await request(server.url)
         .put(`/api/group/${groupId}/quotas`)
         .set("Cookie", delegateCookie)
         .send({ defaultVacationDays: 26, defaultHomeOfficeDays: 5 })
@@ -189,7 +193,7 @@ describe("organization admin over the API", () => {
     });
 
     it("edits the group's working days", async () => {
-      await request(app)
+      await request(server.url)
         .put(`/api/group/${groupId}/working-days`)
         .set("Cookie", delegateCookie)
         .send({ workingDays: [1, 2, 3, 4] })
@@ -197,7 +201,7 @@ describe("organization admin over the API", () => {
     });
 
     it("sets a member's individual quota", async () => {
-      await request(app)
+      await request(server.url)
         .put(`/api/quotas/${groupId}`)
         .set("Cookie", delegateCookie)
         .send({
@@ -213,12 +217,15 @@ describe("organization admin over the API", () => {
 
   describe("limits of the authority", () => {
     it("refuses a stranger everywhere", async () => {
-      await request(app).get(`/api/group/${groupId}`).set("Cookie", outsiderCookie).expect(403);
-      await request(app)
+      await request(server.url)
+        .get(`/api/group/${groupId}`)
+        .set("Cookie", outsiderCookie)
+        .expect(403);
+      await request(server.url)
         .get(`/api/group-user/${groupId}`)
         .set("Cookie", outsiderCookie)
         .expect(403);
-      await request(app)
+      await request(server.url)
         .put(`/api/group/${groupId}/quotas`)
         .set("Cookie", outsiderCookie)
         .send({ defaultVacationDays: 1, defaultHomeOfficeDays: 1 })
@@ -238,7 +245,7 @@ describe("organization admin over the API", () => {
         controlledUser: true,
       });
 
-      await request(app)
+      await request(server.url)
         .put("/api/group-user")
         .set("Cookie", delegateCookie)
         .send({
@@ -259,7 +266,7 @@ describe("organization admin over the API", () => {
     it("will not let a repeated self-entry sneak the raise past the check", async () => {
       // The handler applies every record in order, so checking only the first
       // match would let a harmless one pass while a later one escalates.
-      await request(app)
+      await request(server.url)
         .put("/api/group-user")
         .set("Cookie", delegateCookie)
         .send({
@@ -287,7 +294,7 @@ describe("organization admin over the API", () => {
     it("will not let an org admin grant approver rights to anyone", async () => {
       // Blocking only self-grants leaves the obvious way around it: invite a
       // second account you control, then promote that one instead.
-      await request(app)
+      await request(server.url)
         .put("/api/group-user")
         .set("Cookie", delegateCookie)
         .send({
@@ -306,7 +313,7 @@ describe("organization admin over the API", () => {
     });
 
     it("still lets an org admin manage the non-approver permissions", async () => {
-      await request(app)
+      await request(server.url)
         .put("/api/group-user")
         .set("Cookie", delegateCookie)
         .send({
@@ -327,7 +334,7 @@ describe("organization admin over the API", () => {
     it("will not let an org admin name themselves the group's approver", async () => {
       // The approver columns are approval authority by another name; blocking
       // only `approverAccess` would leave this route as the way around it.
-      await request(app)
+      await request(server.url)
         .put(`/api/group/${groupId}/approvers`)
         .set("Cookie", delegateCookie)
         .send({ mainApprovalUser: delegate.id, tempApprovalUser: null })
@@ -337,7 +344,7 @@ describe("organization admin over the API", () => {
     it("will not let an org admin add anyone else as approver either", async () => {
       // Blocking only self leaves the proxy: name a second account you control
       // as `mainApprovalUser` instead.
-      await request(app)
+      await request(server.url)
         .put(`/api/group/${groupId}/approvers`)
         .set("Cookie", delegateCookie)
         .send({ mainApprovalUser: member.id, tempApprovalUser: null })
@@ -347,7 +354,7 @@ describe("organization admin over the API", () => {
     it("lets an org admin re-submit the approvers a group already has", async () => {
       // Keeping the current assignment is not an escalation, and the settings
       // form submits the whole object.
-      await request(app)
+      await request(server.url)
         .put(`/api/group/${groupId}/approvers`)
         .set("Cookie", delegateCookie)
         .send({ mainApprovalUser: owner.id, tempApprovalUser: null })
@@ -357,19 +364,22 @@ describe("organization admin over the API", () => {
     it("revokes the org grant when they leave the organization's last group", async () => {
       expect(await isOrganizationAdmin(delegate.id, organizationId)).toBe(true);
 
-      await request(app)
+      await request(server.url)
         .delete(`/api/group-user/${groupId}/${delegate.id}`)
         .set("Cookie", ownerCookie)
         .expect(200);
 
       expect(await isOrganizationAdmin(delegate.id, organizationId)).toBe(false);
-      await request(app).get(`/api/group/${groupId}`).set("Cookie", delegateCookie).expect(403);
+      await request(server.url)
+        .get(`/api/group/${groupId}`)
+        .set("Cookie", delegateCookie)
+        .expect(403);
     });
   });
 
   describe("organization endpoints", () => {
     it("lets the owner rename the organization", async () => {
-      await request(app)
+      await request(server.url)
         .patch("/api/organization")
         .set("Cookie", ownerCookie)
         .send({ name: "Acme Renamed" })
@@ -383,7 +393,7 @@ describe("organization admin over the API", () => {
         grantedByUserId: owner.id,
       });
 
-      await request(app)
+      await request(server.url)
         .patch(`/api/organization?organizationId=${organizationId}`)
         .set("Cookie", delegateCookie)
         .send({ billingEmail: "attacker@evil.test" })
@@ -391,12 +401,12 @@ describe("organization admin over the API", () => {
     });
 
     it("refuses a delegated admin the candidate list and the grant routes", async () => {
-      await request(app)
+      await request(server.url)
         .get(`/api/organization/candidates?organizationId=${organizationId}`)
         .set("Cookie", delegateCookie)
         .expect(403);
 
-      await request(app)
+      await request(server.url)
         .post(`/api/organization/admins?organizationId=${organizationId}`)
         .set("Cookie", delegateCookie)
         .send({ userId: outsider.id })
@@ -404,7 +414,7 @@ describe("organization admin over the API", () => {
     });
 
     it("refuses to grant admin to someone outside the organization's groups", async () => {
-      await request(app)
+      await request(server.url)
         .post("/api/organization/admins")
         .set("Cookie", ownerCookie)
         .send({ userId: outsider.id })
@@ -414,7 +424,7 @@ describe("organization admin over the API", () => {
     it("reports an existing administrator as a conflict, not as a non-member", async () => {
       // They are excluded from the candidate list for being an admin already,
       // so "not a member of any group" would be a flatly wrong answer.
-      await request(app)
+      await request(server.url)
         .post("/api/organization/admins")
         .set("Cookie", ownerCookie)
         .send({ userId: delegate.id })
@@ -422,7 +432,7 @@ describe("organization admin over the API", () => {
     });
 
     it("trims and lower-cases a billing address rather than rejecting it", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .patch("/api/organization")
         .set("Cookie", ownerCookie)
         .send({ billingEmail: "  Billing@Acme.TEST  " })
@@ -431,7 +441,7 @@ describe("organization admin over the API", () => {
       expect(res.body.billingEmail).toBe("billing@acme.test");
 
       // Restore, so this case does not decide what the later reads observe.
-      await request(app)
+      await request(server.url)
         .patch("/api/organization")
         .set("Cookie", ownerCookie)
         .send({ billingEmail: "api-owner@test.com" })
@@ -439,11 +449,15 @@ describe("organization admin over the API", () => {
     });
 
     it("rejects a patch that names no field", async () => {
-      await request(app).patch("/api/organization").set("Cookie", ownerCookie).send({}).expect(422);
+      await request(server.url)
+        .patch("/api/organization")
+        .set("Cookie", ownerCookie)
+        .send({})
+        .expect(422);
     });
 
     it("hides the billing address from a delegated admin's own read", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/organization?organizationId=${organizationId}`)
         .set("Cookie", delegateCookie)
         .expect(200);
@@ -453,7 +467,7 @@ describe("organization admin over the API", () => {
     });
 
     it("gives the owner the billing address", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/organization")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -463,13 +477,13 @@ describe("organization admin over the API", () => {
     });
 
     it("404s for a user with no organization at all", async () => {
-      await request(app).get("/api/organization").set("Cookie", outsiderCookie).expect(404);
+      await request(server.url).get("/api/organization").set("Cookie", outsiderCookie).expect(404);
     });
   });
 
   describe("Sick day benefit toggle", () => {
     it("defaults to off", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/organization")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -478,13 +492,13 @@ describe("organization admin over the API", () => {
     });
 
     it("refuses enabling on the Free plan with 402 and leaves the toggle off", async () => {
-      await request(app)
+      await request(server.url)
         .patch("/api/organization")
         .set("Cookie", ownerCookie)
         .send({ sickDayBenefitEnabled: true })
         .expect(402);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/organization")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -497,14 +511,14 @@ describe("organization admin over the API", () => {
         status: subscriptionStatus.Active,
       });
 
-      const patched = await request(app)
+      const patched = await request(server.url)
         .patch("/api/organization")
         .set("Cookie", ownerCookie)
         .send({ sickDayBenefitEnabled: true })
         .expect(200);
       expect(patched.body.sickDayBenefitEnabled).toBe(true);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/organization")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -518,7 +532,7 @@ describe("organization admin over the API", () => {
         graceEndsAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
       });
 
-      const patched = await request(app)
+      const patched = await request(server.url)
         .patch("/api/organization")
         .set("Cookie", ownerCookie)
         .send({ sickDayBenefitEnabled: false })

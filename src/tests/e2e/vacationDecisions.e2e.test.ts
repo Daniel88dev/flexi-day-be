@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
+import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import type { Response } from "supertest";
 import { eq, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
@@ -18,6 +20,7 @@ import { session } from "../../db/schema/auth-schema.js";
 
 describe("Vacation decision routes E2E", () => {
   let context: TestContext;
+  let server: LoopbackServer;
   let approverCookie: string;
 
   const eventsFor = async (vacationId: string) =>
@@ -89,9 +92,11 @@ describe("Vacation decision routes E2E", () => {
 
   beforeAll(async () => {
     context = await setupTestEnvironment();
+    server = await listenOnLoopback(createServer());
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -110,7 +115,7 @@ describe("Vacation decision routes E2E", () => {
     });
 
     it("rejects the request, stamps the rejecter and records the reason on the timeline", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post(`/api/vacation/reject/${vacationId}`)
         .set("Cookie", approverCookie)
         .send({ reason: "the team is short that week" })
@@ -136,7 +141,7 @@ describe("Vacation decision routes E2E", () => {
     it("returns 403 for a caller with no approver standing in the group", async () => {
       const cookie = await authCookieFor(context.user2.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post(`/api/vacation/reject/${vacationId}`)
         .set("Cookie", cookie)
         .send({ reason: "no" })
@@ -161,7 +166,7 @@ describe("Vacation decision routes E2E", () => {
         })
         .where(eq(vacation.id, vacationId));
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post(`/api/vacation/reject/${vacationId}`)
         .set("Cookie", approverCookie)
         .send({ reason: "second" })
@@ -174,7 +179,7 @@ describe("Vacation decision routes E2E", () => {
     });
 
     it("returns 404 for an id that does not exist", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post(`/api/vacation/reject/${uuidv4()}`)
         .set("Cookie", approverCookie)
         .send({ reason: "no" })
@@ -196,7 +201,7 @@ describe("Vacation decision routes E2E", () => {
     });
 
     it("approves every record in the batch and appends one event per record", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/approve")
         .set("Cookie", approverCookie)
         .send({ ids })
@@ -222,7 +227,7 @@ describe("Vacation decision routes E2E", () => {
     it("approves a batch carrying exactly one id", async () => {
       const id = ids[0] ?? "";
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/approve")
         .set("Cookie", approverCookie)
         .send({ ids: [id] })
@@ -237,7 +242,7 @@ describe("Vacation decision routes E2E", () => {
       const cookie = await authCookieFor(context.user2.id);
       const othersIds = [ids[0] ?? "", ids[1] ?? ""];
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/approve")
         .set("Cookie", cookie)
         .send({ ids: othersIds })
@@ -259,7 +264,7 @@ describe("Vacation decision routes E2E", () => {
         .set({ approvedAt: new Date(), approvedBy: context.approverUser.id })
         .where(eq(vacation.id, ids[0] ?? ""));
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/approve")
         .set("Cookie", approverCookie)
         .send({ ids })
@@ -279,7 +284,7 @@ describe("Vacation decision routes E2E", () => {
         id,
         { approvedAt: new Date(), approvedBy: context.approverUser.id },
         () =>
-          request(context.app)
+          request(server.url)
             .post("/api/vacation/approve")
             .set("Cookie", approverCookie)
             .send({ ids: [id] })
@@ -293,7 +298,7 @@ describe("Vacation decision routes E2E", () => {
     });
 
     it("returns 404 when one of the ids does not exist", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/approve")
         .set("Cookie", approverCookie)
         .send({ ids: [...ids, uuidv4()] })
@@ -319,7 +324,7 @@ describe("Vacation decision routes E2E", () => {
     });
 
     it("rejects every record in the batch and appends one event per record carrying the reason", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/reject")
         .set("Cookie", approverCookie)
         .send({ ids, reason: "we cannot cover those days" })
@@ -347,7 +352,7 @@ describe("Vacation decision routes E2E", () => {
       const cookie = await authCookieFor(context.user2.id);
       const othersIds = [ids[0] ?? "", ids[1] ?? ""];
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/reject")
         .set("Cookie", cookie)
         .send({ ids: othersIds, reason: "no" })
@@ -373,7 +378,7 @@ describe("Vacation decision routes E2E", () => {
         })
         .where(eq(vacation.id, ids[0] ?? ""));
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/reject")
         .set("Cookie", approverCookie)
         .send({ ids, reason: "second" })
@@ -392,7 +397,7 @@ describe("Vacation decision routes E2E", () => {
         id,
         { rejectedAt: new Date(), rejectedBy: context.approverUser.id, rejectionReason: "first" },
         () =>
-          request(context.app)
+          request(server.url)
             .post("/api/vacation/reject")
             .set("Cookie", approverCookie)
             .send({ ids: [id], reason: "second" })
@@ -407,7 +412,7 @@ describe("Vacation decision routes E2E", () => {
     });
 
     it("returns 404 when one of the ids does not exist", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/reject")
         .set("Cookie", approverCookie)
         .send({ ids: [...ids, uuidv4()], reason: "no" })

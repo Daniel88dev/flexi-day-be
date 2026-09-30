@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -63,7 +63,7 @@ const settings = (
   });
 
 describe("attendance ceilings", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: { id: string };
   let member: { id: string };
@@ -74,8 +74,10 @@ describe("attendance ceilings", () => {
   let colleagueCookie: string;
   let colleagueEmploymentId: string;
 
-  const clockIn = () => request(app).post("/api/attendance/clock-in").set("Cookie", memberCookie);
-  const current = () => request(app).get("/api/attendance/current").set("Cookie", memberCookie);
+  const clockIn = () =>
+    request(server.url).post("/api/attendance/clock-in").set("Cookie", memberCookie);
+  const current = () =>
+    request(server.url).get("/api/attendance/current").set("Cookie", memberCookie);
 
   const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * MINUTE_MS);
 
@@ -137,7 +139,8 @@ describe("attendance ceilings", () => {
       .orderBy(asc(attendanceEvents.createdAt));
 
   const noticesFor = async (cookie: string) =>
-    (await request(app).get("/api/notifications").set("Cookie", cookie).expect(200)).body as {
+    (await request(server.url).get("/api/notifications").set("Cookie", cookie).expect(200))
+      .body as {
       type: string;
       title: string;
       body: string;
@@ -154,7 +157,7 @@ describe("attendance ceilings", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await createTestUser("ceiling-owner@test.com", "Olivia Owner", "password123");
     member = await createTestUser("ceiling-member@test.com", "Milo Member", "password123");
@@ -209,6 +212,7 @@ describe("attendance ceilings", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 

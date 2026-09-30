@@ -1,5 +1,3 @@
-import { createServer } from "../../../server.js";
-import type { Express } from "express";
 import { db } from "../../../db/db.js";
 import { user } from "../../../db/schema/auth-schema.js";
 import { groups } from "../../../db/schema/group-schema.js";
@@ -33,7 +31,6 @@ export interface TestGroup {
 }
 
 export interface TestContext {
-  app: Express;
   user1: TestUser;
   user2: TestUser;
   approverUser: TestUser;
@@ -111,8 +108,6 @@ export async function setupTestEnvironment(): Promise<TestContext> {
     return cachedContext;
   }
 
-  const app = createServer();
-
   // Create test users
   const user1 = await createTestUser("user1@test.com", "Test User 1", "password123");
   const user2 = await createTestUser("user2@test.com", "Test User 2", "password123");
@@ -121,7 +116,7 @@ export async function setupTestEnvironment(): Promise<TestContext> {
   // Create test group
   const group = await createTestGroup("Test Group", user1.id, approverUser.id);
 
-  cachedContext = { app, user1, user2, approverUser, group };
+  cachedContext = { user1, user2, approverUser, group };
   return cachedContext;
 }
 

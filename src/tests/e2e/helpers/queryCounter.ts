@@ -3,6 +3,7 @@ import type { RequestListener } from "node:http";
 import type { Express } from "express";
 import type { Pool, PoolClient, QueryConfig } from "pg";
 import { db } from "../../../db/db.js";
+import { listenOnLoopback } from "../../loopbackServer.js";
 
 const scope = new AsyncLocalStorage<string[]>();
 let installed = false;
@@ -53,16 +54,20 @@ const install = () => {
 };
 
 /**
- * The SQL one request sends, in order. `send` gets a listener that serves the
- * app inside the counting scope; hand it to supertest in place of the app.
+ * The SQL one request sends, in order. `send` gets the URL of a loopback server
+ * that serves the app inside the counting scope and closes once `send` settles.
  */
 export const countQueries = async <T>(
   app: Express,
-  send: (counted: RequestListener) => PromiseLike<T>
+  send: (url: string) => PromiseLike<T>
 ): Promise<{ result: T; queries: string[] }> => {
   install();
   const queries: string[] = [];
   const counted: RequestListener = (req, res) => scope.run(queries, () => app(req, res));
-  const result = await send(counted);
-  return { result, queries };
+  const server = await listenOnLoopback(counted);
+  try {
+    return { result: await send(server.url), queries };
+  } finally {
+    await server.close();
+  }
 };

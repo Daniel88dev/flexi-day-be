@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
+import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { setupTestEnvironment, cleanupTestData, type TestContext } from "./helpers/testSetup.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { db } from "../../db/db.js";
@@ -22,11 +24,13 @@ const vacationDay = (() => {
 
 describe("Calendar feed E2E", () => {
   let context: TestContext;
+  let server: LoopbackServer;
   let cookie: string;
   let feedToken: string;
 
   beforeAll(async () => {
     context = await setupTestEnvironment();
+    server = await listenOnLoopback(createServer());
     cookie = await authCookieFor(context.user1.id);
 
     // TEAM scope requires membership, and the org-owner manager holds no row.
@@ -44,7 +48,7 @@ describe("Calendar feed E2E", () => {
     await db.update(groups).set({ holidayCountry: "CZ" }).where(eq(groups.id, context.group.id));
 
     // Warm the holiday cache so rows exist that a leaky feed could pick up.
-    await request(context.app)
+    await request(server.url)
       .get(`/api/bank-holidays?country=CZ&year=${YEAR}`)
       .set("Cookie", cookie)
       .expect(200);
@@ -63,7 +67,7 @@ describe("Calendar feed E2E", () => {
 
     // The feed deliberately *includes* BANK_HOLIDAY, the worst case: holidays
     // must still stay out because they are never vacation rows.
-    const created = await request(context.app)
+    const created = await request(server.url)
       .post("/api/calendar-sync")
       .set("Cookie", cookie)
       .send({
@@ -85,6 +89,7 @@ describe("Calendar feed E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await db.delete(bankHolidays);
     await cleanupTestData();
   });
@@ -93,7 +98,7 @@ describe("Calendar feed E2E", () => {
     const stored = await db.select().from(bankHolidays).where(eq(bankHolidays.country, "CZ"));
     expect(stored.length).toBeGreaterThan(5);
 
-    const response = await request(context.app).get(`/calendars/${feedToken}.ics`).expect(200);
+    const response = await request(server.url).get(`/calendars/${feedToken}.ics`).expect(200);
     const body = response.text || String(response.body);
 
     expect(body).toContain("BEGIN:VCALENDAR");

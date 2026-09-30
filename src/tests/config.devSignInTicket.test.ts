@@ -3,8 +3,9 @@
  * gated `/api/dev` router, so it needs its own proof that it only exists when
  * the dev tools do.
  */
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, onTestFinished, vi } from "vitest";
 import request from "supertest";
+import { listenOnLoopback } from "./loopbackServer.js";
 
 vi.mock("../services/email/index.js", () => ({
   emailSender: { sendTemplated: () => Promise.resolve() },
@@ -34,7 +35,9 @@ const loadServer = async (env: Record<string, string>) => {
   process.env = { ...ORIGINAL_ENV, ...env };
   vi.resetModules();
   const { createServer } = await import("../server.js");
-  return createServer();
+  const { url, close } = await listenOnLoopback(createServer());
+  onTestFinished(close);
+  return url;
 };
 
 // No device id: the endpoint refuses before it reads the ticket or the

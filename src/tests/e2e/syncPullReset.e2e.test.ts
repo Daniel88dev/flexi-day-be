@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -58,17 +58,17 @@ const organizationIdOf = async (userId: string): Promise<string> =>
 const idsOf = (rows: IdRow[]): string[] => rows.map((row) => row.id);
 
 describe("Sync pull reset triggers E2E", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   const pull = async (cookie: string, cursor?: string): Promise<SyncBody> => {
-    const call = request(app).get("/api/sync/pull").set("Cookie", cookie);
+    const call = request(server.url).get("/api/sync/pull").set("Cookie", cookie);
     const res = await (cursor === undefined ? call : call.query({ cursor })).expect(200);
     expect(res.headers["cache-control"]).toBe("no-store");
     return res.body as SyncBody;
   };
 
-  beforeAll(() => {
-    app = createServer();
+  beforeAll(async () => {
+    server = await listenOnLoopback(createServer());
   });
 
   beforeEach(async () => {
@@ -76,6 +76,7 @@ describe("Sync pull reset triggers E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await resetReportData();
   });
 

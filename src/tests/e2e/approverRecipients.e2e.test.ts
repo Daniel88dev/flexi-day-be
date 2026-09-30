@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { inArray } from "drizzle-orm";
 import { db } from "../../db/db.js";
@@ -9,6 +8,7 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { notifications } from "../../db/schema/notification-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { cleanupTestData, createTestUser, type TestUser } from "./helpers/testSetup.js";
@@ -40,7 +40,7 @@ const TUE = isoDay(new Date(MONDAY.getTime() + 24 * 60 * 60 * 1000));
  * The same set reaches email and the in-app bell.
  */
 describe("approver recipients", () => {
-  let app: Express;
+  let server: LoopbackServer;
   let manager: TestUser;
   let mainApprover: TestUser;
   let tempApprover: TestUser;
@@ -111,7 +111,7 @@ describe("approver recipients", () => {
   const emailsOf = (...users: TestUser[]) => users.map((u) => u.email).sort();
 
   beforeAll(async () => {
-    app = createServer();
+    server = await listenOnLoopback(createServer());
     manager = await createTestUser("manager@recipients.test", "Mia Manager", "password123");
     mainApprover = await createTestUser("main@recipients.test", "Max Main", "password123");
     tempApprover = await createTestUser("temp@recipients.test", "Tia Temp", "password123");
@@ -122,6 +122,7 @@ describe("approver recipients", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -136,7 +137,7 @@ describe("approver recipients", () => {
   it("asks main, temp, approver-access members and the manager about a new request", async () => {
     const groupId = await fullGroup();
 
-    await request(app)
+    await request(server.url)
       .post("/api/vacation/create-vacation")
       .set("Cookie", await authCookieFor(requester.id))
       .send({ groupId, from: MON, to: MON })
@@ -151,7 +152,7 @@ describe("approver recipients", () => {
     const groupId = await makeGroup();
     await join(groupId, requester.id, {});
 
-    await request(app)
+    await request(server.url)
       .post("/api/vacation/create-vacation")
       .set("Cookie", await authCookieFor(requester.id))
       .send({ groupId, from: MON, to: MON })
@@ -166,7 +167,7 @@ describe("approver recipients", () => {
     // The usual shape: the manager also holds a membership with every flag set.
     await join(groupId, manager.id, { adminAccess: true, approverAccess: true });
 
-    await request(app)
+    await request(server.url)
       .post("/api/vacation/create-vacation")
       .set("Cookie", await authCookieFor(manager.id))
       .send({ groupId, from: MON, to: MON, userId: requester.id })
@@ -196,7 +197,7 @@ describe("approver recipients", () => {
       }))
     );
 
-    await request(app)
+    await request(server.url)
       .post("/api/vacation/cancel")
       .set("Cookie", await authCookieFor(requester.id))
       .send({ ids })

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { Express } from "express";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -70,6 +71,7 @@ const settingsReads = (queries: string[]) =>
 
 describe("the round trips behind GET /api/attendance/current", () => {
   let app: Express;
+  let server: LoopbackServer;
   let ORGANIZATION_ID: string;
   let engineeringId: string;
 
@@ -84,8 +86,8 @@ describe("the round trips behind GET /api/attendance/current", () => {
   const cookieOf = (person: Person) => cookies.get(person.id)!;
 
   const current = async (person: Person) => {
-    const { result, queries } = await countQueries(app, (counted) =>
-      request(counted).get("/api/attendance/current").set("Cookie", cookieOf(person)).expect(200)
+    const { result, queries } = await countQueries(app, (url) =>
+      request(url).get("/api/attendance/current").set("Cookie", cookieOf(person)).expect(200)
     );
     return { result, queries: handlerQueries(queries) };
   };
@@ -122,6 +124,7 @@ describe("the round trips behind GET /api/attendance/current", () => {
   beforeAll(async () => {
     await cleanupTestData();
     app = createServer();
+    server = await listenOnLoopback(app);
 
     owner = await person("rt-owner@test.com", "Olivia Owner");
     delegate = await person("rt-delegate@test.com", "Dora Delegate");
@@ -151,6 +154,7 @@ describe("the round trips behind GET /api/attendance/current", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -201,11 +205,11 @@ describe("the round trips behind GET /api/attendance/current", () => {
     beforeAll(async () => {
       await switchOn(ORGANIZATION_ID);
       await onPro(ORGANIZATION_ID);
-      await request(app)
+      await request(server.url)
         .post("/api/attendance/clock-in")
         .set("Cookie", cookieOf(member))
         .expect(201);
-      await request(app)
+      await request(server.url)
         .post("/api/attendance/break/start")
         .set("Cookie", cookieOf(member))
         .expect(201);

@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { session as sessionTable } from "../../db/schema/auth-schema.js";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { WEB_TEST_PASSWORD, createWebUser } from "./helpers/authHelper.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 import {
@@ -49,14 +49,15 @@ const cookieShape = (cookie: string | undefined): string[] =>
     .sort();
 
 describe("dev sign-in ticket", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -67,7 +68,7 @@ describe("dev sign-in ticket", () => {
   const deviceId = () => `device-${uuidv4()}`;
 
   const mint = (email: string, token: string | null = DEV_TOKEN) => {
-    const req = request(app).post("/api/dev/sign-in-ticket");
+    const req = request(server.url).post("/api/dev/sign-in-ticket");
     if (token !== null) req.set("x-dev-token", token);
     return req.send({ email });
   };
@@ -79,7 +80,7 @@ describe("dev sign-in ticket", () => {
   };
 
   const redeem = (ticket: string, headers: Record<string, string>) =>
-    request(app).post(REDEEM_PATH).set(headers).send({ ticket });
+    request(server.url).post(REDEEM_PATH).set(headers).send({ ticket });
 
   describe("mint", () => {
     it("hands out a ticket that expires in sixty seconds", async () => {
@@ -127,7 +128,7 @@ describe("dev sign-in ticket", () => {
       expect(rows[0]).toMatchObject({ deviceId: device });
       expect(yearsUntil(rows[0]!.expiresAt)).toBeGreaterThan(9.9);
 
-      const signedIn = await request(app)
+      const signedIn = await request(server.url)
         .post("/api/auth/sign-in/email")
         .set(nativeHeaders(deviceId()))
         .send({ email, password: WEB_TEST_PASSWORD });
@@ -138,7 +139,7 @@ describe("dev sign-in ticket", () => {
       expect(redeemed).not.toMatch(/max-age=|expires=/i);
       expect(cookieShape(redeemed)).toEqual(cookieShape(lastCookie(signedIn, SESSION_COOKIE)));
 
-      const current = await request(app)
+      const current = await request(server.url)
         .get("/api/auth/get-session")
         .set("Cookie", cookieHeaderOf(res))
         .set("x-client-device-id", device);
@@ -151,7 +152,7 @@ describe("dev sign-in ticket", () => {
       const first = await createWebUser("Ticket Earlier Session Subject");
       const second = await createWebUser("Ticket Later Session Subject");
 
-      const earlier = await request(app)
+      const earlier = await request(server.url)
         .post("/api/auth/sign-in/email")
         .set(nativeHeaders(device))
         .send({ email: first.email, password: WEB_TEST_PASSWORD });

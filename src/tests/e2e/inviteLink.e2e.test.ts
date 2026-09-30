@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
@@ -11,6 +10,7 @@ import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import { manualPlanOverride } from "../../db/schema/subscription-schema.js";
 import { config } from "../../config.js";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateInviteCode } from "../../utils/inviteCode.js";
@@ -34,7 +34,7 @@ vi.mock("../../services/email/index.js", () => ({
  * HTTP against a real database.
  */
 describe("invite link", () => {
-  let app: Express;
+  let server: LoopbackServer;
   let owner: { id: string; name: string };
   let ownerCookie: string;
   let groupId: string;
@@ -55,7 +55,7 @@ describe("invite link", () => {
 
   const issueInvite = async (email: string, forGroup = groupId, cookie = ownerCookie) => {
     const sentBefore = sentEmails.length;
-    const res = await request(app)
+    const res = await request(server.url)
       .post(`/api/group-user/${forGroup}/invites`)
       .set("Cookie", cookie)
       .send({ email });
@@ -67,21 +67,22 @@ describe("invite link", () => {
     return { res, mail, token, code: (res.body as { invite: { code: string } }).invite.code };
   };
 
-  const preview = (token: string) => request(app).post("/api/auth/invite/preview").send({ token });
+  const preview = (token: string) =>
+    request(server.url).post("/api/auth/invite/preview").send({ token });
 
   const join = (token: string, cookie: string) =>
-    request(app).post("/api/auth/invite/join").set("Cookie", cookie).send({ token });
+    request(server.url).post("/api/auth/invite/join").set("Cookie", cookie).send({ token });
 
   const redeemCode = (code: string, cookie: string) =>
-    request(app).post(`/api/group-user/code/${code}`).set("Cookie", cookie);
+    request(server.url).post(`/api/group-user/code/${code}`).set("Cookie", cookie);
 
   const isVerified = async (cookie: string) => {
-    const res = await request(app).get("/api/auth/get-session").set("Cookie", cookie);
+    const res = await request(server.url).get("/api/auth/get-session").set("Cookie", cookie);
     return (res.body as { user: { emailVerified: boolean } }).user.emailVerified;
   };
 
   const groupIdsOf = async (cookie: string) => {
-    const res = await request(app).get("/api/group").set("Cookie", cookie);
+    const res = await request(server.url).get("/api/group").set("Cookie", cookie);
     return (res.body as { id: string }[]).map((g) => g.id);
   };
 
@@ -90,7 +91,7 @@ describe("invite link", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
     const created = await createTestUser("link-owner@test.com", "Link Owner", "password123");
     owner = { id: created.id, name: created.name };
     ownerCookie = await authCookieFor(owner.id);
@@ -105,6 +106,7 @@ describe("invite link", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -135,10 +137,10 @@ describe("invite link", () => {
       expect(Object.values(row)).not.toContain(token);
       expect(row.linkSecretHash).toBeTruthy();
 
-      const listed = await request(app)
+      const listed = await request(server.url)
         .get(`/api/group-user/${groupId}/invites`)
         .set("Cookie", ownerCookie);
-      const revoked = await request(app)
+      const revoked = await request(server.url)
         .delete(`/api/group-user/invites/${row.id}`)
         .set("Cookie", ownerCookie);
 
@@ -181,7 +183,7 @@ describe("invite link", () => {
     it("reports a revoked invite", async () => {
       const invitee = await makeUser(true);
       const { res, token } = await issueInvite(invitee.email);
-      await request(app)
+      await request(server.url)
         .delete(`/api/group-user/invites/${(res.body as { invite: { id: string } }).invite.id}`)
         .set("Cookie", ownerCookie);
 
@@ -246,7 +248,9 @@ describe("invite link", () => {
       const invitee = await makeUser(false);
       const { token } = await issueInvite(invitee.email);
 
-      expect((await request(app).post("/api/auth/invite/join").send({ token })).status).toBe(401);
+      expect((await request(server.url).post("/api/auth/invite/join").send({ token })).status).toBe(
+        401
+      );
     });
 
     it("uses up the invite, so neither the link nor the code works again", async () => {

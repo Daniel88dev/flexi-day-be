@@ -145,6 +145,9 @@ deliberately absent from the API docs.
 - E2E `user` rows take better-auth's `generateId()` ids, never UUIDs: a UUID fixture passes a
   `z.uuid()` validator on a user id that every real user fails. Keep an email built from the id
   lowercase, because better-auth lowercases the address at sign-in and matches it exactly.
+- Tests hand supertest the URL of a `listenOnLoopback` server (`src/tests/loopbackServer.ts`),
+  never the app: given an app, supertest listens on `::`, and on macOS a process already holding
+  that port on `127.0.0.1` answers instead.
 
 ## Configuration
 

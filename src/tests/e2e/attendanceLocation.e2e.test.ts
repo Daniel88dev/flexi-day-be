@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -45,7 +45,7 @@ const settings = (locationEnabled = true) =>
   });
 
 describe("attendance location", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: { id: string };
   let member: { id: string };
@@ -55,15 +55,17 @@ describe("attendance location", () => {
   let otherCookie: string;
   let memberEmploymentId: string;
 
-  const clockIn = () => request(app).post("/api/attendance/clock-in").set("Cookie", memberCookie);
-  const clockOut = () => request(app).post("/api/attendance/clock-out").set("Cookie", memberCookie);
+  const clockIn = () =>
+    request(server.url).post("/api/attendance/clock-in").set("Cookie", memberCookie);
+  const clockOut = () =>
+    request(server.url).post("/api/attendance/clock-out").set("Cookie", memberCookie);
 
   const sendFix = (
     sessionId: string,
     fix: { end: "IN" | "OUT"; accuracy: number; latitude?: number; longitude?: number },
     cookie = memberCookie
   ) =>
-    request(app)
+    request(server.url)
       .post(`/api/attendance/sessions/${sessionId}/location`)
       .set("Cookie", cookie)
       .send({ ...PRAGUE, ...fix });
@@ -102,7 +104,7 @@ describe("attendance location", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await createTestUser("loc-owner@test.com", "Olivia Owner", "password123");
     member = await createTestUser("loc-member@test.com", "Milo Member", "password123");
@@ -150,6 +152,7 @@ describe("attendance location", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -213,7 +216,7 @@ describe("attendance location", () => {
       const session = await clockIn().expect(201);
       await sendFix(session.body.id, { end: "IN", accuracy: 15 }).expect(200);
 
-      const state = await request(app)
+      const state = await request(server.url)
         .get("/api/attendance/current")
         .set("Cookie", memberCookie)
         .expect(200);
@@ -306,7 +309,7 @@ describe("attendance location", () => {
     it("401s without a session cookie", async () => {
       const session = await clockIn().expect(201);
 
-      await request(app)
+      await request(server.url)
         .post(`/api/attendance/sessions/${session.body.id}/location`)
         .send({ ...PRAGUE, end: "IN", accuracy: 5 })
         .expect(401);
@@ -317,7 +320,7 @@ describe("attendance location", () => {
 
       await sendFix(session.body.id, { end: "IN", accuracy: 5, latitude: 200 }).expect(422);
       await sendFix(session.body.id, { end: "IN", accuracy: 0 }).expect(422);
-      await request(app)
+      await request(server.url)
         .post(`/api/attendance/sessions/${session.body.id}/location`)
         .set("Cookie", memberCookie)
         .send({ ...PRAGUE, end: "SIDEWAYS", accuracy: 5 })
@@ -452,13 +455,13 @@ describe("attendance location", () => {
 
   describe("the one-time notice", () => {
     const getSettings = () =>
-      request(app).get("/api/users/me/settings").set("Cookie", memberCookie);
+      request(server.url).get("/api/users/me/settings").set("Cookie", memberCookie);
 
     it("starts undismissed and stays dismissed once set", async () => {
       const initial = await getSettings().expect(200);
       expect(initial.body.attendanceLocationNoticeDismissed).toBe(false);
 
-      const saved = await request(app)
+      const saved = await request(server.url)
         .put("/api/users/me/settings")
         .set("Cookie", memberCookie)
         .send({ attendanceLocationNoticeDismissed: true })
@@ -469,7 +472,7 @@ describe("attendance location", () => {
       expect(after.body.attendanceLocationNoticeDismissed).toBe(true);
 
       // Saving an unrelated card must not bring the notice back.
-      await request(app)
+      await request(server.url)
         .put("/api/users/me/settings")
         .set("Cookie", memberCookie)
         .send({ emailNotifications: false })
@@ -479,7 +482,7 @@ describe("attendance location", () => {
     });
 
     it("is an ordinary preference, so a person may put the notice back", async () => {
-      await request(app)
+      await request(server.url)
         .put("/api/users/me/settings")
         .set("Cookie", memberCookie)
         .send({ attendanceLocationNoticeDismissed: true })
@@ -488,7 +491,7 @@ describe("attendance location", () => {
       // Nothing in the product sends this, but the endpoint does not pretend
       // the flag is write-once — every other field on it is freely settable,
       // and un-dismissing only means seeing the notice again.
-      const undismissed = await request(app)
+      const undismissed = await request(server.url)
         .put("/api/users/me/settings")
         .set("Cookie", memberCookie)
         .send({ attendanceLocationNoticeDismissed: false })
@@ -502,14 +505,14 @@ describe("attendance location", () => {
   describe("the organization switch", () => {
     it("tells the widget whether to ask the browser at all", async () => {
       await settings(false);
-      const off = await request(app)
+      const off = await request(server.url)
         .get("/api/attendance/current")
         .set("Cookie", memberCookie)
         .expect(200);
       expect(off.body.locationEnabled).toBe(false);
 
       await settings(true);
-      const on = await request(app)
+      const on = await request(server.url)
         .get("/api/attendance/current")
         .set("Cookie", memberCookie)
         .expect(200);
@@ -519,7 +522,7 @@ describe("attendance location", () => {
     it("leaves the switch off for an organization that never set attendance up", async () => {
       await db.delete(organizationAttendanceSettings);
 
-      const state = await request(app)
+      const state = await request(server.url)
         .get("/api/attendance/current")
         .set("Cookie", memberCookie)
         .expect(200);

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
@@ -16,14 +16,14 @@ import {
 type Caller = "manager" | "viewMember" | "adminMember" | "orgAdmin" | "plainMember" | "outsider";
 
 describe("who may read a group's members and quotas", () => {
-  let app: Express;
+  let server: LoopbackServer;
   let groupId: string;
   const ids = {} as Record<Caller, string>;
   const cookies = {} as Record<Caller, string>;
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     const names: Record<Caller, string> = {
       manager: "Mara Manager",
@@ -80,12 +80,13 @@ describe("who may read a group's members and quotas", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
   describe.each(["manager", "viewMember", "adminMember", "orgAdmin"] as const)("%s", (caller) => {
     it("lists the group's members", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/group-user/${groupId}`)
         .set("Cookie", cookies[caller])
         .expect(200);
@@ -96,7 +97,7 @@ describe("who may read a group's members and quotas", () => {
     });
 
     it("reads the group's quotas", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/quotas/${groupId}?year=2026`)
         .set("Cookie", cookies[caller])
         .expect(200);
@@ -109,7 +110,7 @@ describe("who may read a group's members and quotas", () => {
     it("narrows the quotas to one member by their better-auth id", async () => {
       expect(ids.plainMember).toMatch(/^[A-Za-z0-9]{32}$/);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/quotas/${groupId}?year=2026&userId=${ids.plainMember}`)
         .set("Cookie", cookies[caller])
         .expect(200);
@@ -119,7 +120,7 @@ describe("who may read a group's members and quotas", () => {
   });
 
   it("rejects an empty userId filter", async () => {
-    await request(app)
+    await request(server.url)
       .get(`/api/quotas/${groupId}?year=2026&userId=`)
       .set("Cookie", cookies.manager)
       .expect(400);
@@ -127,7 +128,7 @@ describe("who may read a group's members and quotas", () => {
 
   describe.each(["plainMember", "outsider"] as const)("%s", (caller) => {
     it("is refused the members list", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/group-user/${groupId}`)
         .set("Cookie", cookies[caller])
         .expect(403);
@@ -136,7 +137,7 @@ describe("who may read a group's members and quotas", () => {
     });
 
     it("is refused the quotas", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/quotas/${groupId}?year=2026`)
         .set("Cookie", cookies[caller])
         .expect(403);

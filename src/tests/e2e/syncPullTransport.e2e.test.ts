@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { authCookieFor, createWebUser, webSessionCookieFor } from "./helpers/authHelper.js";
 import {
   addLeave,
@@ -35,10 +35,10 @@ const rateLimitHeaderNames = (res: request.Response): string[] =>
  * signed cookie `utils/devSession.ts` mints.
  */
 describe("Sync pull transport E2E", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
-  beforeAll(() => {
-    app = createServer();
+  beforeAll(async () => {
+    server = await listenOnLoopback(createServer());
   });
 
   beforeEach(async () => {
@@ -46,6 +46,7 @@ describe("Sync pull transport E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await resetReportData();
   });
 
@@ -66,13 +67,13 @@ describe("Sync pull transport E2E", () => {
       await seedGroupFor(caller.id);
       const cookie = await authCookieFor(caller.id);
 
-      const plain = await request(app)
+      const plain = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", cookie)
         .set("Accept-Encoding", "identity")
         .expect(200);
 
-      const gzipped = await request(app)
+      const gzipped = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", cookie)
         .set("Accept-Encoding", "gzip")
@@ -100,7 +101,7 @@ describe("Sync pull transport E2E", () => {
       const caller = await makeUser("Caller");
       await seedGroupFor(caller.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .set("Accept-Encoding", "identity")
@@ -115,7 +116,7 @@ describe("Sync pull transport E2E", () => {
       const caller = await makeUser("Caller");
       await seedGroupFor(caller.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .set("Accept-Encoding", "gzip")
@@ -133,7 +134,7 @@ describe("Sync pull transport E2E", () => {
       }
       const cookie = await authCookieFor(caller.id);
 
-      const other = await request(app)
+      const other = await request(server.url)
         .get("/api/group")
         .set("Cookie", cookie)
         .set("Accept-Encoding", "gzip")
@@ -153,7 +154,7 @@ describe("Sync pull transport E2E", () => {
       // `DEV_TOOLS_ENABLED` — so the shared minting path in
       // `utils/devSession.ts`, which is all `/api/dev/session` adds a cookie
       // around, stands in for the route.
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .set("Accept-Encoding", "gzip")
@@ -167,9 +168,9 @@ describe("Sync pull transport E2E", () => {
     it("answers a web session from better-auth's own sign-in", async () => {
       const caller = await createWebUser("Web Caller");
       await seedGroupFor(caller.id);
-      const cookie = await webSessionCookieFor(app, caller.email);
+      const cookie = await webSessionCookieFor(server.url, caller.email);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", cookie)
         .set("Accept-Encoding", "gzip")
@@ -185,8 +186,11 @@ describe("Sync pull transport E2E", () => {
       await seedGroupFor(caller.id);
       const cookie = await authCookieFor(caller.id);
 
-      const other = await request(app).get("/api/group").set("Cookie", cookie).expect(200);
-      const pull = await request(app).get("/api/sync/pull").set("Cookie", cookie).expect(200);
+      const other = await request(server.url).get("/api/group").set("Cookie", cookie).expect(200);
+      const pull = await request(server.url)
+        .get("/api/sync/pull")
+        .set("Cookie", cookie)
+        .expect(200);
 
       // The sync router adds no limiter of its own, so the pull is bounded by
       // the same `/api` limiters as everything else and says so identically.

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -50,7 +50,7 @@ let ORGANIZATION_ID: string;
 type Person = { id: string; name: string };
 
 describe("attendance corrections", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: Person;
   let groupAdmin: Person;
@@ -64,25 +64,27 @@ describe("attendance corrections", () => {
   const cookieOf = (person: Person) => cookies.get(person.id)!;
 
   const patchSession = (person: Person, sessionId: string, body: unknown) =>
-    request(app)
+    request(server.url)
       .patch(`/api/attendance/sessions/${sessionId}`)
       .set("Cookie", cookieOf(person))
       .send(body);
 
   const deleteSession = (person: Person, sessionId: string) =>
-    request(app).delete(`/api/attendance/sessions/${sessionId}`).set("Cookie", cookieOf(person));
+    request(server.url)
+      .delete(`/api/attendance/sessions/${sessionId}`)
+      .set("Cookie", cookieOf(person));
 
   const patchBreak = (person: Person, breakId: string, body: unknown) =>
-    request(app)
+    request(server.url)
       .patch(`/api/attendance/breaks/${breakId}`)
       .set("Cookie", cookieOf(person))
       .send(body);
 
   const deleteBreak = (person: Person, breakId: string) =>
-    request(app).delete(`/api/attendance/breaks/${breakId}`).set("Cookie", cookieOf(person));
+    request(server.url).delete(`/api/attendance/breaks/${breakId}`).set("Cookie", cookieOf(person));
 
   const events = (person: Person, sessionId: string) =>
-    request(app)
+    request(server.url)
       .get(`/api/attendance/sessions/${sessionId}/events`)
       .set("Cookie", cookieOf(person));
 
@@ -155,7 +157,7 @@ describe("attendance corrections", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     const make = async (email: string, name: string): Promise<Person> => {
       const user = await createTestUser(email, name, "password123");
@@ -217,6 +219,7 @@ describe("attendance corrections", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -502,7 +505,7 @@ describe("attendance corrections", () => {
 
   describe("the window on the state read", () => {
     const current = (person: Person) =>
-      request(app)
+      request(server.url)
         .get("/api/attendance/current")
         .query({ organizationId: ORGANIZATION_ID })
         .set("Cookie", cookieOf(person));
@@ -943,7 +946,7 @@ describe("attendance corrections", () => {
 
   describe("the day a dialog opens onto", () => {
     const day = (person: Person, query: Record<string, string>) =>
-      request(app)
+      request(server.url)
         .get("/api/attendance/day")
         .query({ organizationId: ORGANIZATION_ID, ...query })
         .set("Cookie", cookieOf(person));

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -80,7 +80,7 @@ const proActive = () =>
   });
 
 describe("my attendance, by month", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: { id: string };
   let groupAdmin: { id: string };
@@ -167,20 +167,20 @@ describe("my attendance, by month", () => {
   const REQUIRED = 480 * DAYS_IN_MONTH;
 
   const getMonth = (cookie: string, query: Record<string, string | number> = {}) =>
-    request(app)
+    request(server.url)
       .get("/api/attendance/month")
       .query({ organizationId: ORGANIZATION_ID, year, month, ...query })
       .set("Cookie", cookie);
 
   const patchEmployment = (cookie: string, employmentId: string, body: unknown) =>
-    request(app)
+    request(server.url)
       .patch(`/api/employment/${employmentId}`)
       .set("Cookie", cookie)
       .send(body as object);
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await createTestUser("month-owner@test.com", "Olivia Owner", "password123");
     groupAdmin = await createTestUser("month-admin@test.com", "Gina Groupadmin", "password123");
@@ -226,6 +226,7 @@ describe("my attendance, by month", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -331,7 +332,7 @@ describe("my attendance, by month", () => {
 
     it("owes nothing on the days of the current month still to come", async () => {
       const now = new Date();
-      const { body } = await request(app)
+      const { body } = await request(server.url)
         .get("/api/attendance/month")
         .query({
           organizationId: ORGANIZATION_ID,
@@ -388,7 +389,7 @@ describe("my attendance, by month", () => {
       const secondOrganization = await ensureOrganizationForUser(second.id);
       await syncEmployment(secondOrganization.id, second.id);
 
-      const { body } = await request(app)
+      const { body } = await request(server.url)
         .get("/api/attendance/month")
         .query({ organizationId: secondOrganization.id, year, month })
         .set("Cookie", await authCookieFor(second.id))
@@ -437,7 +438,7 @@ describe("my attendance, by month", () => {
     it("refuses a caller with no Employment in the organization", async () => {
       const outsider = await createTestUser("month-outsider@test.com", "Otto", "password123");
 
-      await request(app)
+      await request(server.url)
         .get("/api/attendance/month")
         .query({ organizationId: ORGANIZATION_ID, year, month })
         .set("Cookie", await authCookieFor(outsider.id))
@@ -457,7 +458,7 @@ describe("my attendance, by month", () => {
       }).expect(200);
       expect(set.body).toMatchObject({ id: memberEmploymentId, requiredMinutesPerDay: 300 });
 
-      const roster = await request(app)
+      const roster = await request(server.url)
         .get("/api/employment/list")
         .query({ organizationId: ORGANIZATION_ID })
         .set("Cookie", ownerCookie)

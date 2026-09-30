@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi, type MockInstance } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 import { base32 } from "@better-auth/utils/base32";
@@ -10,6 +9,7 @@ import { auth } from "../../utils/auth.js";
 import { logger } from "../../middleware/logger.js";
 import { SESSION_DEVICE_MISMATCH } from "../../utils/nativeSession.js";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { WEB_TEST_PASSWORD, authCookieFor, createWebUser } from "./helpers/authHelper.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 import {
@@ -44,21 +44,22 @@ const expectNoCookieExpiry = (res: request.Response, name: string) => {
  * left exactly as it was. Runs against a real database.
  */
 describe("native session", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
   const deviceId = () => `device-${uuidv4()}`;
 
   const signIn = (email: string, headers: Record<string, string> = {}) => {
-    const req = request(app).post("/api/auth/sign-in/email");
+    const req = request(server.url).post("/api/auth/sign-in/email");
     for (const [name, value] of Object.entries(headers)) req.set(name, value);
     return req.send({ email, password: WEB_TEST_PASSWORD });
   };
@@ -132,7 +133,7 @@ describe("native session", () => {
     expect(rows[0]!.id).not.toBe(replaced!.id);
     expect(rows[0]).toMatchObject({ deviceId: device });
 
-    const stale = await request(app)
+    const stale = await request(server.url)
       .get("/api/auth/get-session")
       .set("Cookie", cookieHeaderOf(first))
       .set("x-client-device-id", device);
@@ -183,7 +184,7 @@ describe("native session", () => {
   it("ignores a sign-in body that tries to stamp the fields itself", async () => {
     const { id, email } = await createWebUser("Body Forger Subject");
 
-    const res = await request(app)
+    const res = await request(server.url)
       .post("/api/auth/sign-in/email")
       .set("Origin", BROWSER_ORIGIN)
       .send({
@@ -223,7 +224,7 @@ describe("native session", () => {
 
     // A ten-year row would otherwise outlive the phone it was lost with.
     expect(await sessionsOf(id)).toHaveLength(0);
-    const after = await request(app)
+    const after = await request(server.url)
       .get("/api/auth/get-session")
       .set("Cookie", cookieHeaderOf(signedIn));
     expect(after.body?.user).toBeFalsy();
@@ -260,14 +261,18 @@ describe("native session", () => {
     });
 
     const changePassword = (cookie: string, headers: Record<string, string>) =>
-      request(app).post("/api/auth/change-password").set(headers).set("Cookie", cookie).send({
-        currentPassword: WEB_TEST_PASSWORD,
-        newPassword: NEW_PASSWORD,
-        revokeOtherSessions: true,
-      });
+      request(server.url)
+        .post("/api/auth/change-password")
+        .set(headers)
+        .set("Cookie", cookie)
+        .send({
+          currentPassword: WEB_TEST_PASSWORD,
+          newPassword: NEW_PASSWORD,
+          revokeOtherSessions: true,
+        });
 
     const getSession = (cookie: string, headers: Record<string, string> = {}) =>
-      request(app).get("/api/auth/get-session").set("Cookie", cookie).set(headers);
+      request(server.url).get("/api/auth/get-session").set("Cookie", cookie).set(headers);
 
     it("keeps the phone signed in on a new ten-year session when it changes the password", async () => {
       const device = deviceId();
@@ -361,7 +366,7 @@ describe("native session", () => {
 
       // Enrollment from a browser session, the way a person actually does it.
       const cookie = await authCookieFor(userId);
-      const enable = await request(app)
+      const enable = await request(server.url)
         .post("/api/auth/two-factor/enable")
         .set("Origin", BROWSER_ORIGIN)
         .set("Cookie", cookie)
@@ -369,7 +374,7 @@ describe("native session", () => {
       expect(enable.status).toBe(200);
       totpSecret = new URL(enable.body.totpURI as string).searchParams.get("secret") ?? "";
 
-      const verified = await request(app)
+      const verified = await request(server.url)
         .post("/api/auth/two-factor/verify-totp")
         .set("Origin", BROWSER_ORIGIN)
         .set("Cookie", cookie)
@@ -389,7 +394,7 @@ describe("native session", () => {
       // The pre-challenge session dies with the redirect, as it does on the web.
       expect(await sessionsOf(userId)).toHaveLength(0);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .post("/api/auth/two-factor/verify-totp")
         .set(nativeHeaders(device))
         .set("Cookie", cookieHeaderOf(challenge))
@@ -409,7 +414,7 @@ describe("native session", () => {
       const device = deviceId();
 
       const opened = await signIn(email, nativeHeaders(device));
-      const established = await request(app)
+      const established = await request(server.url)
         .post("/api/auth/two-factor/verify-totp")
         .set(nativeHeaders(device))
         .set("Cookie", cookieHeaderOf(opened))
@@ -427,7 +432,7 @@ describe("native session", () => {
       expect(during).toHaveLength(1);
       expect(during[0]!.id).toBe(standing!.id);
 
-      const verified = await request(app)
+      const verified = await request(server.url)
         .post("/api/auth/two-factor/verify-totp")
         .set(nativeHeaders(device))
         .set("Cookie", cookieHeaderOf(challenge))
@@ -446,7 +451,7 @@ describe("native session", () => {
       const device = deviceId();
 
       const challenge = await signIn(email, nativeHeaders(device));
-      const trusted = await request(app)
+      const trusted = await request(server.url)
         .post("/api/auth/two-factor/verify-totp")
         .set(nativeHeaders(device))
         .set("Cookie", cookieHeaderOf(challenge))
@@ -480,7 +485,7 @@ describe("native session", () => {
      */
     it("keys a native request on the cookie it carries, not on its IP", async () => {
       const sendOtp = (challenge: request.Response, device: string) =>
-        request(app)
+        request(server.url)
           .post("/api/auth/two-factor/send-otp")
           .set(nativeHeaders(device))
           .set("Cookie", cookieHeaderOf(challenge))
@@ -531,10 +536,10 @@ describe("native session", () => {
     };
 
     const getSession = (cookie: string, headers: Record<string, string> = {}) =>
-      request(app).get("/api/auth/get-session").set("Cookie", cookie).set(headers);
+      request(server.url).get("/api/auth/get-session").set("Cookie", cookie).set(headers);
 
     const protectedRoute = (cookie: string, headers: Record<string, string> = {}) =>
-      request(app).get(PROTECTED_ROUTE).set("Cookie", cookie).set(headers);
+      request(server.url).get(PROTECTED_ROUTE).set("Cookie", cookie).set(headers);
 
     /** Every shape of the header a browser could send by mistake. */
     const strayHeaders = () => [

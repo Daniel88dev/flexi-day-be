@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
+import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { setupTestEnvironment, cleanupTestData, type TestContext } from "./helpers/testSetup.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { db } from "../../db/db.js";
@@ -11,10 +13,12 @@ const YEAR = new Date().getFullYear();
 
 describe("Bank holidays E2E", () => {
   let context: TestContext;
+  let server: LoopbackServer;
   let cookie: string;
 
   beforeAll(async () => {
     context = await setupTestEnvironment();
+    server = await listenOnLoopback(createServer());
     // user1 owns the group's organization, so they hold group admin rights.
     cookie = await authCookieFor(context.user1.id);
     // Self-heal from an interrupted previous run; the first test asserts on
@@ -23,6 +27,7 @@ describe("Bank holidays E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await db.delete(bankHolidays);
     await cleanupTestData();
   });
@@ -32,7 +37,7 @@ describe("Bank holidays E2E", () => {
       const before = await db.select().from(bankHolidays).where(eq(bankHolidays.country, "CZ"));
       expect(before).toHaveLength(0);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .get(`/api/bank-holidays?country=CZ&year=${YEAR}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -46,11 +51,11 @@ describe("Bank holidays E2E", () => {
     });
 
     it("serves the cached rows on subsequent requests", async () => {
-      const first = await request(context.app)
+      const first = await request(server.url)
         .get(`/api/bank-holidays?country=CZ&year=${YEAR}`)
         .set("Cookie", cookie)
         .expect(200);
-      const second = await request(context.app)
+      const second = await request(server.url)
         .get(`/api/bank-holidays?country=CZ&year=${YEAR}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -59,20 +64,20 @@ describe("Bank holidays E2E", () => {
     });
 
     it("never duplicates rows: repeat and region-filtered requests leave the table unchanged", async () => {
-      await request(context.app)
+      await request(server.url)
         .get(`/api/bank-holidays?country=CZ&year=${YEAR}`)
         .set("Cookie", cookie)
         .expect(200);
       const filled = await db.select().from(bankHolidays).where(eq(bankHolidays.country, "CZ"));
 
       // A region-filtered miss on a cached country must not trigger a refill.
-      const regionResponse = await request(context.app)
+      const regionResponse = await request(server.url)
         .get(`/api/bank-holidays?country=CZ&year=${YEAR}&region=PR`)
         .set("Cookie", cookie)
         .expect(200);
       expect(regionResponse.body).toEqual([]);
 
-      await request(context.app)
+      await request(server.url)
         .get(`/api/bank-holidays?country=CZ&year=${YEAR}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -83,7 +88,7 @@ describe("Bank holidays E2E", () => {
     });
 
     it("returns an empty array for an unsupported country", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .get(`/api/bank-holidays?country=ZZ&year=${YEAR}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -94,7 +99,7 @@ describe("Bank holidays E2E", () => {
 
   describe("GET /api/bank-holidays/countries", () => {
     it("lists supported countries", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .get("/api/bank-holidays/countries")
         .set("Cookie", cookie)
         .expect(200);
@@ -106,7 +111,7 @@ describe("Bank holidays E2E", () => {
 
   describe("PUT /api/group/:groupId/holiday-country", () => {
     it("persists the country, upper-cased, and returns it on group reads", async () => {
-      const putResponse = await request(context.app)
+      const putResponse = await request(server.url)
         .put(`/api/group/${context.group.id}/holiday-country`)
         .set("Cookie", cookie)
         .send({ holidayCountry: "cz" })
@@ -114,7 +119,7 @@ describe("Bank holidays E2E", () => {
 
       expect(putResponse.body.holidayCountry).toBe("CZ");
 
-      const getResponse = await request(context.app)
+      const getResponse = await request(server.url)
         .get(`/api/group/${context.group.id}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -123,7 +128,7 @@ describe("Bank holidays E2E", () => {
     });
 
     it("clears the country with null", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .put(`/api/group/${context.group.id}/holiday-country`)
         .set("Cookie", cookie)
         .send({ holidayCountry: null })
@@ -136,7 +141,7 @@ describe("Bank holidays E2E", () => {
     });
 
     it("rejects an unsupported country code with 422", async () => {
-      await request(context.app)
+      await request(server.url)
         .put(`/api/group/${context.group.id}/holiday-country`)
         .set("Cookie", cookie)
         .send({ holidayCountry: "XX" })
@@ -146,7 +151,7 @@ describe("Bank holidays E2E", () => {
     it("refuses a caller without group admin rights", async () => {
       const outsiderCookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .put(`/api/group/${context.group.id}/holiday-country`)
         .set("Cookie", outsiderCookie)
         .send({ holidayCountry: "CZ" })

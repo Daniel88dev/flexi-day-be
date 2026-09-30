@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
@@ -10,6 +9,7 @@ import { db } from "../../db/db.js";
 import { account, twoFactor as twoFactorTable, user } from "../../db/schema/auth-schema.js";
 import { auth } from "../../utils/auth.js";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 
@@ -32,7 +32,7 @@ vi.mock("../../services/email/index.js", () => ({
  * Runs against a real database.
  */
 describe("two-factor authentication", () => {
-  let app: Express;
+  let server: LoopbackServer;
   const password = "sturdy-passphrase-42";
   const email = `twofactor-${uuidv4()}@dev.local`;
   let userId: string;
@@ -44,7 +44,7 @@ describe("two-factor authentication", () => {
   const BROWSER_ORIGIN = "http://localhost:3000";
 
   const postWithCookie = (path: string, cookie: string) =>
-    request(app).post(path).set("Origin", BROWSER_ORIGIN).set("Cookie", cookie);
+    request(server.url).post(path).set("Origin", BROWSER_ORIGIN).set("Cookie", cookie);
 
   const cookiesOf = (res: request.Response): string =>
     (res.headers["set-cookie"] as unknown as string[] | undefined)
@@ -59,11 +59,12 @@ describe("two-factor authentication", () => {
     return code;
   };
 
-  const signIn = () => request(app).post("/api/auth/sign-in/email").send({ email, password });
+  const signIn = () =>
+    request(server.url).post("/api/auth/sign-in/email").send({ email, password });
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
     userId = generateId();
     await db.insert(user).values({
       id: userId,
@@ -85,6 +86,7 @@ describe("two-factor authentication", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -155,7 +157,7 @@ describe("two-factor authentication", () => {
 
     const sessionCookies = cookiesOf(right);
     expect(sessionCookies).toContain("session_token");
-    const me = await request(app).get("/api/auth/get-session").set("Cookie", sessionCookies);
+    const me = await request(server.url).get("/api/auth/get-session").set("Cookie", sessionCookies);
     expect(me.status).toBe(200);
     expect(me.body.user.email).toBe(email);
   });
@@ -222,7 +224,7 @@ describe("two-factor authentication", () => {
 
     // Sign-in offers only the emailed code — the authenticator was never
     // proven, so the row is unverified and totp must not be listed.
-    const challenge = await request(app)
+    const challenge = await request(server.url)
       .post("/api/auth/sign-in/email")
       .send({ email: otpEmail, password });
     expect(challenge.body.twoFactorRedirect).toBe(true);

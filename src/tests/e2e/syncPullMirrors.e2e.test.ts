@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
@@ -82,10 +82,10 @@ const seedMirror = async (
 };
 
 describe("Sync pull mirrors E2E", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
-  beforeAll(() => {
-    app = createServer();
+  beforeAll(async () => {
+    server = await listenOnLoopback(createServer());
   });
 
   beforeEach(async () => {
@@ -93,6 +93,7 @@ describe("Sync pull mirrors E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await resetReportData();
   });
 
@@ -103,7 +104,7 @@ describe("Sync pull mirrors E2E", () => {
       await addMember(fixture.sourceGroupId, outsider.id);
       const unmirrored = await addLeave(fixture.sourceGroupId, outsider.id, dayIn(THIS_YEAR, 5, 5));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(fixture.caller.id))
         .expect(200);
@@ -120,7 +121,7 @@ describe("Sync pull mirrors E2E", () => {
     it("returns neither the mirror nor the mirrored vacations when the target is self-scoped", async () => {
       const fixture = await seedMirror({ targetAccess: "self" });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(fixture.caller.id))
         .expect(200);
@@ -136,7 +137,7 @@ describe("Sync pull mirrors E2E", () => {
       const fixture = await seedMirror();
       await removeMember(fixture.targetGroupId, fixture.dana.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(fixture.caller.id))
         .expect(200);
@@ -156,7 +157,7 @@ describe("Sync pull mirrors E2E", () => {
         approvedBy: sourceApprover.id,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(fixture.caller.id))
         .expect(200);
@@ -187,7 +188,7 @@ describe("Sync pull mirrors E2E", () => {
       const sourceOrganizationId = await organizationIdOf(otherManager.id);
       const targetOrganizationId = await organizationIdOf(manager.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -223,7 +224,7 @@ describe("Sync pull mirrors E2E", () => {
       await ageEverything();
       await removeMirror(fixture.mirrorId, ago(1 * MINUTE));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(fixture.caller.id))
@@ -244,7 +245,7 @@ describe("Sync pull mirrors E2E", () => {
       await ageEverything();
       const addedMirror = await addMirror(fixture.dana.id, secondSource, fixture.targetGroupId);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(fixture.caller.id))

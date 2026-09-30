@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -47,7 +47,7 @@ let ORGANIZATION_ID: string;
 type Person = { id: string; name: string };
 
 describe("entered attendance sessions", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: Person;
   let groupAdmin: Person;
@@ -71,7 +71,7 @@ describe("entered attendance sessions", () => {
       breaks?: { startedAt: string; endedAt: string }[];
     }
   ) =>
-    request(app)
+    request(server.url)
       .post("/api/attendance/sessions")
       .set("Cookie", cookieOf(person))
       .send({ organizationId: ORGANIZATION_ID, ...body });
@@ -118,7 +118,7 @@ describe("entered attendance sessions", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     const make = async (email: string, name: string): Promise<Person> => {
       const user = await createTestUser(email, name, "password123");
@@ -179,6 +179,7 @@ describe("entered attendance sessions", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -456,7 +457,7 @@ describe("entered attendance sessions", () => {
       }).expect(201);
 
       const day = (businessDate: string) =>
-        request(app)
+        request(server.url)
           .get("/api/attendance/day")
           .query({ organizationId: ORGANIZATION_ID, userId: member.id, businessDate })
           .set("Cookie", cookieOf(owner))
@@ -532,7 +533,7 @@ describe("entered attendance sessions", () => {
         closedBy: "USER",
       });
 
-      const day = await request(app)
+      const day = await request(server.url)
         .get("/api/attendance/day")
         .query({
           organizationId: ORGANIZATION_ID,
@@ -543,7 +544,7 @@ describe("entered attendance sessions", () => {
         .expect(200);
       expect(day.body.sessions).toMatchObject([{ origin: "ENTERED", enteredByUserId: owner.id }]);
 
-      const clocked = await request(app)
+      const clocked = await request(server.url)
         .get("/api/attendance/day")
         .query({
           organizationId: ORGANIZATION_ID,
@@ -554,7 +555,7 @@ describe("entered attendance sessions", () => {
         .expect(200);
       expect(clocked.body.sessions).toMatchObject([{ origin: "CLOCKED", enteredByUserId: null }]);
 
-      const team = await request(app)
+      const team = await request(server.url)
         .get("/api/attendance/team")
         .query({
           organizationId: ORGANIZATION_ID,
@@ -583,7 +584,7 @@ describe("entered attendance sessions", () => {
         endedAt: at(saturday, "10:00"),
       }).expect(201);
 
-      const team = await request(app)
+      const team = await request(server.url)
         .get("/api/attendance/team")
         .query({ organizationId: ORGANIZATION_ID, from: saturday, to: saturday })
         .set("Cookie", cookieOf(owner))
@@ -603,7 +604,9 @@ describe("entered attendance sessions", () => {
 
   describe("deleting an entered session", () => {
     const remove = (person: Person, sessionId: string) =>
-      request(app).delete(`/api/attendance/sessions/${sessionId}`).set("Cookie", cookieOf(person));
+      request(server.url)
+        .delete(`/api/attendance/sessions/${sessionId}`)
+        .set("Cookie", cookieOf(person));
 
     it("lets the employee delete one they entered on a past day inside the window", async () => {
       const { body } = await enter(member, dayBack(4)).expect(201);
@@ -679,7 +682,7 @@ describe("entered attendance sessions", () => {
         { breakId: expect.any(String), ...breaks[1] },
       ]);
 
-      const timeline = await request(app)
+      const timeline = await request(server.url)
         .get(`/api/attendance/sessions/${body.id}/events`)
         .set("Cookie", cookieOf(member))
         .expect(200);
@@ -746,7 +749,7 @@ describe("entered attendance sessions", () => {
         origin: "ENTERED",
       });
 
-      const timeline = await request(app)
+      const timeline = await request(server.url)
         .get(`/api/attendance/sessions/${body.id}/events`)
         .set("Cookie", cookieOf(member))
         .expect(200);

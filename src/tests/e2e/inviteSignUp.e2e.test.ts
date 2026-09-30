@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
@@ -10,6 +9,7 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import { manualPlanOverride } from "../../db/schema/subscription-schema.js";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { authCookieFor } from "./helpers/authHelper.js";
@@ -54,7 +54,7 @@ vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
  * Driven over HTTP against a real database.
  */
 describe("sign up with invite", () => {
-  let app: Express;
+  let server: LoopbackServer;
   let ownerCookie: string;
   let groupId: string;
 
@@ -62,7 +62,7 @@ describe("sign up with invite", () => {
 
   const issueInvite = async (email: string, forGroup = groupId, cookie = ownerCookie) => {
     const sentBefore = sentEmails.length;
-    const res = await request(app)
+    const res = await request(server.url)
       .post(`/api/group-user/${forGroup}/invites`)
       .set("Cookie", cookie)
       .send({ email });
@@ -76,7 +76,7 @@ describe("sign up with invite", () => {
   };
 
   const signUp = (body: { name?: string; email: string; password?: string; token: string }) =>
-    request(app)
+    request(server.url)
       .post("/api/auth/invite/sign-up")
       .send({ name: "Nora Newcomer", password: PASSWORD, ...body });
 
@@ -86,21 +86,22 @@ describe("sign up with invite", () => {
   };
 
   const sessionOf = async (cookie: string) => {
-    const res = await request(app).get("/api/auth/get-session").set("Cookie", cookie);
+    const res = await request(server.url).get("/api/auth/get-session").set("Cookie", cookie);
     return res.body as { user: { email: string; emailVerified: boolean } } | null;
   };
 
   const groupIdsOf = async (cookie: string) => {
-    const res = await request(app).get("/api/group").set("Cookie", cookie);
+    const res = await request(server.url).get("/api/group").set("Cookie", cookie);
     return (res.body as { id: string }[]).map((g) => g.id);
   };
 
-  const preview = (token: string) => request(app).post("/api/auth/invite/preview").send({ token });
+  const preview = (token: string) =>
+    request(server.url).post("/api/auth/invite/preview").send({ token });
 
   // A password sign-in tells the three account states apart without reading
   // a table: 401 for no account, 403 for an unconfirmed one, 200 otherwise.
   const signInStatus = async (email: string, password = PASSWORD) =>
-    (await request(app).post("/api/auth/sign-in/email").send({ email, password })).status;
+    (await request(server.url).post("/api/auth/sign-in/email").send({ email, password })).status;
 
   const errorCode = (res: request.Response) =>
     (res.body as { errors: { context?: { code?: string } }[] }).errors[0]?.context?.code;
@@ -109,7 +110,7 @@ describe("sign up with invite", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
     const owner = await createTestUser("signup-owner@test.com", "Signup Owner", "password123");
     ownerCookie = await authCookieFor(owner.id);
     groupId = (await createTestGroup("Signup Target", owner.id)).id;
@@ -125,6 +126,7 @@ describe("sign up with invite", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
     vi.restoreAllMocks();
   });
@@ -162,13 +164,15 @@ describe("sign up with invite", () => {
     const cookie = sessionCookieOf(res);
 
     expect((await preview(token)).body).toMatchObject({ status: "used" });
-    const byLink = await request(app)
+    const byLink = await request(server.url)
       .post("/api/auth/invite/join")
       .set("Cookie", cookie)
       .send({ token });
     expect(byLink.status).toBe(410);
     expect(errorCode(byLink)).toBe("INVITE_USED");
-    const byCode = await request(app).post(`/api/group-user/code/${code}`).set("Cookie", cookie);
+    const byCode = await request(server.url)
+      .post(`/api/group-user/code/${code}`)
+      .set("Cookie", cookie);
     expect(byCode.status).toBe(404);
   });
 
@@ -195,7 +199,9 @@ describe("sign up with invite", () => {
           .set({ expiresAt: new Date(Date.now() - 1000) })
           .where(eq(inviteLink.id, inviteId)),
       revoked: async (inviteId: string) =>
-        request(app).delete(`/api/group-user/invites/${inviteId}`).set("Cookie", ownerCookie),
+        request(server.url)
+          .delete(`/api/group-user/invites/${inviteId}`)
+          .set("Cookie", ownerCookie),
     };
 
     it.each(["used", "expired", "revoked"] as const)(

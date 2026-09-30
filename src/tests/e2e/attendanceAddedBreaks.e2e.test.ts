@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -50,7 +50,7 @@ let ORGANIZATION_ID: string;
 type Person = { id: string; name: string };
 
 describe("breaks added to closed attendance sessions", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: Person;
   let groupAdmin: Person;
@@ -67,7 +67,7 @@ describe("breaks added to closed attendance sessions", () => {
     sessionId: string,
     body: { startedAt: string; endedAt: string }
   ) =>
-    request(app)
+    request(server.url)
       .post(`/api/attendance/sessions/${sessionId}/breaks`)
       .set("Cookie", cookieOf(person))
       .send(body);
@@ -113,7 +113,7 @@ describe("breaks added to closed attendance sessions", () => {
       .orderBy(asc(attendanceBreaks.startedAt));
 
   const workedOn = async (person: Person, businessDate: string): Promise<number> => {
-    const team = await request(app)
+    const team = await request(server.url)
       .get("/api/attendance/team")
       .query({ organizationId: ORGANIZATION_ID, from: businessDate, to: businessDate })
       .set("Cookie", cookieOf(owner))
@@ -130,7 +130,7 @@ describe("breaks added to closed attendance sessions", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     const make = async (email: string, name: string): Promise<Person> => {
       const user = await createTestUser(email, name, "password123");
@@ -189,6 +189,7 @@ describe("breaks added to closed attendance sessions", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -415,7 +416,7 @@ describe("breaks added to closed attendance sessions", () => {
         (entry: { startedAt: string }) => entry.startedAt === at(session.businessDate, "14:00")
       );
 
-      const { body } = await request(app)
+      const { body } = await request(server.url)
         .patch(`/api/attendance/breaks/${later.id}`)
         .set("Cookie", cookieOf(owner))
         .send({ startedAt: at(session.businessDate, "12:15") })

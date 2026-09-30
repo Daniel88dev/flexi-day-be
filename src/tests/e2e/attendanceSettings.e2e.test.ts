@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -44,7 +44,7 @@ const free = () =>
 let ORGANIZATION_ID: string;
 
 describe("organization attendance settings", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: { id: string };
   /** Org admin who belongs to no group — the delegate path. */
@@ -60,7 +60,7 @@ describe("organization attendance settings", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await createTestUser("att-owner@test.com", "Olivia Owner", "password123");
     delegate = await createTestUser("att-delegate@test.com", "Dana Delegate", "password123");
@@ -112,6 +112,7 @@ describe("organization attendance settings", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -122,7 +123,7 @@ describe("organization attendance settings", () => {
   });
 
   const put = (cookie: string, body: unknown) =>
-    request(app)
+    request(server.url)
       .put(`/api/organization/attendance-settings?organizationId=${ORGANIZATION_ID}`)
       .set("Cookie", cookie)
       .send(body);
@@ -136,7 +137,7 @@ describe("organization attendance settings", () => {
 
   describe("get", () => {
     it("answers the defaults with the feature off when nothing was ever saved", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -161,7 +162,7 @@ describe("organization attendance settings", () => {
     });
 
     it("is readable by a delegated admin", async () => {
-      await request(app)
+      await request(server.url)
         .get("/api/organization/attendance-settings")
         .set("Cookie", delegateCookie)
         .expect(200);
@@ -170,12 +171,12 @@ describe("organization attendance settings", () => {
     it("403s for a group manager and for a member", async () => {
       // Named explicitly: neither administers an organization, so an unscoped
       // request has none to default to and 404s before the permission check.
-      await request(app)
+      await request(server.url)
         .get(`/api/organization/attendance-settings?organizationId=${ORGANIZATION_ID}`)
         .set("Cookie", managerCookie)
         .expect(403);
 
-      await request(app)
+      await request(server.url)
         .get(`/api/organization/attendance-settings?organizationId=${ORGANIZATION_ID}`)
         .set("Cookie", memberCookie)
         .expect(403);
@@ -186,7 +187,7 @@ describe("organization attendance settings", () => {
     it("writes the defaults for every rule the body omits", async () => {
       await proActive();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
@@ -206,7 +207,7 @@ describe("organization attendance settings", () => {
         active: true,
       });
 
-      const reread = await request(app)
+      const reread = await request(server.url)
         .get("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -216,7 +217,7 @@ describe("organization attendance settings", () => {
     it("succeeds as a delegated admin", async () => {
       await proActive();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", delegateCookie)
         .send({
@@ -245,13 +246,13 @@ describe("organization attendance settings", () => {
     it("403s for a group manager and for a member", async () => {
       await proActive();
 
-      await request(app)
+      await request(server.url)
         .put(`/api/organization/attendance-settings?organizationId=${ORGANIZATION_ID}`)
         .set("Cookie", managerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
         .expect(403);
 
-      await request(app)
+      await request(server.url)
         .put(`/api/organization/attendance-settings?organizationId=${ORGANIZATION_ID}`)
         .set("Cookie", memberCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
@@ -261,13 +262,13 @@ describe("organization attendance settings", () => {
     it("422s when enabling without a timezone", async () => {
       await proActive();
 
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true })
         .expect(422);
 
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: null })
@@ -277,13 +278,13 @@ describe("organization attendance settings", () => {
     it("422s on an unknown timezone and an unsupported holiday country", async () => {
       await proActive();
 
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Mars/Olympus_Mons" })
         .expect(422);
 
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague", holidayCountry: "ZZ" })
@@ -291,7 +292,7 @@ describe("organization attendance settings", () => {
     });
 
     it("keeps a timezone-less body legal while attendance stays off", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: false, breakMinutes: 15 })
@@ -306,7 +307,7 @@ describe("organization attendance settings", () => {
     });
 
     it("402s when enabling on Free, and writes nothing", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
@@ -318,7 +319,7 @@ describe("organization attendance settings", () => {
 
       // The guard runs inside the write's transaction, so the refusal rolls the
       // row back rather than leaving attendance stored-on-but-inactive.
-      const reread = await request(app)
+      const reread = await request(server.url)
         .get("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -328,7 +329,7 @@ describe("organization attendance settings", () => {
     it("402s when enabling on a Pro subscription whose grace has expired", async () => {
       await proLapsed();
 
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
@@ -337,7 +338,7 @@ describe("organization attendance settings", () => {
 
     it("never gates turning attendance off", async () => {
       await proActive();
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
@@ -345,7 +346,7 @@ describe("organization attendance settings", () => {
 
       await proLapsed();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: false, timezone: "Europe/Prague" })
@@ -366,7 +367,7 @@ describe("organization attendance settings", () => {
       }).expect(200);
       expect(res.body).toMatchObject({ selfServiceEnabled: true, selfServiceDays: 7 });
 
-      const reread = await request(app)
+      const reread = await request(server.url)
         .get("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -458,7 +459,7 @@ describe("organization attendance settings", () => {
   describe("when a Pro organization lapses", () => {
     it("keeps the row readable and reports attendance inactive", async () => {
       await proActive();
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague", requiredMinutesPerDay: 450 })
@@ -466,7 +467,7 @@ describe("organization attendance settings", () => {
 
       await proLapsed();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .expect(200);
@@ -482,7 +483,7 @@ describe("organization attendance settings", () => {
 
     it("lets a lapsed organization still correct its rules", async () => {
       await proActive();
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
@@ -490,7 +491,7 @@ describe("organization attendance settings", () => {
 
       await proLapsed();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Berlin", breakMinutes: 60 })
@@ -505,7 +506,7 @@ describe("organization attendance settings", () => {
 
     it("goes active again when the subscription comes back", async () => {
       await proActive();
-      await request(app)
+      await request(server.url)
         .put("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .send({ attendanceEnabled: true, timezone: "Europe/Prague" })
@@ -514,7 +515,7 @@ describe("organization attendance settings", () => {
       await proLapsed();
       await proActive();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/organization/attendance-settings")
         .set("Cookie", ownerCookie)
         .expect(200);
