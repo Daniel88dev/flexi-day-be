@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { cleanupTestData, createTestUser } from "./helpers/testSetup.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { createGroup } from "../../services/group/groupServices.js";
@@ -23,7 +23,7 @@ import {
  * manager and a delegated admin — are what pins the last row of that table.
  */
 describe("employment endpoints", () => {
-  let app: Express;
+  let server: LoopbackServer;
   let organizationId: string;
 
   let owner: { id: string };
@@ -53,17 +53,20 @@ describe("employment endpoints", () => {
     createGroupUser({ id: uuidv4(), groupId, userId, viewAccess: true, controlledUser: true });
 
   const listAs = (cookie: string, id = organizationId) =>
-    request(app).get("/api/employment/list").query({ organizationId: id }).set("Cookie", cookie);
+    request(server.url)
+      .get("/api/employment/list")
+      .query({ organizationId: id })
+      .set("Cookie", cookie);
 
   const getAs = (cookie: string, userId?: string, id = organizationId) =>
-    request(app)
+    request(server.url)
       .get("/api/employment")
       .query({ organizationId: id, ...(userId ? { userId } : {}) })
       .set("Cookie", cookie);
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await userOf("owner");
     delegate = await userOf("delegate");
@@ -106,6 +109,7 @@ describe("employment endpoints", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -140,7 +144,7 @@ describe("employment endpoints", () => {
     });
 
     it("422s without an organization to answer about", async () => {
-      await request(app).get("/api/employment").set("Cookie", cookies.engineer!).expect(422);
+      await request(server.url).get("/api/employment").set("Cookie", cookies.engineer!).expect(422);
     });
 
     describe("asking about someone else", () => {
@@ -239,7 +243,7 @@ describe("employment endpoints", () => {
 
   describe("the billing overview's headcount", () => {
     it("counts the organization's active Employments", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/billing/subscription")
         .set("Cookie", cookies.owner!)
         .expect(200);
@@ -254,7 +258,7 @@ describe("employment endpoints", () => {
     });
 
     it("gives a caller who administers no organization zero", async () => {
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/billing/subscription")
         .set("Cookie", cookies.outsider!)
         .expect(200);

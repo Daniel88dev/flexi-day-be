@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { and, eq, ne } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
@@ -136,10 +136,10 @@ const membershipIdsOf = async (groupId: string): Promise<string[]> =>
   ).map((row) => row.id);
 
 describe("Sync pull E2E", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
-  beforeAll(() => {
-    app = createServer();
+  beforeAll(async () => {
+    server = await listenOnLoopback(createServer());
   });
 
   beforeEach(async () => {
@@ -147,18 +147,19 @@ describe("Sync pull E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await resetReportData();
   });
 
   describe("GET /api/sync/pull", () => {
     it("rejects an unauthenticated caller", async () => {
-      await request(app).get("/api/sync/pull").expect(401);
+      await request(server.url).get("/api/sync/pull").expect(401);
     });
 
     it("answers a sync reset with every table key in dependency order", async () => {
       const caller = await makeUser("Caller");
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -182,7 +183,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, leaver.id);
       await removeMember(groupId, leaver.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(200);
@@ -199,7 +200,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, manager.id);
       await addMember(groupId, member.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -216,7 +217,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, plain.id);
       await addMember(groupId, other.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(plain.id))
         .expect(200);
@@ -241,7 +242,7 @@ describe("Sync pull E2E", () => {
         updatedAt: new Date(),
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(orgAdmin.id))
         .expect(200);
@@ -266,7 +267,7 @@ describe("Sync pull E2E", () => {
       const managerOrgId = await organizationIdOf(manager.id);
       const otherOrgId = await organizationIdOf(otherManager.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -293,7 +294,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       const [stored] = await db.select().from(groups).where(eq(groups.id, groupId));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -333,7 +334,7 @@ describe("Sync pull E2E", () => {
       await ageEverything();
       await setVacationUpdatedAt(changed, ago(1 * MINUTE));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(manager.id))
@@ -359,13 +360,13 @@ describe("Sync pull E2E", () => {
       await setVacationUpdatedAt(booking, ago(30 * MINUTE));
       const cookie = await authCookieFor(manager.id);
 
-      const first = await request(app)
+      const first = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(45 * MINUTE)) })
         .set("Cookie", cookie)
         .expect(200);
 
-      const second = await request(app)
+      const second = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: first.body.cursor })
         .set("Cookie", cookie)
@@ -387,13 +388,13 @@ describe("Sync pull E2E", () => {
       await setVacationUpdatedAt(booking, ago(20 * SECOND));
       const cookie = await authCookieFor(manager.id);
 
-      const first = await request(app)
+      const first = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(30 * SECOND)) })
         .set("Cookie", cookie)
         .expect(200);
 
-      const second = await request(app)
+      const second = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: first.body.cursor })
         .set("Cookie", cookie)
@@ -426,7 +427,7 @@ describe("Sync pull E2E", () => {
       await setVacationUpdatedAt(tiedBooking, tie);
       await setVacationUpdatedAt(laterBooking, ago(1 * MINUTE));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(manager.id))
@@ -462,7 +463,7 @@ describe("Sync pull E2E", () => {
       await ageEverything();
       await setGroupUpdatedAt(former, ago(1 * MINUTE));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(caller.id))
@@ -488,7 +489,7 @@ describe("Sync pull E2E", () => {
       await setMembershipUpdatedAt(groupId, other.id, ago(1 * MINUTE));
       await setMembershipUpdatedAt(groupId, plain.id, ago(2 * MINUTE));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(plain.id))
@@ -517,7 +518,7 @@ describe("Sync pull E2E", () => {
       const deletedAt = ago(1 * MINUTE);
       await db.update(groups).set({ deletedAt, updatedAt: deletedAt }).where(eq(groups.id, former));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(caller.id))
@@ -561,7 +562,7 @@ describe("Sync pull E2E", () => {
         .set({ deletedAt: removedAt, updatedAt: removedAt })
         .where(and(eq(groupUsers.groupId, groupId), eq(groupUsers.userId, leaver.id)));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(manager.id))
@@ -595,7 +596,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       await ageEverything();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: "not-a-cursor" })
         .set("Cookie", await authCookieFor(manager.id))
@@ -614,7 +615,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       await ageEverything();
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(31 * DAY)) })
         .set("Cookie", await authCookieFor(manager.id))
@@ -631,7 +632,7 @@ describe("Sync pull E2E", () => {
       await ageEverything();
       const cursor = encodeSyncCursor(ago(10 * MINUTE));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/sync/pull?cursor=${cursor}&cursor=${cursor}`)
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -655,7 +656,7 @@ describe("Sync pull E2E", () => {
       page.organizations.length + page.users.length + page.groups.length + page.groupUsers.length;
 
     const pull = async (cookie: string, cursor?: string): Promise<SyncPageBody> => {
-      const call = request(app).get("/api/sync/pull").set("Cookie", cookie);
+      const call = request(server.url).get("/api/sync/pull").set("Cookie", cookie);
       const res = await (cursor === undefined ? call : call.query({ cursor })).expect(200);
       expect(res.headers["cache-control"]).toBe("no-store");
       return res.body as SyncPageBody;
@@ -818,7 +819,7 @@ describe("Sync pull E2E", () => {
       const own = await addLeave(groupId, viewer.id, dayIn(THIS_YEAR, 5, 4));
       const theirs = await addLeave(groupId, member.id, dayIn(THIS_YEAR, 5, 5));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(200);
@@ -838,7 +839,7 @@ describe("Sync pull E2E", () => {
       const own = await addLeave(groupId, plain.id, dayIn(THIS_YEAR, 5, 4));
       await addLeave(groupId, other.id, dayIn(THIS_YEAR, 5, 5));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(plain.id))
         .expect(200);
@@ -864,7 +865,7 @@ describe("Sync pull E2E", () => {
       await addQuota(left, caller.id, THIS_YEAR);
       await removeMember(left, caller.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -895,7 +896,7 @@ describe("Sync pull E2E", () => {
       await addQuota(groupId, leaver.id, THIS_YEAR);
       await removeMember(groupId, leaver.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(200);
@@ -919,7 +920,7 @@ describe("Sync pull E2E", () => {
       await addQuota(groupId, manager.id, THIS_YEAR);
       await addQuota(groupId, member.id, THIS_YEAR);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -947,7 +948,7 @@ describe("Sync pull E2E", () => {
         createdByUserId: manager.id,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -988,7 +989,7 @@ describe("Sync pull E2E", () => {
       const onTheBoundary = await addLeave(groupId, caller.id, dayIn(LAST_YEAR, 1, 1));
       await addLeave(groupId, caller.id, dayIn(LAST_YEAR - 1, 12, 31));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -1008,7 +1009,7 @@ describe("Sync pull E2E", () => {
       await addQuota(groupId, viewer.id, THIS_YEAR);
       await addQuota(groupId, member.id, THIS_YEAR);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(200);
@@ -1028,7 +1029,7 @@ describe("Sync pull E2E", () => {
       await addQuota(groupId, plain.id, THIS_YEAR);
       await addQuota(groupId, other.id, THIS_YEAR);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(plain.id))
         .expect(200);
@@ -1045,7 +1046,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, caller.id);
       await addQuota(groupId, caller.id, LAST_YEAR);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -1068,7 +1069,7 @@ describe("Sync pull E2E", () => {
         await addQuota(groupId, caller.id, LAST_YEAR);
         await addQuota(groupId, caller.id, LAST_YEAR - 1);
 
-        const res = await request(app)
+        const res = await request(server.url)
           .get("/api/sync/pull")
           .set("Cookie", await authCookieFor(caller.id))
           .expect(200);
@@ -1091,7 +1092,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, member.id);
       await makeGroup("Finance", stranger.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(200);
@@ -1107,7 +1108,7 @@ describe("Sync pull E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       const [stored] = await db.select().from(user).where(eq(user.id, manager.id));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -1134,7 +1135,7 @@ describe("Sync pull E2E", () => {
         createdByUserId: booker.id,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);
@@ -1156,7 +1157,7 @@ describe("Sync pull E2E", () => {
       await ageEverything();
       await addMember(groupId, newcomer.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(caller.id))
@@ -1182,7 +1183,7 @@ describe("Sync pull E2E", () => {
         .set({ updatedAt: ago(1 * MINUTE) })
         .where(eq(vacation.id, changed));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(caller.id))
@@ -1205,7 +1206,7 @@ describe("Sync pull E2E", () => {
         .set({ name: "Approver Renamed", updatedAt: ago(1 * MINUTE) })
         .where(eq(user.id, approver.id));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(caller.id))
@@ -1231,7 +1232,7 @@ describe("Sync pull E2E", () => {
         .set({ updatedAt: ago(1 * MINUTE) })
         .where(eq(userYearQuotas.relatedYear, THIS_YEAR.toString()));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(caller.id))
@@ -1253,7 +1254,7 @@ describe("Sync pull E2E", () => {
       const cancelledAt = ago(1 * MINUTE);
       await cancelLeave(vacationId, manager.id, cancelledAt);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", await authCookieFor(caller.id))
@@ -1280,7 +1281,7 @@ describe("Sync pull E2E", () => {
       const vacationId = await addLeave(groupId, caller.id, dayIn(THIS_YEAR, 5, 4));
       await cancelLeave(vacationId, manager.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(caller.id))
         .expect(200);

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -53,7 +53,7 @@ let ORGANIZATION_ID: string;
 type Person = { id: string; name: string };
 
 describe("team attendance", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: Person;
   let manager: Person;
@@ -72,7 +72,7 @@ describe("team attendance", () => {
   const cookieOf = (person: Person) => cookies.get(person.id)!;
 
   const getTeam = (person: Person, query: Record<string, string> = {}) =>
-    request(app)
+    request(server.url)
       .get("/api/attendance/team")
       .query({
         organizationId: ORGANIZATION_ID,
@@ -117,7 +117,7 @@ describe("team attendance", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     const make = async (email: string, name: string): Promise<Person> => {
       const user = await createTestUser(email, name, "password123");
@@ -195,6 +195,7 @@ describe("team attendance", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 

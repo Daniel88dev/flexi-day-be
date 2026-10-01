@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
+import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import {
   setupTestEnvironment,
   cleanupTestData,
@@ -74,6 +76,7 @@ const midweekCzechHoliday = () => {
 
 describe("Vacation API E2E Tests", () => {
   let context: TestContext;
+  let server: LoopbackServer;
 
   const addToGroup = async (
     userId: string,
@@ -94,9 +97,11 @@ describe("Vacation API E2E Tests", () => {
 
   beforeAll(async () => {
     context = await setupTestEnvironment();
+    server = await listenOnLoopback(createServer());
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -109,7 +114,7 @@ describe("Vacation API E2E Tests", () => {
 
   describe("GET /api/vacation", () => {
     it("should return 401 when not authenticated", async () => {
-      const response = await request(context.app).get("/api/vacation").expect(401);
+      const response = await request(server.url).get("/api/vacation").expect(401);
 
       expect(response.body).toBeDefined();
     });
@@ -118,7 +123,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", cookie)
         .query({ year: 2025, month: 1 })
@@ -132,7 +137,7 @@ describe("Vacation API E2E Tests", () => {
       const vacationId = await createTestVacation(context.user1.id, context.group.id, "2025-01-15");
       const cookie = await authCookieFor(context.user1.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", cookie)
         .query({ year: 2025, month: 1 })
@@ -152,7 +157,7 @@ describe("Vacation API E2E Tests", () => {
       await createTestVacation(context.user1.id, context.group.id, "2025-01-15");
       const cookie = await authCookieFor(context.user1.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", cookie)
         .query({ year: 2025, month: 2 })
@@ -167,7 +172,7 @@ describe("Vacation API E2E Tests", () => {
       await createTestVacation(context.user1.id, context.group.id, "2025-01-15");
       const cookie = await authCookieFor(context.user2.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", cookie)
         .query({ year: 2025, month: 1 })
@@ -179,7 +184,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 422 for an out-of-range month", async () => {
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .get("/api/vacation")
         .set("Cookie", cookie)
         .query({ year: 2025, month: 13 })
@@ -189,7 +194,7 @@ describe("Vacation API E2E Tests", () => {
 
   describe("POST /api/vacation/create-vacation", () => {
     it("should return 401 when not authenticated", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/create-vacation")
         .send({ groupId: context.group.id, from: WED, to: WED })
         .expect(401);
@@ -200,7 +205,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 422 when the request body is invalid", async () => {
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: "not-a-uuid", from: "invalid-date", to: "invalid-date" })
@@ -212,7 +217,7 @@ describe("Vacation API E2E Tests", () => {
       const cookie = await authCookieFor(context.user1.id);
 
       // A Wednesday, inside the group's default Mon–Fri working days.
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: WED, to: WED })
@@ -229,7 +234,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: WED, to: WED, halfDay: true })
@@ -244,7 +249,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: WED, to: WED })
@@ -259,7 +264,7 @@ describe("Vacation API E2E Tests", () => {
       const cookie = await authCookieFor(context.user1.id);
 
       // Mon → Fri spans five weekdays.
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: MON, to: FRI })
@@ -274,7 +279,7 @@ describe("Vacation API E2E Tests", () => {
 
       // Fri → the following Mon covers a weekend; only the two
       // weekdays should be booked.
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: FRI, to: NEXT_MON })
@@ -292,7 +297,7 @@ describe("Vacation API E2E Tests", () => {
       const cookie = await authCookieFor(context.user1.id);
 
       // A full weekend.
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: SAT, to: SUN })
@@ -302,7 +307,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 403 for a group the caller is not a member of", async () => {
       const cookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: WED, to: WED })
@@ -314,7 +319,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 403 rather than 404 for a group that does not exist", async () => {
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: uuidv4(), from: WED, to: WED })
@@ -342,7 +347,7 @@ describe("Vacation API E2E Tests", () => {
     it("skips a holiday of the group's country inside a range", async () => {
       const cookie = await authCookieFor(context.user1.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: DAY_BEFORE, to: DAY_AFTER })
@@ -357,7 +362,7 @@ describe("Vacation API E2E Tests", () => {
     it("returns 422 for a single day that is a holiday", async () => {
       const cookie = await authCookieFor(context.user1.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: isoDay(HOLIDAY), to: isoDay(HOLIDAY) })
@@ -370,7 +375,7 @@ describe("Vacation API E2E Tests", () => {
 
   describe("POST /api/vacation/create-vacation — re-requesting a day", () => {
     const bookDay = (cookie: string, day = WED) =>
-      request(context.app)
+      request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: day, to: day });
@@ -395,7 +400,7 @@ describe("Vacation API E2E Tests", () => {
       const created = await bookDay(cookie).expect(201);
       const rejectedId = (created.body as { id: string }[])[0]?.id;
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/reject/${rejectedId ?? ""}`)
         .set("Cookie", approverCookie)
         .send({ reason: "not this week" })
@@ -419,7 +424,7 @@ describe("Vacation API E2E Tests", () => {
       const created = await bookDay(cookie).expect(201);
       const cancelledId = (created.body as { id: string }[])[0]?.id;
 
-      await request(context.app)
+      await request(server.url)
         .delete(`/api/vacation/${cancelledId ?? ""}`)
         .set("Cookie", cookie)
         .send({})
@@ -440,7 +445,7 @@ describe("Vacation API E2E Tests", () => {
       const created = await bookDay(cookie).expect(201);
       const rejectedId = (created.body as { id: string }[])[0]?.id ?? "";
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/reject/${rejectedId}`)
         .set("Cookie", approverCookie)
         .send({ reason: "not this week" })
@@ -449,7 +454,7 @@ describe("Vacation API E2E Tests", () => {
 
       // A decided row is not re-decidable, so this never reaches the day the
       // live request now holds.
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${rejectedId}`)
         .set("Cookie", approverCookie)
         .expect(409);
@@ -507,7 +512,7 @@ describe("Vacation API E2E Tests", () => {
     };
 
     const bookSickDay = async (cookie: string, day: string, halfDay = false) =>
-      request(context.app).post("/api/vacation/create-vacation").set("Cookie", cookie).send({
+      request(server.url).post("/api/vacation/create-vacation").set("Cookie", cookie).send({
         groupId: benefitGroup.id,
         from: day,
         to: day,
@@ -582,7 +587,7 @@ describe("Vacation API E2E Tests", () => {
       await allowSickDays(0);
 
       const managerCookie = await authCookieFor(manager.id);
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${id}`)
         .set("Cookie", managerCookie)
         .expect(200);
@@ -600,7 +605,7 @@ describe("Vacation API E2E Tests", () => {
         { day: FRI, vacationType: "OTHER", note: "Jury duty" },
       ];
       for (const { day, vacationType, note } of bookings) {
-        const response = await request(context.app)
+        const response = await request(server.url)
           .post("/api/vacation/create-vacation")
           .set("Cookie", cookie)
           .send({ groupId: context.group.id, from: day, to: day, vacationType, note })
@@ -613,7 +618,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: WED, to: WED, vacationType: "OTHER" })
@@ -627,7 +632,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({
@@ -647,7 +652,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      const created = await request(context.app)
+      const created = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: WED, to: WED, vacationType: "NON_PAID_LEAVE" })
@@ -655,7 +660,7 @@ describe("Vacation API E2E Tests", () => {
       const id = created.body[0].id as string;
 
       const approverCookie = await authCookieFor(context.approverUser.id);
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${id}`)
         .set("Cookie", approverCookie)
         .expect(200);
@@ -677,7 +682,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: MON, to: FRI })
@@ -690,7 +695,7 @@ describe("Vacation API E2E Tests", () => {
       for (const row of response.body as { id: string }[]) expect(row.id).not.toBe(requestId);
 
       const [year, month] = MON.split("-").map(Number);
-      const list = await request(context.app)
+      const list = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", cookie)
         .query({ year, month })
@@ -698,7 +703,7 @@ describe("Vacation API E2E Tests", () => {
       expect(list.body).toHaveLength(5);
       expectAllStamped(list.body, requestId);
 
-      const groupList = await request(context.app)
+      const groupList = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", cookie)
         .query({ year, month, groupId: context.group.id })
@@ -706,7 +711,7 @@ describe("Vacation API E2E Tests", () => {
       expect(groupList.body).toHaveLength(5);
       expectAllStamped(groupList.body, requestId);
 
-      const detail = await request(context.app)
+      const detail = await request(server.url)
         .get(`/api/vacation/${response.body[2].id as string}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -717,12 +722,12 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user1.id, context.group.id);
       const cookie = await authCookieFor(context.user1.id);
 
-      const first = await request(context.app)
+      const first = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: WED, to: WED })
         .expect(201);
-      const second = await request(context.app)
+      const second = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: FRI, to: FRI })
@@ -742,7 +747,7 @@ describe("Vacation API E2E Tests", () => {
     });
 
     it("should return 401 when not authenticated", async () => {
-      const response = await request(context.app)
+      const response = await request(server.url)
         .post(`/api/vacation/approve/${vacationId}`)
         .expect(401);
 
@@ -752,7 +757,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 422 when the vacation id is not a valid UUID", async () => {
       const cookie = await authCookieFor(context.approverUser.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/approve/not-a-uuid")
         .set("Cookie", cookie)
         .expect(422);
@@ -761,7 +766,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 404 when the vacation does not exist", async () => {
       const cookie = await authCookieFor(context.approverUser.id);
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${uuidv4()}`)
         .set("Cookie", cookie)
         .expect(404);
@@ -770,7 +775,7 @@ describe("Vacation API E2E Tests", () => {
     it("should approve and stamp the approver when the caller may approve", async () => {
       const cookie = await authCookieFor(context.approverUser.id);
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${vacationId}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -783,7 +788,7 @@ describe("Vacation API E2E Tests", () => {
     it("should return 403 when the caller is not an approver", async () => {
       const cookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${vacationId}`)
         .set("Cookie", cookie)
         .expect(403);
@@ -796,7 +801,7 @@ describe("Vacation API E2E Tests", () => {
       await addToGroup(context.user2.id, context.group.id, { approverAccess: true });
       const cookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${vacationId}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -810,7 +815,7 @@ describe("Vacation API E2E Tests", () => {
       const own = await createTestVacation(context.user2.id, context.group.id, "2025-12-23");
       const cookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${own}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -833,7 +838,7 @@ describe("Vacation API E2E Tests", () => {
       const own = await createTestVacation(context.user2.id, context.group.id, "2025-12-23");
       const cookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${own}`)
         .set("Cookie", cookie)
         .expect(403);
@@ -846,7 +851,7 @@ describe("Vacation API E2E Tests", () => {
       const own = await createTestVacation(context.approverUser.id, context.group.id, "2025-12-23");
       const cookie = await authCookieFor(context.approverUser.id);
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${own}`)
         .set("Cookie", cookie)
         .expect(403);

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
+import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -49,6 +51,7 @@ const REQUEST_YEAR = new Date().getFullYear() + 1;
 
 describe("Attachments E2E", () => {
   let context: TestContext;
+  let server: LoopbackServer;
   let organizationId: string;
   let viewer: TestUser;
   let orgAdmin: TestUser;
@@ -89,7 +92,7 @@ describe("Attachments E2E", () => {
   };
 
   const create = (cookie: string, body: Record<string, unknown>) =>
-    request(context.app).post("/api/attachments").set("Cookie", cookie).send(body);
+    request(server.url).post("/api/attachments").set("Cookie", cookie).send(body);
 
   const pngBody = (requestId: string) => ({
     requestId,
@@ -102,7 +105,7 @@ describe("Attachments E2E", () => {
   const upload = (target: UploadTarget, bytes: Buffer) => {
     if (target.method !== "PUT") throw new Error("The disk store hands out PUT targets");
     const url = new URL(target.url);
-    return request(context.app)
+    return request(server.url)
       .put(url.pathname + url.search)
       .set("Content-Type", target.headers["Content-Type"] ?? "application/octet-stream")
       .send(bytes);
@@ -117,7 +120,7 @@ describe("Attachments E2E", () => {
   /** Fetches a signed download link's bytes, session-less like the browser would. */
   const downloadBytes = (link: string) => {
     const url = new URL(link);
-    return request(context.app)
+    return request(server.url)
       .get(url.pathname + url.search)
       .buffer(true)
       .parse((res, done) => {
@@ -129,10 +132,10 @@ describe("Attachments E2E", () => {
   };
 
   const detail = (cookie: string, vacationId: string) =>
-    request(context.app).get(`/api/vacation/${vacationId}`).set("Cookie", cookie);
+    request(server.url).get(`/api/vacation/${vacationId}`).set("Cookie", cookie);
 
   const remove = (cookie: string, attachmentId: string) =>
-    request(context.app).delete(`/api/attachments/${attachmentId}`).set("Cookie", cookie);
+    request(server.url).delete(`/api/attachments/${attachmentId}`).set("Cookie", cookie);
 
   const rowFor = async (attachmentId: string) => {
     const [row] = await db.select().from(attachments).where(eq(attachments.id, attachmentId));
@@ -162,6 +165,7 @@ describe("Attachments E2E", () => {
 
   beforeAll(async () => {
     context = await setupTestEnvironment();
+    server = await listenOnLoopback(createServer());
     organizationId = (await ensureOrganizationForUser(context.user1.id)).id;
 
     viewer = await createTestUser("viewer@test.com", "Viewer", "password123");
@@ -178,6 +182,7 @@ describe("Attachments E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -243,14 +248,14 @@ describe("Attachments E2E", () => {
       const cookie = await authCookieFor(context.user2.id);
       const days = await db.select().from(vacation).where(eq(vacation.requestId, requestId));
 
-      await request(context.app)
+      await request(server.url)
         .delete(`/api/vacation/${days[0]!.id}`)
         .set("Cookie", cookie)
         .expect(200);
       await create(cookie, pngBody(requestId)).expect(201);
       expect((await detail(cookie, days[1]!.id).expect(200)).body.canAttach).toBe(true);
 
-      await request(context.app)
+      await request(server.url)
         .delete(`/api/vacation/${days[1]!.id}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -360,7 +365,7 @@ describe("Attachments E2E", () => {
       });
       expect(shown.body.canAttach).toBe(true);
 
-      const link = await request(context.app)
+      const link = await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", cookie)
         .expect(200);
@@ -405,7 +410,7 @@ describe("Attachments E2E", () => {
         status: AttachmentStatus.Ready,
       });
 
-      const link = await request(context.app)
+      const link = await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", cookie)
         .expect(200);
@@ -442,7 +447,7 @@ describe("Attachments E2E", () => {
         fixture("clean.pdf")
       );
 
-      const link = await request(context.app)
+      const link = await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .query({ disposition: "attachment" })
         .set("Cookie", cookie)
@@ -450,7 +455,7 @@ describe("Attachments E2E", () => {
       expect(link.body).toMatchObject({ disposition: "attachment", fileName: "clean.pdf" });
 
       const url = new URL(link.body.url as string);
-      const bytes = await request(context.app)
+      const bytes = await request(server.url)
         .get(url.pathname + url.search)
         .expect(200);
       expect(bytes.headers["content-type"]).toBe("application/pdf");
@@ -477,7 +482,7 @@ describe("Attachments E2E", () => {
         rejectionReason: AttachmentRejectionReason.PdfJavaScript,
       });
 
-      const refused = await request(context.app)
+      const refused = await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", cookie)
         .expect(409);
@@ -549,7 +554,7 @@ describe("Attachments E2E", () => {
       // The app's JSON parser runs first, so this reaches the handler as a
       // real array rather than as bytes; the Buffer check is what refuses it.
       const url = new URL(target.url);
-      await request(context.app)
+      await request(server.url)
         .put(url.pathname + url.search)
         .set("Content-Type", "application/json")
         .send([1, 2, 3])
@@ -619,11 +624,11 @@ describe("Attachments E2E", () => {
         fixture("small.png")
       );
 
-      await request(context.app)
+      await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(403);
-      await request(context.app)
+      await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", await authCookieFor(context.approverUser.id))
         .expect(200);
@@ -651,7 +656,7 @@ describe("Attachments E2E", () => {
       const cookie = await authCookieFor(context.user1.id);
       const flag = async () =>
         (
-          await request(context.app)
+          await request(server.url)
             .get(`/api/group/${context.group.id}`)
             .set("Cookie", cookie)
             .expect(200)
@@ -698,7 +703,7 @@ describe("Attachments E2E", () => {
       });
       expect(typeof shown.body.attachments[0].deletedAt).toBe("string");
 
-      await request(context.app)
+      await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", cookie)
         .expect(404);
@@ -802,7 +807,7 @@ describe("Attachments E2E", () => {
     const secret = config.attachments.callbackSecret!;
 
     const report = (payload: unknown, signature?: string) => {
-      const pending = request(context.app)
+      const pending = request(server.url)
         .post("/api/attachments/processed")
         .set("Content-Type", "application/json");
       if (signature !== undefined) pending.set(ATTACHMENT_SIGNATURE_HEADER, signature);
@@ -866,7 +871,7 @@ describe("Attachments E2E", () => {
         storageKey,
       });
 
-      const link = await request(context.app)
+      const link = await request(server.url)
         .get(`/api/attachments/${attachmentId}/download-url`)
         .set("Cookie", await authCookieFor(context.user2.id))
         .expect(200);
@@ -956,7 +961,7 @@ describe("Attachments E2E", () => {
       const { attachmentId, storageKey } = await uploadedByOwner(requestId);
       const days = await db.select().from(vacation).where(eq(vacation.requestId, requestId));
 
-      await request(context.app)
+      await request(server.url)
         .delete(`/api/vacation/${days[0]!.id}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -967,7 +972,7 @@ describe("Attachments E2E", () => {
       });
       expect(await stored(storageKey)).toBeDefined();
 
-      await request(context.app)
+      await request(server.url)
         .delete(`/api/vacation/${days[1]!.id}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -986,7 +991,7 @@ describe("Attachments E2E", () => {
       const { attachmentId, storageKey } = await uploadedByOwner(requestId);
       const days = await db.select().from(vacation).where(eq(vacation.requestId, requestId));
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/reject/${days[0]!.id}`)
         .set("Cookie", approver)
         .expect(200);
@@ -996,7 +1001,7 @@ describe("Attachments E2E", () => {
         stale: 0,
       });
 
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/reject/${days[1]!.id}`)
         .set("Cookie", approver)
         .expect(200);

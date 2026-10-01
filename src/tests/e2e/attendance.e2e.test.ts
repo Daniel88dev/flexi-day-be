@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, asc, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -58,7 +58,7 @@ const lapsed = () =>
   });
 
 describe("attendance clock", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: { id: string };
   let member: { id: string };
@@ -69,12 +69,16 @@ describe("attendance clock", () => {
   let outsiderCookie: string;
   let memberEmploymentId: string;
 
-  const clockIn = () => request(app).post("/api/attendance/clock-in").set("Cookie", memberCookie);
-  const clockOut = () => request(app).post("/api/attendance/clock-out").set("Cookie", memberCookie);
+  const clockIn = () =>
+    request(server.url).post("/api/attendance/clock-in").set("Cookie", memberCookie);
+  const clockOut = () =>
+    request(server.url).post("/api/attendance/clock-out").set("Cookie", memberCookie);
   const breakStart = () =>
-    request(app).post("/api/attendance/break/start").set("Cookie", memberCookie);
-  const breakEnd = () => request(app).post("/api/attendance/break/end").set("Cookie", memberCookie);
-  const current = () => request(app).get("/api/attendance/current").set("Cookie", memberCookie);
+    request(server.url).post("/api/attendance/break/start").set("Cookie", memberCookie);
+  const breakEnd = () =>
+    request(server.url).post("/api/attendance/break/end").set("Cookie", memberCookie);
+  const current = () =>
+    request(server.url).get("/api/attendance/current").set("Cookie", memberCookie);
 
   const eventsForMember = () =>
     db
@@ -92,7 +96,7 @@ describe("attendance clock", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await createTestUser("clock-owner@test.com", "Olivia Owner", "password123");
     member = await createTestUser("clock-member@test.com", "Milo Member", "password123");
@@ -132,6 +136,7 @@ describe("attendance clock", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -344,13 +349,19 @@ describe("attendance clock", () => {
     });
 
     it("404s for someone who holds no Employment anywhere", async () => {
-      await request(app).get("/api/attendance/current").set("Cookie", outsiderCookie).expect(404);
+      await request(server.url)
+        .get("/api/attendance/current")
+        .set("Cookie", outsiderCookie)
+        .expect(404);
 
-      await request(app).post("/api/attendance/clock-in").set("Cookie", outsiderCookie).expect(404);
+      await request(server.url)
+        .post("/api/attendance/clock-in")
+        .set("Cookie", outsiderCookie)
+        .expect(404);
     });
 
     it("401s without a session", async () => {
-      await request(app).get("/api/attendance/current").expect(401);
+      await request(server.url).get("/api/attendance/current").expect(401);
     });
   });
 
@@ -486,7 +497,7 @@ describe("attendance clock", () => {
 
   describe("scoping", () => {
     it("accepts the organization named explicitly", async () => {
-      const state = await request(app)
+      const state = await request(server.url)
         .get(`/api/attendance/current?organizationId=${ORGANIZATION_ID}`)
         .set("Cookie", memberCookie)
         .expect(200);
@@ -495,14 +506,14 @@ describe("attendance clock", () => {
     });
 
     it("404s for an organization the caller is not employed by", async () => {
-      await request(app)
+      await request(server.url)
         .get(`/api/attendance/current?organizationId=${uuidv4()}`)
         .set("Cookie", memberCookie)
         .expect(404);
     });
 
     it("422s on a malformed organizationId", async () => {
-      await request(app)
+      await request(server.url)
         .post("/api/attendance/clock-in")
         .set("Cookie", memberCookie)
         .send({ organizationId: "" })

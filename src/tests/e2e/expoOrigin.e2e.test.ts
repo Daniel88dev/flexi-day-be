@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { WEB_TEST_PASSWORD, createWebUser } from "./helpers/authHelper.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 
@@ -17,19 +17,22 @@ const APP_SCHEME = "flexiday://";
  * `Origin` header and has to name a scheme TRUSTED_ORIGINS carries.
  */
 describe("expo origin", () => {
-  let app: Express;
+  let server: LoopbackServer;
   let email: string;
 
   const signIn = () =>
-    request(app).post("/api/auth/sign-in/email").send({ email, password: WEB_TEST_PASSWORD });
+    request(server.url)
+      .post("/api/auth/sign-in/email")
+      .send({ email, password: WEB_TEST_PASSWORD });
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
     ({ email } = await createWebUser("Expo Origin Subject"));
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
@@ -66,7 +69,7 @@ describe("expo origin", () => {
   });
 
   it("does not serve the plugin's authorization proxy", async () => {
-    const res = await request(app)
+    const res = await request(server.url)
       .get("/api/auth/expo-authorization-proxy")
       .query({ authorizationURL: "https://accounts.google.com/o/oauth2/auth?state=abc" });
 

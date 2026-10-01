@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -12,20 +12,20 @@ import { authCookieFor } from "./helpers/authHelper.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 
 describe("user settings: dashboard calendar view", () => {
-  let app: Express;
+  let server: LoopbackServer;
   let viewerId: string;
   let cookie: string;
 
   // Real group ids are not UUIDs, so the settings path must not assume one.
   const GROUP_ID = "Kq7Rz2mWb9XfT4nLp8VdC3sHy6JgA1eE";
 
-  const getSettings = () => request(app).get("/api/users/me/settings").set("Cookie", cookie);
+  const getSettings = () => request(server.url).get("/api/users/me/settings").set("Cookie", cookie);
   const putSettings = (body: object) =>
-    request(app).put("/api/users/me/settings").set("Cookie", cookie).send(body);
+    request(server.url).put("/api/users/me/settings").set("Cookie", cookie).send(body);
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     const owner = await createTestUser("calendar-owner@test.com", "Otto Owner", "password123");
     const viewer = await createTestUser("calendar-view@test.com", "Vera Viewer", "password123");
@@ -52,6 +52,7 @@ describe("user settings: dashboard calendar view", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 

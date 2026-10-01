@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -27,7 +27,7 @@ import { upsertSubscription } from "../../services/billing/subscriptionServices.
  * asserted rather than just the plan name.
  */
 describe("billing overview over the API", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
   let owner: { id: string };
   /** Delegated admin of the owner's organization, owning nothing themselves. */
@@ -66,7 +66,7 @@ describe("billing overview over the API", () => {
 
   beforeAll(async () => {
     await cleanupTestData();
-    app = createServer();
+    server = await listenOnLoopback(createServer());
 
     owner = await createTestUser("overview-owner@test.com", "Olivia Owner", "password123");
     delegate = await createTestUser("overview-delegate@test.com", "Dana Delegate", "password123");
@@ -118,11 +118,12 @@ describe("billing overview over the API", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await cleanupTestData();
   });
 
   it("gives a delegated admin the organization they administer", async () => {
-    const res = await request(app)
+    const res = await request(server.url)
       .get("/api/billing/subscription")
       .set("Cookie", delegateCookie)
       .expect(200);
@@ -151,11 +152,11 @@ describe("billing overview over the API", () => {
   });
 
   it("gives the owner the same plan, limits and usage as their delegate", async () => {
-    const forOwner = await request(app)
+    const forOwner = await request(server.url)
       .get("/api/billing/subscription")
       .set("Cookie", ownerCookie)
       .expect(200);
-    const forDelegate = await request(app)
+    const forDelegate = await request(server.url)
       .get("/api/billing/subscription")
       .set("Cookie", delegateCookie)
       .expect(200);
@@ -167,11 +168,11 @@ describe("billing overview over the API", () => {
   });
 
   it("keeps the billing address and the Paddle linkage owner-only", async () => {
-    const forOwner = await request(app)
+    const forOwner = await request(server.url)
       .get("/api/billing/subscription")
       .set("Cookie", ownerCookie)
       .expect(200);
-    const forDelegate = await request(app)
+    const forDelegate = await request(server.url)
       .get("/api/billing/subscription")
       .set("Cookie", delegateCookie)
       .expect(200);
@@ -188,7 +189,7 @@ describe("billing overview over the API", () => {
   });
 
   it("gives someone who owns one organization their own, not the delegated one", async () => {
-    const res = await request(app)
+    const res = await request(server.url)
       .get("/api/billing/subscription")
       .set("Cookie", dualAdminCookie)
       .expect(200);
@@ -200,7 +201,7 @@ describe("billing overview over the API", () => {
   });
 
   it("gives an unrelated user Free with empty usage", async () => {
-    const res = await request(app)
+    const res = await request(server.url)
       .get("/api/billing/subscription")
       .set("Cookie", outsiderCookie)
       .expect(200);

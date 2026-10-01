@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import ExcelJS from "exceljs";
-import type { Express } from "express";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { reportExports } from "../../db/schema/report-export-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
@@ -55,10 +55,10 @@ const vacationSummaryFor = (summary: Summary[], userId: string) =>
   summary.find((row) => row.userId === userId && row.vacationType === CalendarRecordType.Vacation);
 
 describe("Report API E2E", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
-  beforeAll(() => {
-    app = createServer();
+  beforeAll(async () => {
+    server = await listenOnLoopback(createServer());
   });
 
   beforeEach(async () => {
@@ -66,12 +66,13 @@ describe("Report API E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await resetReportData();
   });
 
   describe("GET /api/reports/scope", () => {
     it("rejects an unauthenticated caller", async () => {
-      await request(app).get("/api/reports/scope").expect(401);
+      await request(server.url).get("/api/reports/scope").expect(401);
     });
 
     it("grants full access to a member with view access", async () => {
@@ -80,7 +81,7 @@ describe("Report API E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, viewer.id, { viewAccess: true });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(200);
@@ -96,7 +97,7 @@ describe("Report API E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, member.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(member.id))
         .expect(200);
@@ -110,7 +111,7 @@ describe("Report API E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, admin.id, { adminAccess: true });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(admin.id))
         .expect(200);
@@ -123,7 +124,7 @@ describe("Report API E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, manager.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -139,11 +140,11 @@ describe("Report API E2E", () => {
       await addMember(groupId, viewer.id, { viewAccess: true });
       await addMember(groupId, colleague.id);
 
-      const viewerRes = await request(app)
+      const viewerRes = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(viewer.id))
         .expect(200);
-      const colleagueRes = await request(app)
+      const colleagueRes = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(colleague.id))
         .expect(200);
@@ -158,7 +159,7 @@ describe("Report API E2E", () => {
     it("returns an empty scope rather than an error for a user in no group", async () => {
       const loner = await makeUser("Loner");
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(loner.id))
         .expect(200);
@@ -172,7 +173,7 @@ describe("Report API E2E", () => {
       await addMember(groupId, manager.id);
       await addLeave(groupId, manager.id, dayIn(PAST_YEAR, 3, 10));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/scope")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -183,7 +184,7 @@ describe("Report API E2E", () => {
 
   describe("GET /api/reports/overview", () => {
     it("rejects an unauthenticated caller", async () => {
-      await request(app).get("/api/reports/overview").expect(401);
+      await request(server.url).get("/api/reports/overview").expect(401);
     });
 
     it("aggregates approved and pending days into the right months", async () => {
@@ -196,7 +197,7 @@ describe("Report API E2E", () => {
       ]);
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 5, 4), { approved: false });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -214,7 +215,7 @@ describe("Report API E2E", () => {
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 3, 10), { halfDay: true });
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 3, 11));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -232,7 +233,7 @@ describe("Report API E2E", () => {
         rejected: true,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -250,12 +251,12 @@ describe("Report API E2E", () => {
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 6, 10));
 
       const cookie = await authCookieFor(manager.id);
-      const past = await request(app)
+      const past = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: PAST_YEAR })
         .set("Cookie", cookie)
         .expect(200);
-      const future = await request(app)
+      const future = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR })
         .set("Cookie", cookie)
@@ -278,7 +279,7 @@ describe("Report API E2E", () => {
       await addQuota(groupId, manager.id, PAST_YEAR, { vacationDays: 20, carriedOverDays: 3 });
       await addLeave(groupId, manager.id, dayIn(PAST_YEAR, 6, 10));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: PAST_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -300,7 +301,7 @@ describe("Report API E2E", () => {
       await addMember(groupId, idle.id);
       await addQuota(groupId, idle.id, CURRENT_YEAR, { vacationDays: 25 });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -323,7 +324,7 @@ describe("Report API E2E", () => {
       await addLeave(groupId, member.id, dayIn(FUTURE_YEAR, 3, 10));
       await addLeave(groupId, colleague.id, dayIn(FUTURE_YEAR, 3, 11));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR })
         .set("Cookie", await authCookieFor(member.id))
@@ -342,7 +343,7 @@ describe("Report API E2E", () => {
         type: CalendarRecordType.Sick,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR, types: CalendarRecordType.Sick })
         .set("Cookie", await authCookieFor(manager.id))
@@ -362,7 +363,7 @@ describe("Report API E2E", () => {
       await addLeave(groupA, manager.id, dayIn(FUTURE_YEAR, 3, 10));
       await addLeave(groupB, manager.id, dayIn(FUTURE_YEAR, 4, 10));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR, groupIds: groupB })
         .set("Cookie", await authCookieFor(manager.id))
@@ -380,7 +381,7 @@ describe("Report API E2E", () => {
       await addMember(theirs, outsider.id);
       await addLeave(theirs, outsider.id, dayIn(FUTURE_YEAR, 3, 10));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/reports/overview")
         .query({ year: FUTURE_YEAR, groupIds: theirs })
         .set("Cookie", await authCookieFor(manager.id))
@@ -394,7 +395,7 @@ describe("Report API E2E", () => {
   describe("GET /api/reports/members/:userId", () => {
     it("rejects an unauthenticated caller", async () => {
       const target = await makeUser("Target");
-      await request(app).get(`/api/reports/members/${target.id}`).expect(401);
+      await request(server.url).get(`/api/reports/members/${target.id}`).expect(401);
     });
 
     it("lets a plain member open their own detail", async () => {
@@ -403,7 +404,7 @@ describe("Report API E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, member.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/reports/members/${member.id}`)
         .query({ year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(member.id))
@@ -420,7 +421,7 @@ describe("Report API E2E", () => {
       await addMember(groupId, manager.id, { viewAccess: true });
       await addMember(otherGroup, stranger.id);
 
-      await request(app)
+      await request(server.url)
         .get(`/api/reports/members/${stranger.id}`)
         .query({ year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -435,7 +436,7 @@ describe("Report API E2E", () => {
       await addMember(groupId, member.id);
       await addMember(groupId, colleague.id);
 
-      await request(app)
+      await request(server.url)
         .get(`/api/reports/members/${colleague.id}`)
         .query({ year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(member.id))
@@ -453,7 +454,7 @@ describe("Report API E2E", () => {
       ]);
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 3, 20), { halfDay: true });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/reports/members/${manager.id}`)
         .query({ year: FUTURE_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -480,7 +481,7 @@ describe("Report API E2E", () => {
       await addChange(groupId, member.id, manager.id, "Quota for X: vacation 20 → 22", earlier);
       await addChange(groupId, member.id, manager.id, "Quota for X: carried over 0 → 3", later);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/reports/members/${member.id}`)
         .query({ year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -499,7 +500,7 @@ describe("Report API E2E", () => {
       await addMember(groupId, member.id);
       await addChange(groupId, member.id, manager.id, "This year's change");
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/reports/members/${member.id}`)
         .query({ year: FUTURE_YEAR })
         .set("Cookie", await authCookieFor(manager.id))
@@ -511,7 +512,10 @@ describe("Report API E2E", () => {
 
   describe("POST /api/reports/export", () => {
     it("rejects an unauthenticated caller", async () => {
-      await request(app).post("/api/reports/export").send({ year: CURRENT_YEAR }).expect(401);
+      await request(server.url)
+        .post("/api/reports/export")
+        .send({ year: CURRENT_YEAR })
+        .expect(401);
     });
 
     it("returns an xlsx attachment", async () => {
@@ -520,7 +524,7 @@ describe("Report API E2E", () => {
       await addMember(groupId, manager.id, { viewAccess: true });
       await addLeave(groupId, manager.id, dayIn(FUTURE_YEAR, 3, 10));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: FUTURE_YEAR })
@@ -552,7 +556,7 @@ describe("Report API E2E", () => {
         type: CalendarRecordType.SickDay,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: FUTURE_YEAR })
@@ -591,7 +595,7 @@ describe("Report API E2E", () => {
         type: CalendarRecordType.SickDay,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: FUTURE_YEAR })
@@ -633,7 +637,7 @@ describe("Report API E2E", () => {
       // summary line — one that used to print the raw user id.
       await removeMember(groupId, leaver.id);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: FUTURE_YEAR })
@@ -665,7 +669,7 @@ describe("Report API E2E", () => {
         dayIn(FUTURE_YEAR, 3, 11),
       ]);
 
-      await request(app)
+      await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: FUTURE_YEAR, groupIds: [groupId], types: [CalendarRecordType.Vacation] })
@@ -695,7 +699,7 @@ describe("Report API E2E", () => {
     it("rejects a year outside the supported range", async () => {
       const manager = await makeUser("Manager");
 
-      await request(app)
+      await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: 1999 })
@@ -705,7 +709,7 @@ describe("Report API E2E", () => {
     it("rejects bank holiday as a type filter", async () => {
       const manager = await makeUser("Manager");
 
-      await request(app)
+      await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: FUTURE_YEAR, types: [CalendarRecordType.BankHoliday] })
@@ -721,7 +725,7 @@ describe("Report API E2E", () => {
         type: CalendarRecordType.BankHoliday,
       });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .post("/api/reports/export")
         .set("Cookie", await authCookieFor(manager.id))
         .send({ year: FUTURE_YEAR })
@@ -752,7 +756,7 @@ describe("Report API E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, member.id, { viewAccess: true });
 
-      await request(app)
+      await request(server.url)
         .get(`/api/quotas/${groupId}/carryover-suggestion`)
         .query({ userId: member.id, year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(member.id))
@@ -769,7 +773,7 @@ describe("Report API E2E", () => {
       await addLeaveRange(groupId, member.id, [dayIn(PAST_YEAR, 3, 10), dayIn(PAST_YEAR, 3, 11)]);
       await addLeave(groupId, member.id, dayIn(PAST_YEAR, 4, 1), { approved: false });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/quotas/${groupId}/carryover-suggestion`)
         .query({ userId: member.id, year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(admin.id))
@@ -796,7 +800,7 @@ describe("Report API E2E", () => {
         dayIn(PAST_YEAR, 3, 12),
       ]);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get(`/api/quotas/${groupId}/carryover-suggestion`)
         .query({ userId: member.id, year: CURRENT_YEAR })
         .set("Cookie", await authCookieFor(admin.id))
@@ -814,7 +818,7 @@ describe("Report API E2E", () => {
       await addMember(groupId, admin.id, { adminAccess: true });
       await addMember(groupId, member.id);
 
-      await request(app)
+      await request(server.url)
         .put(`/api/quotas/${groupId}`)
         .set("Cookie", await authCookieFor(admin.id))
         .send({
@@ -858,7 +862,7 @@ describe("Report API E2E", () => {
         carriedOverDays: 0,
       });
 
-      await request(app)
+      await request(server.url)
         .put(`/api/quotas/${groupId}`)
         .set("Cookie", await authCookieFor(admin.id))
         .send({
@@ -886,7 +890,7 @@ describe("Report API E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, member.id, { viewAccess: true });
 
-      await request(app)
+      await request(server.url)
         .put(`/api/quotas/${groupId}`)
         .set("Cookie", await authCookieFor(member.id))
         .send({

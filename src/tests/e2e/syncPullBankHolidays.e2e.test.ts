@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
 import { encodeSyncCursor } from "../../services/sync/syncCursor.js";
@@ -62,10 +62,10 @@ const insertHoliday = async (values: {
 };
 
 describe("Sync pull bank holidays E2E", () => {
-  let app: Express;
+  let server: LoopbackServer;
 
-  beforeAll(() => {
-    app = createServer();
+  beforeAll(async () => {
+    server = await listenOnLoopback(createServer());
   });
 
   beforeEach(async () => {
@@ -73,6 +73,7 @@ describe("Sync pull bank holidays E2E", () => {
   });
 
   afterAll(async () => {
+    await server?.close();
     await resetReportData();
   });
 
@@ -83,7 +84,7 @@ describe("Sync pull bank holidays E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       const outOfWindow = await insertHoliday({ date: `${LAST_YEAR - 1}-01-01`, country: "CZ" });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -103,12 +104,12 @@ describe("Sync pull bank holidays E2E", () => {
 
       // Seeded after the first pull: a stored row of a year makes the fill
       // skip it, and the fill is what the window is asserted against.
-      await request(app).get("/api/sync/pull").set("Cookie", cookie).expect(200);
+      await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
       const lastDay = await insertHoliday({ date: `${NEXT_YEAR}-12-31`, country: "CZ" });
       const dayAfter = await insertHoliday({ date: `${NEXT_YEAR + 1}-01-01`, country: "CZ" });
       const dayBefore = await insertHoliday({ date: `${LAST_YEAR - 1}-12-31`, country: "CZ" });
 
-      const res = await request(app).get("/api/sync/pull").set("Cookie", cookie).expect(200);
+      const res = await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
 
       const ids = (res.body.bankHolidays as BankHolidayRow[]).map((row) => row.id);
       expect(ids).toContain(lastDay);
@@ -122,7 +123,7 @@ describe("Sync pull bank holidays E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       expect(await storedCountry("SK")).toHaveLength(0);
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -140,7 +141,7 @@ describe("Sync pull bank holidays E2E", () => {
       await addMember(mine, manager.id, { adminAccess: true });
       const foreign = await insertHoliday({ date: `${THIS_YEAR}-01-01`, country: "SK" });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -158,14 +159,14 @@ describe("Sync pull bank holidays E2E", () => {
 
       // The fill skips a country already stored, so the regional row goes in
       // after the pull that filled CZ rather than before it.
-      await request(app).get("/api/sync/pull").set("Cookie", cookie).expect(200);
+      await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
       const regional = await insertHoliday({
         date: `${THIS_YEAR}-03-03`,
         country: "CZ",
         region: "PR",
       });
 
-      const res = await request(app).get("/api/sync/pull").set("Cookie", cookie).expect(200);
+      const res = await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
 
       const rows = res.body.bankHolidays as BankHolidayRow[];
       expect(rows.map((row) => row.id)).not.toContain(regional);
@@ -178,7 +179,7 @@ describe("Sync pull bank holidays E2E", () => {
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, manager.id, { adminAccess: true });
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .set("Cookie", await authCookieFor(manager.id))
         .expect(200);
@@ -192,7 +193,7 @@ describe("Sync pull bank holidays E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       const cookie = await authCookieFor(manager.id);
 
-      await request(app).get("/api/sync/pull").set("Cookie", cookie).expect(200);
+      await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
       await ageEverything();
       const [renamed] = await db
         .select()
@@ -203,7 +204,7 @@ describe("Sync pull bank holidays E2E", () => {
         .set({ name: "Renamed", updatedAt: ago(1 * MINUTE) })
         .where(eq(bankHolidays.id, renamed!.id));
 
-      const res = await request(app)
+      const res = await request(server.url)
         .get("/api/sync/pull")
         .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
         .set("Cookie", cookie)

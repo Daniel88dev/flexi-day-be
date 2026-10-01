@@ -1,5 +1,4 @@
 import request from "supertest";
-import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { generateId } from "better-auth";
 import { hashPassword } from "better-auth/crypto";
@@ -67,8 +66,8 @@ export async function createWebUser(name: string): Promise<{ id: string; email: 
  * The Cookie header better-auth itself hands out at sign-in — the web session,
  * as opposed to the signed cookie `authCookieFor` and `/api/dev/session` mint.
  */
-export async function webSessionCookieFor(app: Express, email: string): Promise<string> {
-  const res = await request(app)
+export async function webSessionCookieFor(url: string, email: string): Promise<string> {
+  const res = await request(url)
     .post("/api/auth/sign-in/email")
     .send({ email, password: WEB_TEST_PASSWORD });
 

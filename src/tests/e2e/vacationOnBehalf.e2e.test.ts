@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
+import { createServer } from "../../server.js";
+import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import {
   setupTestEnvironment,
   cleanupTestData,
@@ -37,6 +39,7 @@ const WED = isoDay(shift(MONDAY_OF_WEEK, 2));
 
 describe("Admin on-behalf vacation management E2E", () => {
   let context: TestContext;
+  let server: LoopbackServer;
   let orgAdmin: TestUser;
 
   const addToGroup = async (
@@ -78,10 +81,12 @@ describe("Admin on-behalf vacation management E2E", () => {
 
   beforeAll(async () => {
     context = await setupTestEnvironment();
+    server = await listenOnLoopback(createServer());
     orgAdmin = await createTestUser("orgadmin@test.com", "Org Admin", "password123");
   });
 
   afterAll(async () => {
+    await server?.close();
     await db.delete(organizationUsers);
     await cleanupTestData();
   });
@@ -93,7 +98,7 @@ describe("Admin on-behalf vacation management E2E", () => {
   });
 
   const createOnBehalf = (cookie: string[], body: Record<string, unknown>) =>
-    request(context.app)
+    request(server.url)
       .post("/api/vacation/create-vacation")
       .set("Cookie", cookie)
       .send({ groupId: context.group.id, from: WED, to: WED, userId: context.user2.id, ...body });
@@ -114,7 +119,7 @@ describe("Admin on-behalf vacation management E2E", () => {
       });
       expect(response.body[0].approvedAt).not.toBeNull();
 
-      const detail = await request(context.app)
+      const detail = await request(server.url)
         .get(`/api/vacation/${response.body[0].id as string}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -194,7 +199,7 @@ describe("Admin on-behalf vacation management E2E", () => {
       // user2 (no admin flag) tries to book for user1.
       const cookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({
@@ -211,7 +216,7 @@ describe("Admin on-behalf vacation management E2E", () => {
       await addToGroup(context.user1.id, context.group.id, { adminAccess: true });
       const cookie = await authCookieFor(context.user1.id);
 
-      await request(context.app)
+      await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({
@@ -237,7 +242,7 @@ describe("Admin on-behalf vacation management E2E", () => {
     it("edits per-day fields and appends an UPDATED event with a change summary", async () => {
       const { cookie, id } = await bookedDay();
 
-      const response = await request(context.app)
+      const response = await request(server.url)
         .patch("/api/vacation")
         .set("Cookie", cookie)
         .send({ ids: [id], vacationType: "SICK", halfDay: true })
@@ -245,7 +250,7 @@ describe("Admin on-behalf vacation management E2E", () => {
 
       expect(response.body[0]).toMatchObject({ vacationType: "SICK", halfDay: true });
 
-      const detail = await request(context.app)
+      const detail = await request(server.url)
         .get(`/api/vacation/${id}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -261,7 +266,7 @@ describe("Admin on-behalf vacation management E2E", () => {
       const { id } = await bookedDay();
       const memberCookie = await authCookieFor(context.user2.id);
 
-      await request(context.app)
+      await request(server.url)
         .patch("/api/vacation")
         .set("Cookie", memberCookie)
         .send({ ids: [id], note: "sneaky" })
@@ -270,9 +275,9 @@ describe("Admin on-behalf vacation management E2E", () => {
 
     it("404s for a cancelled record", async () => {
       const { cookie, id } = await bookedDay();
-      await request(context.app).delete(`/api/vacation/${id}`).set("Cookie", cookie).expect(200);
+      await request(server.url).delete(`/api/vacation/${id}`).set("Cookie", cookie).expect(200);
 
-      await request(context.app)
+      await request(server.url)
         .patch("/api/vacation")
         .set("Cookie", cookie)
         .send({ ids: [id], note: "too late" })
@@ -288,13 +293,13 @@ describe("Admin on-behalf vacation management E2E", () => {
       const created = await createOnBehalf(cookie, { autoApprove: true }).expect(201);
       const id = created.body[0].id as string;
 
-      await request(context.app)
+      await request(server.url)
         .delete(`/api/vacation/${id}`)
         .set("Cookie", cookie)
         .send({ reason: "Booked by mistake" })
         .expect(200);
 
-      const detail = await request(context.app)
+      const detail = await request(server.url)
         .get(`/api/vacation/${id}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -303,14 +308,14 @@ describe("Admin on-behalf vacation management E2E", () => {
 
       const [year, month] = WED.split("-");
       const memberCookie = await authCookieFor(context.user2.id);
-      const withCancelled = await request(context.app)
+      const withCancelled = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", memberCookie)
         .query({ year, month: Number(month), includeCancelled: "true" })
         .expect(200);
       expect(withCancelled.body.map((r: { id: string }) => r.id)).toContain(id);
 
-      const without = await request(context.app)
+      const without = await request(server.url)
         .get("/api/vacation")
         .set("Cookie", memberCookie)
         .query({ year, month: Number(month) })
@@ -328,7 +333,7 @@ describe("Admin on-behalf vacation management E2E", () => {
       await grantOrgAdmin(orgAdmin.id);
       const cookie = await authCookieFor(orgAdmin.id);
 
-      const created = await request(context.app)
+      const created = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({
@@ -346,13 +351,13 @@ describe("Admin on-behalf vacation management E2E", () => {
       });
 
       const ids = created.body.map((r: { id: string }) => r.id);
-      await request(context.app)
+      await request(server.url)
         .patch("/api/vacation")
         .set("Cookie", cookie)
         .send({ ids, note: "team offsite" })
         .expect(200);
 
-      await request(context.app)
+      await request(server.url)
         .delete(`/api/vacation/${ids[0] as string}`)
         .set("Cookie", cookie)
         .expect(200);
@@ -363,7 +368,7 @@ describe("Admin on-behalf vacation management E2E", () => {
       await grantOrgAdmin(orgAdmin.id);
 
       const memberCookie = await authCookieFor(context.user2.id);
-      const created = await request(context.app)
+      const created = await request(server.url)
         .post("/api/vacation/create-vacation")
         .set("Cookie", memberCookie)
         .send({ groupId: context.group.id, from: WED, to: WED })
@@ -371,7 +376,7 @@ describe("Admin on-behalf vacation management E2E", () => {
       const id = created.body[0].id as string;
 
       const cookie = await authCookieFor(orgAdmin.id);
-      await request(context.app)
+      await request(server.url)
         .post(`/api/vacation/approve/${id}`)
         .set("Cookie", cookie)
         .expect(403);

@@ -1,14 +1,18 @@
 import { createServer, type RequestListener } from "node:http";
 import type { AddressInfo } from "node:net";
 
+export interface LoopbackServer {
+  url: string;
+  /** Rejects when called a second time, so close each server exactly once. */
+  close: () => Promise<void>;
+}
+
 /**
  * Hand supertest this server's `url`, never the bare app: for a bare app it listens on `::` and
  * connects to 127.0.0.1, where on macOS another process's loopback listener can hold the port and
  * answer instead. Binding 127.0.0.1 makes the OS refuse a port someone else holds there.
  */
-export async function listenOnLoopback(
-  app: RequestListener
-): Promise<{ url: string; close: () => Promise<void> }> {
+export async function listenOnLoopback(app: RequestListener): Promise<LoopbackServer> {
   const server = createServer(app);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
