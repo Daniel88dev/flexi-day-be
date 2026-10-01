@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { generateId } from "better-auth";
 import { hashPassword } from "better-auth/crypto";
 import { db } from "../../db/db.js";
 import { account, user } from "../../db/schema/auth-schema.js";
@@ -87,7 +88,7 @@ export const seedUser = async (input: {
     };
   }
 
-  const userId = generateRandomUUID();
+  const userId = generateId();
   await db.transaction(async (tx) => {
     await tx.insert(user).values({
       id: userId,
@@ -99,7 +100,7 @@ export const seedUser = async (input: {
     });
 
     await tx.insert(account).values({
-      id: generateRandomUUID(),
+      id: generateId(),
       accountId: userId,
       providerId: "credential",
       userId,

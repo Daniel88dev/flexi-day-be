@@ -115,7 +115,11 @@ that way:
 Seeding is confined to `DEV_SEED_EMAIL_DOMAIN` (default `dev.local`), which is also the exact scope
 of `POST /api/dev/reset` — there is no unscoped delete. Users are created by inserting `user` +
 `account` rows with better-auth's own `hashPassword`, bypassing `signUpEmail` because that runs the
-haveIBeenPwned check (an outbound call that fails offline) and fires a verification email.
+haveIBeenPwned check (an outbound call that fails offline) and fires a verification email. A
+seeded user's id comes from better-auth's `generateId()`, the generator real sign-ups use, and is
+never a UUID: a UUID there would let a UUID validator on a user id pass every local check in the
+browser or on the simulator and fail in production. `src/services/dev/tests/devSeedServices.test.ts`
+pins the shape.
 
 The frontend half is gated too: `/dev-sign-in/` only builds when `NEXT_PUBLIC_DEV_TOOLS=1`, and
 `pageExtensions` in `next.config.ts` keeps `page.dev.tsx` files out of production output entirely.
