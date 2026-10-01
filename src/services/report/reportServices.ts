@@ -385,6 +385,7 @@ export const getMemberChanges = async (
       createdAt: changesSchema.createdAt,
       actorId: actor.id,
       actorName: actor.name,
+      actorDeleted: changesSchema.changingUserDeleted,
     })
     .from(changesSchema)
     .leftJoin(actor, eq(changesSchema.changingUserId, actor.id))
@@ -409,6 +410,7 @@ export const getMemberChanges = async (
       row.actorId && row.actorName
         ? buildUserSummary({ id: row.actorId, name: row.actorName })
         : null,
+    actorDeleted: row.actorDeleted,
     createdAt: row.createdAt.toISOString(),
   }));
 };

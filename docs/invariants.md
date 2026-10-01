@@ -331,6 +331,20 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
   who belongs to no group — a manager whose own group holds no membership row for them, say — to
   org admins alone, because a group admin's scope reaches only people who hold a `group_users` row.
 
+## Account deletion (`src/services/accountDeletion/`)
+
+The policy is in [`account-deletion.md`](account-deletion.md). Two things it leans on elsewhere:
+
+- **`changes.changing_user_id` keeps no `ON DELETE`.** A NULL actor with `changing_user_deleted`
+  false is how the quota rollover is told apart from a person. Account deletion clears the actor
+  and sets the flag in one statement; a check constraint stops the flag riding with an actor id.
+  Switching the FK to `SET NULL` would relabel every deleted admin's edits as the rollover's.
+- **Every path that adds someone to an organization takes `lockOrganization`.** Deletion locks the
+  organizations the user owns or manages a group in, then checks its blockers again. A join that
+  skipped the lock could commit between that check and the delete, and the other person's group or
+  organization would go with the account. `src/tests/e2e/accountDeletion.e2e.test.ts` covers the
+  blockers and the all-or-nothing rollback.
+
 ## Billing config is opt-in (`src/config.ts`)
 
 With `PADDLE_API_KEY` unset, `config.paddle` is `undefined` and `/api/billing/*` returns 503. Once

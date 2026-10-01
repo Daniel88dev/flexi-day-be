@@ -55,7 +55,10 @@ export type MemberChangeEntry = {
   groupId: string;
   changeType: string;
   changeDetail: string;
+  /** Null for the quota rollover, and for an actor who deleted their account. */
   actor: UserSummary | null;
+  /** True when the actor has deleted their account, so `actor: null` does not mean the rollover. */
+  actorDeleted: boolean;
   createdAt: string;
 };
 

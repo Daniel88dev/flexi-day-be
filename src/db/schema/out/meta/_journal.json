@@ -148,6 +148,13 @@
       "when": 1790455154166,
       "tag": "0020_session_auto_closed_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790877273079,
+      "tag": "0021_changes_deleted_actor",
+      "breakpoints": true
     }
   ]
 }

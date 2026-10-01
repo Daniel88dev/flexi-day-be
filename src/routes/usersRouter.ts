@@ -7,6 +7,9 @@ import { handleGetMySettings } from "../controllers/users/handleGetMySettings.js
 import { handlePutMySettings } from "../controllers/users/handlePutMySettings.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import { validatePutUserSettings } from "../services/userSettings/types.js";
+import { handleGetMyDeletion } from "../controllers/users/handleGetMyDeletion.js";
+import { handlePostDeleteMe } from "../controllers/users/handlePostDeleteMe.js";
+import { validatePostDeleteMe } from "../services/accountDeletion/types.js";
 
 export const usersRouter = (): Router => {
   const app = Router();
@@ -166,6 +169,213 @@ export const usersRouter = (): Router => {
     "/me/settings",
     bodyValidationMiddleware(validatePutUserSettings),
     tryCatch(handlePutMySettings)
+  );
+
+  /**
+   * @openapi
+   * /api/users/me/deletion:
+   *   get:
+   *     tags:
+   *       - Users
+   *     summary: Whether the caller can delete their account now
+   *     description: |
+   *       Lists every blocker, not just the first, and says how the delete
+   *       must be confirmed, so a client can show both before asking for
+   *       anything. `confirmation` is `password` for a user with an
+   *       email-and-password account and `recent-sign-in` for a social-only
+   *       user, whose session must be under 24 hours old. Works with a web
+   *       cookie or a Native session. The policy is in
+   *       `docs/account-deletion.md`.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: Deletion status
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AccountDeletionStatus'
+   *       '401':
+   *         description: Not signed in
+   * components:
+   *   schemas:
+   *     AccountDeletionStatus:
+   *       type: object
+   *       required: [canDelete, blockers, confirmation]
+   *       properties:
+   *         canDelete:
+   *           type: boolean
+   *           description: True when `blockers` is empty.
+   *         blockers:
+   *           type: array
+   *           items:
+   *             $ref: '#/components/schemas/DeletionBlocker'
+   *         confirmation:
+   *           type: string
+   *           enum: [password, recent-sign-in]
+   *     DeletionBlocker:
+   *       description: |
+   *         One reason the account cannot be deleted yet, told apart by `kind`.
+   *         `GROUP_HAS_MEMBERS`: the caller manages a live group in which
+   *         another user has a live membership. `ORGANIZATION_HAS_MEMBERS`:
+   *         the caller owns an organization in which another user has an open
+   *         Employment. `SUBSCRIPTION_RENEWING`: an organization the caller
+   *         owns has a Paddle subscription that is not `canceled` and has no
+   *         scheduled cancellation; cancel it in the customer portal first.
+   *         `SUPPORT_ADMIN`: the caller is a platform support admin, or was
+   *         one and has a support access trail.
+   *       oneOf:
+   *         - type: object
+   *           required: [kind, groupId, groupName, otherMembers]
+   *           properties:
+   *             kind:
+   *               type: string
+   *               enum: [GROUP_HAS_MEMBERS]
+   *             groupId:
+   *               type: string
+   *               format: uuid
+   *             groupName:
+   *               type: string
+   *             otherMembers:
+   *               type: integer
+   *               description: Live members other than the caller.
+   *         - type: object
+   *           required: [kind, organizationId, organizationName, otherMembers]
+   *           properties:
+   *             kind:
+   *               type: string
+   *               enum: [ORGANIZATION_HAS_MEMBERS]
+   *             organizationId:
+   *               type: string
+   *               format: uuid
+   *             organizationName:
+   *               type: string
+   *             otherMembers:
+   *               type: integer
+   *               description: Open Employments other than the caller's.
+   *         - type: object
+   *           required: [kind, organizationId, organizationName]
+   *           properties:
+   *             kind:
+   *               type: string
+   *               enum: [SUBSCRIPTION_RENEWING]
+   *             organizationId:
+   *               type: string
+   *               format: uuid
+   *             organizationName:
+   *               type: string
+   *         - type: object
+   *           required: [kind]
+   *           properties:
+   *             kind:
+   *               type: string
+   *               enum: [SUPPORT_ADMIN]
+   *       discriminator:
+   *         propertyName: kind
+   */
+  app.get("/me/deletion", tryCatch(handleGetMyDeletion));
+
+  /**
+   * @openapi
+   * /api/users/me/delete:
+   *   post:
+   *     tags:
+   *       - Users
+   *     summary: Delete the caller's account
+   *     description: |
+   *       Hard-deletes the account in one transaction: the user and everything
+   *       that hangs off them, the groups they manage and the organizations
+   *       they own (both only possible once nobody else is in them), with
+   *       their subscription rows. The caller is cleared from main and temp
+   *       approver slots of other people's groups, and quota changes they
+   *       made stay with a deleted-actor marker. Stored attachment objects
+   *       are removed after the commit; a failure there is logged and does not
+   *       fail the request. Every session ends, web and Native, so the old
+   *       cookie answers 401 afterwards. A wrong password counts toward the
+   *       API's failure rate limit. The full policy is in
+   *       `docs/account-deletion.md`.
+   *
+   *       Blockers are checked again inside the deleting transaction, under
+   *       the same organization locks a join takes, so someone joining in
+   *       between still blocks the delete.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: false
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               password:
+   *                 type: string
+   *                 description: |
+   *                   The current password. Required when the deletion status
+   *                   says `confirmation: password`; ignored otherwise.
+   *     responses:
+   *       '204':
+   *         description: |
+   *           Deleted. The response expires the session cookies.
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           Not confirmed, and nothing changed. `errors[0].context.reason`
+   *           is `PASSWORD_INVALID` for a wrong or missing password, or
+   *           `REAUTH_REQUIRED` for a social-only user whose session is over
+   *           24 hours old; send them through sign-in again.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 errors:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       message:
+   *                         type: string
+   *                       context:
+   *                         type: object
+   *                         properties:
+   *                           reason:
+   *                             type: string
+   *                             enum: [PASSWORD_INVALID, REAUTH_REQUIRED]
+   *       '409':
+   *         description: |
+   *           At least one blocker applies, and nothing changed.
+   *           `errors[0].context` carries `reason: DELETION_BLOCKED` and the
+   *           full `blockers` list, the same one the deletion status returns.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 errors:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       message:
+   *                         type: string
+   *                       context:
+   *                         type: object
+   *                         properties:
+   *                           reason:
+   *                             type: string
+   *                             enum: [DELETION_BLOCKED]
+   *                           blockers:
+   *                             type: array
+   *                             items:
+   *                               $ref: '#/components/schemas/DeletionBlocker'
+   *       '422':
+   *         description: The body failed validation (a `password` that is not a string)
+   */
+  app.post(
+    "/me/delete",
+    bodyValidationMiddleware(validatePostDeleteMe),
+    tryCatch(handlePostDeleteMe)
   );
 
   return app;

@@ -49,6 +49,7 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Device id**            | An opaque id the phone mints once and keeps in its Keychain; sent on every request and checked against the Native session it belongs to. Identifies the phone, not the person. Avoid: install id, app instance id.                                                                                    |
 | **Notification**         | An in-app notice to one user, listed in the bell and pushed to each phone they are signed in on. Not opt-out; email is the separate, opt-out channel. Avoid: alert.                                                                                                                                   |
 | **Push registration**    | One phone's APNs token and its sandbox or production environment, bound to one Native session and ending with it. See [`docs/adr/0006-push-registrations-belong-to-the-native-session.md`](docs/adr/0006-push-registrations-belong-to-the-native-session.md). Avoid: device token, push subscription. |
+| **Account deletion**     | A user removing their own account and everything that hangs off it. See [`docs/account-deletion.md`](docs/account-deletion.md). Avoid: account closure, deactivation.                                                                                                                                 |
 
 ## Vacation workflow
 
@@ -132,7 +133,8 @@ alone. Two consequences worth keeping intact:
 A croner job (`src/jobs/`) rolls unused quota into the new year. `QUOTA_ROLLOVER_ENABLED` toggles it
 (on outside `test`), `QUOTA_ROLLOVER_CRON` sets the schedule (default `0 2 * * *`) and
 `QUOTA_ROLLOVER_TIMEZONE` the zone it runs in (default `Europe/Prague`). Rows it writes to `changes`
-carry a null `changing_user_id`, which is how an automated rollover is told apart from a person.
+carry a null `changing_user_id` with `changing_user_deleted` false, which is how an automated
+rollover is told apart from a person, including one who has since deleted their account.
 
 The same tick then runs the attachment retention sweep (`src/services/attachment/attachmentRetention.ts`):
 attachments go twelve months after the Request's last day, as soon as the Request has no live day
