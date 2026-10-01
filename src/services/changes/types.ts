@@ -6,8 +6,10 @@ export type ChangeRecordType = {
   groupId: string;
   changeType: changesType;
   changeDetail: string;
-  /** Null when the scheduled quota rollover wrote the row rather than a person. */
+  /** Null when the quota rollover wrote the row, or when `changingUserDeleted` is set. */
   changingUserId: string | null;
+  /** The person who made the change has since deleted their account. */
+  changingUserDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
 };

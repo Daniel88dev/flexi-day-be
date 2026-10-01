@@ -1,0 +1,2 @@
+ALTER TABLE "changes" ADD COLUMN "changing_user_deleted" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "changes" ADD CONSTRAINT "changes_deleted_actor_has_no_id_chk" CHECK (NOT ("changes"."changing_user_deleted" AND "changes"."changing_user_id" IS NOT NULL));

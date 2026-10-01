@@ -117,6 +117,11 @@ export const reportRouter = (): Router => {
    *       rows appear only for groups whose organization has the Sick day
    *       benefit enabled. Requires full view access on a group the member
    *       belongs to; callers may always request their own detail.
+   *
+   *       Each entry of `changes` carries `actor` and `actorDeleted`. An
+   *       `actor` of null with `actorDeleted: false` means the quota rollover
+   *       made the change; with `actorDeleted: true`, the person who made it
+   *       has since deleted their account.
    *     security:
    *       - bearerAuth: []
    *     parameters:
