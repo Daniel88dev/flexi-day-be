@@ -106,14 +106,15 @@ describe("account deletion handlers", () => {
   describe("a user with a password", () => {
     beforeEach(() => mockGetHash.mockResolvedValue("stored-hash"));
 
-    it("refuses a missing password without checking anything else", async () => {
+    it("refuses a missing password", async () => {
+      mockVerify.mockResolvedValue(false);
       const { req, res } = deleteRequest();
 
       expect(await refusalOf(handlePostDeleteMe(req, res))).toEqual({
         code: 403,
         reason: "PASSWORD_INVALID",
       });
-      expect(mockVerify).not.toHaveBeenCalled();
+      expect(mockVerify).toHaveBeenCalledWith({ hash: "stored-hash", password: "" });
       expect(mockDeleteAccount).not.toHaveBeenCalled();
     });
 
@@ -130,6 +131,7 @@ describe("account deletion handlers", () => {
     });
 
     it("still needs the password when the session is brand new", async () => {
+      mockVerify.mockResolvedValue(false);
       mockGetSessionCreatedAt.mockResolvedValue(new Date());
       const { req, res } = deleteRequest();
 

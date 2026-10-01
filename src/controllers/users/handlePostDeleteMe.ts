@@ -30,7 +30,7 @@ const assertConfirmed = async (session: AuthSession, password: string | undefine
 
   if (hash) {
     const context = await betterAuth.$context;
-    const valid = password ? await context.password.verify({ hash, password }) : false;
+    const valid = await context.password.verify({ hash, password: password ?? "" });
     if (!valid) {
       throw refuse(DeletionRefusal.PasswordInvalid, "The password is not correct", session.userId);
     }
