@@ -429,22 +429,16 @@ describe("team attendance", () => {
     it("lists who is in now, break and all, for the whole organization", async () => {
       const { body } = await getTeam(owner).expect(200);
 
-      const inNow = [...body.inNow].sort((a: { userId: string }, b: { userId: string }) =>
-        a.userId.localeCompare(b.userId)
-      );
-      expect(inNow.map((entry: { userId: string }) => entry.userId)).toEqual(
-        [member.id, salesMember.id].sort()
-      );
-      expect(inNow.find((entry: { userId: string }) => entry.userId === member.id)).toMatchObject({
+      const inNow = body.inNow as { userId: string }[];
+      expect(inNow.map((entry) => entry.userId).sort()).toEqual([member.id, salesMember.id].sort());
+      expect(inNow.find((entry) => entry.userId === member.id)).toMatchObject({
         employmentId: employmentIds.get(member.id),
         businessDate: businessDate(MONDAY + 1),
         startedAt: at(MONDAY + 1, "06:00").toISOString(),
         onBreak: false,
         breakStartedAt: null,
       });
-      expect(
-        inNow.find((entry: { userId: string }) => entry.userId === salesMember.id)
-      ).toMatchObject({
+      expect(inNow.find((entry) => entry.userId === salesMember.id)).toMatchObject({
         onBreak: true,
         breakStartedAt: at(MONDAY + 7, "09:00").toISOString(),
       });

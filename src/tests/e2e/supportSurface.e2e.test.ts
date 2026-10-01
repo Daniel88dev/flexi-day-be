@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -20,7 +21,8 @@ import {
 import { cleanupTestData } from "./helpers/testSetup.js";
 
 describe("support surface data invariants", () => {
-  const ownerId = uuidv4();
+  const ownerId = generateId();
+  const ownerEmail = `support-owner-${ownerId.toLowerCase()}@dev.local`;
   const orgId = uuidv4();
   const groupId = uuidv4();
 
@@ -28,7 +30,7 @@ describe("support surface data invariants", () => {
     await cleanupTestData();
     await db.insert(user).values({
       id: ownerId,
-      email: `support-owner-${ownerId}@dev.local`,
+      email: ownerEmail,
       name: "Support Owner a_b",
       emailVerified: true,
       createdAt: new Date(),
@@ -38,7 +40,7 @@ describe("support surface data invariants", () => {
       id: orgId,
       name: "Support Org a_b",
       ownerUserId: ownerId,
-      billingEmail: `support-owner-${ownerId}@dev.local`,
+      billingEmail: ownerEmail,
     });
     await db.insert(groups).values({
       id: groupId,

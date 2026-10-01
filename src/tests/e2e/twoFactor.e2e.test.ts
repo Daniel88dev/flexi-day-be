@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { base32 } from "@better-auth/utils/base32";
@@ -63,7 +64,7 @@ describe("two-factor authentication", () => {
   beforeAll(async () => {
     await cleanupTestData();
     app = createServer();
-    userId = uuidv4();
+    userId = generateId();
     await db.insert(user).values({
       id: userId,
       email,
@@ -179,7 +180,7 @@ describe("two-factor authentication", () => {
   it("enrolls and signs in with an emailed code alone", async () => {
     // A second user who never scans the QR — the email-only path.
     const otpEmail = `twofactor-otp-${uuidv4()}@dev.local`;
-    const otpUserId = uuidv4();
+    const otpUserId = generateId();
     await db.insert(user).values({
       id: otpUserId,
       email: otpEmail,

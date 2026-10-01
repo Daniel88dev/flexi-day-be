@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { account, user, verification } from "../../db/schema/auth-schema.js";
@@ -21,10 +22,10 @@ describe("password reset settles the account", () => {
   };
 
   const makeUser = async (emailVerified: boolean) => {
-    const id = uuidv4();
+    const id = generateId();
     await db.insert(user).values({
       id,
-      email: `reset-${id}@dev.local`,
+      email: `reset-${id.toLowerCase()}@dev.local`,
       name: "Reset Subject",
       emailVerified,
       createdAt: new Date(),

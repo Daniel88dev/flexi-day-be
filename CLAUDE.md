@@ -142,6 +142,9 @@ deliberately absent from the API docs.
   tracked example, so write it by hand on a fresh clone; besides the database and better-auth
   values it must set `TRUSTED_ORIGINS=http://localhost:3000,flexiday://`, the same value `ci.yml`
   exports, or the origin-check suite fails.
+- E2E `user` rows take better-auth's `generateId()` ids, never UUIDs: a UUID fixture passes a
+  `z.uuid()` validator on a user id that every real user fails. Keep an email built from the id
+  lowercase, because better-auth lowercases the address at sign-in and matches it exactly.
 
 ## Configuration
 

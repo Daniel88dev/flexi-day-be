@@ -7,6 +7,7 @@ import { vacation } from "../../../db/schema/vacation-schema.js";
 import { groupUsers } from "../../../db/schema/group-users-schema.js";
 import { session } from "../../../db/schema/auth-schema.js";
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
 import { organizations } from "../../../db/schema/organization-schema.js";
 import { subscriptions } from "../../../db/schema/subscription-schema.js";
@@ -50,7 +51,7 @@ export async function createTestUser(
   name: string,
   password: string
 ): Promise<TestUser> {
-  const userId = uuidv4();
+  const userId = generateId();
 
   // Check if user already exists
   const existingUser = await db.select().from(user).where(eq(user.email, email));

@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { generateId } from "better-auth";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../../db/db.js";
 import { user } from "../../../db/schema/auth-schema.js";
@@ -25,10 +26,10 @@ import { ensureOrganizationForUser } from "../../../services/organization/organi
  */
 
 export async function makeUser(name: string): Promise<{ id: string; name: string }> {
-  const id = uuidv4();
+  const id = generateId();
   await db.insert(user).values({
     id,
-    email: `${id}@report-e2e.test`,
+    email: `${id.toLowerCase()}@report-e2e.test`,
     name,
     emailVerified: true,
     createdAt: new Date(),
@@ -87,7 +88,7 @@ export async function addMember(
 export async function seedMembers(groupId: string, count: number): Promise<string[]> {
   const stamp = new Date();
   const members = Array.from({ length: count }, (_, index) => ({
-    id: uuidv4(),
+    id: generateId(),
     email: `bulk-${index.toString()}-${uuidv4()}@report-e2e.test`,
     name: `Bulk ${index.toString()}`,
     emailVerified: true,
