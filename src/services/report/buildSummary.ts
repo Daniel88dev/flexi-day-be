@@ -1,19 +1,12 @@
-import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import type { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import {
+  allowanceFor,
+  QUOTA_BEARING_TYPES,
+  resolveYearAllocation,
+  type QuotaBearingType,
+} from "../userYearQuotas/yearAllocation.js";
+import type { GroupAllowancePolicy } from "../userYearQuotas/types.js";
 import type { ReportQuotaRow, ReportUsageSplit } from "./types.js";
-
-/**
- * Only these calendar record types draw down an allowance, so only they get a
- * summary line — the rest are reported on the detail sheet alone. Sick day is
- * metered only where the organization's Sick day benefit is switched on;
- * callers gate its summary lines through `sickDayGroupIds`.
- */
-export const QUOTA_BEARING_TYPES = [
-  CalendarRecordType.Vacation,
-  CalendarRecordType.HomeOffice,
-  CalendarRecordType.SickDay,
-] as const;
-
-export type QuotaBearingType = (typeof QUOTA_BEARING_TYPES)[number];
 
 export type SummaryEntry = ReportUsageSplit & {
   userId: string;
@@ -33,23 +26,21 @@ type UsageEntry = ReportUsageSplit & {
 const key = (userId: string, groupId: string) => `${userId}::${groupId}`;
 
 /**
- * Joins allowances to usage into one line per (member, group, quota type).
+ * Joins allowances to usage into one line per (member, group, quota type);
+ * other record types appear on the export's detail sheet alone.
  *
  * Members appear even with no bookings — a full allowance and nothing taken is
- * exactly what a manager reads a report to find. Carry-over belongs to the
- * vacation allowance only; the column exists once on the quota row and would
- * otherwise be double-counted against home office.
+ * exactly what a manager reads a report to find. A member with no quota row
+ * reads the group defaults, the same allocation the booking guard enforced.
  *
- * `sickDayGroupIds` names the groups whose organization has the Sick day
- * benefit switched on — only they get a Sick day line. The gate reads the
- * stored toggle, not the live entitlements, so a lapsed subscription keeps
- * reporting the allowances and usage it accrued.
+ * `policies` holds each group's defaults and Sick day toggle; only groups with
+ * the benefit on get a Sick day line.
  */
 export const buildSummaryEntries = (
   quotas: ReportQuotaRow[],
   usage: UsageEntry[],
   members: { userId: string; groupId: string }[],
-  sickDayGroupIds: ReadonlySet<string>,
+  policies: ReadonlyMap<string, GroupAllowancePolicy>,
   types?: CalendarRecordType[]
 ): SummaryEntry[] => {
   const wanted = QUOTA_BEARING_TYPES.filter((type) => !types || types.includes(type));
@@ -70,19 +61,15 @@ export const buildSummaryEntries = (
 
   for (const pair of pairs.values()) {
     const pairKey = key(pair.userId, pair.groupId);
-    const quota = quotaByKey.get(pairKey);
+    const policy = policies.get(pair.groupId);
+    const allocation = resolveYearAllocation(quotaByKey.get(pairKey), policy);
 
     for (const type of wanted) {
-      if (type === CalendarRecordType.SickDay && !sickDayGroupIds.has(pair.groupId)) continue;
+      const allowance = allowanceFor(allocation, type, policy);
+      if (!allowance) continue;
 
+      const { yearQuota, carriedOverDays } = allowance;
       const used = usageByKey.get(`${pairKey}::${type}`);
-      const isVacation = type === CalendarRecordType.Vacation;
-      const carriedOverDays = isVacation ? (quota?.carriedOverDays ?? 0) : 0;
-      const yearQuota = isVacation
-        ? (quota?.vacationDays ?? 0)
-        : type === CalendarRecordType.SickDay
-          ? (quota?.sickDays ?? 0)
-          : (quota?.homeOfficeDays ?? 0);
       const usedToDate = used?.usedToDate ?? 0;
       const plannedRemaining = used?.plannedRemaining ?? 0;
 

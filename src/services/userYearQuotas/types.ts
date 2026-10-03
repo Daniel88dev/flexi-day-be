@@ -59,3 +59,27 @@ export const validatePutUserQuota = z.object({
 });
 
 export type ValidatedPutUserQuotaType = z.infer<typeof validatePutUserQuota>;
+
+export type QuotaFigures = {
+  vacationDays: number;
+  homeOfficeDays: number;
+  sickDays: number;
+  carriedOverDays: number;
+};
+
+export type GroupQuotaDefaults = {
+  defaultVacationDays: number;
+  defaultHomeOfficeDays: number;
+  defaultSickDays: number;
+};
+
+/** A live group's defaults, plus whether its organization meters sick days at all. */
+export type GroupAllowancePolicy = GroupQuotaDefaults & { sickDayBenefitEnabled: boolean };
+
+export type Allowance = { yearQuota: number; carriedOverDays: number };
+
+export type MemberYearAllocation = {
+  allocation: QuotaFigures;
+  /** Undefined for a soft-deleted group. */
+  policy: GroupAllowancePolicy | undefined;
+};

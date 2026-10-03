@@ -74,30 +74,16 @@ export const decreaseChangeForUserYearQuotas = async (
   return row;
 };
 
-/**
- * Sums quota allocations for the supplied user across the supplied groups for
- * a given year. Returns zeros when no quota rows exist yet.
- */
-export const sumUserQuotasForYear = async (
+/** A member's quota rows for one year across the given groups; a group without one is absent. */
+export const getUserYearQuotasForGroups = async (
   userId: string,
   groupIds: string[],
-  relatedYear: string
-): Promise<{
-  vacationDays: number;
-  homeOfficeDays: number;
-  sickDays: number;
-  carriedOverDays: number;
-}> => {
-  if (groupIds.length === 0) {
-    return { vacationDays: 0, homeOfficeDays: 0, sickDays: 0, carriedOverDays: 0 };
-  }
-  const [row] = await db
-    .select({
-      vacationDays: sql<number>`COALESCE(SUM(${userYearQuotas.vacationDays}), 0)`,
-      homeOfficeDays: sql<number>`COALESCE(SUM(${userYearQuotas.homeOfficeDays}), 0)`,
-      sickDays: sql<number>`COALESCE(SUM(${userYearQuotas.sickDays}), 0)`,
-      carriedOverDays: sql<number>`COALESCE(SUM(${userYearQuotas.carriedOverDays}), 0)`,
-    })
+  relatedYear: string,
+  tx?: DbTransaction
+): Promise<UserYearQuotasType[]> => {
+  if (groupIds.length === 0) return [];
+  return (tx ?? db)
+    .select()
     .from(userYearQuotas)
     .where(
       and(
@@ -106,12 +92,6 @@ export const sumUserQuotasForYear = async (
         inArray(userYearQuotas.groupId, groupIds)
       )
     );
-  return {
-    vacationDays: Number(row?.vacationDays ?? 0),
-    homeOfficeDays: Number(row?.homeOfficeDays ?? 0),
-    sickDays: Number(row?.sickDays ?? 0),
-    carriedOverDays: Number(row?.carriedOverDays ?? 0),
-  };
 };
 
 /**

@@ -91,8 +91,10 @@ export const reportRouter = (): Router => {
    *       Returns one `monthly` row per (member, group, month, record type) for
    *       the charts, and one `summary` row per (member, group, quota-bearing
    *       type) for the table — Sick day rows only for groups whose
-   *       organization has the Sick day benefit enabled. Day counts are
-   *       weighted: a `halfDay` booking counts 0.5. The scope is the one
+   *       organization has the Sick day benefit enabled. A member with no
+   *       quota row for the year reads the group defaults as `yearQuota`, with
+   *       `carriedOverDays` 0, the same allowance the booking guard enforces.
+   *       Day counts are weighted: a `halfDay` booking counts 0.5. The scope is the one
    *       `GET /api/reports/scope` returns, so groups the caller administers
    *       without belonging to them are included in full. Filters outside the
    *       caller's scope are silently dropped rather than rejected.
@@ -141,7 +143,9 @@ export const reportRouter = (): Router => {
    *       Allowances, monthly usage, every booking and the admin-made quota
    *       changes recorded against the member for the year. Sick day summary
    *       rows appear only for groups whose organization has the Sick day
-   *       benefit enabled. Requires `access: all` on a group the member
+   *       benefit enabled. `quotas` lists only the stored quota rows; `summary`
+   *       reads the group defaults for a group with no row, as the overview
+   *       does. Requires `access: all` on a group the member
    *       belongs to, which includes a group the caller administers without
    *       being a member; callers may always request their own detail. Each
    *       entry of `groups` carries `canEditQuotas` as in
@@ -187,7 +191,9 @@ export const reportRouter = (): Router => {
    *       first sheet, every individual booking on the second, both with Excel
    *       AutoFilter enabled across all columns. The summary sheet carries one
    *       line per member and metered type — Vacation, Home office, and Sick
-   *       day for groups whose organization has the Sick day benefit enabled. Bank holidays never appear in
+   *       day for groups whose organization has the Sick day benefit enabled,
+   *       with the same figures as `GET /api/reports/overview`, group defaults
+   *       included for a member with no quota row. Bank holidays never appear in
    *       the workbook: a company-wide closure is not leave anyone took, so
    *       `BANK_HOLIDAY` is rejected as a filter value and its rows are
    *       excluded even without a filter. Each call writes a

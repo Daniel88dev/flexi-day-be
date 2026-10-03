@@ -165,7 +165,8 @@ describe("Report scope for groups the viewer administers", () => {
         .sort()
     ).toEqual(
       [
-        [dave.id, 0],
+        // No quota row, so the group's default vacation days.
+        [dave.id, 20],
         [erin.id, 22],
         [frank.id, 18],
       ].sort()

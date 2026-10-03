@@ -337,6 +337,21 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
   who belongs to no group — a manager whose own group holds no membership row for them, say — to
   org admins alone, because a group admin's scope reaches only people who hold a `group_users` row.
 
+## Quota allocation (`src/services/userYearQuotas/yearAllocation.ts`)
+
+- **A missing quota row means the group defaults, with nothing carried over, for every caller.**
+  The booking guard, `GET /api/users/me/balances`, the report summary (overview, member detail and
+  the export's summary sheet) and the carry-over suggestion all take a member's allocation from
+  `resolveYearAllocation`, and the metered allowance per type from `allowanceFor`, which also
+  leaves Sick day unmetered where the organization's benefit is off. A reader with its own fallback
+  would show `allocated: 0` and a negative remaining for days the guard allowed.
+  `src/tests/e2e/missingQuotaAllocation.e2e.test.ts` books up to the default and checks that every
+  reader then shows zero remaining. `computeRolloverRow` opens the new year's rows through the
+  same `resolveYearAllocation`. The iPhone app's local balance has to match the rule too.
+- **The guard reads the allocation after taking its locks.** `assertGrouped` takes every bucket's
+  advisory lock, in key order, before it reads any allocation or total, so a booking that waited on
+  the lock sees what the competing one committed.
+
 ## Account deletion (`src/services/accountDeletion/`)
 
 The policy is in [`account-deletion.md`](account-deletion.md). Two things it leans on elsewhere:

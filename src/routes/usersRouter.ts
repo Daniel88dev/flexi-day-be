@@ -51,6 +51,14 @@ export const usersRouter = (): Router => {
    *     tags:
    *       - Users
    *     summary: Aggregated leave balances for the caller for a given year
+   *     description: |
+   *       One bucket per record type, summed across the caller's groups.
+   *       `allocated` is the year's quota, plus carry-over for Vacation; a
+   *       group with no quota row for the year contributes its defaults, the
+   *       same allowance the booking guard enforces. A Sick day bucket is
+   *       allocated only through groups whose organization has the Sick day
+   *       benefit enabled. `used` counts approved days and `pending` days
+   *       awaiting a decision, half days as 0.5.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -62,6 +70,30 @@ export const usersRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Balance buckets per calendar record type
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 year:
+   *                   type: string
+   *                 buckets:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       type:
+   *                         type: string
+   *                       allocated:
+   *                         type: number
+   *                       used:
+   *                         type: number
+   *                       pending:
+   *                         type: number
+   *       '401':
+   *         description: Not authenticated
+   *       '422':
+   *         description: Invalid year
    */
   app.get("/me/balances", tryCatch(handleGetMyBalances));
 

@@ -1,3 +1,11 @@
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import type { QuotaFigures } from "../userYearQuotas/types.js";
+import {
+  allowanceFor,
+  resolveYearAllocation,
+  totalAllowance,
+} from "../userYearQuotas/yearAllocation.js";
+
 /**
  * One active membership that has no quota row yet for the target year, with
  * everything needed to derive one. The previous-year figures fall back to the
@@ -27,6 +35,20 @@ export type RolloverRow = {
   carriedOverDays: number;
 };
 
+/** The columns come from one left join, so they are all null or none is. */
+const previousRow = (candidate: RolloverCandidate): QuotaFigures | undefined =>
+  candidate.previousVacationDays === null ||
+  candidate.previousHomeOfficeDays === null ||
+  candidate.previousSickDays === null ||
+  candidate.previousCarriedOverDays === null
+    ? undefined
+    : {
+        vacationDays: candidate.previousVacationDays,
+        homeOfficeDays: candidate.previousHomeOfficeDays,
+        sickDays: candidate.previousSickDays,
+        carriedOverDays: candidate.previousCarriedOverDays,
+      };
+
 /**
  * Derives the new year's allowance for one membership.
  *
@@ -39,19 +61,23 @@ export type RolloverRow = {
  * expires — sick days never contribute to `carriedOverDays`.
  */
 export const computeRolloverRow = (candidate: RolloverCandidate): RolloverRow => {
-  const vacationDays = candidate.previousVacationDays ?? candidate.groupDefaultVacationDays;
-  const homeOfficeDays = candidate.previousHomeOfficeDays ?? candidate.groupDefaultHomeOfficeDays;
-  const sickDays = candidate.previousSickDays ?? candidate.groupDefaultSickDays;
+  const previous = resolveYearAllocation(previousRow(candidate), {
+    defaultVacationDays: candidate.groupDefaultVacationDays,
+    defaultHomeOfficeDays: candidate.groupDefaultHomeOfficeDays,
+    defaultSickDays: candidate.groupDefaultSickDays,
+  });
 
-  const previousAllowance = vacationDays + (candidate.previousCarriedOverDays ?? 0);
+  const previousAllowance = totalAllowance(
+    allowanceFor(previous, CalendarRecordType.Vacation, undefined)
+  );
   const leftover = previousAllowance - candidate.previousUsedDays;
 
   return {
     userId: candidate.userId,
     groupId: candidate.groupId,
-    vacationDays,
-    homeOfficeDays,
-    sickDays,
+    vacationDays: previous.vacationDays,
+    homeOfficeDays: previous.homeOfficeDays,
+    sickDays: previous.sickDays,
     carriedOverDays: Math.max(0, Math.floor(leftover)),
   };
 };

@@ -2,11 +2,15 @@ import { sql } from "drizzle-orm";
 import AppError from "../../utils/appError.js";
 import type { DbTransaction } from "../../db/db.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
-import { QUOTA_BEARING_TYPES } from "../report/buildSummary.js";
 import type { VacationType } from "./types.js";
-import { getGroup } from "../group/groupServices.js";
-import { getSickDayEnabledGroupIds } from "../organization/organizationServices.js";
-import { getUserYearGroupQuotas } from "../userYearQuotas/userYearQuotasServices.js";
+import type { MemberYearAllocation } from "../userYearQuotas/types.js";
+import {
+  allowanceFor,
+  getMemberYearAllocations,
+  QUOTA_BEARING_TYPES,
+  resolveYearAllocation,
+  totalAllowance,
+} from "../userYearQuotas/yearAllocation.js";
 import { sumCountedDaysForQuota } from "./vacationServices.js";
 import { dayWeightOf } from "./dayWeight.js";
 
@@ -43,37 +47,33 @@ const lockAllowance = async (check: QuotaCheck, tx: DbTransaction): Promise<void
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 };
 
-/** Falls back to the group defaults so a membership with no quota row yet is bounded, not blocked. */
-const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<number> => {
-  const [quota] = await getUserYearGroupQuotas(
-    check.year.toString(),
-    check.groupId,
-    check.userId,
-    tx
-  );
-
-  // Carry-over belongs to the vacation allowance alone; sick days never roll
-  // over by design.
-  if (quota) {
-    switch (check.calendarRecordType) {
-      case CalendarRecordType.Vacation:
-        return quota.vacationDays + quota.carriedOverDays;
-      case CalendarRecordType.SickDay:
-        return quota.sickDays;
-      default:
-        return quota.homeOfficeDays;
-    }
+/**
+ * One read per member and year, however many groups and types the decision
+ * spans. Callers take every bucket's lock first, so the allocation is read
+ * after any competing booking has committed.
+ */
+const loadAllocations = async (
+  checks: QuotaCheck[],
+  tx: DbTransaction
+): Promise<(check: QuotaCheck) => MemberYearAllocation> => {
+  const groupsByMemberYear = new Map<string, { check: QuotaCheck; groupIds: Set<string> }>();
+  for (const check of checks) {
+    const key = `${check.userId}::${check.year.toString()}`;
+    const entry = groupsByMemberYear.get(key) ?? { check, groupIds: new Set<string>() };
+    entry.groupIds.add(check.groupId);
+    groupsByMemberYear.set(key, entry);
   }
 
-  const group = await getGroup(check.groupId, tx);
-  switch (check.calendarRecordType) {
-    case CalendarRecordType.Vacation:
-      return group?.defaultVacationDays ?? 0;
-    case CalendarRecordType.SickDay:
-      return group?.defaultSickDays ?? 0;
-    default:
-      return group?.defaultHomeOfficeDays ?? 0;
+  const loaded = new Map<string, Map<string, MemberYearAllocation>>();
+  for (const [key, { check, groupIds }] of groupsByMemberYear) {
+    loaded.set(key, await getMemberYearAllocations(check.userId, [...groupIds], check.year, tx));
   }
+
+  return (check) =>
+    loaded.get(`${check.userId}::${check.year.toString()}`)?.get(check.groupId) ?? {
+      allocation: resolveYearAllocation(undefined, undefined),
+      policy: undefined,
+    };
 };
 
 /**
@@ -83,10 +83,13 @@ const allocationFor = async (check: QuotaCheck, tx: DbTransaction): Promise<numb
  */
 const assertOne = async (
   check: QuotaCheck,
+  { allocation, policy }: MemberYearAllocation,
   countPending: boolean,
   tx: DbTransaction
 ): Promise<void> => {
-  await lockAllowance(check, tx);
+  const allowance = allowanceFor(allocation, check.calendarRecordType, policy);
+  if (!allowance) return;
+  const allocated = totalAllowance(allowance);
 
   const { approved, pending } = await sumCountedDaysForQuota(
     check.userId,
@@ -96,7 +99,6 @@ const assertOne = async (
     check.excludeVacationIds,
     tx
   );
-  const allocated = await allocationFor(check, tx);
 
   const alreadyCounted = countPending ? approved + pending : approved;
   const total = Number((alreadyCounted + check.requestedDays).toFixed(2));
@@ -149,26 +151,11 @@ const assertGrouped = async (
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([, bucket]) => bucket);
 
-  // Sick day is metered only where the organization's toggle is on — the same
-  // stored-toggle gate the report summary uses. Rows in organizations that
-  // never enabled the benefit (legacy SICK_DAY data) stay unmetered, so their
-  // approval and edits keep working with a zero allowance.
-  const sickDayGroups = ordered
-    .filter((bucket) => bucket.calendarRecordType === CalendarRecordType.SickDay)
-    .map((bucket) => bucket.groupId);
-  const meteredSickDayGroups =
-    sickDayGroups.length > 0
-      ? await getSickDayEnabledGroupIds(sickDayGroups, tx)
-      : new Set<string>();
+  for (const bucket of ordered) await lockAllowance(bucket, tx);
+  const allocationOf = await loadAllocations(ordered, tx);
 
   for (const bucket of ordered) {
-    if (
-      bucket.calendarRecordType === CalendarRecordType.SickDay &&
-      !meteredSickDayGroups.has(bucket.groupId)
-    ) {
-      continue;
-    }
-    await assertOne(bucket, countPending, tx);
+    await assertOne(bucket, allocationOf(bucket), countPending, tx);
   }
 };
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildSummaryEntries } from "../buildSummary.js";
 import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import type { ReportQuotaRow } from "../types.js";
+import type { GroupAllowancePolicy } from "../../userYearQuotas/types.js";
 
 const quota = (overrides: Partial<ReportQuotaRow> = {}): ReportQuotaRow => ({
   userId: "u1",
@@ -23,7 +24,20 @@ const usage = (overrides: Partial<Parameters<typeof buildSummaryEntries>[1][numb
   ...overrides,
 });
 
-const noSickDayGroups = new Set<string>();
+const policiesFor = (sickDayGroups: string[] = []): Map<string, GroupAllowancePolicy> =>
+  new Map(
+    ["g1", "g2"].map((groupId) => [
+      groupId,
+      {
+        defaultVacationDays: 25,
+        defaultHomeOfficeDays: 8,
+        defaultSickDays: 5,
+        sickDayBenefitEnabled: sickDayGroups.includes(groupId),
+      },
+    ])
+  );
+
+const noSickDayGroups = policiesFor();
 
 describe("buildSummaryEntries", () => {
   it("joins the vacation allowance to its usage and adds carry-over to the remainder", () => {
@@ -46,18 +60,58 @@ describe("buildSummaryEntries", () => {
     expect(homeOffice).toMatchObject({ carriedOverDays: 0, yearQuota: 10, remaining: 10 });
   });
 
-  it("includes members with an allowance but no bookings", () => {
+  it("gives a member with no quota row and no bookings the group defaults", () => {
     const entries = buildSummaryEntries([], [], [{ userId: "u9", groupId: "g1" }], noSickDayGroups);
 
-    expect(entries).toHaveLength(2);
-    expect(entries.every((e) => e.userId === "u9" && e.remaining === 0)).toBe(true);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        userId: "u9",
+        vacationType: CalendarRecordType.Vacation,
+        carriedOverDays: 0,
+        yearQuota: 25,
+        remaining: 25,
+      }),
+      expect.objectContaining({
+        userId: "u9",
+        vacationType: CalendarRecordType.HomeOffice,
+        yearQuota: 8,
+        remaining: 8,
+      }),
+    ]);
   });
 
-  it("includes members with bookings but no quota row", () => {
+  it("draws a member's bookings against the group default when they have no quota row", () => {
     const entries = buildSummaryEntries([], [usage({ userId: "u2" })], [], noSickDayGroups);
     const vacationEntry = entries.find((e) => e.vacationType === CalendarRecordType.Vacation);
 
-    expect(vacationEntry).toMatchObject({ userId: "u2", yearQuota: 0, remaining: -7 });
+    expect(vacationEntry).toMatchObject({
+      userId: "u2",
+      carriedOverDays: 0,
+      yearQuota: 25,
+      remaining: 18,
+    });
+  });
+
+  it("gives a missing quota row the group's sick day default where the benefit is on", () => {
+    const entries = buildSummaryEntries(
+      [],
+      [],
+      [{ userId: "u9", groupId: "g1" }],
+      policiesFor(["g1"])
+    );
+
+    expect(entries.find((e) => e.vacationType === CalendarRecordType.SickDay)).toMatchObject({
+      yearQuota: 5,
+      carriedOverDays: 0,
+      remaining: 5,
+    });
+  });
+
+  it("allocates nothing for a group it has no policy for", () => {
+    const entries = buildSummaryEntries([], [usage({ userId: "u2" })], [], new Map());
+    const vacationEntry = entries.find((e) => e.vacationType === CalendarRecordType.Vacation);
+
+    expect(vacationEntry).toMatchObject({ yearQuota: 0, remaining: -7 });
   });
 
   it("emits only the quota-bearing types present in the type filter", () => {
@@ -109,7 +163,7 @@ describe("buildSummaryEntries", () => {
         }),
       ],
       [],
-      new Set(["g1"])
+      policiesFor(["g1"])
     );
 
     const sickDayEntries = entries.filter((e) => e.vacationType === CalendarRecordType.SickDay);
