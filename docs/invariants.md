@@ -281,6 +281,12 @@ See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
 
 - **Scoped to one organization.** `getAdministrableGroupIds` takes an `organizationId`; mirroring
   passes it, or someone who owns org A and is a delegate in org B could project B's leave into A.
+- **Only the report reads administered groups.** `getReportScopeEntries` adds every group the
+  caller administers to their memberships, across all their organizations, since the report shows
+  each group on its own. `getScopeEntries` stays membership-only because the sync pull, the group
+  calendar (`GET /api/vacation?groupId=`) and my-settings read it. Widening it would put groups an
+  org admin doesn't belong to on their phone and calendar. The "outside the report" cases in
+  `reportAdministeredScope.e2e.test.ts` fail if it widens.
 - **The grant is scoped to membership.** `handleDeleteGroupUser` revokes it when the user leaves
   the organization's last group, under a `lockOrganization` — the count spans the org, so a group
   lock alone lets two concurrent removals each see the other's membership as live.

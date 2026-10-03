@@ -13,7 +13,7 @@ import {
   aggregateUsageSplit,
   getBookingsForScope,
   getQuotasForScope,
-  getScopeEntries,
+  getReportScopeEntries,
   getScopeMembers,
   recordReportExport,
 } from "../../services/report/reportServices.js";
@@ -34,7 +34,7 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedExportRequest = req.body;
 
-  const scope = await getScopeEntries(auth.userId);
+  const scope = await getReportScopeEntries(auth.userId);
   // An unfiltered export still narrows to the exportable types, so bank
   // holiday rows never reach the workbook — the validator already rejects
   // them as an explicit filter.

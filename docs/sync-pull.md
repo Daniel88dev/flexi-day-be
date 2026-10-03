@@ -37,12 +37,14 @@ Every partitioned row carries `organizationId`: groups carry their own, `groupUs
 ## Scope
 
 Scope is membership-only, exactly the web dashboard and calendar, and comes from the report
-service's scope entries (`getScopeEntries`). One level per group drives every table: `all` when the
-caller's membership row carries view or admin access or they are the group's manager, `self`
-otherwise. A group the caller holds no live membership row in is absent whatever else they are
-there, an org admin of the owning organization or the group's own manager. A delta resolves the same scope with soft-deleted groups kept, which the
-report scope drops, so a group soft-deleted before the window the delta covers still counts as one
-of the caller's while their membership row lives.
+service's membership scope (`getScopeEntries`), not the wider one the report reads
+(`getReportScopeEntries`), which adds the groups the caller administers. One level per group drives
+every table: `all` when the caller's membership row carries view or admin access or they are the
+group's manager, `self` otherwise. A group the caller holds no live membership row in is absent
+whatever else they are there, an org admin of the owning organization or the group's own manager. A
+delta resolves the same scope with soft-deleted groups kept, which the report drops, so a group
+soft-deleted before the window the delta covers still counts as one of the caller's while their
+membership row lives.
 
 | Table            | Seen in full (`all`)                                                                       | Self-scoped (`self`)  | Beyond those groups                                                              |
 | ---------------- | ------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------- |

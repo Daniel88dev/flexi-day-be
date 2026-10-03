@@ -13,7 +13,7 @@ import {
   getMemberChanges,
   getMemberGroupsInScope,
   getQuotasForScope,
-  getScopeEntries,
+  getReportScopeEntries,
 } from "../../services/report/reportServices.js";
 import { getUserById } from "../../services/user/userServices.js";
 
@@ -30,7 +30,7 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
   const targetUserId = z.string().min(1).parse(req.params.userId);
   const { year } = validateMemberReportQuery.parse(req.query);
 
-  const scope = await getScopeEntries(auth.userId);
+  const scope = await getReportScopeEntries(auth.userId);
   const isSelf = targetUserId === auth.userId;
 
   // Looking at someone else is only possible through a group the caller can

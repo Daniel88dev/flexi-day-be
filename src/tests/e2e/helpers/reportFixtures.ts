@@ -41,10 +41,12 @@ export async function makeUser(name: string): Promise<{ id: string; name: string
 export async function makeGroup(
   groupName: string,
   managerUserId: string,
-  options: { holidayCountry?: string } = {}
+  options: { holidayCountry?: string; organizationOwnerId?: string } = {}
 ): Promise<string> {
   const id = uuidv4();
-  const organization = await ensureOrganizationForUser(managerUserId);
+  const organization = await ensureOrganizationForUser(
+    options.organizationOwnerId ?? managerUserId
+  );
   await db.insert(groups).values({
     id,
     organizationId: organization.id,

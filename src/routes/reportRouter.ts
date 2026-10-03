@@ -18,11 +18,19 @@ export const reportRouter = (): Router => {
    *       - Reports
    *     summary: Groups, members and years the caller may report on
    *     description: |
-   *       Drives the report's filter controls. Each group comes back with an
-   *       `access` level: `all` when the caller has view access, admin access
-   *       or manages the group, `self` when they are a plain member and may
-   *       only see their own rows. Never 403s — a caller with no view access
-   *       anywhere still receives their own memberships scoped to themselves.
+   *       Drives the report's filter controls. The scope covers every live
+   *       group the caller belongs to plus every live group they administer
+   *       without belonging to it: each group of an organization they own or
+   *       hold a delegated admin grant in, and each group they manage.
+   *
+   *       Each group comes back with an `access` level: `all` when the caller
+   *       has view access, admin access, manages the group or administers its
+   *       organization, `self` when they are a plain member and may only see
+   *       their own rows. `canEditQuotas` is true wherever
+   *       `PUT /api/quotas/{groupId}` would accept them: admin access, the
+   *       manager, or an org admin, member or not. Groups are ordered by name.
+   *       Never 403s — a caller with no view access anywhere still receives
+   *       their own memberships scoped to themselves.
    *     security:
    *       - bearerAuth: []
    *     responses:
@@ -49,12 +57,26 @@ export const reportRouter = (): Router => {
    *                         type: boolean
    *                 members:
    *                   type: array
+   *                   description: One row per (member, group) the caller may select
    *                   items:
    *                     type: object
+   *                     properties:
+   *                       groupId:
+   *                         type: string
+   *                       id:
+   *                         type: string
+   *                       name:
+   *                         type: string
+   *                       initials:
+   *                         type: string
+   *                       avatarColor:
+   *                         type: string
    *                 years:
    *                   type: array
    *                   items:
    *                     type: integer
+   *       '401':
+   *         description: Unauthorized
    */
   app.get("/scope", tryCatch(handleGetReportScope));
 
@@ -70,7 +92,9 @@ export const reportRouter = (): Router => {
    *       the charts, and one `summary` row per (member, group, quota-bearing
    *       type) for the table — Sick day rows only for groups whose
    *       organization has the Sick day benefit enabled. Day counts are
-   *       weighted: a `halfDay` booking counts 0.5. Filters outside the
+   *       weighted: a `halfDay` booking counts 0.5. The scope is the one
+   *       `GET /api/reports/scope` returns, so groups the caller administers
+   *       without belonging to them are included in full. Filters outside the
    *       caller's scope are silently dropped rather than rejected.
    *     security:
    *       - bearerAuth: []
@@ -101,6 +125,8 @@ export const reportRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Report payload
+   *       '401':
+   *         description: Unauthorized
    */
   app.get("/overview", tryCatch(handleGetReportOverview));
 
@@ -115,8 +141,11 @@ export const reportRouter = (): Router => {
    *       Allowances, monthly usage, every booking and the admin-made quota
    *       changes recorded against the member for the year. Sick day summary
    *       rows appear only for groups whose organization has the Sick day
-   *       benefit enabled. Requires full view access on a group the member
-   *       belongs to; callers may always request their own detail.
+   *       benefit enabled. Requires `access: all` on a group the member
+   *       belongs to, which includes a group the caller administers without
+   *       being a member; callers may always request their own detail. Each
+   *       entry of `groups` carries `canEditQuotas` as in
+   *       `GET /api/reports/scope`.
    *
    *       Each entry of `changes` carries `actor` and `actorDeleted`. An
    *       `actor` of null with `actorDeleted: false` means the quota rollover
@@ -137,6 +166,8 @@ export const reportRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: Member detail
+   *       '401':
+   *         description: Unauthorized
    *       '403':
    *         description: No permission to view this member
    *       '404':
@@ -161,6 +192,8 @@ export const reportRouter = (): Router => {
    *       `BANK_HOLIDAY` is rejected as a filter value and its rows are
    *       excluded even without a filter. Each call writes a
    *       `report_exports` audit row naming the caller, year and filters.
+   *       Covers the scope `GET /api/reports/scope` returns, including groups
+   *       the caller administers without belonging to them.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -205,6 +238,8 @@ export const reportRouter = (): Router => {
    *             schema:
    *               type: string
    *               format: binary
+   *       '401':
+   *         description: Unauthorized
    *       '413':
    *         description: Too many rows for one export — narrow the filters
    *       '422':

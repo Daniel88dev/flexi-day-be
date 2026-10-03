@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildScopePredicate, canEditQuotasIn } from "../reportScope.js";
+import { buildScopePredicate, canEditQuotasIn, widenReportScope } from "../reportScope.js";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { vacation } from "../../../db/schema/vacation-schema.js";
 import type { ReportScopeEntry } from "../types.js";
@@ -90,5 +90,56 @@ describe("canEditQuotasIn", () => {
     expect(canEditQuotasIn(scope, "g1")).toBe(true);
     expect(canEditQuotasIn(scope, "g2")).toBe(false);
     expect(canEditQuotasIn(scope, "unknown")).toBe(false);
+  });
+});
+
+describe("widenReportScope", () => {
+  const group = (id: string, groupName: string) => ({ id, groupName });
+
+  it("adds an administered group the caller is not a member of with full access and quota editing", () => {
+    const scope = widenReportScope([], ["g1"], [group("g1", "Support")]);
+
+    expect(scope).toEqual([
+      { groupId: "g1", groupName: "Support", access: "all", canEditQuotas: true },
+    ]);
+  });
+
+  it("raises a self-only membership in an administered group to full access and quota editing", () => {
+    const memberships = [entry({ groupId: "g1", groupName: "Ops", access: "self" })];
+
+    const scope = widenReportScope(memberships, ["g1"], [group("g1", "Ops")]);
+
+    expect(scope).toEqual([
+      { groupId: "g1", groupName: "Ops", access: "all", canEditQuotas: true },
+    ]);
+  });
+
+  it("keeps memberships outside the administered groups as they are", () => {
+    const memberships = [
+      entry({ groupId: "g1", groupName: "Ops", access: "self" }),
+      entry({ groupId: "g2", groupName: "Sales", access: "all", canEditQuotas: false }),
+    ];
+
+    const scope = widenReportScope(memberships, [], [group("g1", "Ops"), group("g2", "Sales")]);
+
+    expect(scope).toEqual(memberships);
+  });
+
+  it("leaves out an administered group that is no longer live", () => {
+    const scope = widenReportScope([], ["deleted", "g1"], [group("g1", "Support")]);
+
+    expect(scope.map((e) => e.groupId)).toEqual(["g1"]);
+  });
+
+  it("follows the order of the live groups it is given", () => {
+    const memberships = [entry({ groupId: "g2", groupName: "Mid", access: "self" })];
+
+    const scope = widenReportScope(
+      memberships,
+      ["g1", "g3"],
+      [group("g1", "Alpha"), group("g2", "Mid"), group("g3", "Zulu")]
+    );
+
+    expect(scope.map((e) => e.groupName)).toEqual(["Alpha", "Mid", "Zulu"]);
   });
 });
