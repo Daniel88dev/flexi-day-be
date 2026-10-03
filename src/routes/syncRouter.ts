@@ -133,9 +133,9 @@ export const syncRouter = (): Router => {
    *       minted with, ordered by `updatedAt` then `id`. `bankHolidays` is the
    *       one table bounded from below alone, so the rows its own fill just
    *       wrote are not held back. `organizations` names the organization of
-   *       every group in the delta and only those: an organization renamed on
-   *       its own carries no group with it, so the new name reaches the client
-   *       on the next pull that does carry one of its groups.
+   *       every group in the delta, plus any organization of a visible group
+   *       whose own row changed, so a rename or a Sick day benefit toggle
+   *       reaches a client that already holds the organization.
    *       The 60 second overlap covers the clock difference between the
    *       database, which stamps inserts, and the server instance that stamps
    *       an update, so the same row may arrive on two consecutive pulls; a
@@ -305,6 +305,12 @@ export const syncRouter = (): Router => {
    *                         type: string
    *                       name:
    *                         type: string
+   *                       sickDayBenefitEnabled:
+   *                         type: boolean
+   *                         description: |
+   *                           The stored Sick day benefit toggle. The balance
+   *                           and the report gate the Sick day allowance on it;
+   *                           requesting a sick day also needs a paid plan
    *                 users:
    *                   type: array
    *                   description: |

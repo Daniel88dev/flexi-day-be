@@ -1,5 +1,8 @@
 # The sync pull's cursor is an `updatedAt` high-water mark, not a change log
 
+Status: accepted. Amended 2026-10-03: `organizations` joins the tables read by their own
+`updatedAt`.
+
 The sync pull (`GET /api/sync/pull`, specified in Daniel88dev/flexi-day-be#182) answers every row
 the caller may see that changed since their last pull. Deciding what "since" means was the whole
 design. We chose the cheapest thing the schema already carries: the cursor is a position on
@@ -11,14 +14,14 @@ version, that the client stores verbatim and never parses.
 
 The alternatives were a change log table and a monotonic sequence column. Either answers "since"
 exactly, without an overlap and without a row ever arriving twice, and a sequence column would
-have made hard deletes expressible too. Both cost the same thing: a migration across the six tables
-the pull reads for changes (`user`, `groups`, `group_users`, `group_mirrors`, `user_year_quotas`,
-`vacation`), and a change to every write path that touches them, including the seven
-vacation transitions, the quota rollover job and the lazy bank-holiday fill. A write that forgot
-to bump the sequence or append to the log would go missing from every client's copy, silently, and
-the pull had no traffic yet to justify that. The opaque cursor is what keeps the option open: its
-encoding is versioned, so a later switch to a sequence changes the codec and the readers, mints
-version 2, and every client holding a version 1 cursor answers one sync reset and carries on. No
+have made hard deletes expressible too. Both cost the same thing: a migration across the tables the
+pull reads for changes (`user`, `groups`, `group_users`, `group_mirrors`, `user_year_quotas`,
+`vacation`, and since 2026-10-03 `organizations`), and a change to every write path that touches
+them, including the seven vacation transitions, the quota rollover job and the lazy bank-holiday
+fill. A write that forgot to bump the sequence or append to the log would go missing from every
+client's copy, silently, and the pull had no traffic yet to justify that. The opaque cursor is what keeps the option open: its
+encoding is versioned, so a later switch to a sequence changes the codec and the readers, mints a
+new version, and every client holding an older cursor answers one sync reset and carries on. No
 client release is involved.
 
 Three costs came out of the implementation and we accept them. The 60 second overlap means a row

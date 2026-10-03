@@ -9,8 +9,10 @@ import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
+import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
+import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { decodeSyncCursor, encodeSyncCursor } from "../../services/sync/syncCursor.js";
 import { authCookieFor } from "./helpers/authHelper.js";
@@ -21,6 +23,7 @@ import {
   ageEverything,
   cancelLeave,
   dayIn,
+  enableSickDayBenefit,
   makeGroup,
   makeUser,
   removeMember,
@@ -42,6 +45,11 @@ const ENVELOPE_KEYS = [
   "vacations",
 ];
 
+type OrganizationRow = {
+  id: string;
+  name: string;
+  sickDayBenefitEnabled: boolean;
+};
 type GroupUserRow = {
   id: string;
   groupId: string;
@@ -266,6 +274,7 @@ describe("Sync pull E2E", () => {
 
       const managerOrgId = await organizationIdOf(manager.id);
       const otherOrgId = await organizationIdOf(otherManager.id);
+      await enableSickDayBenefit(manager.id);
 
       const res = await request(server.url)
         .get("/api/sync/pull")
@@ -283,9 +292,13 @@ describe("Sync pull E2E", () => {
         expect(row.organizationId).toBe(owningGroup!.organizationId);
       }
 
-      const organizations = res.body.organizations as { id: string; name: string }[];
+      const organizations = res.body.organizations as OrganizationRow[];
       expect(organizations.map((row) => row.id).sort()).toEqual([managerOrgId, otherOrgId].sort());
-      for (const row of organizations) expect(typeof row.name).toBe("string");
+      for (const row of organizations) {
+        expect(Object.keys(row)).toEqual(["id", "name", "sickDayBenefitEnabled"]);
+        expect(typeof row.name).toBe("string");
+        expect(row.sickDayBenefitEnabled).toBe(row.id === managerOrgId);
+      }
     });
 
     it("serialises a group row with its raw columns and ISO timestamps", async () => {
@@ -476,6 +489,57 @@ describe("Sync pull E2E", () => {
         await organizationIdOf(formerManager.id),
       ]);
       expect(organizations.map((row) => row.id)).not.toContain(await organizationIdOf(manager.id));
+    });
+
+    // The toggle touches no group: the row arrives on its own `updatedAt`.
+    it("carries an organization whose Sick day benefit was switched since the cursor", async () => {
+      const manager = await makeUser("Manager");
+      const member = await makeUser("Member");
+      const otherManager = await makeUser("Other Manager");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await makeGroup("Finance", otherManager.id);
+      await addMember(groupId, member.id);
+      const organizationId = await organizationIdOf(manager.id);
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Active,
+      });
+      const managerCookie = await authCookieFor(manager.id);
+      const memberCookie = await authCookieFor(member.id);
+      await ageEverything();
+
+      const pull = (cursor: string) =>
+        request(server.url)
+          .get("/api/sync/pull")
+          .query({ cursor })
+          .set("Cookie", memberCookie)
+          .expect(200);
+      const toggle = (sickDayBenefitEnabled: boolean) =>
+        request(server.url)
+          .patch("/api/organization")
+          .set("Cookie", managerCookie)
+          .send({ sickDayBenefitEnabled })
+          .expect(200);
+
+      const before = await pull(encodeSyncCursor(ago(10 * MINUTE)));
+      expect(before.body.reset).toBe(false);
+      expect(before.body.organizations).toEqual([]);
+
+      await toggle(true);
+      await enableSickDayBenefit(otherManager.id);
+      const switchedOn = await pull(before.body.cursor as string);
+      expect(switchedOn.body.reset).toBe(false);
+      expect(switchedOn.body.groups).toEqual([]);
+      expect(switchedOn.body.organizations).toEqual([
+        { id: organizationId, name: expect.any(String), sickDayBenefitEnabled: true },
+      ]);
+
+      await toggle(false);
+      const switchedOff = await pull(switchedOn.body.cursor as string);
+      expect(switchedOff.body.reset).toBe(false);
+      expect(switchedOff.body.organizations).toEqual([
+        { id: organizationId, name: expect.any(String), sickDayBenefitEnabled: false },
+      ]);
     });
 
     it("keeps a membership of a group the caller only sees themselves in out of the delta", async () => {
