@@ -49,6 +49,13 @@ describe("sync cursor codec", () => {
     expect(decodeSyncCursor(encoded)).toBeNull();
   });
 
+  it("rejects a version 1 cursor, minted before organization rows carried the Sick day benefit", () => {
+    const cursorTime = new Date("2026-09-18T10:00:00.000Z");
+    const encoded = encodeBody({ v: 1, t: cursorTime.toISOString() });
+
+    expect(decodeSyncCursor(encoded, cursorTime)).toBeNull();
+  });
+
   it("rejects a cursor whose time is missing or unparseable", () => {
     expect(decodeSyncCursor(encodeBody({ v: SYNC_CURSOR_VERSION }))).toBeNull();
     expect(decodeSyncCursor(encodeBody({ v: SYNC_CURSOR_VERSION, t: "yesterday" }))).toBeNull();
@@ -168,10 +175,10 @@ describe("sync cursor paging state", () => {
     expect(decoded?.page).toEqual(page);
   });
 
-  it("reads a cursor minted before paging existed as a fresh pull", () => {
-    const oldShape = encodeBody({ v: SYNC_CURSOR_VERSION, t: cursorTime.toISOString() });
+  it("reads a cursor with no paging state as a fresh pull", () => {
+    const unpaged = encodeBody({ v: SYNC_CURSOR_VERSION, t: cursorTime.toISOString() });
 
-    expect(decodeSyncCursor(oldShape, cursorTime)).toEqual({
+    expect(decodeSyncCursor(unpaged, cursorTime)).toEqual({
       version: SYNC_CURSOR_VERSION,
       cursorTime,
       page: null,

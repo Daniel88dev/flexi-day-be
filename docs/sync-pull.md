@@ -48,7 +48,7 @@ membership row lives.
 
 | Table            | Seen in full (`all`)                                                                       | Self-scoped (`self`)  | Beyond those groups                                                              |
 | ---------------- | ------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------- |
-| `organizations`  | the organization of the group, id and name only                                            | the same              | the organization of any other group the pull names                               |
+| `organizations`  | the organization of the group: `id`, `name` and `sickDayBenefitEnabled`                    | the same              | the organization of any other group the pull names                               |
 | `users`          | every member and the manager                                                               | the caller            | every actor on a visible booking                                                 |
 | `groups`         | the group row                                                                              | the group row         | a group the caller has left but still holds bookings in; a mirror's source group |
 | `groupUsers`     | the full live member list                                                                  | the caller's own row  | nothing                                                                          |
@@ -71,10 +71,14 @@ Detail the table cannot hold:
   bookings by membership, and the report gives a leaver a summary line. So removal drops their
   `groupUsers` row and nothing else, and their `users` row keeps arriving as the actor on their
   bookings. Mirrors are the exception, below.
-- **`organizations`** is read off the groups, not off itself: a row ships only while the group row
-  that named it falls in the pull's window, so a rename on its own reaches the client on the next
-  pull that carries one of that organization's groups. It is also the one table paged by `id`
-  rather than by `updatedAt` then `id`.
+- **`organizations`** ships the organization of every group the pull carries, plus any
+  organization of a group in the table above whose own row changed in the window. The second half
+  is how a rename or a Sick day benefit toggle reaches a client already holding the row: the write
+  stamps `organizations.updatedAt` and touches no group. A new trigger or a groups stamp would also
+  carry the toggle, but each answers a snapshot to every member of the organization for a one-field
+  change. `sickDayBenefitEnabled` is the stored toggle, the one the balance and the report gate the
+  Sick day allowance on; a lapsed plan leaves it set while requests stop. It is the one table paged
+  by `id` rather than by `updatedAt` then `id`, because two timestamps choose its rows.
 - **`groupMirrors`** follows a mirror only while its owner still belongs to the target group, the
   check `getVacationsForGroup` already makes before projecting. A mirror whose owner has left brings
   neither the mirror row nor the bookings it projected. A mirrored booking stays a row of its source
@@ -125,6 +129,12 @@ the next pull rather than between the two.
   last row it took, whether the loop is a snapshot, and the cursor a delta loop started from. State
   the walk cannot resume from, a keyset missing the timestamp its table orders by or a delta loop
   reaching back past the expiry, makes the whole cursor unusable.
+- **Version.** A cursor minted by another version is unusable, so bumping the version makes every
+  client take one snapshot. That is the lever for a field added to rows a client already holds,
+  which a delta would only deliver as each row next changed. Version 2 added
+  `sickDayBenefitEnabled` to organization rows. A client in the middle of a delta loop when the
+  bump deploys gets a snapshot on a later page: it upserts every row, so the field fills, but skips
+  that snapshot's sweep, as with any cursor that turns unusable mid-loop.
 - **Pages.** Fixed at 1000 rows across all tables, and there is no `limit` parameter. `hasMore` is
   true until the last page; the client loops, applying each page as it lands, and stores only the
   cursor from the page that answered `hasMore: false`. The position does not move inside a loop, so

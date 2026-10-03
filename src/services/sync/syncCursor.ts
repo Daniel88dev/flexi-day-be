@@ -1,7 +1,11 @@
 import { ID_ORDERED_TABLES, SYNC_TABLE_ORDER } from "./syncPage.js";
 import type { SyncCursor, SyncCursorPage, SyncKeyset, SyncTableName } from "./types.js";
 
-export const SYNC_CURSOR_VERSION = 1;
+/**
+ * Bumped when a row a client already holds gains a field it needs: a cursor of
+ * another version is unusable, so every client takes one snapshot.
+ */
+export const SYNC_CURSOR_VERSION = 2;
 
 /** Past this age a cursor cannot be trusted to have covered hard deletes, so the pull resets. */
 export const SYNC_CURSOR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -17,10 +21,7 @@ export const SYNC_CURSOR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
  */
 export const SYNC_OVERLAP_MS = 60 * 1000;
 
-/**
- * Version 1 carries the paging state in an optional `p`, so a cursor minted
- * before paging existed still decodes — it simply asks for a fresh pull.
- */
+/** The paging state rides in an optional `p`, absent from a cursor that asks for a fresh pull. */
 type SyncCursorPageBody = {
   /** True when the loop is a snapshot, so every page of it answers `reset: true`. */
   r: boolean;

@@ -275,6 +275,7 @@ export async function addChange(
  */
 export async function ageEverything(): Promise<void> {
   const longAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  await db.update(organizations).set({ updatedAt: longAgo });
   await db.update(user).set({ updatedAt: longAgo });
   await db.update(groups).set({ updatedAt: longAgo });
   await db.update(groupUsers).set({ updatedAt: longAgo });

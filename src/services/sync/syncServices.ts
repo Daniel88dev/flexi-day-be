@@ -229,7 +229,7 @@ const toGroupUserRow = (
   updatedAt: row.updatedAt.toISOString(),
 });
 
-/** The organizations of every group this pull covers, so a page can name the owner of its rows. */
+/** Visible groups' organizations where the group or the organization changed in the window. */
 const getScopedOrganizationIds = async (
   groupIds: string[],
   window: SyncWindow
@@ -239,7 +239,13 @@ const getScopedOrganizationIds = async (
   const rows = await db
     .selectDistinct({ organizationId: groups.organizationId })
     .from(groups)
-    .where(and(inArray(groups.id, groupIds), inWindow(groups.updatedAt, window)));
+    .innerJoin(organizations, eq(organizations.id, groups.organizationId))
+    .where(
+      and(
+        inArray(groups.id, groupIds),
+        or(inWindow(groups.updatedAt, window), inWindow(organizations.updatedAt, window))
+      )
+    );
 
   return rows.map((row) => row.organizationId);
 };
@@ -256,7 +262,10 @@ const getOrganizationIdByGroupId = async (groupIds: string[]): Promise<Map<strin
   return new Map(rows.map((row) => [row.id, row.organizationId]));
 };
 
-/** Ordered by id alone: an organization row carries no `updatedAt` of its own. */
+/**
+ * Ordered by id alone: a row is chosen by its groups' `updatedAt` as often as
+ * by its own, so neither timestamp orders the set.
+ */
 const readOrganizationsPage = async (
   organizationIds: string[],
   after: SyncKeyset | null,
@@ -265,13 +274,20 @@ const readOrganizationsPage = async (
   if (organizationIds.length === 0) return [];
 
   const rows = await db
-    .select({ id: organizations.id, name: organizations.name })
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      sickDayBenefitEnabled: organizations.sickDayBenefitEnabled,
+    })
     .from(organizations)
     .where(and(inArray(organizations.id, organizationIds), afterId(organizations.id, after)))
     .orderBy(asc(organizations.id))
     .limit(limit);
 
-  return rows.map((row) => ({ key: { updatedAt: null, id: row.id }, row }));
+  return rows.map((row) => ({
+    key: { updatedAt: null, id: row.id },
+    row: row satisfies SyncOrganizationRow,
+  }));
 };
 
 const readGroupsPage = async (

@@ -60,6 +60,7 @@ export type SyncPage = {
 export type SyncOrganizationRow = {
   id: string;
   name: string;
+  sickDayBenefitEnabled: boolean;
 };
 
 export type SyncGroupRow = {
