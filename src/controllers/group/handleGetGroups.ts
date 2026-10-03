@@ -1,52 +1,23 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
-import { resolveOrganizationBadges } from "../../services/organization/organizationBadge.js";
-import { isAttachmentUploadAvailable } from "../../services/billing/guards.js";
 import { getAllGroups } from "../../services/group/groupServices.js";
-import {
-  countMembersByGroup,
-  getAllGroupsForUser,
-} from "../../services/groupUser/groupUserServices.js";
+import { toGroupListItems } from "../../services/group/groupListServices.js";
+import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
 
 /**
  * The caller's own groups — the ones they book leave in. Deliberately
  * membership-only: this list also drives the dashboard, the calendar and the
  * request dialog, so groups the caller merely administers through their
  * organization must not appear here. Those are reached from
- * `/api/organization`.
+ * `/api/group/administered` and `/api/organization`.
  */
 export const handleGetGroups = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
   const memberships = await getAllGroupsForUser(auth.userId);
   const membershipByGroup = new Map(memberships.map((m) => [m.groupId, m]));
-  const groupIds = memberships.map((m) => m.groupId);
 
-  const result = await getAllGroups(groupIds);
+  const result = await getAllGroups(memberships.map((m) => m.groupId));
 
-  const organizationIds = [...new Set(result.map((group) => group.organizationId))];
-  const [badges, memberCounts, uploads] = await Promise.all([
-    resolveOrganizationBadges(organizationIds),
-    countMembersByGroup(groupIds),
-    Promise.all(
-      organizationIds.map(async (id) => [id, await isAttachmentUploadAvailable(id)] as const)
-    ),
-  ]);
-  const uploadsByOrganization = new Map(uploads);
-
-  return res.status(200).json(
-    result.map((group) => {
-      const membership = membershipByGroup.get(group.id);
-      return {
-        ...group,
-        organization: badges.get(group.organizationId) ?? null,
-        memberCount: memberCounts.get(group.id) ?? 0,
-        uploadsAvailable: uploadsByOrganization.get(group.organizationId) ?? false,
-        membership: {
-          adminAccess: membership?.adminAccess ?? false,
-          approverAccess: membership?.approverAccess ?? false,
-        },
-      };
-    })
-  );
+  return res.status(200).json(await toGroupListItems(result, membershipByGroup));
 };

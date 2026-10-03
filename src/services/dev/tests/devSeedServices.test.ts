@@ -47,7 +47,7 @@ vi.mock("../../userYearQuotas/userYearQuotasServices.js", () => ({
 }));
 
 import { account, user } from "../../../db/schema/auth-schema.js";
-import { seedUser } from "../devSeedServices.js";
+import { nextWorkingDay, seedUser } from "../devSeedServices.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -95,5 +95,15 @@ describe("seedUser", () => {
       expect.objectContaining({ password: "hashed:Dev-new-password" })
     );
     expect(mockInserted).not.toHaveBeenCalled();
+  });
+});
+
+describe("nextWorkingDay", () => {
+  it("steps over the weekend from a Friday", () => {
+    expect(nextWorkingDay("2026-10-02")).toBe("2026-10-05");
+  });
+
+  it("takes the following weekday mid-week", () => {
+    expect(nextWorkingDay("2026-10-06")).toBe("2026-10-07");
   });
 });

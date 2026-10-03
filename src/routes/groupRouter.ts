@@ -3,6 +3,7 @@ import { handlePostGroup } from "../controllers/group/handlePostGroup.js";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetGroups } from "../controllers/group/handleGetGroups.js";
 import { handleGetGroup } from "../controllers/group/handleGetGroup.js";
+import { handleGetAdministeredGroups } from "../controllers/group/handleGetAdministeredGroups.js";
 import { handlePutGroupQuotas } from "../controllers/group/handlePutGroupQuotas.js";
 import { handlePutGroupWorkingDays } from "../controllers/group/handlePutGroupWorkingDays.js";
 import { handlePutGroupHolidayCountry } from "../controllers/group/handlePutGroupHolidayCountry.js";
@@ -74,6 +75,86 @@ export const groupRouter = (): Router => {
 
   /**
    * @openapi
+   * components:
+   *   schemas:
+   *     GroupListItem:
+   *       type: object
+   *       properties:
+   *         id:
+   *           type: string
+   *           format: uuid
+   *         organizationId:
+   *           type: string
+   *           format: uuid
+   *         groupName:
+   *           type: string
+   *         defaultVacationDays:
+   *           type: integer
+   *         defaultHomeOfficeDays:
+   *           type: integer
+   *         defaultSickDays:
+   *           type: integer
+   *         workingDays:
+   *           type: array
+   *           items:
+   *             type: integer
+   *         holidayCountry:
+   *           type: string
+   *           nullable: true
+   *         managerUserId:
+   *           type: string
+   *         mainApprovalUser:
+   *           type: string
+   *           nullable: true
+   *         tempApprovalUser:
+   *           type: string
+   *           nullable: true
+   *         deletedAt:
+   *           type: string
+   *           format: date-time
+   *           nullable: true
+   *         createdAt:
+   *           type: string
+   *           format: date-time
+   *         updatedAt:
+   *           type: string
+   *           format: date-time
+   *         organization:
+   *           type: object
+   *           nullable: true
+   *           description: The group's organization badge
+   *           properties:
+   *             id:
+   *               type: string
+   *             name:
+   *               type: string
+   *             plan:
+   *               type: string
+   *               enum: [FREE, PRO, ENTERPRISE, CUSTOM]
+   *             status:
+   *               type: string
+   *               nullable: true
+   *             active:
+   *               type: boolean
+   *             sickDayBenefitActive:
+   *               type: boolean
+   *         memberCount:
+   *           type: integer
+   *           description: Active members of the group
+   *         uploadsAvailable:
+   *           type: boolean
+   *           description: Whether attachments can be uploaded in this group's organization right now (paid plan, grace included).
+   *         membership:
+   *           type: object
+   *           description: The caller's own membership row flags
+   *           properties:
+   *             adminAccess:
+   *               type: boolean
+   *             approverAccess:
+   *               type: boolean
+   */
+  /**
+   * @openapi
    * /api/group:
    *   get:
    *     tags:
@@ -83,9 +164,9 @@ export const groupRouter = (): Router => {
    *       Membership-only on purpose: this list also drives the dashboard, the
    *       calendar and the request dialog, so groups the caller merely
    *       administers through their organization do not appear (those come from
-   *       `/api/organization`). Ordered by group name. Each group carries its
-   *       organization badge, an active-member headcount and the caller's own
-   *       membership flags.
+   *       `/api/group/administered` and `/api/organization`). Ordered by group
+   *       name. Each group carries its organization badge, an active-member
+   *       headcount and the caller's own membership flags.
    *     security:
    *       - bearerAuth: []
    *     responses:
@@ -96,66 +177,46 @@ export const groupRouter = (): Router => {
    *             schema:
    *               type: array
    *               items:
-   *                 type: object
-   *                 properties:
-   *                   id:
-   *                     type: string
-   *                     format: uuid
-   *                   organizationId:
-   *                     type: string
-   *                     format: uuid
-   *                   groupName:
-   *                     type: string
-   *                   defaultVacationDays:
-   *                     type: integer
-   *                   defaultHomeOfficeDays:
-   *                     type: integer
-   *                   defaultSickDays:
-   *                     type: integer
-   *                   workingDays:
-   *                     type: array
-   *                     items:
-   *                       type: integer
-   *                   holidayCountry:
-   *                     type: string
-   *                     nullable: true
-   *                   managerUserId:
-   *                     type: string
-   *                   mainApprovalUser:
-   *                     type: string
-   *                     nullable: true
-   *                   tempApprovalUser:
-   *                     type: string
-   *                     nullable: true
-   *                   deletedAt:
-   *                     type: string
-   *                     format: date-time
-   *                     nullable: true
-   *                   createdAt:
-   *                     type: string
-   *                     format: date-time
-   *                   updatedAt:
-   *                     type: string
-   *                     format: date-time
-   *                   organization:
-   *                     type: object
-   *                     nullable: true
-   *                   memberCount:
-   *                     type: integer
-   *                     description: Active members of the group
-   *                   uploadsAvailable:
-   *                     type: boolean
-   *                     description: Whether attachments can be uploaded in this group's organization right now (paid plan, grace included).
-   *                   membership:
-   *                     type: object
-   *                     description: The caller's own membership row flags
-   *                     properties:
-   *                       adminAccess:
-   *                         type: boolean
-   *                       approverAccess:
-   *                         type: boolean
+   *                 $ref: '#/components/schemas/GroupListItem'
    */
   app.get("/", tryCatch(handleGetGroups));
+
+  /**
+   * @openapi
+   * /api/group/administered:
+   *   get:
+   *     tags:
+   *       - Groups
+   *     summary: Groups the caller administers without being a member
+   *     description: |
+   *       The complement of `GET /api/group`: every live group the caller
+   *       administers, as the owner or a delegated admin of its organization or
+   *       as its manager, and holds no active membership in. Groups the caller
+   *       belongs to never appear here, whatever their rights in them, and
+   *       deleted groups are left out. Ordered by group name across all
+   *       organizations. Each item has the `GET /api/group` shape, with both
+   *       `membership` flags false, plus `viaOrgAdmin`.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: Groups the caller administers but does not belong to, possibly empty
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 allOf:
+   *                   - $ref: '#/components/schemas/GroupListItem'
+   *                   - type: object
+   *                     properties:
+   *                       viaOrgAdmin:
+   *                         type: boolean
+   *                         description: True when the authority comes from the organization, false when the caller is the group's manager
+   *       '401':
+   *         description: Not signed in
+   */
+  app.get("/administered", tryCatch(handleGetAdministeredGroups));
 
   /**
    * @openapi
