@@ -1,5 +1,6 @@
 import { and, eq, inArray, or, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
+import type { GroupType } from "../group/types.js";
 import type { ReportScopeEntry } from "./types.js";
 
 type ScopeColumns = {
@@ -56,6 +57,31 @@ export const buildScopePredicate = (
 export const canViewWholeGroup = (scope: ReportScopeEntry[], groupId: string): boolean =>
   scope.some((entry) => entry.groupId === groupId && entry.access === "all");
 
-/** True when the caller may edit quotas in the group — group admin or manager. */
+/** True when the caller may edit quotas in the group: group admin, manager or org admin. */
 export const canEditQuotasIn = (scope: ReportScopeEntry[], groupId: string): boolean =>
   scope.some((entry) => entry.groupId === groupId && entry.canEditQuotas);
+
+/**
+ * Widens membership scope entries with the groups the caller administers. An
+ * administered group opens in full with quota editing, as `assertGroupAdmin`
+ * allows on the write path. `liveGroups` decides which groups survive and in
+ * what order, so a group missing from it stays out.
+ */
+export const widenReportScope = (
+  memberships: ReportScopeEntry[],
+  administrableGroupIds: string[],
+  liveGroups: Pick<GroupType, "id" | "groupName">[]
+): ReportScopeEntry[] => {
+  const administrable = new Set(administrableGroupIds);
+  const membershipByGroup = new Map(memberships.map((entry) => [entry.groupId, entry]));
+
+  return liveGroups.flatMap((group): ReportScopeEntry[] => {
+    if (administrable.has(group.id)) {
+      return [
+        { groupId: group.id, groupName: group.groupName, access: "all", canEditQuotas: true },
+      ];
+    }
+    const membership = membershipByGroup.get(group.id);
+    return membership ? [membership] : [];
+  });
+};

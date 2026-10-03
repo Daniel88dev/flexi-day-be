@@ -7,7 +7,7 @@ import {
   aggregateUsageByUserMonth,
   aggregateUsageSplit,
   getQuotasForScope,
-  getScopeEntries,
+  getReportScopeEntries,
   getScopeMembers,
 } from "../../services/report/reportServices.js";
 
@@ -21,7 +21,7 @@ export const handleGetReportOverview = async (req: Request, res: Response) => {
 
   const { year, groupIds, userIds, types } = validateReportQuery.parse(req.query);
 
-  const scope = await getScopeEntries(auth.userId);
+  const scope = await getReportScopeEntries(auth.userId);
   const filters = { groupIds, userIds, types };
 
   const [monthly, usage, quotas, allMembers, sickDayGroupIds] = await Promise.all([

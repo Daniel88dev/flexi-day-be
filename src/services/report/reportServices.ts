@@ -10,7 +10,9 @@ import { reportExports } from "../../db/schema/report-export-schema.js";
 import { alias } from "drizzle-orm/pg-core";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { sumDaysWhere } from "../vacation/dayWeight.js";
-import { buildScopePredicate } from "./reportScope.js";
+import { getAllGroups } from "../group/groupServices.js";
+import { getAdministrableGroupIds } from "../groupUser/groupAccess.js";
+import { buildScopePredicate, widenReportScope } from "./reportScope.js";
 import { collapseBookings, type BookingRow } from "./collapseBookings.js";
 import type {
   MemberChangeEntry,
@@ -33,9 +35,11 @@ const vacationScopeColumns = { userId: vacation.userId, groupId: vacation.groupI
 const quotaScopeColumns = { userId: userYearQuotas.userId, groupId: userYearQuotas.groupId };
 
 /**
- * The groups the caller may pull into a report, and at what depth. View
+ * The groups the caller belongs to, and at what depth they may see each. View
  * access, admin access, or being the group's manager all open the whole
- * group; a plain membership still lets the member report on themselves.
+ * group; a plain membership still lets the member see themselves. The sync
+ * pull, the calendar and my-settings rely on it staying membership-only; the
+ * report reads {@link getReportScopeEntries} instead.
  *
  * `includeDeletedGroups` is for the sync pull alone: membership rows outlive a
  * soft-deleted group, and a client that already holds the group needs its
@@ -74,6 +78,18 @@ export const getScopeEntries = async (
       canEditQuotas,
     };
   });
+};
+
+/** The caller's memberships plus every live group they administer. Report endpoints only. */
+export const getReportScopeEntries = async (userId: string): Promise<ReportScopeEntry[]> => {
+  const [memberships, administrableGroupIds] = await Promise.all([
+    getScopeEntries(userId),
+    getAdministrableGroupIds(userId),
+  ]);
+  const liveGroups = await getAllGroups([
+    ...new Set([...memberships.map((entry) => entry.groupId), ...administrableGroupIds]),
+  ]);
+  return widenReportScope(memberships, administrableGroupIds, liveGroups);
 };
 
 /**
@@ -119,7 +135,7 @@ export const getScopeMembers = async (
 
 /** Scope plus everything the filter controls need: selectable members and years. */
 export const getReportScope = async (userId: string): Promise<ReportScope> => {
-  const entries = await getScopeEntries(userId);
+  const entries = await getReportScopeEntries(userId);
 
   if (entries.length === 0) return { groups: [], members: [], years: [new Date().getFullYear()] };
 
