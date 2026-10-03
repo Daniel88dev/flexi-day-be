@@ -132,9 +132,11 @@ the next pull rather than between the two.
 - **Version.** A cursor minted by another version is unusable, so bumping the version makes every
   client take one snapshot. That is the lever for a field added to rows a client already holds,
   which a delta would only deliver as each row next changed. Version 2 added
-  `sickDayBenefitEnabled` to organization rows. A client in the middle of a delta loop when the
-  bump deploys gets a snapshot on a later page: it upserts every row, so the field fills, but skips
-  that snapshot's sweep, as with any cursor that turns unusable mid-loop.
+  `sickDayBenefitEnabled` to organization rows. A delta loop whose cursor turns unusable mid-loop,
+  the bump included, gets a snapshot on a later page, and the phone restarts it as a fresh snapshot
+  from page one so the sweep runs (flexi-day-rn T-159). A snapshot loop in the same position gets a
+  fresh page one it cannot tell from its own next page, so it upserts every row but skips that
+  snapshot's sweep.
 - **Pages.** Fixed at 1000 rows across all tables, and there is no `limit` parameter. `hasMore` is
   true until the last page; the client loops, applying each page as it lands, and stores only the
   cursor from the page that answered `hasMore: false`. The position does not move inside a loop, so
