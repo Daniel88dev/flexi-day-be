@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { generateId } from "better-auth";
 import { hashPassword } from "better-auth/crypto";
 import { db } from "../../db/db.js";
@@ -116,12 +116,14 @@ export const seedUser = async (input: {
 export const seedTeam = async (input: {
   teamName: string;
   managerUserId: string;
+  organizationId?: string;
 }): Promise<{ id: string; groupName: string }> => {
-  const organization = await ensureOrganizationForUser(input.managerUserId);
+  const organizationId =
+    input.organizationId ?? (await ensureOrganizationForUser(input.managerUserId)).id;
 
   const group = await createGroup({
     id: generateRandomUUID(),
-    organizationId: organization.id,
+    organizationId,
     groupName: input.teamName,
     managerUserId: input.managerUserId,
     mainApprovalUser: input.managerUserId,
@@ -137,12 +139,20 @@ export const seedTeam = async (input: {
 /** Lets the scenario seeder be re-run without stacking up duplicate teams. */
 export const findTeam = async (
   managerUserId: string,
-  groupName: string
+  groupName: string,
+  organizationId?: string
 ): Promise<{ id: string; groupName: string } | undefined> => {
   const [row] = await db
     .select({ id: groups.id, groupName: groups.groupName })
     .from(groups)
-    .where(and(eq(groups.managerUserId, managerUserId), eq(groups.groupName, groupName)))
+    .where(
+      and(
+        eq(groups.managerUserId, managerUserId),
+        eq(groups.groupName, groupName),
+        isNull(groups.deletedAt),
+        organizationId ? eq(groups.organizationId, organizationId) : undefined
+      )
+    )
     .limit(1);
   return row;
 };
@@ -185,7 +195,7 @@ export const setQuota = async (input: {
   });
 };
 
-type VacationState = "pending" | "approved" | "rejected";
+export type VacationState = "pending" | "approved" | "rejected";
 
 export const addVacation = async (input: {
   userId: string;
@@ -266,6 +276,15 @@ export const workingDayFromToday = (offset: number): string => {
   while (date.getUTCDay() === 0 || date.getUTCDay() === 6) {
     date.setUTCDate(date.getUTCDate() + (offset < 0 ? -1 : 1));
   }
+  return formatDateToISOString(date);
+};
+
+/** The working day after `day`, so a seeded two-day range never collapses onto one Monday. */
+export const nextWorkingDay = (day: string): string => {
+  const date = new Date(`${day}T00:00:00Z`);
+  do {
+    date.setUTCDate(date.getUTCDate() + 1);
+  } while (date.getUTCDay() === 0 || date.getUTCDay() === 6);
   return formatDateToISOString(date);
 };
 
