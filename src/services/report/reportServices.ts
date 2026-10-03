@@ -12,6 +12,11 @@ import { buildUserSummary } from "../../utils/userPresentation.js";
 import { sumDaysWhere } from "../vacation/dayWeight.js";
 import { getAllGroups } from "../group/groupServices.js";
 import { getAdministrableGroupIds } from "../groupUser/groupAccess.js";
+import {
+  allowanceFor,
+  getMemberYearAllocation,
+  totalAllowance,
+} from "../userYearQuotas/yearAllocation.js";
 import { buildScopePredicate, widenReportScope } from "./reportScope.js";
 import { collapseBookings, type BookingRow } from "./collapseBookings.js";
 import type {
@@ -434,7 +439,8 @@ export const getMemberChanges = async (
 /**
  * Unused allowance from the previous year, offered as the default when an
  * admin sets this year's carry-over. Pending days count as spoken for —
- * suggesting days a member has already requested would over-grant.
+ * suggesting days a member has already requested would over-grant. With no
+ * quota row last year, the group default is what the member could book.
  */
 export const getCarryOverSuggestion = async (
   userId: string,
@@ -444,19 +450,7 @@ export const getCarryOverSuggestion = async (
   const previousYear = year - 1;
   const { start, end } = yearBounds(previousYear);
 
-  const [quotaRow] = await db
-    .select({
-      vacationDays: userYearQuotas.vacationDays,
-      carriedOverDays: userYearQuotas.carriedOverDays,
-    })
-    .from(userYearQuotas)
-    .where(
-      and(
-        eq(userYearQuotas.userId, userId),
-        eq(userYearQuotas.groupId, groupId),
-        eq(userYearQuotas.relatedYear, previousYear.toString())
-      )
-    );
+  const { allocation, policy } = await getMemberYearAllocation(userId, groupId, previousYear);
 
   const [usageRow] = await db
     .select({
@@ -474,7 +468,7 @@ export const getCarryOverSuggestion = async (
       )
     );
 
-  const allocated = (quotaRow?.vacationDays ?? 0) + (quotaRow?.carriedOverDays ?? 0);
+  const allocated = totalAllowance(allowanceFor(allocation, CalendarRecordType.Vacation, policy));
   const used = Number(usageRow?.used ?? 0);
 
   return {

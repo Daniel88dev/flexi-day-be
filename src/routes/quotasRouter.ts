@@ -104,7 +104,8 @@ export const quotasRouter = (): Router => {
    *     description: |
    *       Returns the member's unused vacation allowance from `year - 1` so the
    *       quota dialog can pre-fill this year's carry-over. Pending days count
-   *       as spent. Advisory only — the stored value is whatever the admin
+   *       as spent. With no quota row for `year - 1`, `allocated` is the
+   *       group's default vacation days. Advisory only — the stored value is whatever the admin
    *       submits to `PUT /api/quotas/{groupId}`. Requires admin access.
    *     security:
    *       - bearerAuth: []

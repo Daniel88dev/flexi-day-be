@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { validateReportQuery } from "../../services/report/types.js";
 import { buildSummaryEntries } from "../../services/report/buildSummary.js";
-import { getSickDayEnabledGroupIds } from "../../services/organization/organizationServices.js";
+import { getGroupAllowancePolicies } from "../../services/group/groupServices.js";
 import {
   aggregateUsageByUserMonth,
   aggregateUsageSplit,
@@ -24,12 +24,12 @@ export const handleGetReportOverview = async (req: Request, res: Response) => {
   const scope = await getReportScopeEntries(auth.userId);
   const filters = { groupIds, userIds, types };
 
-  const [monthly, usage, quotas, allMembers, sickDayGroupIds] = await Promise.all([
+  const [monthly, usage, quotas, allMembers, policies] = await Promise.all([
     aggregateUsageByUserMonth(scope, auth.userId, year, filters),
     aggregateUsageSplit(scope, auth.userId, year, filters),
     getQuotasForScope(scope, auth.userId, year, { groupIds, userIds }),
     getScopeMembers(scope, auth.userId),
-    getSickDayEnabledGroupIds(scope.map((entry) => entry.groupId)),
+    getGroupAllowancePolicies(scope.map((entry) => entry.groupId)),
   ]);
 
   const selectableMembers = allMembers.filter(
@@ -41,7 +41,7 @@ export const handleGetReportOverview = async (req: Request, res: Response) => {
     quotas,
     usage,
     selectableMembers.map((member) => ({ userId: member.id, groupId: member.groupId })),
-    sickDayGroupIds,
+    policies,
     types
   );
 

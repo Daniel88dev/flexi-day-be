@@ -393,27 +393,6 @@ export const removeOrganizationAdmin = async (
   return removed.length > 0;
 };
 
-/**
- * Of the given groups, the ones whose organization has the Sick day benefit
- * switched on. Deliberately the stored toggle rather than live entitlements:
- * reporting keeps showing the allowances and usage a lapsed organization
- * accrued, while requestability is what goes dormant (`isSickDayBenefitActive`).
- */
-export const getSickDayEnabledGroupIds = async (
-  groupIds: string[],
-  tx?: DbTransaction
-): Promise<Set<string>> => {
-  if (groupIds.length === 0) return new Set();
-
-  const rows = await (tx ?? db)
-    .select({ id: groups.id })
-    .from(groups)
-    .innerJoin(organizations, eq(groups.organizationId, organizations.id))
-    .where(and(inArray(groups.id, groupIds), eq(organizations.sickDayBenefitEnabled, true)));
-
-  return new Set(rows.map((row) => row.id));
-};
-
 /** Bulk lookup for the per-group organization badge — one query, not one per group. */
 export const getOrganizationsByIds = async (
   organizationIds: string[],

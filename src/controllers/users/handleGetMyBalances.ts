@@ -3,7 +3,12 @@ import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
-import { sumUserQuotasForYear } from "../../services/userYearQuotas/userYearQuotasServices.js";
+import {
+  allowanceFor,
+  getMemberYearAllocations,
+  QUOTA_BEARING_TYPES,
+  totalAllowance,
+} from "../../services/userYearQuotas/yearAllocation.js";
 import { aggregateUserUsageForYear } from "../../services/vacation/vacationServices.js";
 
 const queryParams = z.object({
@@ -29,8 +34,8 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
 
   const visibleGroupIds = (await getAllGroupsForUser(auth.userId)).map((row) => row.groupId);
 
-  const [quotaSums, usage] = await Promise.all([
-    sumUserQuotasForYear(auth.userId, visibleGroupIds, year.toString()),
+  const [allocations, usage] = await Promise.all([
+    getMemberYearAllocations(auth.userId, visibleGroupIds, year),
     aggregateUserUsageForYear(auth.userId, visibleGroupIds, year),
   ]);
 
@@ -44,14 +49,16 @@ export const handleGetMyBalances = async (req: Request, res: Response) => {
     return bucket;
   };
 
-  // Carry-over belongs to the vacation allowance only.
-  ensure(CalendarRecordType.Vacation).allocated =
-    quotaSums.vacationDays + quotaSums.carriedOverDays;
-  ensure(CalendarRecordType.HomeOffice).allocated = quotaSums.homeOfficeDays;
-  // Only once allocated: members of organizations without the Sick day
-  // benefit must not see an empty sick day bucket.
-  if (quotaSums.sickDays > 0) {
-    ensure(CalendarRecordType.SickDay).allocated = quotaSums.sickDays;
+  ensure(CalendarRecordType.Vacation);
+  ensure(CalendarRecordType.HomeOffice);
+  // A Sick day bucket only appears through a group whose organization has the
+  // benefit on, so members without it never see an empty one.
+  for (const { allocation, policy } of allocations.values()) {
+    for (const type of QUOTA_BEARING_TYPES) {
+      const allowance = allowanceFor(allocation, type, policy);
+      if (!allowance) continue;
+      ensure(type).allocated += totalAllowance(allowance);
+    }
   }
 
   for (const row of usage) {

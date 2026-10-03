@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import { validateMemberReportQuery } from "../../services/report/types.js";
 import { buildSummaryEntries } from "../../services/report/buildSummary.js";
-import { getSickDayEnabledGroupIds } from "../../services/organization/organizationServices.js";
+import { getGroupAllowancePolicies } from "../../services/group/groupServices.js";
 import AppError from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import {
@@ -52,14 +52,14 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
 
   const filters = { groupIds: sharedGroupIds, userIds: [targetUserId] };
 
-  const [member, monthly, usage, quotas, bookings, changes, sickDayGroupIds] = await Promise.all([
+  const [member, monthly, usage, quotas, bookings, changes, policies] = await Promise.all([
     getUserById(targetUserId),
     aggregateUsageByUserMonth(scope, auth.userId, year, filters),
     aggregateUsageSplit(scope, auth.userId, year, filters),
     getQuotasForScope(scope, auth.userId, year, filters),
     getBookingsForScope(scope, auth.userId, year, filters),
     getMemberChanges(targetUserId, sharedGroupIds, year),
-    getSickDayEnabledGroupIds(sharedGroupIds),
+    getGroupAllowancePolicies(sharedGroupIds),
   ]);
 
   if (!member) {
@@ -75,7 +75,7 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
     quotas,
     usage,
     sharedGroupIds.map((groupId) => ({ userId: targetUserId, groupId })),
-    sickDayGroupIds
+    policies
   );
 
   return res.status(200).json({

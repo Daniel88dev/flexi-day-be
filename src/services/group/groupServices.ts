@@ -1,6 +1,8 @@
 import type { GroupInsertType, GroupType } from "./types.js";
+import type { GroupAllowancePolicy } from "../userYearQuotas/types.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { organizations } from "../../db/schema/organization-schema.js";
 import { and, asc, count, eq, inArray, isNull, or } from "drizzle-orm";
 import { user } from "../../db/schema/auth-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -50,6 +52,34 @@ export const getAllGroups = async (
     .from(groups)
     .where(and(inArray(groups.id, groupIds), isNull(groups.deletedAt)))
     .orderBy(asc(groups.groupName));
+};
+
+/**
+ * Each live group's quota defaults and whether its organization has the Sick
+ * day benefit switched on. Deliberately the stored toggle rather than live
+ * entitlements: reporting keeps showing the allowances and usage a lapsed
+ * organization accrued, while requestability is what goes dormant
+ * (`isSickDayBenefitActive`).
+ */
+export const getGroupAllowancePolicies = async (
+  groupIds: string[],
+  tx?: DbTransaction
+): Promise<Map<string, GroupAllowancePolicy>> => {
+  if (groupIds.length === 0) return new Map();
+
+  const rows = await (tx ?? db)
+    .select({
+      id: groups.id,
+      defaultVacationDays: groups.defaultVacationDays,
+      defaultHomeOfficeDays: groups.defaultHomeOfficeDays,
+      defaultSickDays: groups.defaultSickDays,
+      sickDayBenefitEnabled: organizations.sickDayBenefitEnabled,
+    })
+    .from(groups)
+    .innerJoin(organizations, eq(groups.organizationId, organizations.id))
+    .where(and(inArray(groups.id, groupIds), isNull(groups.deletedAt)));
+
+  return new Map(rows.map(({ id, ...policy }) => [id, policy]));
 };
 
 export const createGroup = async (
