@@ -1,4 +1,5 @@
 import { APIError } from "better-auth/api";
+import AppError from "./appError.js";
 import { readNativeClient, type HeaderSource, type NativeClient } from "./clientHeaders.js";
 
 /**
@@ -105,3 +106,17 @@ export const deviceMismatchError = (): APIError =>
 export const isDeviceMismatchError = (error: unknown): boolean =>
   error instanceof APIError &&
   (error.body as { code?: string } | undefined)?.code === SESSION_DEVICE_MISMATCH;
+
+/** The refusal every phone-only route gives a web session. */
+export const NATIVE_SESSION_REQUIRED = "NATIVE_SESSION_REQUIRED";
+
+export const assertNativeSession = (session: { userId: string; deviceId?: string }): void => {
+  if (session.deviceId) return;
+  throw new AppError({
+    message: "Only the phone app can call this",
+    code: 403,
+    logging: true,
+    context: { userId: session.userId },
+    publicContext: { reason: NATIVE_SESSION_REQUIRED },
+  });
+};

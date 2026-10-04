@@ -84,6 +84,23 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   keys without an `alg` and the stock import refuses them. The "phone id tokens" block in
   `src/tests/utils/socialProviders.test.ts` runs each provider through better-auth's own
   `verifyProviderIdToken` and fails if any of this is undone.
+- **OAuth tokens are encrypted at rest.** `account.encryptOAuthTokens` is on, so better-auth
+  encrypts every access and refresh token it writes with the auth secret, and the Apple
+  authorization route writes its tokens through the same helper (`src/utils/oauthTokens.ts`).
+  Rows written before it went on still hold plaintext, and `decryptOAuthToken` passes them through
+  because they do not look encrypted, so there is no migration. Code that reads a token straight
+  from the `account` table must decrypt it with that helper. Turning the option off would leave
+  every encrypted row unreadable, and a database dump of plaintext refresh tokens is a sign-in for
+  each social user, since a refresh token yields fresh id tokens the phone's sign-in accepts.
+  `src/tests/utils/oauthTokenEncryption.test.ts` fails if the option goes or a plaintext row stops
+  reading.
+- **The Apple authorization route is the only writer of a phone link's refresh token.** A phone
+  Apple sign-in posts an id token and nothing else, so better-auth stores no refresh token for it;
+  `POST /api/users/me/apple-authorization` exchanges the sign-in's one-time code and stores one.
+  A later id-token sign-in must leave it in place: better-auth drops undefined fields from the
+  account update, and if an upgrade started writing them as null, deletion would have nothing to
+  revoke at Apple. `src/tests/utils/appleRepeatSignIn.test.ts` fails if a repeat sign-in clears
+  the stored token.
 - **A completed password reset settles the account.** `onPasswordReset` marks the address verified
   and, when it was _not_ already verified, deletes every non-`credential` `account` row in the same
   transaction. Both halves are deliberate. Verifying is what makes the new password usable at all

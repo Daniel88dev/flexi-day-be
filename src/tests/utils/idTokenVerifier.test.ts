@@ -1,6 +1,7 @@
 import type { JWK } from "jose";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  appleIdTokenReader,
   appleIdTokenVerifier,
   createIdTokenVerifier,
   googleIdTokenVerifier,
@@ -306,5 +307,26 @@ describe("appleIdTokenVerifier", () => {
     });
     expect(await verify(hashed, "n-1")).toBe(true);
     expect(await verify(hashed, "n-2")).toBe(false);
+  });
+});
+
+describe("appleIdTokenReader", () => {
+  const APPLE = "https://appleid.apple.com";
+
+  beforeEach(() => {
+    fetchMock = stubKeySet(`${APPLE}/auth/keys`, served);
+  });
+
+  it("returns the claims of a token the verifier accepts", async () => {
+    const token = await signIdToken(key, { iss: APPLE, aud: "com.flexiday.app", sub: "apple-1" });
+    expect(await appleIdTokenReader("com.flexiday.app")(token)).toMatchObject({ sub: "apple-1" });
+  });
+
+  it("returns null for a token the verifier rejects", async () => {
+    const read = appleIdTokenReader("com.flexiday.app");
+    expect(await read(await signIdToken(key, { iss: APPLE, aud: "com.flexiday.web" }))).toBeNull();
+    expect(
+      await read(await signIdToken(stranger, { iss: APPLE, aud: "com.flexiday.app" }))
+    ).toBeNull();
   });
 });

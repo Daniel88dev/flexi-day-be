@@ -3,6 +3,9 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 
 export type IdTokenVerifier = (token: string, nonce?: string) => Promise<boolean>;
 
+/** The claims of a token that passes every rule, or null. */
+export type IdTokenReader = (token: string, nonce?: string) => Promise<JWTPayload | null>;
+
 type IdTokenRules = {
   keysUrl: string;
   issuer?: string | string[];
@@ -36,7 +39,7 @@ function nonceMatches(
  * rules below repeat its own: issuer, audience, RS256, expiry, an hour's
  * maximum age, the nonce only when the request carries one.
  */
-export function createIdTokenVerifier(rules: IdTokenRules): IdTokenVerifier {
+export function createIdTokenReader(rules: IdTokenRules): IdTokenReader {
   const keys = createRemoteJWKSet(new URL(rules.keysUrl));
 
   return async (token, nonce) => {
@@ -47,12 +50,18 @@ export function createIdTokenVerifier(rules: IdTokenRules): IdTokenVerifier {
         algorithms: ["RS256"],
         maxTokenAge: MAX_TOKEN_AGE,
       });
-      if (nonce && !nonceMatches(payload.nonce, nonce, rules.nonceComparison)) return false;
-      return rules.verifyClaims ? rules.verifyClaims(payload) : true;
+      if (nonce && !nonceMatches(payload.nonce, nonce, rules.nonceComparison)) return null;
+      if (rules.verifyClaims && !rules.verifyClaims(payload)) return null;
+      return payload;
     } catch {
-      return false;
+      return null;
     }
   };
+}
+
+export function createIdTokenVerifier(rules: IdTokenRules): IdTokenVerifier {
+  const read = createIdTokenReader(rules);
+  return async (token, nonce) => (await read(token, nonce)) !== null;
 }
 
 export function googleIdTokenVerifier(clientId: string) {
@@ -88,11 +97,14 @@ export function microsoftIdTokenVerifier(clientId: string, tenant: string) {
 }
 
 /** An app may hand Apple the SHA-256 of its nonce rather than the nonce, so either form matches. */
-export function appleIdTokenVerifier(bundleId: string) {
-  return createIdTokenVerifier({
-    keysUrl: "https://appleid.apple.com/auth/keys",
-    issuer: "https://appleid.apple.com",
-    audience: bundleId,
-    nonceComparison: "exact-or-sha256",
-  });
-}
+const appleRules = (bundleId: string): IdTokenRules => ({
+  keysUrl: "https://appleid.apple.com/auth/keys",
+  issuer: "https://appleid.apple.com",
+  audience: bundleId,
+  nonceComparison: "exact-or-sha256",
+});
+
+export const appleIdTokenVerifier = (bundleId: string) =>
+  createIdTokenVerifier(appleRules(bundleId));
+
+export const appleIdTokenReader = (bundleId: string) => createIdTokenReader(appleRules(bundleId));

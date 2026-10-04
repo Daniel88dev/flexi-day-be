@@ -35,7 +35,13 @@ const encodeJwtPart = (value: object) => Buffer.from(JSON.stringify(value)).toSt
  * `secretFor` is synchronous because better-auth reads `clientSecret` through
  * a plain property, which `buildSocialProviders` turns into a getter.
  */
-export function createAppleSecretMinter({ teamId, keyId, privateKey }: AppleSigningKey) {
+export type AppleSecretMinter = { secretFor(sub: string): string };
+
+export function createAppleSecretMinter({
+  teamId,
+  keyId,
+  privateKey,
+}: AppleSigningKey): AppleSecretMinter {
   const key = parsePrivateKey(privateKey);
   const cache = new Map<string, { secret: string; exp: number }>();
 

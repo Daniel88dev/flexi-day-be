@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { auth } from "../../utils/auth.js";
-import { buildAccountLinking, buildSocialProviders } from "../../utils/socialProviders.js";
-import { appleCredentials } from "../appleFixtures.js";
+import { buildAccountLinking } from "../../utils/socialProviders.js";
+import { appleCredentials, socialProvidersFrom } from "../appleFixtures.js";
 
 /**
  * Guards the settings-page "connect Google/Microsoft/Apple" feature against being
@@ -13,7 +13,7 @@ import { appleCredentials } from "../appleFixtures.js";
  * configured and anything asserted about the wired object would be vacuous.
  */
 describe("account linking policy", () => {
-  const configured = buildSocialProviders({
+  const configured = socialProvidersFrom({
     googleClientId: "google-id",
     googleClientSecret: "google-secret",
     microsoftClientId: "microsoft-id",
@@ -30,12 +30,12 @@ describe("account linking policy", () => {
 
   it("trusts nothing when no provider is configured", () => {
     expect(buildAccountLinking(undefined).trustedProviders).toEqual([]);
-    expect(buildAccountLinking(buildSocialProviders({})).trustedProviders).toEqual([]);
+    expect(buildAccountLinking(socialProvidersFrom({})).trustedProviders).toEqual([]);
   });
 
   it("never trusts a provider that is not configured", () => {
     const googleOnly = buildAccountLinking(
-      buildSocialProviders({ googleClientId: "id", googleClientSecret: "secret" })
+      socialProvidersFrom({ googleClientId: "id", googleClientSecret: "secret" })
     );
     expect(googleOnly.trustedProviders).toEqual(["google"]);
   });

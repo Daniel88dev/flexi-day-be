@@ -90,6 +90,24 @@ describe("authSession middleware", () => {
     });
   });
 
+  it("carries the device id of a Native session and none for a web one", async () => {
+    const user = { id: "user_1", name: "Ada", email: "ada@example.com", emailVerified: true };
+    const deviceId = "11111111-2222-4333-8444-555555555555";
+
+    const native = makeReqResNext();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (auth as any).api.getSession.mockResolvedValue({ session: { id: "s1", deviceId }, user });
+    await authSession(native.req, native.res, native.next);
+
+    const web = makeReqResNext();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (auth as any).api.getSession.mockResolvedValue({ session: { id: "s2", deviceId: null }, user });
+    await authSession(web.req, web.res, web.next);
+
+    expect(native.req.auth?.deviceId).toBe(deviceId);
+    expect(web.req.auth?.deviceId).toBeUndefined();
+  });
+
   it("preserves boolean falsy emailVerified field", async () => {
     const { req, res, next } = makeReqResNext();
     const fake = {

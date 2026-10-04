@@ -17,6 +17,8 @@ export type AuthSession = {
   userName: string;
   userEmail: string;
   emailVerified: boolean;
+  /** Set only on a Native session: the phone it is bound to. */
+  deviceId?: string;
 };
 
 export const authSession = async (req: Request, res: Response, next: NextFunction) => {
@@ -33,6 +35,7 @@ export const authSession = async (req: Request, res: Response, next: NextFunctio
       userName: session.user.name,
       userEmail: session.user.email,
       emailVerified: Boolean(session.user.emailVerified),
+      ...(session.session.deviceId ? { deviceId: session.session.deviceId } : {}),
     };
     // Id only — name and email deliberately stay out of Sentry.
     Sentry.setUser({ id: session.user.id });

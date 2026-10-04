@@ -1,8 +1,10 @@
-import { createAppleSecretMinter } from "./appleClientSecret.js";
+import { createAppleSecretMinter, type AppleSecretMinter } from "./appleClientSecret.js";
 import {
+  appleIdTokenReader,
   appleIdTokenVerifier,
   googleIdTokenVerifier,
   microsoftIdTokenVerifier,
+  type IdTokenReader,
 } from "./idTokenVerifier.js";
 
 type SocialCredentials = {
@@ -42,27 +44,51 @@ type SocialCredentials = {
  */
 const NEVER_TRUST_PROVIDER_EMAIL = () => ({ emailVerified: false });
 
-function buildApple(auth?: SocialCredentials) {
-  const clientId = auth?.appleClientId;
+/**
+ * Apple is two clients behind one key: the Services ID signs in on the web,
+ * the bundle id on the phone. Each needs a secret minted with itself as the
+ * subject, so the provider and the phone's authorization route share this.
+ */
+export type AppleClient = {
+  servicesId: string;
+  bundleId: string;
+  minter: AppleSecretMinter;
+  /** The verified claims of an id token issued to the bundle id, or null. */
+  readIdToken: IdTokenReader;
+};
+
+export function appleClientFrom(auth?: SocialCredentials): AppleClient | undefined {
+  const servicesId = auth?.appleClientId;
   const teamId = auth?.appleTeamId;
   const keyId = auth?.appleKeyId;
-  const appBundleIdentifier = auth?.appleAppBundleIdentifier;
+  const bundleId = auth?.appleAppBundleIdentifier;
   const privateKey = auth?.applePrivateKey;
-  if (!clientId || !teamId || !keyId || !appBundleIdentifier || !privateKey) return {};
+  if (!servicesId || !teamId || !keyId || !bundleId || !privateKey) return undefined;
 
-  const minter = createAppleSecretMinter({ teamId, keyId, privateKey });
+  return {
+    servicesId,
+    bundleId,
+    minter: createAppleSecretMinter({ teamId, keyId, privateKey }),
+    readIdToken: appleIdTokenReader(bundleId),
+  };
+}
+
+function buildApple(client: AppleClient | undefined) {
+  if (!client) return {};
+
+  const { servicesId, bundleId, minter } = client;
   return {
     apple: {
       // The Services ID: the web flow's client_id and the secret's subject.
-      clientId,
+      clientId: servicesId,
       // A getter, so each token request reads a current secret.
       get clientSecret() {
-        return minter.secretFor(clientId);
+        return minter.secretFor(servicesId);
       },
       // better-auth's own audience check no longer runs once verifyIdToken is
       // set; this stays so the config names the audience the verifier is given.
-      appBundleIdentifier,
-      verifyIdToken: appleIdTokenVerifier(appBundleIdentifier),
+      appBundleIdentifier: bundleId,
+      verifyIdToken: appleIdTokenVerifier(bundleId),
       mapProfileToUser: NEVER_TRUST_PROVIDER_EMAIL,
     },
   };
@@ -75,7 +101,10 @@ function buildApple(auth?: SocialCredentials) {
  * Returns `undefined` when nothing is configured, which is what better-auth
  * expects for "no social sign-in".
  */
-export function buildSocialProviders(auth?: SocialCredentials) {
+export function buildSocialProviders(
+  auth: SocialCredentials | undefined,
+  apple: AppleClient | undefined
+) {
   // "common" also admits personal Microsoft accounts; set MICROSOFT_TENANT_ID
   // to a directory GUID to pin sign-in to one org.
   const microsoftTenant = auth?.microsoftTenantId || "common";
@@ -107,7 +136,7 @@ export function buildSocialProviders(auth?: SocialCredentials) {
           },
         }
       : {}),
-    ...buildApple(auth),
+    ...buildApple(apple),
   };
 
   return Object.keys(providers).length > 0 ? providers : undefined;
