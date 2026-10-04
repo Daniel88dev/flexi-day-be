@@ -44,7 +44,14 @@ resource "aws_apprunner_service" "main" {
             PORT            = tostring(var.app_port)
             BETTER_AUTH_URL = "https://${var.api_domain_name}"
             FEED_BASE_URL   = "https://${var.api_domain_name}"
-            TRUSTED_ORIGINS = join(",", var.trusted_origins)
+            # Apple POSTs the web callback from appleid.apple.com, and
+            # better-auth refuses a non-GET from an untrusted origin. Derived
+            # here rather than listed in trusted_origins so it stays out of the
+            # attachments bucket's CORS rule, which is browser origins only.
+            TRUSTED_ORIGINS = join(",", concat(
+              var.trusted_origins,
+              var.apple_client_id != "" ? ["https://appleid.apple.com"] : []
+            ))
 
             # Liveness probes only. App Runner hits /health every 10s (see
             # health_check_configuration below), which would otherwise be the
@@ -77,6 +84,17 @@ resource "aws_apprunner_service" "main" {
             MICROSOFT_TENANT_ID = var.microsoft_tenant_id
           } : {},
 
+          # Sign in with Apple. Services ID, team, key id and bundle id are all
+          # public; the .p8 is injected below. Web callback:
+          # {BETTER_AUTH_URL}/api/auth/callback/apple; its origin joins
+          # TRUSTED_ORIGINS above.
+          var.apple_client_id != "" ? {
+            APPLE_CLIENT_ID             = var.apple_client_id
+            APPLE_TEAM_ID               = var.apple_team_id
+            APPLE_KEY_ID                = var.apple_key_id
+            APPLE_APP_BUNDLE_IDENTIFIER = var.apple_app_bundle_identifier
+          } : {},
+
           # Paddle price IDs are public catalog identifiers, not secrets, so
           # they ride as plain env vars. The API key and webhook secret go
           # through Secrets Manager below. Omitted entirely when billing is
@@ -106,6 +124,9 @@ resource "aws_apprunner_service" "main" {
           } : {},
           var.microsoft_client_id != "" ? {
             MICROSOFT_CLIENT_SECRET = aws_secretsmanager_secret.microsoft_client_secret[0].arn
+          } : {},
+          var.apple_client_id != "" ? {
+            APPLE_PRIVATE_KEY = aws_secretsmanager_secret.apple_private_key[0].arn
           } : {},
           var.paddle_api_key != "" ? {
             PADDLE_API_KEY        = aws_secretsmanager_secret.paddle_api_key[0].arn
@@ -140,6 +161,7 @@ resource "aws_apprunner_service" "main" {
     aws_secretsmanager_secret_version.better_auth_secret,
     aws_secretsmanager_secret_version.google_client_secret,
     aws_secretsmanager_secret_version.microsoft_client_secret,
+    aws_secretsmanager_secret_version.apple_private_key,
     aws_secretsmanager_secret_version.paddle_api_key,
     aws_secretsmanager_secret_version.paddle_webhook_secret,
     aws_secretsmanager_secret_version.attachments_callback_secret,

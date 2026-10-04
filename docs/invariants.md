@@ -10,9 +10,10 @@ Better Auth with email/password, mandatory email verification, password reset by
 rate limit (50 requests / 10s) on top of `credentialsLimiter`.
 
 - **Social sign-in never confers a verified address; an invite link does.** `buildSocialProviders`
-  maps every Google and Microsoft profile to `emailVerified: false`, because both providers' claims
-  attest the _domain_, not the mailbox. Two things verify an address: our own confirmation email,
-  and following an invite link. Redeeming an email-bound **invite code** requires a verified address
+  maps every Google, Microsoft and Apple profile to `emailVerified: false`. Google's and Microsoft's
+  claims attest the _domain_, not the mailbox, and Apple gets the same rule rather than an exception
+  of its own. Two things verify an address: our own confirmation email, and following an invite
+  link. Redeeming an email-bound **invite code** requires a verified address
   (`handlePostGroupUser`), because the admin knows the code and knowing it proves nothing about the
   mailbox. The **invite link** is different: its secret is generated at issue time, stored only as a
   SHA-256 hash, returned by no API and sent only to the invited address, so holding it is the proof.
@@ -23,7 +24,8 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   `withoutConfirmationEmail` (`src/utils/confirmationEmail.ts`), an async-context flag only that
   handler sets, never a header or body field a client could send. Without this split, an
   identity-provider administrator who asserts a colleague's address could join that colleague's
-  team with the code, and a legitimately invited Google or Microsoft user could not join at all.
+  team with the code, and a legitimately invited Google, Microsoft or Apple user could not join at
+  all.
 
   Verifying by link deliberately has **no settle step**: unlike a password reset, it leaves the
   account's provider links in place. On an unverified account every provider link was attached by
@@ -45,13 +47,43 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   `src/tests/e2e/inviteSignUp.e2e.test.ts` sign-up with invite and
   `src/tests/e2e/inviteRedemption.e2e.test.ts` the code.
 
-- **Account linking is explicit only.** `accountLinking` trusts both providers — needed at all,
-  since the false `emailVerified` above would otherwise block every link — and then sets
-  `disableImplicitLinking`, so a provider can only be attached from a signed-in session via
-  `POST /link-social` (Settings → Sign-in methods). Without that flag, a directory administrator
-  could set a mail attribute to someone else's address and sign straight into their account.
-  Keep `allowDifferentEmails` and `allowUnlinkingAll` off;
+- **Account linking is explicit only.** `accountLinking` trusts every configured provider (Google,
+  Microsoft, Apple), derived from `buildSocialProviders` so an unconfigured one is never listed.
+  That trust is needed at all because the false `emailVerified` above would otherwise block every
+  link. It then sets `disableImplicitLinking`, so a provider can only be attached from a signed-in
+  session via `POST /link-social` (Settings → Sign-in methods). Without that flag, a directory
+  administrator could set a mail attribute to someone else's address and sign straight into their
+  account. Keep `allowDifferentEmails` and `allowUnlinkingAll` off;
   `src/tests/utils/accountLinking.test.ts` fails if any of this is undone.
+- **Social sign-in does not run the second factor.** The `twoFactor` plugin's hook matches only
+  `/sign-in/email`, `/sign-in/username` and `/sign-in/phone-number`. A Google, Microsoft or Apple
+  sign-in, whether through the web callback or the phone's id token at `/sign-in/social`, therefore
+  mints a session without our code even when `twoFactorEnabled` is on. That is a deliberate
+  exception, not an equivalent control: a Google or Microsoft account can run with no second step
+  at all, so a linked provider can be a way in with no second factor anywhere. Our second factor
+  guards the password, not the account, and every provider linked to an account skips it. If a
+  better-auth upgrade widened the matcher, social users with two-factor on would start meeting our
+  code challenge without anyone deciding they should; if it narrowed it, a password sign-in would
+  get through without its code. Putting a social path under the plugin is a product decision, not a
+  fix.
+  `src/tests/utils/twoFactorScope.test.ts` fails if the matcher moves either way.
+- **The Expo authorization proxy stays disabled.** `disabledPaths` in `auth.ts` lists
+  `/expo-authorization-proxy`. The `expo()` plugin serves it to start a browser sign-in from the
+  phone, and it redirects to any https URL its query names, an open redirect on the API's own
+  domain. Nothing needs it: the phone signs in by posting the provider's id token to
+  `/sign-in/social`. `src/tests/utils/expoAuthorizationProxy.test.ts` fails if the entry goes, and
+  "does not serve the plugin's authorization proxy" in `src/tests/e2e/expoOrigin.e2e.test.ts` checks
+  the route answers 404.
+- **Phone id tokens are verified by our own verifier.** `buildSocialProviders` gives Google,
+  Microsoft and Apple a `verifyIdToken` from `src/utils/idTokenVerifier.ts`, backed by a cached
+  `jose` key set per provider. Once a provider has that option, better-auth runs no other check on
+  a token posted to `/sign-in/social` or `/link-social`, so issuer, audience, RS256, the one-hour
+  maximum age and the nonce all live in that file, and loosening one there loosens sign-in. A
+  provider left without the option falls back to better-auth's stock check, which downloads the key
+  set on every sign-in, and Microsoft tokens stop verifying at all, because Microsoft publishes its
+  keys without an `alg` and the stock import refuses them. The "phone id tokens" block in
+  `src/tests/utils/socialProviders.test.ts` runs each provider through better-auth's own
+  `verifyProviderIdToken` and fails if any of this is undone.
 - **A completed password reset settles the account.** `onPasswordReset` marks the address verified
   and, when it was _not_ already verified, deletes every non-`credential` `account` row in the same
   transaction. Both halves are deliberate. Verifying is what makes the new password usable at all

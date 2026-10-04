@@ -1,9 +1,21 @@
+import { createAppleSecretMinter } from "./appleClientSecret.js";
+import {
+  appleIdTokenVerifier,
+  googleIdTokenVerifier,
+  microsoftIdTokenVerifier,
+} from "./idTokenVerifier.js";
+
 type SocialCredentials = {
   googleClientId?: string;
   googleClientSecret?: string;
   microsoftClientId?: string;
   microsoftClientSecret?: string;
   microsoftTenantId?: string;
+  appleClientId?: string;
+  appleTeamId?: string;
+  appleKeyId?: string;
+  appleAppBundleIdentifier?: string;
+  applePrivateKey?: string;
 };
 
 /**
@@ -17,10 +29,10 @@ type SocialCredentials = {
  * not drive access decisions. Flexi Day does drive one: `handlePostGroupUser`
  * lets a verified address redeem a team invite bound to it.
  *
- * So social sign-in never confers a verified address. The account is created
- * unverified and better-auth sends our own confirmation email, exactly as an
- * email/password sign-up would; only clicking that link marks the address
- * verified.
+ * So social sign-in, Apple's included, never confers a verified address. The
+ * account is created unverified and better-auth sends our own confirmation
+ * email, exactly as an email/password sign-up would; only clicking that link
+ * marks the address verified.
  *
  * Consequence worth knowing: a social sign-in cannot attach itself to a
  * pre-existing account with the same address. It reports `account_not_linked`,
@@ -30,20 +42,52 @@ type SocialCredentials = {
  */
 const NEVER_TRUST_PROVIDER_EMAIL = () => ({ emailVerified: false });
 
+function buildApple(auth?: SocialCredentials) {
+  const clientId = auth?.appleClientId;
+  const teamId = auth?.appleTeamId;
+  const keyId = auth?.appleKeyId;
+  const appBundleIdentifier = auth?.appleAppBundleIdentifier;
+  const privateKey = auth?.applePrivateKey;
+  if (!clientId || !teamId || !keyId || !appBundleIdentifier || !privateKey) return {};
+
+  const minter = createAppleSecretMinter({ teamId, keyId, privateKey });
+  return {
+    apple: {
+      // The Services ID: the web flow's client_id and the secret's subject.
+      clientId,
+      // A getter, so each token request reads a current secret.
+      get clientSecret() {
+        return minter.secretFor(clientId);
+      },
+      // better-auth's own audience check no longer runs once verifyIdToken is
+      // set; this stays so the config names the audience the verifier is given.
+      appBundleIdentifier,
+      verifyIdToken: appleIdTokenVerifier(appBundleIdentifier),
+      mapProfileToUser: NEVER_TRUST_PROVIDER_EMAIL,
+    },
+  };
+}
+
 /**
- * Register each provider only when both of its credentials are present, so
+ * Register each provider only when all of its credentials are present, so
  * non-production/test environments (and any deploy before the secrets are
  * wired) start cleanly instead of failing with an empty client id/secret.
  * Returns `undefined` when nothing is configured, which is what better-auth
  * expects for "no social sign-in".
  */
 export function buildSocialProviders(auth?: SocialCredentials) {
+  // "common" also admits personal Microsoft accounts; set MICROSOFT_TENANT_ID
+  // to a directory GUID to pin sign-in to one org.
+  const microsoftTenant = auth?.microsoftTenantId || "common";
   const providers = {
     ...(auth?.googleClientId && auth.googleClientSecret
       ? {
           google: {
             clientId: auth.googleClientId,
             clientSecret: auth.googleClientSecret,
+            // Does not enforce better-auth's `hd` option; configuring `hd` needs
+            // the verifier extended.
+            verifyIdToken: googleIdTokenVerifier(auth.googleClientId),
             mapProfileToUser: NEVER_TRUST_PROVIDER_EMAIL,
           },
         }
@@ -53,9 +97,8 @@ export function buildSocialProviders(auth?: SocialCredentials) {
           microsoft: {
             clientId: auth.microsoftClientId,
             clientSecret: auth.microsoftClientSecret,
-            // "common" also admits personal Microsoft accounts; set
-            // MICROSOFT_TENANT_ID to a directory GUID to pin sign-in to one org.
-            tenantId: auth.microsoftTenantId || "common",
+            tenantId: microsoftTenant,
+            verifyIdToken: microsoftIdTokenVerifier(auth.microsoftClientId, microsoftTenant),
             // Stated explicitly rather than left to better-auth, which would
             // otherwise derive it from `email_verified` / `xms_edov` /
             // `verified_primary_email` — all claims a directory administrator
@@ -64,6 +107,7 @@ export function buildSocialProviders(auth?: SocialCredentials) {
           },
         }
       : {}),
+    ...buildApple(auth),
   };
 
   return Object.keys(providers).length > 0 ? providers : undefined;

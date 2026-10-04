@@ -35,6 +35,8 @@ api_domain_name  = "api.flexi-day.com"
 manage_dns_validation_records = false
 
 # Better Auth trusted origins: your frontend URLs plus the phone app's scheme.
+# https://appleid.apple.com is added by apprunner.tf itself once apple_client_id
+# is set; do not list it here, or it lands in the attachments bucket's CORS rule.
 trusted_origins = ["https://flexi-day.com", "https://www.flexi-day.com", "flexiday://"]
 
 # Better Auth secret: leave empty to auto-generate a random 64-char secret
@@ -67,6 +69,21 @@ microsoft_client_secret = ""
 # "common" = any work/school account + personal Microsoft accounts,
 # "organizations" = work/school only, or a tenant GUID for a single directory.
 microsoft_tenant_id = "common"
+
+# Sign in with Apple: leave apple_client_id empty to disable it. The four values
+# here are public (Services ID, Team ID, Key ID, bundle id). The .p8 key is the
+# one secret and goes through the environment, never into this file:
+#   export TF_VAR_apple_private_key="$(cat ~/Downloads/AuthKey_<KEYID>.p8)"
+# Export it rather than prefixing one command: apply needs it as much as plan,
+# and a bare apply without it builds a new plan that fails the precondition.
+# The backend mints Apple's short-lived client secret from the key itself, so
+# nothing here expires; rotate the key by registering a second one in the
+# portal (two per App ID), applying with the new id and key, then revoking the
+# old one. Portal steps: flexi-day-rn/docs/native-sign-in-setup.md.
+apple_client_id             = ""
+apple_team_id               = ""
+apple_key_id                = ""
+apple_app_bundle_identifier = "com.flexiday.app"
 
 # Paddle billing. Leave paddle_api_key empty to disable billing entirely: no
 # Paddle secrets are created, no Paddle env vars are injected, and the

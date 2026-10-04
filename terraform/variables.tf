@@ -256,6 +256,40 @@ variable "microsoft_tenant_id" {
   default     = "common"
 }
 
+# Sign in with Apple. The backend holds the .p8 key and mints the short-lived
+# client secret itself, so there is no secret to rotate by hand; see
+# docs/native-sign-in-setup.md in flexi-day-rn for the portal steps.
+variable "apple_client_id" {
+  description = "Apple Services ID identifier, the web flow's client_id (public; plain env var). Leave empty to disable Apple sign-in entirely."
+  type        = string
+  default     = ""
+}
+
+variable "apple_team_id" {
+  description = "Apple Developer Team ID (public; plain env var). Required if apple_client_id is set."
+  type        = string
+  default     = ""
+}
+
+variable "apple_key_id" {
+  description = "Key ID of the Sign in with Apple key whose .p8 is apple_private_key (public; plain env var). Required if apple_client_id is set."
+  type        = string
+  default     = ""
+}
+
+variable "apple_app_bundle_identifier" {
+  description = "iOS bundle id the phone's id tokens carry as their audience (public; plain env var). Required if apple_client_id is set."
+  type        = string
+  default     = "com.flexiday.app"
+}
+
+variable "apple_private_key" {
+  description = "Contents of the Sign in with Apple .p8 key (stored in Secrets Manager). Required if apple_client_id is set. Pass it as TF_VAR_apple_private_key, never in terraform.tfvars."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # Attachments (docs/adr/0003)
 variable "attachments_bucket_name" {
   description = "S3 bucket for attachment bytes. Bucket names are global, so override on a collision; empty means <project_name>-<environment>-attachments."

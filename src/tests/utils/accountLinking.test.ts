@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { auth } from "../../utils/auth.js";
 import { buildAccountLinking, buildSocialProviders } from "../../utils/socialProviders.js";
+import { appleCredentials } from "../appleFixtures.js";
 
 /**
- * Guards the settings-page "connect Google/Microsoft" feature against being
+ * Guards the settings-page "connect Google/Microsoft/Apple" feature against being
  * bought at the price of the automatic linking it replaces. Every assertion
  * here is a rule an attacker would benefit from having relaxed.
  *
@@ -17,13 +18,14 @@ describe("account linking policy", () => {
     googleClientSecret: "google-secret",
     microsoftClientId: "microsoft-id",
     microsoftClientSecret: "microsoft-secret",
+    ...appleCredentials(),
   });
   const accountLinking = buildAccountLinking(configured);
 
   it("trusts every configured provider, or no link can ever be made", () => {
     // Without this, `mapProfileToUser`'s deliberately false `emailVerified`
     // makes better-auth refuse /link-social for everyone.
-    expect(accountLinking.trustedProviders).toEqual(["google", "microsoft"]);
+    expect(accountLinking.trustedProviders).toEqual(["google", "microsoft", "apple"]);
   });
 
   it("trusts nothing when no provider is configured", () => {

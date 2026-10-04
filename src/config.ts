@@ -21,6 +21,14 @@ type AuthConfig = {
   microsoftClientId?: string;
   microsoftClientSecret?: string;
   microsoftTenantId?: string;
+  // Sign in with Apple. Registered only when all five are set. The client id
+  // is the Services ID; the private key is the `.p8` the backend mints its
+  // client secrets from, and the only sensitive value of the five.
+  appleClientId?: string;
+  appleTeamId?: string;
+  appleKeyId?: string;
+  appleAppBundleIdentifier?: string;
+  applePrivateKey?: string;
 };
 
 type EmailConfig = {
@@ -312,6 +320,11 @@ export const config: Config = {
           microsoftClientId: process.env.MICROSOFT_CLIENT_ID,
           microsoftClientSecret: process.env.MICROSOFT_CLIENT_SECRET,
           microsoftTenantId: process.env.MICROSOFT_TENANT_ID,
+          appleClientId: process.env.APPLE_CLIENT_ID,
+          appleTeamId: process.env.APPLE_TEAM_ID,
+          appleKeyId: process.env.APPLE_KEY_ID,
+          appleAppBundleIdentifier: process.env.APPLE_APP_BUNDLE_IDENTIFIER,
+          applePrivateKey: process.env.APPLE_PRIVATE_KEY,
         }
       : undefined,
   email: {

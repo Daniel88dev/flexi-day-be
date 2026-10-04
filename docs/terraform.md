@@ -46,12 +46,38 @@ each variable its own plain-string secret.
 
 ### Optional blocks
 
-A feature that ships switched off follows the shape Paddle, Google and Microsoft already use. One
-variable defaults to `""` and acts as the switch, each secret carries
+A feature that ships switched off follows the shape Paddle, Google, Microsoft and Apple already
+use. One variable defaults to `""` and acts as the switch, each secret carries
 `count = var.switch != "" ? 1 : 0`, and the App Runner env maps `merge()` in an empty object when the
 switch is unset. Guard the rest with `lifecycle { precondition { ... } }` in `secrets.tf` so a
 half-filled config fails at plan time rather than putting App Runner into a boot loop against
 `config.ts`.
+
+### Sign in with Apple
+
+`apple_client_id`, the Services ID, is the switch. With it set, `apple_team_id`, `apple_key_id` and
+`apple_app_bundle_identifier` ride as plain env vars beside it, and `apple_private_key`, the `.p8`
+key, goes to Secrets Manager as `<project>-<environment>-apple-private-key` and reaches the service
+as the runtime secret `APPLE_PRIVATE_KEY`, with its ARN on the instance role. Two preconditions on
+the secret version fail the plan when the switch is set without the key or without the other three
+ids, because `buildSocialProviders` registers Apple only when all five reach it.
+
+Pass the key as `TF_VAR_apple_private_key`, never in `terraform.tfvars`; the comment above the
+Apple block in `terraform.tfvars.example` has the command. The variable has to reach both `plan`
+and `apply`: a bare `terraform apply` after a plan that had it builds a fresh plan with the empty
+default and fails the precondition. Either export it in the shell for the whole session, or write
+the plan with `-out` and apply that file. Nothing here expires: the backend signs
+its own one-hour client secrets with the key. Rotation is a second key in Apple's portal, an apply
+with the new key id and key, then revoking the old one.
+
+No plan-time check reads the key itself, so a malformed `TF_VAR_apple_private_key` plans and applies
+cleanly. The backend then refuses to start on it. Prove a new key locally first: put it in `.env` as
+`APPLE_PRIVATE_KEY` with the other four values and start the backend, which builds the provider and
+parses the key at boot. Only then run `terraform apply` and deploy.
+
+Apple POSTs the web callback, so `apprunner.tf` appends `https://appleid.apple.com` to
+`TRUSTED_ORIGINS` whenever the switch is set. Leave it out of `trusted_origins`: that list also
+feeds the attachments bucket's CORS rule, which is for browser origins.
 
 ### Done when
 
