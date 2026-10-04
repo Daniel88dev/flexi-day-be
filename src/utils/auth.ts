@@ -86,7 +86,7 @@ export const auth = betterAuth({
     // Completing a reset means clicking a link we mailed to the address, which
     // is the same proof the confirmation email asks for — so it settles the
     // address the same way. This is what makes a password usable at all for
-    // someone who signed up through Google or Microsoft: social sign-in leaves
+    // someone who signed up through a social provider: social sign-in leaves
     // the address unverified on purpose, and `requireEmailVerification` above
     // would otherwise reject the password they just set, with no way to ask
     // for a confirmation email again.
