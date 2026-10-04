@@ -76,6 +76,7 @@ resource "aws_iam_role_policy" "apprunner_secrets" {
           ],
           aws_secretsmanager_secret.google_client_secret[*].arn,
           aws_secretsmanager_secret.microsoft_client_secret[*].arn,
+          aws_secretsmanager_secret.apple_private_key[*].arn,
           aws_secretsmanager_secret.paddle_api_key[*].arn,
           aws_secretsmanager_secret.paddle_webhook_secret[*].arn
         )

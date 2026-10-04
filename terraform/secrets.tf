@@ -121,6 +121,43 @@ resource "aws_secretsmanager_secret_version" "microsoft_client_secret" {
   }
 }
 
+# Sign in with Apple private key, same opt-in shape. Unlike Google and
+# Microsoft this is not a client secret but the .p8 the backend signs its own
+# short-lived client secrets with. The multi-line PEM is stored as is; the
+# backend's parser accepts both real newlines and the literal \n a .env file
+# carries.
+resource "aws_secretsmanager_secret" "apple_private_key" {
+  count                   = var.apple_client_id != "" ? 1 : 0
+  name                    = "${var.project_name}-${var.environment}-apple-private-key"
+  description             = "Sign in with Apple private key (.p8) for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-apple-private-key"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "apple_private_key" {
+  count         = var.apple_client_id != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.apple_private_key[0].id
+  secret_string = var.apple_private_key
+
+  # A Services ID without its key, team or key id leaves better-auth unable to
+  # mint a client secret; fail at plan time instead of booting a service whose
+  # Apple button 500s.
+  lifecycle {
+    precondition {
+      condition     = var.apple_private_key != ""
+      error_message = "apple_private_key is required when apple_client_id is set (pass it as TF_VAR_apple_private_key)."
+    }
+
+    precondition {
+      condition     = var.apple_team_id != "" && var.apple_key_id != "" && var.apple_app_bundle_identifier != ""
+      error_message = "apple_team_id, apple_key_id and apple_app_bundle_identifier are required when apple_client_id is set."
+    }
+  }
+}
+
 # Paddle API key and webhook signing secret. Only provisioned when billing is
 # enabled (paddle_api_key set), matching the google_client_secret pattern
 # above, so an empty secret_string never reaches Secrets Manager. The six
