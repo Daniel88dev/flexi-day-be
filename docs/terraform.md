@@ -63,7 +63,10 @@ the secret version fail the plan when the switch is set without the key or witho
 ids, because `buildSocialProviders` registers Apple only when all five reach it.
 
 Pass the key as `TF_VAR_apple_private_key`, never in `terraform.tfvars`; the comment above the
-Apple block in `terraform.tfvars.example` has the command. Nothing here expires: the backend signs
+Apple block in `terraform.tfvars.example` has the command. The variable has to reach both `plan`
+and `apply`: a bare `terraform apply` after a plan that had it builds a fresh plan with the empty
+default and fails the precondition. Either export it in the shell for the whole session, or write
+the plan with `-out` and apply that file. Nothing here expires: the backend signs
 its own one-hour client secrets with the key. Rotation is a second key in Apple's portal, an apply
 with the new key id and key, then revoking the old one.
 

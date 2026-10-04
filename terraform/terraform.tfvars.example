@@ -73,7 +73,9 @@ microsoft_tenant_id = "common"
 # Sign in with Apple: leave apple_client_id empty to disable it. The four values
 # here are public (Services ID, Team ID, Key ID, bundle id). The .p8 key is the
 # one secret and goes through the environment, never into this file:
-#   TF_VAR_apple_private_key="$(cat ~/Downloads/AuthKey_<KEYID>.p8)" terraform plan
+#   export TF_VAR_apple_private_key="$(cat ~/Downloads/AuthKey_<KEYID>.p8)"
+# Export it rather than prefixing one command: apply needs it as much as plan,
+# and a bare apply without it builds a new plan that fails the precondition.
 # The backend mints Apple's short-lived client secret from the key itself, so
 # nothing here expires; rotate the key by registering a second one in the
 # portal (two per App ID), applying with the new id and key, then revoking the

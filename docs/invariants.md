@@ -58,12 +58,14 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
 - **Social sign-in does not run the second factor.** The `twoFactor` plugin's hook matches only
   `/sign-in/email`, `/sign-in/username` and `/sign-in/phone-number`. A Google, Microsoft or Apple
   sign-in, whether through the web callback or the phone's id token at `/sign-in/social`, therefore
-  mints a session without our code even when `twoFactorEnabled` is on. That is deliberate: the
-  provider's own second factor covers that sign-in. Our second factor guards the password, not the
-  account, so every provider linked to an account is a way in that skips it. If a better-auth
-  upgrade widened the matcher, social users with two-factor on would start meeting our code
-  challenge without anyone deciding they should; if it narrowed it, a password sign-in would get
-  through without its code. Putting a social path under the plugin is a product decision, not a fix.
+  mints a session without our code even when `twoFactorEnabled` is on. That is a deliberate
+  exception, not an equivalent control: a Google or Microsoft account can run with no second step
+  at all, so a linked provider can be a way in with no second factor anywhere. Our second factor
+  guards the password, not the account, and every provider linked to an account skips it. If a
+  better-auth upgrade widened the matcher, social users with two-factor on would start meeting our
+  code challenge without anyone deciding they should; if it narrowed it, a password sign-in would
+  get through without its code. Putting a social path under the plugin is a product decision, not a
+  fix.
   `src/tests/utils/twoFactorScope.test.ts` fails if the matcher moves either way.
 - **The Expo authorization proxy stays disabled.** `disabledPaths` in `auth.ts` lists
   `/expo-authorization-proxy`. The `expo()` plugin serves it to start a browser sign-in from the
