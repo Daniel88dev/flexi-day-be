@@ -216,6 +216,14 @@ export const syncRouter = (): Router => {
    *       A paged snapshot answers `reset: true` on every one of its pages, and
    *       a paged delta stays `reset: false` throughout.
    *
+   *       `first` is `true` on the page that starts a loop and `false` on every
+   *       page that continues one. A page starts a loop when the request sent
+   *       no cursor, a cursor with no paging state, or a cursor the server
+   *       could not decode or resume from. A client that sent a continuation
+   *       cursor and gets `first: true` back is holding the first page of a
+   *       fresh loop, so it restarts its own loop rather than appending the
+   *       page to the one it was in.
+   *
    *       Tables arrive in dependency order across the loop, so a page that
    *       resumes inside one table carries the tables before it as empty
    *       arrays: they landed on an earlier page.
@@ -269,6 +277,7 @@ export const syncRouter = (): Router => {
    *                 - cursor
    *                 - hasMore
    *                 - reset
+   *                 - first
    *                 - organizations
    *                 - users
    *                 - groups
@@ -296,6 +305,13 @@ export const syncRouter = (): Router => {
    *                     True when the payload is a full snapshot rather than a
    *                     delta: no cursor, one the server could not use, or a
    *                     change since the cursor to what the caller may see
+   *                 first:
+   *                   type: boolean
+   *                   description: |
+   *                     True when this page starts a loop: no cursor, a cursor
+   *                     with no paging state, or one the server could not
+   *                     decode or resume from. False on every page that
+   *                     continues a loop from the paging state in its cursor
    *                 organizations:
    *                   type: array
    *                   items:
