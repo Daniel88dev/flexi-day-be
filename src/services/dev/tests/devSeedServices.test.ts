@@ -1,8 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockExisting, mockInserted, mockUpdateSet, mockUpdateWhere } = vi.hoisted(() => ({
+const {
+  mockExisting,
+  mockSelectWhere,
+  mockInserted,
+  mockReturning,
+  mockUpdateSet,
+  mockUpdateWhere,
+} = vi.hoisted(() => ({
   mockExisting: vi.fn(),
+  mockSelectWhere: vi.fn(),
   mockInserted: vi.fn(),
+  mockReturning: vi.fn(),
   mockUpdateSet: vi.fn(),
   mockUpdateWhere: vi.fn(),
 }));
@@ -19,12 +28,22 @@ vi.mock("../../../db/db.js", () => {
   const insert = (table: unknown) => ({
     values: (values: unknown) => {
       mockInserted(table, values);
-      return Promise.resolve();
+      return Object.assign(Promise.resolve(), {
+        onConflictDoNothing: () => ({ returning: mockReturning }),
+      });
     },
+  });
+  const select = () => ({
+    from: () => ({
+      where: (condition: unknown) => {
+        mockSelectWhere(condition);
+        return { limit: mockExisting };
+      },
+    }),
   });
   return {
     db: {
-      select: () => ({ from: () => ({ where: () => ({ limit: mockExisting }) }) }),
+      select,
       update: () => ({
         set: (values: unknown) => {
           mockUpdateSet(values);
@@ -32,7 +51,7 @@ vi.mock("../../../db/db.js", () => {
         },
       }),
       insert,
-      transaction: (callback: (tx: unknown) => Promise<unknown>) => callback({ insert }),
+      transaction: (callback: (tx: unknown) => Promise<unknown>) => callback({ select, insert }),
     },
   };
 });
@@ -46,8 +65,12 @@ vi.mock("../../userYearQuotas/userYearQuotasServices.js", () => ({
   upsertUserYearQuota: vi.fn(),
 }));
 
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { account, user } from "../../../db/schema/auth-schema.js";
-import { nextWorkingDay, seedUser } from "../devSeedServices.js";
+import { CalendarRecordType, vacation } from "../../../db/schema/vacation-schema.js";
+import { vacationEvents, vacationEventType } from "../../../db/schema/vacation-event-schema.js";
+import { addVacation, nextWorkingDay, seedUser } from "../devSeedServices.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -105,5 +128,84 @@ describe("nextWorkingDay", () => {
 
   it("takes the following weekday mid-week", () => {
     expect(nextWorkingDay("2026-10-06")).toBe("2026-10-07");
+  });
+});
+
+describe("addVacation", () => {
+  const USER_ID = "Xk3vR9qLmT2wYb7nPc4dHs8fJa6gUe1z";
+  const booking = {
+    userId: USER_ID,
+    groupId: "group-1",
+    requestedDay: "2026-10-01",
+    actorUserId: "Qm7tB2xLp9vRw4sNk6yHc3dFj8gZa5eU",
+  };
+
+  const renderedLookup = () => {
+    const query = new PgDialect().sqlToQuery(mockSelectWhere.mock.calls[0]![0] as SQL);
+    return { sql: query.sql, params: query.params };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReturning.mockResolvedValue([{ id: "inserted" }]);
+  });
+
+  it("inserts nothing when the same rejected booking was already seeded", async () => {
+    mockExisting.mockResolvedValue([{ id: "existing-rejected" }]);
+
+    const id = await addVacation({ ...booking, state: "rejected" });
+
+    expect(id).toBeUndefined();
+    expect(mockInserted).not.toHaveBeenCalled();
+  });
+
+  it("matches a live rejected row for the same user, day and record type", async () => {
+    mockExisting.mockResolvedValue([{ id: "existing-rejected" }]);
+
+    await addVacation({ ...booking, state: "rejected", type: CalendarRecordType.HomeOffice });
+
+    const lookup = renderedLookup();
+    expect(lookup.sql).toContain('"vacation"."user_id" = $');
+    expect(lookup.sql).toContain('"vacation"."requested_day" = $');
+    expect(lookup.sql).toContain('"vacation"."vacation_type" = $');
+    expect(lookup.sql).toContain('"vacation"."rejected_at" is not null');
+    expect(lookup.sql).toContain('"vacation"."deleted_at" is null');
+    expect(lookup.params).toEqual(
+      expect.arrayContaining([USER_ID, "2026-10-01", CalendarRecordType.HomeOffice])
+    );
+  });
+
+  it("seeds a rejected booking and its timeline when none exists yet", async () => {
+    mockExisting.mockResolvedValue([]);
+
+    const id = await addVacation({ ...booking, state: "rejected" });
+
+    expect(id).toEqual(expect.any(String));
+    expect(insertedInto(vacation)).toEqual([
+      expect.objectContaining({ id, userId: USER_ID, rejectedAt: expect.any(Date) }),
+    ]);
+    expect(insertedInto(vacationEvents)).toEqual([
+      [
+        expect.objectContaining({ vacationId: id, eventType: vacationEventType.Created }),
+        expect.objectContaining({ vacationId: id, eventType: vacationEventType.Rejected }),
+      ],
+    ]);
+  });
+
+  it("leaves pending and approved bookings to the unique index", async () => {
+    await addVacation({ ...booking, state: "pending" });
+    await addVacation({ ...booking, state: "approved" });
+
+    expect(mockExisting).not.toHaveBeenCalled();
+    expect(insertedInto(vacation)).toHaveLength(2);
+  });
+
+  it("reports nothing created when the index turns the insert into a no-op", async () => {
+    mockReturning.mockResolvedValue([]);
+
+    const id = await addVacation({ ...booking, state: "approved" });
+
+    expect(id).toBeUndefined();
+    expect(insertedInto(vacationEvents)).toEqual([]);
   });
 });
