@@ -10,6 +10,7 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { encodeSyncCursor } from "../../services/sync/syncCursor.js";
 import { authCookieFor } from "./helpers/authHelper.js";
+import { expectFirstOnlyOnPageOne } from "./helpers/syncPullHelpers.js";
 import {
   addLeave,
   addMember,
@@ -34,6 +35,7 @@ type SyncBody = {
   cursor: string;
   hasMore: boolean;
   reset: boolean;
+  first: boolean;
   organizations: IdRow[];
   users: IdRow[];
   groups: GroupRow[];
@@ -411,6 +413,7 @@ describe("Sync pull reset triggers E2E", () => {
 
       expect(pages.length).toBeGreaterThan(1);
       expect(pages.every((page) => page.reset)).toBe(true);
+      expectFirstOnlyOnPageOne(pages);
       expect(pages.at(-1)!.hasMore).toBe(false);
       for (const page of pages.slice(0, -1)) {
         const rows =

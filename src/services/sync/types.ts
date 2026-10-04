@@ -202,6 +202,7 @@ export type SyncEnvelope = {
   cursor: string;
   hasMore: boolean;
   reset: boolean;
+  first: boolean;
   organizations: SyncOrganizationRow[];
   users: SyncUserRow[];
   groups: SyncGroupRow[];

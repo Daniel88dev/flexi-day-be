@@ -13,6 +13,7 @@ to the limiters, are in [`invariants.md`](invariants.md#sync-pull-transport-srcr
   "cursor": "opaque",
   "hasMore": false,
   "reset": false,
+  "first": true,
   "organizations": [],
   "users": [],
   "groups": [],
@@ -132,17 +133,20 @@ the next pull rather than between the two.
 - **Version.** A cursor minted by another version is unusable, so bumping the version makes every
   client take one snapshot. That is the lever for a field added to rows a client already holds,
   which a delta would only deliver as each row next changed. Version 2 added
-  `sickDayBenefitEnabled` to organization rows. A delta loop whose cursor turns unusable mid-loop,
-  the bump included, gets a snapshot on a later page, and the phone restarts it as a fresh snapshot
-  from page one so the sweep runs (flexi-day-rn T-159). A snapshot loop in the same position gets a
-  fresh page one it cannot tell from its own next page, so it upserts every row but skips that
-  snapshot's sweep.
+  `sickDayBenefitEnabled` to organization rows. A cursor that turns unusable mid-loop, the bump
+  included, is answered with page one of a fresh snapshot, which says `first: true`. The phone
+  restarts its loop whenever a page after its first answers `first: true`, so the fresh snapshot
+  runs from page one and its sweep runs.
 - **Pages.** Fixed at 1000 rows across all tables, and there is no `limit` parameter. `hasMore` is
   true until the last page; the client loops, applying each page as it lands, and stores only the
-  cursor from the page that answered `hasMore: false`. The position does not move inside a loop, so
-  no row arrives twice and none is skipped; a row that changes between two pages leaves the window
-  and the next delta carries it. Tables arrive in dependency order across the loop, so a page
-  resuming inside one table carries the tables before it as empty arrays.
+  cursor from the page that answered `hasMore: false`. `first` is true on the page that starts a
+  loop and false on every page that continues one from the paging state in its cursor. A page
+  starts a loop when the request sent no cursor, a bare cursor, or any cursor the server could not
+  decode or resume from. The server sets it from its own resume state, and the client never reads
+  it off the cursor. The position does not move inside a loop, so no row arrives twice and none is
+  skipped; a row that changes between two pages leaves the window and the next delta carries it.
+  Tables arrive in dependency order across the loop, so a page resuming inside one table carries
+  the tables before it as empty arrays.
 
 An unusable cursor is never an error. It answers a sync reset, exactly as no cursor at all does, and
 so does the `cursor` parameter sent more than once.

@@ -817,14 +817,16 @@ const rowsOf = <Row>(page: SyncPage, table: SyncTableName): Row[] =>
   (page.rows.get(table) ?? []) as Row[];
 
 /**
- * The one place `cursor` and `hasMore` are set. A page that stopped mid-pull
- * hands back a cursor carrying where it stopped and whether the loop is a
- * snapshot; the last page of a loop hands back the bare cursor time, which is
- * the position the next pull starts from.
+ * The one place `cursor`, `hasMore` and `first` are set. A page that stopped
+ * mid-pull hands back a cursor carrying where it stopped and whether the loop
+ * is a snapshot; the last page of a loop hands back the bare cursor time, which
+ * is the position the next pull starts from. A page read without a resume
+ * position starts a loop, whatever cursor the request sent.
  */
 const buildEnvelope = (payload: {
   cursorTime: Date;
   loop: SyncLoop;
+  resume: SyncPagePosition | null;
   page: SyncPage;
 }): SyncEnvelope => ({
   cursor: encodeSyncCursor(
@@ -833,6 +835,7 @@ const buildEnvelope = (payload: {
   ),
   hasMore: payload.page.hasMore,
   reset: payload.loop.reset,
+  first: payload.resume === null,
   organizations: rowsOf<SyncOrganizationRow>(payload.page, "organizations"),
   users: rowsOf<SyncUserRow>(payload.page, "users"),
   groups: rowsOf<SyncGroupRow>(payload.page, "groups"),
@@ -877,6 +880,7 @@ const buildSyncSnapshot = async (
   return buildEnvelope({
     cursorTime,
     loop: { reset: true, previousCursorTime: null },
+    resume,
     page,
   });
 };
@@ -923,6 +927,7 @@ const buildSyncDelta = async (
   return buildEnvelope({
     cursorTime,
     loop: { reset: false, previousCursorTime },
+    resume,
     page,
   });
 };

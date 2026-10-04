@@ -16,6 +16,7 @@ import { upsertSubscription } from "../../services/billing/subscriptionServices.
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { decodeSyncCursor, encodeSyncCursor } from "../../services/sync/syncCursor.js";
 import { authCookieFor } from "./helpers/authHelper.js";
+import { expectFirstOnlyOnPageOne } from "./helpers/syncPullHelpers.js";
 import {
   addLeave,
   addMember,
@@ -35,6 +36,7 @@ const ENVELOPE_KEYS = [
   "cursor",
   "hasMore",
   "reset",
+  "first",
   "organizations",
   "users",
   "groups",
@@ -175,6 +177,7 @@ describe("Sync pull E2E", () => {
       expect(res.headers["cache-control"]).toBe("no-store");
       expect(Object.keys(res.body)).toEqual(ENVELOPE_KEYS);
       expect(res.body.reset).toBe(true);
+      expect(res.body.first).toBe(true);
       expect(res.body.hasMore).toBe(false);
       expect(typeof res.body.cursor).toBe("string");
       expect(res.body.cursor.length).toBeGreaterThan(0);
@@ -355,6 +358,7 @@ describe("Sync pull E2E", () => {
 
       expect(res.headers["cache-control"]).toBe("no-store");
       expect(res.body.reset).toBe(false);
+      expect(res.body.first).toBe(true);
       expect(res.body.hasMore).toBe(false);
       const vacationIds = (res.body.vacations as VacationRow[]).map((row) => row.id);
       expect(vacationIds).toEqual([changed]);
@@ -667,6 +671,7 @@ describe("Sync pull E2E", () => {
         .expect(200);
 
       expect(res.body.reset).toBe(true);
+      expect(res.body.first).toBe(true);
       expect((res.body.groups as GroupRow[]).map((row) => row.id)).toEqual([groupId]);
       expect((res.body.groupUsers as GroupUserRow[]).map((row) => row.userId)).toEqual([
         manager.id,
@@ -710,6 +715,7 @@ describe("Sync pull E2E", () => {
       cursor: string;
       hasMore: boolean;
       reset: boolean;
+      first: boolean;
       organizations: { id: string }[];
       users: UserRow[];
       groups: GroupRow[];
@@ -777,12 +783,14 @@ describe("Sync pull E2E", () => {
       expect(pages[0]!.organizations).toHaveLength(1);
     });
 
-    it("keeps reset true on every page of a paged snapshot", async () => {
+    it("keeps reset true on every page of a paged snapshot and first on its first page alone", async () => {
       const { cookie } = await seedOverflowingGroup();
 
       const pages = await pullLoop(cookie);
 
+      expect(pages.length).toBeGreaterThan(1);
       expect(pages.every((page) => page.reset)).toBe(true);
+      expectFirstOnlyOnPageOne(pages);
       expect(pages.at(-1)!.organizations).toEqual([]);
       expect(pages.at(-1)!.groups).toEqual([]);
     });
@@ -810,7 +818,7 @@ describe("Sync pull E2E", () => {
       expect(last?.cursorTime.toISOString()).toBe(first?.cursorTime.toISOString());
     });
 
-    it("pages a delta too, keeping reset false and delivering every changed row once", async () => {
+    it("pages a delta too, keeping reset false, first on page one alone and every changed row once", async () => {
       const { bulkMembershipIds, managerId, cookie } = await seedOverflowingGroup();
       await db
         .update(groupUsers)
@@ -830,6 +838,7 @@ describe("Sync pull E2E", () => {
       expect(pages.length).toBeGreaterThan(1);
       expect(pages.at(-1)!.hasMore).toBe(false);
       expect(pages.every((page) => page.reset === false)).toBe(true);
+      expectFirstOnlyOnPageOne(pages);
       const delivered = pages.flatMap((page) => page.groupUsers.map((row) => row.id));
       expect(new Set(delivered).size).toBe(delivered.length);
       expect(delivered.sort()).toEqual([...bulkMembershipIds].sort());
@@ -869,6 +878,57 @@ describe("Sync pull E2E", () => {
       expect(delivered).not.toContain(changedLater);
       expect(delta.reset).toBe(false);
       expect(delta.groupUsers.map((row) => row.id)).toEqual([changedLater]);
+    });
+
+    /** Edits a cursor's JSON body into one the server cannot use. */
+    const rewriteCursor = (
+      cursor: string,
+      change: (body: Record<string, unknown>) => Record<string, unknown>
+    ): string =>
+      Buffer.from(
+        JSON.stringify(change(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")))),
+        "utf8"
+      ).toString("base64url");
+
+    it("answers a snapshot continuation from another cursor version with a fresh first page", async () => {
+      const { cookie } = await seedOverflowingGroup();
+      const firstPage = await pull(cookie);
+      expect(firstPage.hasMore).toBe(true);
+      expect(decodeSyncCursor(firstPage.cursor)?.page).not.toBeNull();
+
+      const page = await pull(
+        cookie,
+        rewriteCursor(firstPage.cursor, (body) => ({ ...body, v: Number(body.v) + 1 }))
+      );
+
+      expect(page.reset).toBe(true);
+      expect(page.first).toBe(true);
+      expect(page.organizations).toHaveLength(1);
+    });
+
+    it("answers a delta continuation it cannot resume with a fresh first page", async () => {
+      const { managerId, cookie } = await seedOverflowingGroup();
+      await db
+        .update(groupUsers)
+        .set({ updatedAt: ago(5 * MINUTE) })
+        .where(ne(groupUsers.userId, managerId));
+      const firstPage = await pull(cookie, encodeSyncCursor(ago(10 * MINUTE)));
+      expect(firstPage.hasMore).toBe(true);
+      expect(firstPage.first).toBe(true);
+      expect(firstPage.reset).toBe(false);
+
+      const page = await pull(
+        cookie,
+        rewriteCursor(firstPage.cursor, (body) => {
+          const paging = { ...(body.p as Record<string, unknown>) };
+          delete paging.s;
+          return { ...body, p: paging };
+        })
+      );
+
+      expect(page.reset).toBe(true);
+      expect(page.first).toBe(true);
+      expect(page.organizations).toHaveLength(1);
     });
   });
 
