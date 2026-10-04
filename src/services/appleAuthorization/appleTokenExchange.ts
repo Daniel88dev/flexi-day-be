@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { logger } from "../../middleware/logger.js";
 import type { AppleClient } from "../../utils/socialProviders.js";
+import { errorCodeOf } from "./appleErrorCode.js";
 import type { AppleExchange } from "./types.js";
 
 const TOKEN_ENDPOINT = "https://appleid.apple.com/auth/token";
@@ -12,9 +13,6 @@ const tokenResponse = z.object({
   refresh_token: z.string().min(1),
   id_token: z.string().min(1),
 });
-
-const errorCodeOf = (body: unknown) =>
-  typeof body === "object" && body !== null && "error" in body ? String(body.error) : undefined;
 
 /**
  * Trades the phone's one-time authorization code for Apple's tokens, as the

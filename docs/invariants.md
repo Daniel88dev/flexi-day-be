@@ -101,6 +101,15 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   account update, and if an upgrade started writing them as null, deletion would have nothing to
   revoke at Apple. `src/tests/utils/appleRepeatSignIn.test.ts` fails if a repeat sign-in clears
   the stored token.
+- **An Apple link is revoked at Apple when it goes.** Deleting the account and disconnecting Apple
+  in Settings both revoke the link's refresh token at Apple. It is best effort: a revoke that fails
+  or cannot be made is logged, and never refuses either action or changes its answer. The token is
+  read while the row still exists, and the unlink revokes only once it succeeded.
+  [`account-deletion.md`](account-deletion.md#apple-links) has the sequence and the rules.
+  `src/services/appleAuthorization/tests/appleRevocation.test.ts` pins the call,
+  `src/controllers/users/tests/accountDeletion.test.ts` the order around the commit, and
+  `src/tests/utils/appleUnlinkRevocation.test.ts` runs a real better-auth unlink and fails if the
+  `apple-unlink-revocation` plugin leaves `auth.ts`.
 - **A completed password reset settles the account.** `onPasswordReset` marks the address verified
   and, when it was _not_ already verified, deletes every non-`credential` `account` row in the same
   transaction. Both halves are deliberate. Verifying is what makes the new password usable at all

@@ -16,6 +16,7 @@ import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
 import { appleClientFrom, buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
+import { appleUnlinkRevocation } from "./appleUnlinkRevocation.js";
 import { confirmationEmailSuppressed } from "./confirmationEmail.js";
 import { devSignInTicketPlugin } from "./devSignInTicket.js";
 import {
@@ -355,6 +356,7 @@ export const auth = betterAuth({
     }),
     // After `twoFactor`, so it sees the redirect body that plugin returns.
     nativeSessionEvictionPlugin,
+    appleUnlinkRevocation(appleClient),
     // `config.dev` cannot exist in production — config startup throws.
     ...(config.dev ? [devSignInTicketPlugin] : []),
     // Last on purpose (better-auth infers session fields added by earlier

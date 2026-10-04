@@ -18,7 +18,7 @@ with invite, and is not this flow.
 | Account                                          | `confirmation`   | What the delete needs                      | Refusal                |
 | ------------------------------------------------ | ---------------- | ------------------------------------------ | ---------------------- |
 | Has an email-and-password (`credential`) account | `password`       | The current password in the body           | 403 `PASSWORD_INVALID` |
-| Google or Microsoft only, no password            | `recent-sign-in` | A session created within the last 24 hours | 403 `REAUTH_REQUIRED`  |
+| Google, Microsoft or Apple only, no password     | `recent-sign-in` | A session created within the last 24 hours | 403 `REAUTH_REQUIRED`  |
 
 The password is checked with better-auth's own hasher against the stored credential hash. A
 password user always needs the password, however new the session. 24 hours is better-auth's default
@@ -72,6 +72,8 @@ Goes:
   collected inside the transaction and removed after the commit through `deleteStoredBytes`, with
   the incoming and processed keys of an upload that never settled. A store failure is logged and the
   request still answers 204, because the account is already gone.
+- Every Apple account link, revoked at Apple as well, so the user's Apple settings stop listing the
+  app. See "Apple links" below.
 
 Stays:
 
@@ -89,3 +91,40 @@ The response expires the session cookies, and every session row is gone with the
 web cookie and the old Native session both answer 401. Logs name the deleted account by id, never
 by email. There is no grace period, no undo and no email afterwards. RDS backups keep the data for
 their 7-day retention.
+
+## Apple links
+
+Apple asks an app that offers Sign in with Apple to revoke the user's tokens when the account goes.
+The `account` rows cascade with the user, so the revocation reads them first and calls Apple last:
+
+1. Before the transaction, `collectAppleRevocations` reads each Apple link's refresh token,
+   decrypted, and the client it was issued to: the `aud` of the stored id token, decoded but not
+   verified, or the Services ID when no id token is stored. A web link names the Services ID, a
+   phone link the bundle id.
+2. The transaction deletes the account as above.
+3. After the commit, next to the attachment clean-up, `revokeAtApple` posts each token to
+   `https://appleid.apple.com/auth/revoke` once, with `client_id` that client, a secret minted for
+   it and `token_type_hint=refresh_token`.
+
+Disconnecting Apple in Settings runs the same `revokeAtApple` once the unlink succeeds; see
+[`social-sign-in.md`](social-sign-in.md#revocation-at-apple). The rules below hold for both. The
+revocation is best effort, and never refuses a deletion or an unlink or changes its answer:
+
+- A refused deletion revokes nothing. A wrong password or a stale session is refused before
+  anything is collected, and a blocker throws out of the transaction before the revoke step. A
+  refused unlink revokes nothing either.
+- A link without a refresh token is logged as `apple.revoke.no_token` and skipped. That is a phone
+  sign-in whose authorization follow-up never landed, and the user never signed in on the phone
+  again to bring a new code. A stored token that does not decrypt is logged as
+  `apple.revoke.unreadable_token` and skipped the same way.
+- A revoke Apple refuses or that does not reach Apple is logged as `apple.revoke.rejected` or
+  `apple.revoke.unreachable`, and the request still answers as it would have. So is a failure to
+  read the links at all (`apple.revoke.collect_failed`), which revokes nothing. A revoke Apple
+  accepts is logged as `apple.revoke.revoked`. Every line carries the user id and the link's row
+  id, never the token.
+- Each revoke is awaited inline with a ten-second timeout, so a slow Apple can delay a deletion or
+  unlink answer by up to that per link.
+- When Apple is not configured on the server, stored Apple tokens are not revoked and nothing is
+  logged: there is no key to sign the request with.
+
+Google and Microsoft links are not revoked.

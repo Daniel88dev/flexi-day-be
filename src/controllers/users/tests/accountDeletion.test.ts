@@ -9,6 +9,9 @@ const {
   mockDeleteAccount,
   mockRemoveObjects,
   mockVerify,
+  mockCollectApple,
+  mockRevokeApple,
+  APPLE_CLIENT,
 } = vi.hoisted(() => ({
   mockGetBlockers: vi.fn(),
   mockGetConfirmation: vi.fn(),
@@ -17,6 +20,9 @@ const {
   mockDeleteAccount: vi.fn(),
   mockRemoveObjects: vi.fn(),
   mockVerify: vi.fn(),
+  mockCollectApple: vi.fn(),
+  mockRevokeApple: vi.fn(),
+  APPLE_CLIENT: { stand: "in for the Apple client" },
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
@@ -30,6 +36,14 @@ vi.mock("../../../services/accountDeletion/accountDeletionServices.js", () => ({
   removeAttachmentObjects: mockRemoveObjects,
 }));
 
+vi.mock("../../../services/appleAuthorization/appleAuthorizationServices.js", () => ({
+  collectAppleRevocations: mockCollectApple,
+}));
+
+vi.mock("../../../services/appleAuthorization/appleRevocation.js", () => ({
+  revokeAtApple: mockRevokeApple,
+}));
+
 const TX = { stand: "in" };
 vi.mock("../../../db/db.js", () => ({
   db: { transaction: (cb: (tx: unknown) => unknown) => cb(TX) },
@@ -41,6 +55,7 @@ vi.mock("../../../utils/auth.js", () => {
     attributes: { secure: false, sameSite: "lax", path: "/", httpOnly: true },
   });
   return {
+    appleClient: APPLE_CLIENT,
     auth: {
       $context: Promise.resolve({
         password: { verify: mockVerify },
@@ -61,6 +76,12 @@ import AppError from "../../../utils/appError.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
 
 const HOUR_MS = 60 * 60 * 1000;
+
+const APPLE_REVOCATIONS = [
+  { linkId: "account-row-1", audience: "com.flexiday.app", refreshToken: "apple-refresh-token" },
+];
+
+const firstCall = (mock: ReturnType<typeof vi.fn>) => mock.mock.invocationCallOrder[0] ?? -1;
 
 const deleteRequest = (body: Record<string, unknown> = {}) => {
   const { req, res } = makeReqRes({ body });
@@ -85,6 +106,7 @@ describe("account deletion handlers", () => {
     vi.clearAllMocks();
     vi.mocked(getAuth).mockReturnValue(mockAuthData);
     mockDeleteAccount.mockResolvedValue({ groups: 0, organizations: 0, attachments: [] });
+    mockCollectApple.mockResolvedValue(APPLE_REVOCATIONS);
   });
 
   it("reports the blockers and the confirmation the caller needs", async () => {
@@ -165,7 +187,35 @@ describe("account deletion handlers", () => {
 
       await expect(handlePostDeleteMe(req, res)).rejects.toBe(blocked);
       expect(mockRemoveObjects).not.toHaveBeenCalled();
+      expect(mockRevokeApple).not.toHaveBeenCalled();
       expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it("collects the Apple links before the transaction and revokes them after the commit", async () => {
+      mockVerify.mockResolvedValue(true);
+      const { req, res } = deleteRequest({ password: "right" });
+
+      await handlePostDeleteMe(req, res);
+
+      expect(mockCollectApple).toHaveBeenCalledWith(mockAuthData.userId);
+      expect(mockRevokeApple).toHaveBeenCalledTimes(1);
+      expect(mockRevokeApple).toHaveBeenCalledWith(
+        APPLE_CLIENT,
+        mockAuthData.userId,
+        APPLE_REVOCATIONS
+      );
+      expect(firstCall(mockCollectApple)).toBeLessThan(firstCall(mockDeleteAccount));
+      expect(firstCall(mockDeleteAccount)).toBeLessThan(firstCall(mockRevokeApple));
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it("revokes nothing at Apple when the password is refused", async () => {
+      mockVerify.mockResolvedValue(false);
+      const { req, res } = deleteRequest({ password: "wrong" });
+
+      await expect(handlePostDeleteMe(req, res)).rejects.toBeInstanceOf(AppError);
+      expect(mockCollectApple).not.toHaveBeenCalled();
+      expect(mockRevokeApple).not.toHaveBeenCalled();
     });
   });
 
@@ -193,6 +243,7 @@ describe("account deletion handlers", () => {
       });
       expect(mockVerify).not.toHaveBeenCalled();
       expect(mockDeleteAccount).not.toHaveBeenCalled();
+      expect(mockRevokeApple).not.toHaveBeenCalled();
     });
   });
 });
