@@ -1,7 +1,9 @@
 import { betterAuth } from "better-auth";
-import { describe, expect, it } from "vitest";
+import { verifyProviderIdToken } from "better-auth/oauth2";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildSocialProviders } from "../../utils/socialProviders.js";
 import { appleCredentials, decodeJwtPart } from "../appleFixtures.js";
+import { newSigningKey, signIdToken, stubKeySet } from "../idTokenFixtures.js";
 
 const microsoft = { microsoftClientId: "id", microsoftClientSecret: "secret" };
 const google = { googleClientId: "id", googleClientSecret: "secret" };
@@ -145,4 +147,78 @@ describe("provider-supplied email is never trusted", () => {
     const result = buildSocialProviders(microsoft)?.microsoft?.mapProfileToUser?.({});
     expect(result).toHaveProperty("emailVerified");
   });
+});
+
+// Runs through better-auth's own entry point, so it fails if an upgrade stops
+// honouring verifyIdToken.
+describe("phone id tokens", () => {
+  const tid = "11111111-1111-1111-1111-111111111111";
+  const cases = [
+    {
+      provider: "google",
+      keysUrl: "https://www.googleapis.com/oauth2/v3/certs",
+      claims: { iss: "https://accounts.google.com", aud: "id" },
+      publishesAlg: true,
+    },
+    {
+      provider: "microsoft",
+      keysUrl: "https://login.microsoftonline.com/common/discovery/v2.0/keys",
+      claims: { iss: `https://login.microsoftonline.com/${tid}/v2.0`, aud: "id", tid },
+      // Microsoft publishes its keys without an alg.
+      publishesAlg: false,
+    },
+    {
+      provider: "apple",
+      keysUrl: "https://appleid.apple.com/auth/keys",
+      claims: { iss: "https://appleid.apple.com", aud: "com.flexiday.app" },
+      publishesAlg: true,
+    },
+  ] as const;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function builtProvider(id: string) {
+    const instance = betterAuth({
+      secret: "a-test-secret-that-is-long-enough-for-better-auth",
+      baseURL: "http://localhost:8080",
+      socialProviders: buildSocialProviders({ ...google, ...microsoft, ...apple }),
+    });
+    const provider = (await instance.$context).socialProviders.find((p) => p.id === id);
+    if (!provider) throw new Error(`${id} is not registered`);
+    return provider;
+  }
+
+  it.each(cases)("$provider supplies its own verifyIdToken", ({ provider }) => {
+    const providers = buildSocialProviders({ ...google, ...microsoft, ...apple });
+    expect(providers?.[provider]?.verifyIdToken).toBeTypeOf("function");
+  });
+
+  it.each(cases)(
+    "$provider verifies through a key set fetched once",
+    async ({ provider, keysUrl, claims, publishesAlg }) => {
+      const key = await newSigningKey("kid-1");
+      const { alg, ...withoutAlg } = key.jwk;
+      const fetchMock = stubKeySet(keysUrl, [publishesAlg ? { ...withoutAlg, alg } : withoutAlg]);
+      const built = await builtProvider(provider);
+
+      expect(await verifyProviderIdToken(built, await signIdToken(key, claims))).toBe(true);
+      expect(await verifyProviderIdToken(built, await signIdToken(key, claims))).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(keysUrl, expect.anything());
+    }
+  );
+
+  it.each(cases)(
+    "$provider rejects a token for another audience",
+    async ({ provider, keysUrl, claims }) => {
+      const key = await newSigningKey("kid-1");
+      stubKeySet(keysUrl, [key.jwk]);
+      const built = await builtProvider(provider);
+      const token = await signIdToken(key, { ...claims, aud: "someone-else" });
+
+      expect(await verifyProviderIdToken(built, token)).toBe(false);
+    }
+  );
 });

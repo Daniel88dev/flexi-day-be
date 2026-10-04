@@ -1,4 +1,9 @@
 import { createAppleSecretMinter } from "./appleClientSecret.js";
+import {
+  appleIdTokenVerifier,
+  googleIdTokenVerifier,
+  microsoftIdTokenVerifier,
+} from "./idTokenVerifier.js";
 
 type SocialCredentials = {
   googleClientId?: string;
@@ -54,9 +59,10 @@ function buildApple(auth?: SocialCredentials) {
       get clientSecret() {
         return minter.secretFor(clientId);
       },
-      // Becomes the only audience the phone's id tokens are checked against.
-      // The web callback never runs that check.
+      // better-auth's own audience check no longer runs once verifyIdToken is
+      // set; this stays so the config names the audience the verifier is given.
       appBundleIdentifier,
+      verifyIdToken: appleIdTokenVerifier(appBundleIdentifier),
       mapProfileToUser: NEVER_TRUST_PROVIDER_EMAIL,
     },
   };
@@ -70,12 +76,18 @@ function buildApple(auth?: SocialCredentials) {
  * expects for "no social sign-in".
  */
 export function buildSocialProviders(auth?: SocialCredentials) {
+  // "common" also admits personal Microsoft accounts; set MICROSOFT_TENANT_ID
+  // to a directory GUID to pin sign-in to one org.
+  const microsoftTenant = auth?.microsoftTenantId || "common";
   const providers = {
     ...(auth?.googleClientId && auth.googleClientSecret
       ? {
           google: {
             clientId: auth.googleClientId,
             clientSecret: auth.googleClientSecret,
+            // Does not enforce better-auth's `hd` option; configuring `hd` needs
+            // the verifier extended.
+            verifyIdToken: googleIdTokenVerifier(auth.googleClientId),
             mapProfileToUser: NEVER_TRUST_PROVIDER_EMAIL,
           },
         }
@@ -85,9 +97,8 @@ export function buildSocialProviders(auth?: SocialCredentials) {
           microsoft: {
             clientId: auth.microsoftClientId,
             clientSecret: auth.microsoftClientSecret,
-            // "common" also admits personal Microsoft accounts; set
-            // MICROSOFT_TENANT_ID to a directory GUID to pin sign-in to one org.
-            tenantId: auth.microsoftTenantId || "common",
+            tenantId: microsoftTenant,
+            verifyIdToken: microsoftIdTokenVerifier(auth.microsoftClientId, microsoftTenant),
             // Stated explicitly rather than left to better-auth, which would
             // otherwise derive it from `email_verified` / `xms_edov` /
             // `verified_primary_email` — all claims a directory administrator

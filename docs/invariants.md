@@ -74,6 +74,16 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   `/sign-in/social`. `src/tests/utils/expoAuthorizationProxy.test.ts` fails if the entry goes, and
   "does not serve the plugin's authorization proxy" in `src/tests/e2e/expoOrigin.e2e.test.ts` checks
   the route answers 404.
+- **Phone id tokens are verified by our own verifier.** `buildSocialProviders` gives Google,
+  Microsoft and Apple a `verifyIdToken` from `src/utils/idTokenVerifier.ts`, backed by a cached
+  `jose` key set per provider. Once a provider has that option, better-auth runs no other check on
+  a token posted to `/sign-in/social` or `/link-social`, so issuer, audience, RS256, the one-hour
+  maximum age and the nonce all live in that file, and loosening one there loosens sign-in. A
+  provider left without the option falls back to better-auth's stock check, which downloads the key
+  set on every sign-in, and Microsoft tokens stop verifying at all, because Microsoft publishes its
+  keys without an `alg` and the stock import refuses them. The "phone id tokens" block in
+  `src/tests/utils/socialProviders.test.ts` runs each provider through better-auth's own
+  `verifyProviderIdToken` and fails if any of this is undone.
 - **A completed password reset settles the account.** `onPasswordReset` marks the address verified
   and, when it was _not_ already verified, deletes every non-`credential` `account` row in the same
   transaction. Both halves are deliberate. Verifying is what makes the new password usable at all
