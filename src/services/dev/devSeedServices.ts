@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { generateId } from "better-auth";
 import { hashPassword } from "better-auth/crypto";
 import { db } from "../../db/db.js";
@@ -209,63 +209,85 @@ export const addVacation = async (input: {
 }): Promise<string | undefined> => {
   const id = generateRandomUUID();
   const now = new Date();
+  const vacationType = input.type ?? CalendarRecordType.Vacation;
 
-  const [row] = await db
-    .insert(vacation)
-    .values({
-      id,
-      userId: input.userId,
-      groupId: input.groupId,
-      requestId: input.requestId ?? generateRandomUUID(),
-      requestedDay: input.requestedDay,
-      vacationType: input.type ?? CalendarRecordType.Vacation,
-      note: input.note,
-      approvedAt: input.state === "approved" ? now : null,
-      approvedBy: input.state === "approved" ? (input.actorUserId ?? null) : null,
-      rejectedAt: input.state === "rejected" ? now : null,
-      rejectedBy: input.state === "rejected" ? (input.actorUserId ?? null) : null,
-      rejectionReason: input.state === "rejected" ? "Team coverage on that day" : null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    // The (user, day) uniqueness makes re-seeding over existing data a no-op
-    // rather than an error.
-    .onConflictDoNothing()
-    .returning();
+  return db.transaction(async (tx) => {
+    // The (user, day) unique index skips rejected rows, so it cannot stop a
+    // re-run from seeding the same rejected booking again.
+    if (input.state === "rejected") {
+      const [existing] = await tx
+        .select({ id: vacation.id })
+        .from(vacation)
+        .where(
+          and(
+            eq(vacation.userId, input.userId),
+            eq(vacation.requestedDay, input.requestedDay),
+            eq(vacation.vacationType, vacationType),
+            isNotNull(vacation.rejectedAt),
+            isNull(vacation.deletedAt)
+          )
+        )
+        .limit(1);
+      if (existing) return undefined;
+    }
 
-  if (!row) return undefined;
+    const [row] = await tx
+      .insert(vacation)
+      .values({
+        id,
+        userId: input.userId,
+        groupId: input.groupId,
+        requestId: input.requestId ?? generateRandomUUID(),
+        requestedDay: input.requestedDay,
+        vacationType,
+        note: input.note,
+        approvedAt: input.state === "approved" ? now : null,
+        approvedBy: input.state === "approved" ? (input.actorUserId ?? null) : null,
+        rejectedAt: input.state === "rejected" ? now : null,
+        rejectedBy: input.state === "rejected" ? (input.actorUserId ?? null) : null,
+        rejectionReason: input.state === "rejected" ? "Team coverage on that day" : null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      // The (user, day) uniqueness makes re-seeding over existing data a no-op
+      // rather than an error.
+      .onConflictDoNothing()
+      .returning();
 
-  const events: (typeof vacationEvents.$inferInsert)[] = [
-    {
-      id: generateRandomUUID(),
-      vacationId: id,
-      eventType: vacationEventType.Created,
-      actorUserId: input.userId,
-      createdAt: now,
-    },
-  ];
-  if (input.state === "approved") {
-    events.push({
-      id: generateRandomUUID(),
-      vacationId: id,
-      eventType: vacationEventType.Approved,
-      actorUserId: input.actorUserId ?? input.userId,
-      createdAt: now,
-    });
-  }
-  if (input.state === "rejected") {
-    events.push({
-      id: generateRandomUUID(),
-      vacationId: id,
-      eventType: vacationEventType.Rejected,
-      actorUserId: input.actorUserId ?? input.userId,
-      reason: "Team coverage on that day",
-      createdAt: now,
-    });
-  }
-  await db.insert(vacationEvents).values(events);
+    if (!row) return undefined;
 
-  return id;
+    const events: (typeof vacationEvents.$inferInsert)[] = [
+      {
+        id: generateRandomUUID(),
+        vacationId: id,
+        eventType: vacationEventType.Created,
+        actorUserId: input.userId,
+        createdAt: now,
+      },
+    ];
+    if (input.state === "approved") {
+      events.push({
+        id: generateRandomUUID(),
+        vacationId: id,
+        eventType: vacationEventType.Approved,
+        actorUserId: input.actorUserId ?? input.userId,
+        createdAt: now,
+      });
+    }
+    if (input.state === "rejected") {
+      events.push({
+        id: generateRandomUUID(),
+        vacationId: id,
+        eventType: vacationEventType.Rejected,
+        actorUserId: input.actorUserId ?? input.userId,
+        reason: "Team coverage on that day",
+        createdAt: now,
+      });
+    }
+    await tx.insert(vacationEvents).values(events);
+
+    return id;
+  });
 };
 
 /** ISO date `offset` days from today (UTC), skipped forward off weekends. */
