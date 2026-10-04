@@ -324,7 +324,10 @@ export const usersRouter = (): Router => {
    *       approver slots of other people's groups, and quota changes they
    *       made stay with a deleted-actor marker. Stored attachment objects
    *       are removed after the commit; a failure there is logged and does not
-   *       fail the request. Every session ends, web and Native, so the old
+   *       fail the request. Each Apple account link is then revoked at Apple
+   *       with the refresh token read before the transaction; a link without
+   *       one, or a revoke Apple refuses, is logged and does not fail the
+   *       request either. Every session ends, web and Native, so the old
    *       cookie answers 401 afterwards. A wrong password counts toward the
    *       API's failure rate limit. The full policy is in
    *       `docs/account-deletion.md`.

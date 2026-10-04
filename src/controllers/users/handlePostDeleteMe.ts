@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { getAuth, type AuthSession } from "../../middleware/authSession.js";
 import { logger } from "../../middleware/logger.js";
 import AppError from "../../utils/appError.js";
-import { auth as betterAuth } from "../../utils/auth.js";
+import { appleClient, auth as betterAuth } from "../../utils/auth.js";
 import { db } from "../../db/db.js";
 import {
   deleteAccountRows,
@@ -10,6 +10,8 @@ import {
   getSessionCreatedAt,
   removeAttachmentObjects,
 } from "../../services/accountDeletion/accountDeletionServices.js";
+import { collectAppleRevocations } from "../../services/appleAuthorization/appleAuthorizationServices.js";
+import { revokeAtApple } from "../../services/appleAuthorization/appleRevocation.js";
 import {
   DeletionRefusal,
   FRESH_SIGN_IN_MS,
@@ -74,13 +76,16 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
 
   await assertConfirmed(session, password);
 
+  const appleRevocations = await collectAppleRevocations(session.userId);
   const deleted = await db.transaction((tx) => deleteAccountRows(session.userId, tx));
   await removeAttachmentObjects(session.userId, deleted.attachments);
+  await revokeAtApple(appleClient, session.userId, appleRevocations);
   logger.info("account deleted", {
     userId: session.userId,
     groups: deleted.groups,
     organizations: deleted.organizations,
     attachments: deleted.attachments.length,
+    appleLinks: appleRevocations.length,
   });
 
   await clearSessionCookies(res);

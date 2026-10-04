@@ -1,20 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { appleCredentials } from "../../../tests/appleFixtures.js";
-import { decryptStoredOAuthToken } from "../../../utils/oauthTokens.js";
+import { logger } from "../../../middleware/logger.js";
+import { appleCredentials, storedIdToken } from "../../../tests/appleFixtures.js";
+import { decryptStoredOAuthToken, encryptOAuthToken } from "../../../utils/oauthTokens.js";
 import { appleClientFrom } from "../../../utils/socialProviders.js";
 import type { AppleExchange, StoredAppleTokens } from "../types.js";
 
-const { mockFindAppleAccounts, mockSaveAppleTokens, mockExchange, appleSettings } = vi.hoisted(
-  () => ({
-    mockFindAppleAccounts: vi.fn(),
-    mockSaveAppleTokens: vi.fn(),
-    mockExchange: vi.fn(),
-    appleSettings: { current: undefined as unknown },
-  })
-);
+const {
+  mockFindAppleAccounts,
+  mockFindAppleLinksToRevoke,
+  mockSaveAppleTokens,
+  mockExchange,
+  appleSettings,
+} = vi.hoisted(() => ({
+  mockFindAppleAccounts: vi.fn(),
+  mockFindAppleLinksToRevoke: vi.fn(),
+  mockSaveAppleTokens: vi.fn(),
+  mockExchange: vi.fn(),
+  appleSettings: { current: undefined as unknown },
+}));
 
 vi.mock("../appleAccounts.js", () => ({
   findAppleAccounts: mockFindAppleAccounts,
+  findAppleLinksToRevoke: mockFindAppleLinksToRevoke,
   saveAppleTokens: mockSaveAppleTokens,
 }));
 
@@ -30,7 +37,7 @@ vi.mock("../../../utils/auth.js", async (importOriginal) => {
   };
 });
 
-import { storeAppleAuthorization } from "../appleAuthorizationServices.js";
+import { collectAppleRevocations, storeAppleAuthorization } from "../appleAuthorizationServices.js";
 
 const SUBJECT = "001234.abcdef0123456789.1234";
 const appleLink = { id: "account-row-1", accountId: SUBJECT };
@@ -116,5 +123,50 @@ describe("storeAppleAuthorization", () => {
     await storeAppleAuthorization("user-1", "c0de");
 
     expect(mockSaveAppleTokens).toHaveBeenCalledWith("account-row-1", expect.anything());
+  });
+});
+
+describe("collectAppleRevocations", () => {
+  it("reads each Apple link's refresh token through better-auth's helper, and its audience", async () => {
+    mockFindAppleLinksToRevoke.mockResolvedValue([
+      {
+        id: "account-row-phone",
+        userId: "user-1",
+        refreshToken: await encryptOAuthToken("phone-refresh-token"),
+        idToken: storedIdToken({ aud: "com.flexiday.app", sub: SUBJECT }),
+      },
+      { id: "account-row-web", userId: "user-1", refreshToken: "web-plaintext", idToken: null },
+      { id: "account-row-bare", userId: "user-1", refreshToken: null, idToken: null },
+    ]);
+
+    expect(await collectAppleRevocations("user-1")).toEqual([
+      {
+        linkId: "account-row-phone",
+        audience: "com.flexiday.app",
+        refreshToken: "phone-refresh-token",
+      },
+      { linkId: "account-row-web", audience: "com.flexiday.web", refreshToken: "web-plaintext" },
+      { linkId: "account-row-bare", audience: "com.flexiday.web", refreshToken: null },
+    ]);
+    expect(mockFindAppleLinksToRevoke).toHaveBeenCalledWith("user-1");
+  });
+
+  it("collects nothing when Apple is not configured on this server", async () => {
+    appleSettings.current = undefined;
+
+    expect(await collectAppleRevocations("user-1")).toEqual([]);
+    expect(mockFindAppleLinksToRevoke).not.toHaveBeenCalled();
+  });
+
+  it("collects nothing, logged, rather than throw when the links cannot be read", async () => {
+    const error = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    mockFindAppleLinksToRevoke.mockRejectedValue(new Error("connection reset"));
+
+    expect(await collectAppleRevocations("user-1")).toEqual([]);
+    expect(error).toHaveBeenCalledWith(
+      "apple.revoke.collect_failed",
+      expect.objectContaining({ userId: "user-1" })
+    );
+    error.mockRestore();
   });
 });

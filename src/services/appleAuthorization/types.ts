@@ -26,5 +26,15 @@ export type StoredAppleTokens = {
 /** Apple's answer to a code, in plaintext, with the subject of its verified id token. */
 export type AppleExchange = StoredAppleTokens & { subject: string };
 
+export type StoredAppleLink = {
+  id: string;
+  userId: string;
+  refreshToken?: string | null;
+  idToken?: string | null;
+};
+
+/** What revoking one Apple link takes, read before the link goes. */
+export type AppleRevocation = { linkId: string; audience: string; refreshToken: string | null };
+
 export type AppleAuthorizationOutcome =
   { stored: true } | { stored: false; refusal: AppleAuthorizationRefusal };
