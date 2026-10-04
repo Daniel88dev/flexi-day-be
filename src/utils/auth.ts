@@ -15,7 +15,7 @@ import { customSession, haveIBeenPwned, openAPI, twoFactor } from "better-auth/p
 import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
-import { buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
+import { appleClientFrom, buildAccountLinking, buildSocialProviders } from "./socialProviders.js";
 import { confirmationEmailSuppressed } from "./confirmationEmail.js";
 import { devSignInTicketPlugin } from "./devSignInTicket.js";
 import {
@@ -38,7 +38,9 @@ const RESET_EXPIRES_IN = "1 hour";
 // sync if `otpOptions.period` is ever configured below.
 const OTP_EXPIRES_IN = "3 minutes";
 
-const socialProviders = buildSocialProviders(config?.auth);
+export const appleClient = appleClientFrom(config?.auth);
+
+const socialProviders = buildSocialProviders(config?.auth, appleClient);
 
 /**
  * One phone, one session. A plugin hook rather than the user-level
@@ -70,12 +72,27 @@ const nativeSessionEvictionPlugin = {
   },
 } satisfies BetterAuthPlugin;
 
+const sessionOptions = {
+  // `input: false` keeps them off the request body: only the create hook
+  // writes them, from headers that were matched against a bounded pattern.
+  additionalFields: {
+    deviceId: { type: "string", required: false, input: false },
+    platform: { type: "string", required: false, input: false },
+    appVersion: { type: "string", required: false, input: false },
+  },
+} as const;
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
   socialProviders,
-  account: { accountLinking: buildAccountLinking(socialProviders) },
+  account: {
+    accountLinking: buildAccountLinking(socialProviders),
+    // Rows from before this hold plaintext; `decryptOAuthToken` passes them
+    // through, so there is no migration.
+    encryptOAuthTokens: true,
+  },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
@@ -205,15 +222,7 @@ export const auth = betterAuth({
     window: 10,
     max: 50,
   },
-  session: {
-    // `input: false` keeps them off the request body: only the hook below
-    // writes them, from headers that were matched against a bounded pattern.
-    additionalFields: {
-      deviceId: { type: "string", required: false, input: false },
-      platform: { type: "string", required: false, input: false },
-      appVersion: { type: "string", required: false, input: false },
-    },
-  },
+  session: sessionOptions,
   databaseHooks: {
     session: {
       create: {
@@ -353,12 +362,15 @@ export const auth = betterAuth({
     // already makes, so the frontend learns whether to render the support UI
     // without any extra request. A UI hint only — the enforcement is
     // `requireSupportAdmin` on /api/support/*.
-    customSession(({ user, session }) =>
-      Promise.resolve({
-        user,
-        session,
-        supportAdmin: config.support?.userIds.includes(user.id) ?? false,
-      })
+    customSession(
+      ({ user, session }) =>
+        Promise.resolve({
+          user,
+          session,
+          supportAdmin: config.support?.userIds.includes(user.id) ?? false,
+        }),
+      // Type-only: lets the session's own fields, `deviceId` among them, through.
+      { session: sessionOptions }
     ),
   ],
 });

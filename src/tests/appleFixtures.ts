@@ -1,4 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
+import { appleClientFrom, buildSocialProviders } from "../utils/socialProviders.js";
 
 /** A throwaway EC P-256 key, the curve Apple's `.p8` keys use. */
 export function newP256Key() {
@@ -25,3 +26,7 @@ export function decodeJwtPart(jwt: string | undefined, part: 0 | 1): Record<stri
   const encoded = jwt?.split(".")[part] ?? "";
   return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as Record<string, unknown>;
 }
+
+/** `buildSocialProviders` the way `auth.ts` calls it, with the Apple client built from the same values. */
+export const socialProvidersFrom = (credentials?: Parameters<typeof appleClientFrom>[0]) =>
+  buildSocialProviders(credentials, appleClientFrom(credentials));

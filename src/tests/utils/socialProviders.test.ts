@@ -1,8 +1,7 @@
 import { betterAuth } from "better-auth";
 import { verifyProviderIdToken } from "better-auth/oauth2";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildSocialProviders } from "../../utils/socialProviders.js";
-import { appleCredentials, decodeJwtPart } from "../appleFixtures.js";
+import { appleCredentials, decodeJwtPart, socialProvidersFrom } from "../appleFixtures.js";
 import { newSigningKey, signIdToken, stubKeySet } from "../idTokenFixtures.js";
 
 const microsoft = { microsoftClientId: "id", microsoftClientSecret: "secret" };
@@ -11,8 +10,8 @@ const apple = appleCredentials();
 
 describe("buildSocialProviders", () => {
   it("returns undefined when nothing is configured", () => {
-    expect(buildSocialProviders(undefined)).toBeUndefined();
-    expect(buildSocialProviders({})).toBeUndefined();
+    expect(socialProvidersFrom(undefined)).toBeUndefined();
+    expect(socialProvidersFrom({})).toBeUndefined();
   });
 
   it.each([
@@ -21,46 +20,46 @@ describe("buildSocialProviders", () => {
     ["microsoft", { microsoftClientId: "id" }],
     ["microsoft", { microsoftClientSecret: "secret" }],
   ])("does not register %s from a half-configured pair", (_provider, credentials) => {
-    expect(buildSocialProviders(credentials)).toBeUndefined();
+    expect(socialProvidersFrom(credentials)).toBeUndefined();
   });
 
   it.each(Object.keys(apple) as (keyof typeof apple)[])(
     "does not register apple without %s",
     (missing) => {
-      expect(buildSocialProviders({ ...apple, [missing]: "" })).toBeUndefined();
-      expect(buildSocialProviders({ ...apple, [missing]: undefined })).toBeUndefined();
+      expect(socialProvidersFrom({ ...apple, [missing]: "" })).toBeUndefined();
+      expect(socialProvidersFrom({ ...apple, [missing]: undefined })).toBeUndefined();
     }
   );
 
   it("registers each provider independently of the others", () => {
-    expect(Object.keys(buildSocialProviders(google) ?? {})).toEqual(["google"]);
-    expect(Object.keys(buildSocialProviders(microsoft) ?? {})).toEqual(["microsoft"]);
-    expect(Object.keys(buildSocialProviders(apple) ?? {})).toEqual(["apple"]);
+    expect(Object.keys(socialProvidersFrom(google) ?? {})).toEqual(["google"]);
+    expect(Object.keys(socialProvidersFrom(microsoft) ?? {})).toEqual(["microsoft"]);
+    expect(Object.keys(socialProvidersFrom(apple) ?? {})).toEqual(["apple"]);
     expect(
-      Object.keys(buildSocialProviders({ ...google, ...microsoft, ...apple }) ?? {}).sort()
+      Object.keys(socialProvidersFrom({ ...google, ...microsoft, ...apple }) ?? {}).sort()
     ).toEqual(["apple", "google", "microsoft"]);
   });
 
   it("defaults the Microsoft tenant to common and honours an override", () => {
-    expect(buildSocialProviders(microsoft)?.microsoft?.tenantId).toBe("common");
-    expect(buildSocialProviders({ ...microsoft, microsoftTenantId: "" })?.microsoft?.tenantId).toBe(
+    expect(socialProvidersFrom(microsoft)?.microsoft?.tenantId).toBe("common");
+    expect(socialProvidersFrom({ ...microsoft, microsoftTenantId: "" })?.microsoft?.tenantId).toBe(
       "common"
     );
     expect(
-      buildSocialProviders({ ...microsoft, microsoftTenantId: "a-guid" })?.microsoft?.tenantId
+      socialProvidersFrom({ ...microsoft, microsoftTenantId: "a-guid" })?.microsoft?.tenantId
     ).toBe("a-guid");
   });
 });
 
 describe("apple", () => {
   it("uses the Services ID for the web flow and the bundle id as the phone's audience", () => {
-    const provider = buildSocialProviders(apple)?.apple;
+    const provider = socialProvidersFrom(apple)?.apple;
     expect(provider?.clientId).toBe("com.flexiday.web");
     expect(provider?.appBundleIdentifier).toBe("com.flexiday.app");
   });
 
   it("serves a client secret minted for the Services ID", () => {
-    const claims = decodeJwtPart(buildSocialProviders(apple)?.apple?.clientSecret, 1);
+    const claims = decodeJwtPart(socialProvidersFrom(apple)?.apple?.clientSecret, 1);
     expect(claims).toMatchObject({
       iss: "TEAM123456",
       sub: "com.flexiday.web",
@@ -69,7 +68,7 @@ describe("apple", () => {
   });
 
   it("exposes the secret through a getter, so every token request reads a current one", () => {
-    const provider = buildSocialProviders(apple)?.apple;
+    const provider = socialProvidersFrom(apple)?.apple;
     const descriptor = Object.getOwnPropertyDescriptor(provider, "clientSecret");
     expect(descriptor?.get).toBeTypeOf("function");
   });
@@ -78,7 +77,7 @@ describe("apple", () => {
     // better-auth closes over the options object it was handed. A release that
     // copied it would freeze the first secret at boot, and Apple would start
     // refusing it an hour later with no error before then.
-    const socialProviders = buildSocialProviders(apple);
+    const socialProviders = socialProvidersFrom(apple);
     const instance = betterAuth({
       secret: "a-test-secret-that-is-long-enough-for-better-auth",
       baseURL: "http://localhost:8080",
@@ -94,7 +93,7 @@ describe("apple", () => {
   });
 
   it("refuses to start on a key it cannot sign with rather than registering a broken provider", () => {
-    expect(() => buildSocialProviders({ ...apple, applePrivateKey: "not-a-key" })).toThrow(
+    expect(() => socialProvidersFrom({ ...apple, applePrivateKey: "not-a-key" })).toThrow(
       /APPLE_PRIVATE_KEY/
     );
   });
@@ -126,17 +125,17 @@ describe("provider-supplied email is never trusted", () => {
   ] as const;
 
   it.each(claims)("microsoft: %s -> unverified", (_label, profile) => {
-    const map = buildSocialProviders(microsoft)?.microsoft?.mapProfileToUser;
+    const map = socialProvidersFrom(microsoft)?.microsoft?.mapProfileToUser;
     expect(map?.(profile)).toEqual({ emailVerified: false });
   });
 
   it.each(claims)("google: %s -> unverified", (_label, profile) => {
-    const map = buildSocialProviders(google)?.google?.mapProfileToUser;
+    const map = socialProvidersFrom(google)?.google?.mapProfileToUser;
     expect(map?.(profile)).toEqual({ emailVerified: false });
   });
 
   it.each(claims)("apple: %s -> unverified", (_label, profile) => {
-    const map = buildSocialProviders(apple)?.apple?.mapProfileToUser;
+    const map = socialProvidersFrom(apple)?.apple?.mapProfileToUser;
     expect(map?.(profile)).toEqual({ emailVerified: false });
   });
 
@@ -144,7 +143,7 @@ describe("provider-supplied email is never trusted", () => {
     // better-auth spreads mapProfileToUser's result OVER its own claim-derived
     // value, so returning {} would hand the decision straight back to the
     // provider claims this whole rule exists to distrust.
-    const result = buildSocialProviders(microsoft)?.microsoft?.mapProfileToUser?.({});
+    const result = socialProvidersFrom(microsoft)?.microsoft?.mapProfileToUser?.({});
     expect(result).toHaveProperty("emailVerified");
   });
 });
@@ -183,7 +182,7 @@ describe("phone id tokens", () => {
     const instance = betterAuth({
       secret: "a-test-secret-that-is-long-enough-for-better-auth",
       baseURL: "http://localhost:8080",
-      socialProviders: buildSocialProviders({ ...google, ...microsoft, ...apple }),
+      socialProviders: socialProvidersFrom({ ...google, ...microsoft, ...apple }),
     });
     const provider = (await instance.$context).socialProviders.find((p) => p.id === id);
     if (!provider) throw new Error(`${id} is not registered`);
@@ -191,7 +190,7 @@ describe("phone id tokens", () => {
   }
 
   it.each(cases)("$provider supplies its own verifyIdToken", ({ provider }) => {
-    const providers = buildSocialProviders({ ...google, ...microsoft, ...apple });
+    const providers = socialProvidersFrom({ ...google, ...microsoft, ...apple });
     expect(providers?.[provider]?.verifyIdToken).toBeTypeOf("function");
   });
 

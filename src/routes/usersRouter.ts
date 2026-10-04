@@ -10,6 +10,8 @@ import { validatePutUserSettings } from "../services/userSettings/types.js";
 import { handleGetMyDeletion } from "../controllers/users/handleGetMyDeletion.js";
 import { handlePostDeleteMe } from "../controllers/users/handlePostDeleteMe.js";
 import { validatePostDeleteMe } from "../services/accountDeletion/types.js";
+import { handlePostAppleAuthorization } from "../controllers/users/handlePostAppleAuthorization.js";
+import { validatePostAppleAuthorization } from "../services/appleAuthorization/types.js";
 
 export const usersRouter = (): Router => {
   const app = Router();
@@ -408,6 +410,111 @@ export const usersRouter = (): Router => {
     "/me/delete",
     bodyValidationMiddleware(validatePostDeleteMe),
     tryCatch(handlePostDeleteMe)
+  );
+
+  /**
+   * @openapi
+   * /api/users/me/apple-authorization:
+   *   post:
+   *     tags:
+   *       - Users
+   *     summary: Store the Apple tokens behind the phone's Sign in with Apple
+   *     description: |
+   *       The phone app calls this right after an Apple sign-in, with the
+   *       one-time `authorizationCode` Apple's sheet returned. A sign-in by id
+   *       token stores no refresh token, and deleting the account has to revoke
+   *       one at Apple, so the backend exchanges the code at Apple's token
+   *       endpoint as the app (client id the bundle id, client secret minted
+   *       for it), verifies the returned id token (issuer Apple, audience the
+   *       bundle id), and stores the refresh token, access token, its expiry
+   *       and the id token on the caller's Apple account link whose subject
+   *       matches. The access and refresh token are encrypted like every token
+   *       better-auth writes.
+   *
+   *       A code is single-use and expires after five minutes, so the call is
+   *       never retried, here or by the phone; a later Apple sign-in brings a
+   *       new code and fills a link that missed one. A sign-in alone never
+   *       clears a stored token. Native session only: a web session has no
+   *       code to give.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [authorizationCode]
+   *             properties:
+   *               authorizationCode:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 2048
+   *                 description: |
+   *                   The `authorizationCode` from `expo-apple-authentication`'s
+   *                   `signInAsync`, sent as received.
+   *     responses:
+   *       '204':
+   *         description: Stored.
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           A web session, and nothing changed. `errors[0].context.reason`
+   *           is `NATIVE_SESSION_REQUIRED`.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AppleAuthorizationError'
+   *       '409':
+   *         description: |
+   *           Nothing changed. `errors[0].context.reason` is
+   *           `APPLE_ACCOUNT_MISSING` when the caller has no Apple account
+   *           link, or `APPLE_SUBJECT_MISMATCH` when the code belongs to an
+   *           Apple ID other than the one linked.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AppleAuthorizationError'
+   *       '422':
+   *         description: The body failed validation (`authorizationCode` missing, empty or over 2048 characters)
+   *       '502':
+   *         description: |
+   *           Apple refused or could not be reached, its answer carried no
+   *           refresh token, or the id token it returned did not verify.
+   *           Nothing changed, and the code is spent. `errors[0].context.reason`
+   *           is `APPLE_EXCHANGE_FAILED`.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AppleAuthorizationError'
+   * components:
+   *   schemas:
+   *     AppleAuthorizationError:
+   *       type: object
+   *       properties:
+   *         errors:
+   *           type: array
+   *           items:
+   *             type: object
+   *             properties:
+   *               message:
+   *                 type: string
+   *               context:
+   *                 type: object
+   *                 properties:
+   *                   reason:
+   *                     type: string
+   *                     enum:
+   *                       - NATIVE_SESSION_REQUIRED
+   *                       - APPLE_ACCOUNT_MISSING
+   *                       - APPLE_SUBJECT_MISMATCH
+   *                       - APPLE_EXCHANGE_FAILED
+   */
+  app.post(
+    "/me/apple-authorization",
+    bodyValidationMiddleware(validatePostAppleAuthorization),
+    tryCatch(handlePostAppleAuthorization)
   );
 
   return app;
