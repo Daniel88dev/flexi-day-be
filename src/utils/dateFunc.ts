@@ -169,3 +169,13 @@ export const monthStart = (year: number, month: number): DateString =>
 
 export const monthEnd = (year: number, month: number): DateString =>
   formatDateToISOString(new Date(Date.UTC(year, month, 0)));
+
+/** A month widened by `padDays` on each side, half-open like `formatStartAndEndDate`. */
+export const paddedMonthRange = (
+  year: number,
+  month: number,
+  padDays: number
+): { startDate: DateString; endDate: DateString } => ({
+  startDate: formatDateToISOString(new Date(Date.UTC(year, month - 1, 1 - padDays))),
+  endDate: formatDateToISOString(new Date(Date.UTC(year, month, 1 + padDays))),
+});
