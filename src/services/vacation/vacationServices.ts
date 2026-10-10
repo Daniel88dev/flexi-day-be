@@ -695,6 +695,44 @@ export const getPendingApprovalsForApprover = async (
     );
 };
 
+export type OwnPendingRow = PendingApprovalRow &
+  Pick<VacationType, "deletedAt" | "approvedAt" | "rejectedAt">;
+
+/**
+ * The requester's own pending rows in live groups, ordered as
+ * `collapsePendingApprovals` requires. Includes rows the requester may decide
+ * themselves; the caller filters those out.
+ */
+export const getPendingRequestsForRequester = async (userId: string): Promise<OwnPendingRow[]> =>
+  db
+    .select({
+      vacationId: vacation.id,
+      userId: vacation.userId,
+      userName: user.name,
+      groupId: vacation.groupId,
+      groupName: groups.groupName,
+      vacationType: vacation.vacationType,
+      requestedDay: vacation.requestedDay,
+      note: vacation.note,
+      submittedAt: vacation.createdAt,
+      deletedAt: vacation.deletedAt,
+      approvedAt: vacation.approvedAt,
+      rejectedAt: vacation.rejectedAt,
+    })
+    .from(vacation)
+    .innerJoin(groups, eq(vacation.groupId, groups.id))
+    .innerJoin(user, eq(vacation.userId, user.id))
+    .where(
+      and(
+        eq(vacation.userId, userId),
+        isNull(vacation.deletedAt),
+        isNull(vacation.approvedAt),
+        isNull(vacation.rejectedAt),
+        isNull(groups.deletedAt)
+      )
+    )
+    .orderBy(asc(vacation.groupId), asc(vacation.vacationType), asc(vacation.requestedDay));
+
 /**
  * Weighted day totals for one allowance. Scoped to a single group, unlike
  * {@link aggregateUserUsageForYear}, because an allowance is granted per
