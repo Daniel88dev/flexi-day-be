@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetMyApprovals } from "../controllers/users/handleGetMyApprovals.js";
+import { handleGetMyPendingRequests } from "../controllers/users/handleGetMyPendingRequests.js";
 import { handleGetMyDashboardSummary } from "../controllers/users/handleGetMyDashboardSummary.js";
 import { handleGetMyBalances } from "../controllers/users/handleGetMyBalances.js";
 import { handleGetMySettings } from "../controllers/users/handleGetMySettings.js";
@@ -30,6 +31,90 @@ export const usersRouter = (): Router => {
    *         description: Array of pending approvals with contiguous days collapsed
    */
   app.get("/me/approvals", tryCatch(handleGetMyApprovals));
+
+  /**
+   * @openapi
+   * /api/users/me/pending-requests:
+   *   get:
+   *     tags:
+   *       - Users
+   *     summary: List the caller's own requests still waiting on an approver
+   *     description: |
+   *       The caller's own pending rows (not approved, rejected or cancelled)
+   *       in every live group, with contiguous days of the same group and
+   *       record type collapsed into one range exactly as
+   *       `/api/users/me/approvals` collapses them. Read-only: the caller
+   *       cannot decide these.
+   *
+   *       A row the caller may decide themselves (they have approver access
+   *       in its group and their records are not mirrored into that group) is
+   *       left out, because `/api/users/me/approvals` lists it. No row appears
+   *       in both responses for the same caller.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: The caller's pending ranges; empty when nothing is waiting
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/PendingRange'
+   *       '401':
+   *         description: Not signed in
+   * components:
+   *   schemas:
+   *     PendingRange:
+   *       type: object
+   *       required:
+   *         - vacationIds
+   *         - user
+   *         - groupId
+   *         - groupName
+   *         - vacationType
+   *         - from
+   *         - to
+   *         - businessDays
+   *         - note
+   *         - submittedAt
+   *       properties:
+   *         vacationIds:
+   *           type: array
+   *           description: Every vacation row in the range, oldest day first.
+   *           items:
+   *             type: string
+   *             format: uuid
+   *         user:
+   *           $ref: '#/components/schemas/UserSummary'
+   *         groupId:
+   *           type: string
+   *           format: uuid
+   *         groupName:
+   *           type: string
+   *         vacationType:
+   *           type: string
+   *           enum: [VACATION, HOME_OFFICE, SICK, BANK_HOLIDAY, NON_PAID_LEAVE, PAID_TIME_OFF, SICK_DAY, STUDY_LEAVE, OTHER]
+   *         from:
+   *           type: string
+   *           format: date
+   *         to:
+   *           type: string
+   *           format: date
+   *           description: Inclusive.
+   *         businessDays:
+   *           type: integer
+   *           description: Monday to Friday days from `from` to `to`, inclusive.
+   *         note:
+   *           type: string
+   *           nullable: true
+   *           description: The first non-empty note among the range's rows.
+   *         submittedAt:
+   *           type: string
+   *           format: date-time
+   *           description: When the earliest row in the range was created.
+   */
+  app.get("/me/pending-requests", tryCatch(handleGetMyPendingRequests));
 
   /**
    * @openapi
