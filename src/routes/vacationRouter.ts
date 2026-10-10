@@ -23,6 +23,7 @@ import { handleBulkApproveVacation } from "../controllers/vacation/handleBulkApp
 import { handleBulkRejectVacation } from "../controllers/vacation/handleBulkRejectVacation.js";
 import { handleBulkCancelVacation } from "../controllers/vacation/handleBulkCancelVacation.js";
 import { handleUpdateVacation } from "../controllers/vacation/handleUpdateVacation.js";
+import { handleGetVacationCalendar } from "../controllers/vacation/handleGetVacationCalendar.js";
 
 export const vacationRouter = (): Router => {
   const app = Router();
@@ -129,6 +130,71 @@ export const vacationRouter = (): Router => {
    *               description: Whether the caller may decide on this request right now.
    */
   app.get("/", tryCatch(handleGetVacations));
+
+  /**
+   * @openapi
+   * /api/vacation/calendar:
+   *   get:
+   *     tags:
+   *       - Vacations
+   *     summary: Retrieve the dashboard calendar's vacations for a month plus 6 days either side
+   *     description: |
+   *       Returns the live vacation records the dashboard month calendar draws:
+   *       from 6 days before the 1st of the month through 6 days after its last
+   *       day, so the leading and trailing days of the neighbouring months in
+   *       the first and last week carry their records. The window crosses a
+   *       year boundary as needed: December 2026 reaches 6 January 2027, and
+   *       January 2027 starts on 26 December 2026.
+   *
+   *       Scope, access and row shape are those of `GET /api/vacation`. Without
+   *       `groupId` the caller's own records are returned; with it the whole
+   *       group's, mirrored records included. Group scope requires view access
+   *       on that group (view access, admin access, or being its manager); a
+   *       plain member gets a 403. Cancelled rows are never included.
+   *     operationId: handleGetVacationCalendar
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: year
+   *         in: query
+   *         required: true
+   *         schema:
+   *           type: integer
+   *           minimum: 2023
+   *           maximum: 2050
+   *       - name: month
+   *         in: query
+   *         required: true
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 12
+   *       - name: groupId
+   *         in: query
+   *         required: false
+   *         description: Return this group's records instead of the caller's own.
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: Live vacations in the padded window, ordered by day
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/VacationListItem'
+   *       '401':
+   *         description: Unauthorized
+   *       '403':
+   *         description: No access to view this group's records
+   *       '422':
+   *         description: Missing or out-of-range `year` or `month`
+   *       '500':
+   *         description: Internal Server Error
+   */
+  app.get("/calendar", tryCatch(handleGetVacationCalendar));
 
   /**
    * @openapi

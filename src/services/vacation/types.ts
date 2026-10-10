@@ -101,6 +101,17 @@ export type VacationDetail = VacationListItem & {
   vacationIds: string[];
 };
 
+export const vacationQueryYear = z.coerce.number().int().min(2023).max(2050);
+export const vacationQueryMonth = z.coerce.number().int().min(1).max(12);
+export const vacationQueryGroupId = z.string().min(1).optional();
+
+/** Query of GET /api/vacation/calendar: one month, own records or one group's. */
+export const validateVacationCalendarQuery = z.object({
+  year: vacationQueryYear,
+  month: vacationQueryMonth,
+  groupId: vacationQueryGroupId,
+});
+
 /** Optional cancellation reason, accepted on DELETE /api/vacation/:id. */
 export const validateCancelVacation = z
   .object({
