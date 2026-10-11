@@ -13,6 +13,8 @@ export const FAKE_REVOKED_MARKER = "fake-revoked";
 export const FAKE_EXCHANGE_FAILURE_MARKER = "fake-fail";
 /** A callback code containing this comes back without the calendar scope. */
 export const FAKE_NO_SCOPE_MARKER = "fake-noscope";
+/** A callback code containing this yields an account the fake driver refuses status types for. */
+export const FAKE_PLAIN_MARKER = "fake-plain";
 
 const fakeScope = (provider: calendarProvider) =>
   provider === calendarProvider.Google
@@ -69,8 +71,10 @@ export const createFakeAdapter = (
         refreshed: false,
       });
     }
+    // Keeps the code, so a refreshed token still carries the connection's markers.
+    const code = stored.refreshToken.replace(/^fake-refresh-[a-z]+-/, "");
     return Promise.resolve({
-      accessToken: `fake-access-${provider.toLowerCase()}-${now}`,
+      accessToken: `fake-access-${provider.toLowerCase()}-${code}-${now}`,
       expiresAt: new Date(now + HOUR_MS),
       refreshToken: stored.refreshToken,
       refreshed: true,

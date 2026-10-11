@@ -85,6 +85,18 @@ apple_team_id               = ""
 apple_key_id                = ""
 apple_app_bundle_identifier = "com.flexiday.app"
 
+# Calendar direct sync: approved absences written into the user's own Google or
+# Microsoft calendar. No new secrets; each switch reuses that provider's
+# sign-in client above and does nothing while it is unset. Register these
+# callback URIs next to the sign-in ones:
+#   https://api.flexi-day.com/api/calendar-sync/connections/google/callback
+#   https://api.flexi-day.com/api/calendar-sync/connections/microsoft/callback
+# Rollout order: backend with both false, then the web, then Google true, then
+# Microsoft true only after Entra publisher verification (T-301). The gates are
+# in docs/terraform.md.
+calendar_sync_google_enabled    = false
+calendar_sync_microsoft_enabled = false
+
 # Paddle billing. Leave paddle_api_key empty to disable billing entirely: no
 # Paddle secrets are created, no Paddle env vars are injected, and the
 # backend's /api/billing/* routes return 503.

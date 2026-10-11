@@ -40,7 +40,7 @@ describe("Microsoft adapter", () => {
       authority: `${endpoint.url}/common/oauth2/v2.0`,
     });
 
-  it("asks the common authority for consent to the calendar scope", () => {
+  it("asks the common authority for the calendar scope without forcing consent", () => {
     const url = new URL(createMicrosoftAdapter(CLIENT).consentUrl("signed-state"));
 
     expect(url.origin + url.pathname).toBe(
@@ -52,7 +52,7 @@ describe("Microsoft adapter", () => {
       response_mode: "query",
       redirect_uri: CLIENT.redirectUri,
       scope: "Calendars.ReadWrite offline_access",
-      prompt: "consent",
+      prompt: "select_account",
       state: "signed-state",
     });
     expect(MICROSOFT_SCOPE).toBe("Calendars.ReadWrite offline_access");

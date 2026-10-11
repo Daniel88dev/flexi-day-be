@@ -95,6 +95,21 @@ const writeChildren = async (
   }
 };
 
+/** Writes a config with its teams and types inside the caller's transaction. */
+export const insertCalendarSync = async (
+  base: CalendarSyncInsert,
+  teamIds: string[],
+  types: CalendarSyncTypeEntry[],
+  tx: DbTransaction
+) => {
+  const [row] = await tx.insert(calendarSync).values(base).returning();
+  if (!row) {
+    throw new Error("Failed to create calendar-sync config");
+  }
+  await writeChildren(row.id, teamIds, types, tx);
+  return row;
+};
+
 /**
  * Creates a config together with its teams and types in a single transaction.
  */
@@ -103,14 +118,7 @@ export const createCalendarSync = async (
   teamIds: string[],
   types: CalendarSyncTypeEntry[]
 ): Promise<CalendarSyncFull> => {
-  const created = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(calendarSync).values(base).returning();
-    if (!row) {
-      throw new Error("Failed to create calendar-sync config");
-    }
-    await writeChildren(row.id, teamIds, types, tx);
-    return row;
-  });
+  const created = await db.transaction((tx) => insertCalendarSync(base, teamIds, types, tx));
 
   const [full] = await assembleConfigs([created]);
   if (!full) {
@@ -165,6 +173,7 @@ export const getCalendarSyncByToken = async (
 /**
  * Replaces a config's mutable fields and its teams/types. Returns the updated
  * config, or undefined when no live config with that id is owned by the user.
+ * A sync target whose type list changed comes back marked due.
  */
 export const updateCalendarSync = async (
   id: string,
@@ -195,8 +204,22 @@ export const updateCalendarSync = async (
         )
         .returning();
       if (!row) return undefined;
+      const before = await tx
+        .select({ vacationType: calendarSyncTypes.vacationType })
+        .from(calendarSyncTypes)
+        .where(eq(calendarSyncTypes.calendarSyncId, row.id));
       await writeChildren(row.id, teamIds, types, tx);
-      return row;
+
+      const after = new Set(types.map((t) => t.vacationType));
+      const typesChanged =
+        before.length !== after.size || before.some((t) => !after.has(t.vacationType));
+      if (!row.connectionId || !typesChanged) return row;
+      const [due] = await tx
+        .update(calendarSync)
+        .set({ syncDueAt: new Date(), syncAttempts: 0 })
+        .where(eq(calendarSync.id, row.id))
+        .returning();
+      return due ?? row;
     })
     .catch((error: unknown) => {
       // A config syncing to a connected account cannot become TEAM; turn the target off first.

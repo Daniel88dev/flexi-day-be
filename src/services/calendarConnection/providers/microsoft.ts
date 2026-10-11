@@ -71,7 +71,9 @@ export const createMicrosoftAdapter = (
         response_mode: "query",
         redirect_uri: options.redirectUri,
         scope: MICROSOFT_SCOPE,
-        prompt: "consent",
+        // Not `consent`: it demands a user consent that a tenant's policy may forbid even after
+        // an admin consented for the tenant. Entra issues the refresh token either way.
+        prompt: "select_account",
         state,
       }).toString();
       return url.toString();

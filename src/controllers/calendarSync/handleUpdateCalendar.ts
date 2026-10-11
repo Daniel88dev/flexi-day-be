@@ -6,6 +6,7 @@ import { validateUpdateCalendarSync } from "../../services/calendarSync/types.js
 import { feedBaseUrl, resolveTeamIds, serializeConfigWithTarget } from "./utils.js";
 import { updateCalendarSync } from "../../services/calendarSync/calendarSyncServices.js";
 import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
+import { enqueueSync } from "../../services/calendarSync/enqueueSync.js";
 
 const validateUUID = z.uuid();
 
@@ -55,6 +56,8 @@ export const handleUpdateCalendar = async (req: Request, res: Response) => {
       context: { userId: auth.userId, id },
     });
   }
+
+  if (config.connectionId && config.syncDueAt) enqueueSync([config.id]);
 
   return res.status(200).json(await serializeConfigWithTarget(config, feedBaseUrl(req), true));
 };

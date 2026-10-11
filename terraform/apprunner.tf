@@ -69,6 +69,11 @@ resource "aws_apprunner_service" "main" {
             # the callback secret is injected below. Both are required, so
             # the backend refuses to boot on a half-configured deploy.
             ATTACHMENTS_BUCKET = aws_s3_bucket.attachments.bucket
+
+            # CALENDAR_SYNC_DRIVER stays unset so the backend uses the live
+            # driver. The connections reuse the sign-in client secrets below.
+            CALENDAR_SYNC_GOOGLE_ENABLED    = tostring(var.calendar_sync_google_enabled)
+            CALENDAR_SYNC_MICROSOFT_ENABLED = tostring(var.calendar_sync_microsoft_enabled)
           },
           # Google OAuth client id is public; only set when Google sign-in is
           # enabled. The matching client secret is injected below via Secrets

@@ -1,5 +1,4 @@
 import type { Request } from "express";
-import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type {
   CalendarSyncFull,
   ValidatedCreateCalendarSync,
@@ -9,19 +8,7 @@ import AppError from "../../utils/appError.js";
 import type { CalendarTargetView } from "../../services/calendarConnection/types.js";
 import { calendarTargetViews } from "../../services/calendarConnection/calendarConnectionServices.js";
 import { getCalendarSyncById } from "../../services/calendarSync/calendarSyncServices.js";
-
-/** Human-readable labels for each calendar record type, used in feed event summaries. */
-export const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
-  [CalendarRecordType.Vacation]: "Vacation",
-  [CalendarRecordType.HomeOffice]: "Home office",
-  [CalendarRecordType.Sick]: "Sick",
-  [CalendarRecordType.BankHoliday]: "Bank holiday",
-  [CalendarRecordType.NonPaidLeave]: "Non-paid leave",
-  [CalendarRecordType.PaidTimeOff]: "Paid time off",
-  [CalendarRecordType.SickDay]: "Sick day",
-  [CalendarRecordType.StudyLeave]: "Study leave",
-  [CalendarRecordType.Other]: "Other",
-};
+import { recordTypeLabels } from "../../services/calendarSync/labels.js";
 
 /**
  * Public base URL used to build feed links. Prefers `FEED_BASE_URL`. In
@@ -66,7 +53,7 @@ export const serializeConfig = (
   teamIds: config.teamIds,
   types: config.types.map((t) => ({
     type: t.vacationType,
-    label: CALENDAR_RECORD_TYPE_LABELS[t.vacationType],
+    label: recordTypeLabels("en")[t.vacationType],
     color: t.color,
     mineColor: t.mineColor,
   })),

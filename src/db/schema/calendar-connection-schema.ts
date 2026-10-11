@@ -1,4 +1,4 @@
-import { index, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
 import { calendarSync } from "./calendar-sync-schema.js";
@@ -68,6 +68,8 @@ export const calendarConnection = pgTable(
       .notNull()
       .default(calendarConnectionStatus.Active),
     lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    // Held by the instance syncing or purging this connection; any instance may take it once past.
+    syncLeaseUntil: timestamp("sync_lease_until", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -94,6 +96,8 @@ export const calendarSyncEvents = pgTable(
     vacationId: text("vacation_id").references(() => vacation.id, { onDelete: "set null" }),
     providerEventId: text("provider_event_id"),
     kind: calendarSyncEventKindEnum("kind").notNull(),
+    // Google's `eventType`, which Google never lets an existing event change.
+    eventType: text("event_type"),
     contentHash: text("content_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -108,4 +112,26 @@ export const calendarSyncEvents = pgTable(
     ),
     index("idx_calendar_sync_events_config").on(table.calendarSyncId),
   ]
+);
+
+/**
+ * Dev only: every call `CALENDAR_SYNC_DRIVER=fake` received, in place of a
+ * provider. Production never writes it; boot refuses the fake driver there.
+ */
+export const calendarSyncFakeEvents = pgTable(
+  "calendar_sync_fake_events",
+  {
+    id: text("id").primaryKey(),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => calendarConnection.id, { onDelete: "cascade" }),
+    provider: calendarProviderEnum("provider").notNull(),
+    operation: text("operation").$type<"INSERT" | "PATCH" | "DELETE">().notNull(),
+    providerEventId: text("provider_event_id"),
+    payload: jsonb("payload"),
+    // "ok", or the failure the driver returned.
+    result: text("result").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_calendar_sync_fake_events_connection").on(table.connectionId)]
 );

@@ -4,6 +4,7 @@ import { createServer } from "./server.js";
 import { config } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { startQuotaRolloverJob, stopQuotaRolloverJob } from "./jobs/quotaRolloverJob.js";
+import { startCalendarSyncQueue, stopCalendarSyncQueue } from "./jobs/calendarSyncQueueJob.js";
 import http from "http";
 
 const app = createServer();
@@ -18,10 +19,12 @@ server.listen(config.api.port, () => {
   });
 
   startQuotaRolloverJob();
+  void startCalendarSyncQueue();
 
   const shutdown = () => {
     logger.info("Shutting down HTTP server...");
     stopQuotaRolloverJob();
+    stopCalendarSyncQueue();
     server.close((closeErr?: Error) => {
       if (closeErr) {
         logger.error("Error shutting down HTTP server", { err: closeErr });

@@ -19,6 +19,7 @@ import { getGroup } from "../../services/group/groupServices.js";
 import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
 import { getUserById } from "../../services/user/userServices.js";
 import { postVacationBulk } from "../../services/vacation/vacationServices.js";
+import { markCalendarTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 import { createVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
 import { getNonWorkingDays } from "../../services/workingDays/workingDaysServices.js";
 import { NonWorkingDayCause } from "../../services/workingDays/types.js";
@@ -248,6 +249,7 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     // Nothing left to decide, so approvers are not asked; the member hears the
     // record was booked and approved for them.
     await notifyVacationDecision(created, "approved", actor);
+    await markCalendarTargetsDirty(created);
   } else if (onBehalf) {
     // Approvers must see the member as the requester — the leave is theirs;
     // the admin who filed it is attributed on the timeline and in the member's

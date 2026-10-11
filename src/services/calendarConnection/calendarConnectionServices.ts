@@ -13,6 +13,7 @@ import { authSecret, decryptStoredOAuthToken, encryptOAuthToken } from "../../ut
 import { logger } from "../../middleware/logger.js";
 import {
   CALENDAR_SYNC_NEEDS_RECONNECT,
+  CALENDAR_SYNC_PROVIDER_OFF,
   CALENDAR_SYNC_TARGET_EXISTS,
   CALENDAR_SYNC_TEAM_SCOPE,
   CALENDAR_TARGET_PAUSED,
@@ -26,11 +27,17 @@ import { assertCalendarSyncEntitled, isCalendarSyncEntitled } from "./entitlemen
 import { teamScopeError } from "./errors.js";
 import { signOAuthState, verifyOAuthState } from "./oauthState.js";
 import { providerAdapter } from "./providers/index.js";
-import { ProviderGrantRevokedError, ProviderTokenError } from "./providers/types.js";
+import {
+  ProviderGrantRevokedError,
+  ProviderTokenError,
+  type CalendarProviderAdapter,
+  type ProviderTokens,
+} from "./providers/types.js";
 import { purgeTarget } from "../calendarSync/syncEngine.js";
 import { enqueueSync } from "../calendarSync/enqueueSync.js";
+import type { AccessTokenSource } from "../calendarSync/drivers/types.js";
 
-const dueNow = () => ({ syncDueAt: new Date(), syncAttempts: 0, lastError: null });
+export const dueNow = () => ({ syncDueAt: new Date(), syncAttempts: 0, lastError: null });
 
 export const assertTargetAttachable = (config: { scope: calendarSyncScope }): void => {
   if (config.scope !== calendarSyncScope.Me) {
@@ -102,6 +109,7 @@ const providerOff = (provider: calendarProvider) =>
   new AppError({
     code: 404,
     message: "This calendar provider is not available",
+    publicContext: { code: CALENDAR_SYNC_PROVIDER_OFF },
     context: { provider },
   });
 
@@ -173,29 +181,96 @@ export const listConnections = async (userId: string): Promise<CalendarConnectio
 };
 
 /** The consent URL for a `ME` config, refused when the provider is off or the user is not entitled. */
+/**
+ * The adapter for a provider whose switch is on, once the config, when given,
+ * is the user's own live `ME` config and syncs to no other provider.
+ */
+export const assertConnectable = async (
+  userId: string,
+  configId: string | undefined,
+  provider: calendarProvider
+): Promise<CalendarProviderAdapter> => {
+  const adapter = providerAdapter(provider);
+  if (!adapter) throw providerOff(provider);
+  if (configId === undefined) return adapter;
+
+  const config = await getOwnedConfig(configId, userId);
+  if (!config) throw configNotFound({ configId, userId });
+  assertTargetAttachable(config);
+  if (await targetsOtherProvider(config, provider)) {
+    throw new AppError({
+      code: 409,
+      message: "This calendar already syncs to another account; turn that off first",
+      context: { configId, userId },
+      publicContext: { code: CALENDAR_SYNC_TARGET_EXISTS },
+    });
+  }
+  return adapter;
+};
+
 export const startConnection = async (input: {
   userId: string;
   provider: calendarProvider;
   configId: string;
   timeZone: string;
 }): Promise<string> => {
-  const adapter = providerAdapter(input.provider);
-  if (!adapter) throw providerOff(input.provider);
-
-  const config = await getOwnedConfig(input.configId, input.userId);
-  if (!config) throw configNotFound({ configId: input.configId, userId: input.userId });
-  assertTargetAttachable(config);
-  if (await targetsOtherProvider(config, input.provider)) {
-    throw new AppError({
-      code: 409,
-      message: "This calendar already syncs to another account; turn that off first",
-      context: { configId: input.configId, userId: input.userId },
-      publicContext: { code: CALENDAR_SYNC_TARGET_EXISTS },
-    });
-  }
+  const adapter = await assertConnectable(input.userId, input.configId, input.provider);
   await assertCalendarSyncEntitled(input.userId);
 
   return adapter.consentUrl(signOAuthState(input, await authSecret()));
+};
+
+/**
+ * Saves a provider's tokens as the user's live connection, reviving the row a
+ * broken one left, attaches the config as its target and marks every target on
+ * the connection due, since a reconnect re-syncs each in full. Runs in the
+ * caller's transaction when given one. The caller enqueues the returned
+ * targets after the commit.
+ */
+export const storeConnection = async (
+  input: {
+    userId: string;
+    provider: calendarProvider;
+    configId: string;
+    timeZone: string;
+    tokens: ProviderTokens;
+  },
+  tx?: DbTransaction
+): Promise<{ connectionId: string; dueConfigIds: string[] }> => {
+  const { userId, provider, configId, timeZone, tokens } = input;
+  const [refreshTokenEnc, accessTokenEnc] = await Promise.all([
+    encryptOAuthToken(tokens.refreshToken),
+    encryptOAuthToken(tokens.accessToken),
+  ]);
+  const tokenColumns = {
+    refreshTokenEnc,
+    accessTokenEnc,
+    accessTokenExpiresAt: tokens.expiresAt,
+    grantedScopes: tokens.scope,
+    capability: calendarCapability.Unknown,
+    status: calendarConnectionStatus.Active,
+    lastErrorAt: null,
+  };
+
+  const store = async (tx: DbTransaction) => {
+    const [connection] = await tx
+      .insert(calendarConnection)
+      .values({ id: generateRandomUUID(), userId, provider, ...tokenColumns })
+      .onConflictDoUpdate({
+        target: [calendarConnection.userId, calendarConnection.provider],
+        targetWhere: sql`${calendarConnection.revokedAt} IS NULL`,
+        set: tokenColumns,
+      })
+      .returning({ id: calendarConnection.id });
+    await attachTarget({ configId, userId, connectionId: connection!.id, timeZone }, tx);
+    const due = await tx
+      .update(calendarSync)
+      .set(dueNow())
+      .where(and(eq(calendarSync.connectionId, connection!.id), isNull(calendarSync.deletedAt)))
+      .returning({ id: calendarSync.id });
+    return { connectionId: connection!.id, dueConfigIds: due.map((row) => row.id) };
+  };
+  return tx ? store(tx) : db.transaction(store);
 };
 
 /** Why a callback did not connect; the web maps each to its own message. */
@@ -270,41 +345,9 @@ export const completeConnection = async (
     return { ok: false, error: "scope_denied", configId };
   }
 
-  const [refreshTokenEnc, accessTokenEnc] = await Promise.all([
-    encryptOAuthToken(tokens.refreshToken),
-    encryptOAuthToken(tokens.accessToken),
-  ]);
-  const tokenColumns = {
-    refreshTokenEnc,
-    accessTokenEnc,
-    accessTokenExpiresAt: tokens.expiresAt,
-    grantedScopes: tokens.scope,
-    capability: calendarCapability.Unknown,
-    status: calendarConnectionStatus.Active,
-    lastErrorAt: null,
-  };
-
   let dueConfigIds: string[];
   try {
-    dueConfigIds = await db.transaction(async (tx) => {
-      const [connection] = await tx
-        .insert(calendarConnection)
-        .values({ id: generateRandomUUID(), userId, provider, ...tokenColumns })
-        .onConflictDoUpdate({
-          target: [calendarConnection.userId, calendarConnection.provider],
-          targetWhere: sql`${calendarConnection.revokedAt} IS NULL`,
-          set: tokenColumns,
-        })
-        .returning({ id: calendarConnection.id });
-      await attachTarget({ configId, userId, connectionId: connection!.id, timeZone }, tx);
-      // A reconnect re-syncs every target on the connection in full.
-      const due = await tx
-        .update(calendarSync)
-        .set(dueNow())
-        .where(and(eq(calendarSync.connectionId, connection!.id), isNull(calendarSync.deletedAt)))
-        .returning({ id: calendarSync.id });
-      return due.map((row) => row.id);
-    });
+    ({ dueConfigIds } = await storeConnection({ userId, provider, configId, timeZone, tokens }));
   } catch (error) {
     if (!(error instanceof AppError)) throw error;
     if (error.errors[0]?.publicContext.code === CALENDAR_SYNC_TEAM_SCOPE) {
@@ -337,10 +380,12 @@ export const markNeedsReconnect = async (connectionId: string): Promise<void> =>
 
 /**
  * A usable access token for the connection, refreshed when it is within a
- * minute of expiry. Throws `ProviderGrantRevokedError` once the grant is gone.
+ * minute of expiry, or always with `forceRefresh` (after the provider answered
+ * 401 to it). Throws `ProviderGrantRevokedError` once the grant is gone.
  */
 export const connectionAccessToken = async (
-  connection: CalendarConnectionRecord
+  connection: CalendarConnectionRecord,
+  options: { forceRefresh?: boolean } = {}
 ): Promise<string> => {
   if (connection.status === calendarConnectionStatus.NeedsReconnect) {
     throw new ProviderGrantRevokedError("needs_reconnect");
@@ -355,11 +400,11 @@ export const connectionAccessToken = async (
 
   let fresh;
   try {
-    fresh = await adapter.accessToken({
-      accessToken,
-      expiresAt: connection.accessTokenExpiresAt,
-      refreshToken,
-    });
+    fresh = await adapter.accessToken(
+      options.forceRefresh
+        ? { accessToken: null, expiresAt: null, refreshToken }
+        : { accessToken, expiresAt: connection.accessTokenExpiresAt, refreshToken }
+    );
   } catch (error) {
     if (error instanceof ProviderGrantRevokedError) {
       await markNeedsReconnect(connection.id);
@@ -384,6 +429,39 @@ export const connectionAccessToken = async (
     })
     .where(eq(calendarConnection.id, connection.id));
   return fresh.accessToken;
+};
+
+const reloadConnection = async (
+  connection: CalendarConnectionRecord
+): Promise<CalendarConnectionRecord> => {
+  const [row] = await db
+    .select()
+    .from(calendarConnection)
+    .where(eq(calendarConnection.id, connection.id));
+  if (!row) throw new ProviderTokenError("connection_gone");
+  return row;
+};
+
+/**
+ * One run's token for a connection: fetched once, shared by every driver call
+ * of the run, replaced only when a refresh is forced. A failure is not cached.
+ * A forced refresh reads the row again, so a refresh token Microsoft rotated
+ * earlier in the run is never replayed.
+ */
+export const connectionTokenSource = (connection: CalendarConnectionRecord): AccessTokenSource => {
+  let current: Promise<string> | undefined;
+  return (options) => {
+    if (!current || options?.forceRefresh) {
+      const attempt = options?.forceRefresh
+        ? reloadConnection(connection).then((row) => connectionAccessToken(row, options))
+        : connectionAccessToken(connection, options);
+      current = attempt;
+      attempt.catch(() => {
+        if (current === attempt) current = undefined;
+      });
+    }
+    return current;
+  };
 };
 
 const targetNotFound = (context: Record<string, unknown>) =>
