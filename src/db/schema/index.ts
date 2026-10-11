@@ -8,6 +8,7 @@ import { inviteLink } from "./invite-link-schema.js";
 import { bankHolidays } from "./bank-holiday-schema.js";
 import { notifications } from "./notification-schema.js";
 import { calendarSync, calendarSyncTeams, calendarSyncTypes } from "./calendar-sync-schema.js";
+import { calendarConnection, calendarSyncEvents } from "./calendar-connection-schema.js";
 import { vacationEvents } from "./vacation-event-schema.js";
 import { userSettings } from "./user-settings-schema.js";
 import { reportExports } from "./report-export-schema.js";
@@ -41,6 +42,8 @@ export const schema = {
   calendarSync,
   calendarSyncTeams,
   calendarSyncTypes,
+  calendarConnection,
+  calendarSyncEvents,
   reportExports,
   supportAccess,
   organizations,

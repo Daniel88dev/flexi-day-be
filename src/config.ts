@@ -82,6 +82,13 @@ type AttachmentsConfig = {
   callbackSecret?: string;
 };
 
+type CalendarSyncConfig = {
+  googleEnabled: boolean;
+  microsoftEnabled: boolean;
+  driver: "live" | "fake";
+  appUrl: string;
+};
+
 type DevToolsConfig = {
   /** Shared secret every `/api/dev/*` request must present as `x-dev-token`. */
   token: string;
@@ -108,6 +115,8 @@ type Config = {
   /** Platform-support read surface. `undefined` means the routes do not exist. */
   support?: SupportConfig;
   attachments: AttachmentsConfig;
+  /** Direct writes into users' Google or Microsoft calendars. `undefined` when no provider is on. */
+  calendarSync?: CalendarSyncConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -143,6 +152,10 @@ const parseTemplateStage = (): "dev" | "prod" => {
 const databaseUrl = envOrThrow("DATABASE");
 
 const awsRegion = process.env.AWS_REGION ?? "eu-central-1";
+
+const appUrl =
+  process.env.APP_URL ??
+  (environment === "production" ? "https://www.flexi-day.com" : "http://localhost:3000");
 
 const LOCAL_DB_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -296,6 +309,30 @@ const parseAttachments = (): AttachmentsConfig => {
   };
 };
 
+/**
+ * Connections reuse the sign-in OAuth clients, so a provider's switch counts
+ * only while that provider's sign-in credentials are configured.
+ */
+const parseCalendarSync = (): CalendarSyncConfig | undefined => {
+  const rawDriver = process.env.CALENDAR_SYNC_DRIVER || "live";
+  if (rawDriver !== "live" && rawDriver !== "fake") {
+    throw new Error(`Invalid CALENDAR_SYNC_DRIVER: "${rawDriver}". Expected "live" or "fake"`);
+  }
+  if (environment === "production" && rawDriver === "fake") {
+    throw new Error("CALENDAR_SYNC_DRIVER=fake must never be set when NODE_ENV=production");
+  }
+
+  const googleEnabled =
+    process.env.CALENDAR_SYNC_GOOGLE_ENABLED === "true" &&
+    Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  const microsoftEnabled =
+    process.env.CALENDAR_SYNC_MICROSOFT_ENABLED === "true" &&
+    Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
+  if (!googleEnabled && !microsoftEnabled) return undefined;
+
+  return { googleEnabled, microsoftEnabled, driver: rawDriver, appUrl };
+};
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -332,9 +369,7 @@ export const config: Config = {
     templateStage: parseTemplateStage(),
     region: awsRegion,
     configurationSet: process.env.SES_CONFIGURATION_SET,
-    appUrl:
-      process.env.APP_URL ??
-      (environment === "production" ? "https://www.flexi-day.com" : "http://localhost:3000"),
+    appUrl,
   },
   quotaRollover: {
     // Off under test so the e2e suite drives the rollover explicitly instead
@@ -352,6 +387,7 @@ export const config: Config = {
   dev: parseDevTools(),
   support: parseSupport(),
   attachments: parseAttachments(),
+  calendarSync: parseCalendarSync(),
 };
 
-export type { PaddleConfig };
+export type { CalendarSyncConfig, PaddleConfig };
