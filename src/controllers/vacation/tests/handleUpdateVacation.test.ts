@@ -18,6 +18,7 @@ const {
   mockAssertEditWithinQuota,
   mockNotifyVacationUpdated,
   mockAssertSickDayRequestable,
+  mockMarkTargetsDirty,
 } = vi.hoisted(() => ({
   mockGetVacationsByIds: vi.fn(),
   mockUpdateVacationRows: vi.fn(),
@@ -26,6 +27,7 @@ const {
   mockAssertEditWithinQuota: vi.fn(),
   mockNotifyVacationUpdated: vi.fn(),
   mockAssertSickDayRequestable: vi.fn(),
+  mockMarkTargetsDirty: vi.fn(),
 }));
 
 vi.mock("../../../utils/generateUUID.js", () => ({
@@ -46,6 +48,10 @@ vi.mock("../../../services/vacation/quotaGuard.js", () => ({
 
 vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
   notifyVacationUpdated: mockNotifyVacationUpdated,
+}));
+
+vi.mock("../../../services/calendarSync/markCalendarTargetsDirty.js", () => ({
+  markCalendarTargetsDirty: mockMarkTargetsDirty,
 }));
 
 vi.mock("../../../db/db.js", () => ({
@@ -125,6 +131,23 @@ describe("handleUpdateVacation", () => {
       name: mockAuthData.userName,
     });
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("hands dirty marking the rows before and after the edit, so a retype leaves the old type", async () => {
+    mockGetVacationsByIds.mockResolvedValue([baseRow({ approvedAt: new Date() })]);
+    mockUpdateVacationRows.mockResolvedValue([
+      baseRow({ approvedAt: new Date(), vacationType: CalendarRecordType.Sick }),
+    ]);
+    const { req, res } = makeReqRes({
+      body: { ids: ["v-1"], vacationType: CalendarRecordType.Sick },
+    });
+
+    await handleUpdateVacation(req, res);
+
+    const marked = (mockMarkTargetsDirty.mock.calls[0]?.[0] as { vacationType: string }[]).map(
+      (row) => row.vacationType
+    );
+    expect(marked).toEqual([CalendarRecordType.Vacation, CalendarRecordType.Sick]);
   });
 
   it("skips the quota guard when only presentation fields change", async () => {

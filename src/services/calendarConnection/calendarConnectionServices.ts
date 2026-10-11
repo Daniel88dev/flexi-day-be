@@ -391,15 +391,30 @@ export const connectionAccessToken = async (
   return fresh.accessToken;
 };
 
+const reloadConnection = async (
+  connection: CalendarConnectionRecord
+): Promise<CalendarConnectionRecord> => {
+  const [row] = await db
+    .select()
+    .from(calendarConnection)
+    .where(eq(calendarConnection.id, connection.id));
+  if (!row) throw new ProviderTokenError("connection_gone");
+  return row;
+};
+
 /**
  * One run's token for a connection: fetched once, shared by every driver call
  * of the run, replaced only when a refresh is forced. A failure is not cached.
+ * A forced refresh reads the row again, so a refresh token Microsoft rotated
+ * earlier in the run is never replayed.
  */
 export const connectionTokenSource = (connection: CalendarConnectionRecord): AccessTokenSource => {
   let current: Promise<string> | undefined;
   return (options) => {
     if (!current || options?.forceRefresh) {
-      const attempt = connectionAccessToken(connection, options);
+      const attempt = options?.forceRefresh
+        ? reloadConnection(connection).then((row) => connectionAccessToken(row, options))
+        : connectionAccessToken(connection, options);
       current = attempt;
       attempt.catch(() => {
         if (current === attempt) current = undefined;

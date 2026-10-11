@@ -24,6 +24,7 @@ const {
   mockNotifyVacationCancelled,
   mockNotifyVacationsCancelled,
   mockNotifyVacationComment,
+  mockMarkTargetsDirty,
 } = vi.hoisted(() => ({
   timeline: [] as string[],
   tx: {},
@@ -48,6 +49,7 @@ const {
   mockNotifyVacationCancelled: vi.fn(),
   mockNotifyVacationsCancelled: vi.fn(),
   mockNotifyVacationComment: vi.fn(),
+  mockMarkTargetsDirty: vi.fn(),
 }));
 
 vi.mock("../../../db/db.js", () => ({
@@ -106,6 +108,10 @@ vi.mock("../../groupUser/groupAccess.js", () => ({
 vi.mock("../vacationPermissions.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../vacationPermissions.js")>()),
   resolveVacationPermissions: mockResolveVacationPermissions,
+}));
+
+vi.mock("../../calendarSync/markCalendarTargetsDirty.js", () => ({
+  markCalendarTargetsDirty: mockMarkTargetsDirty,
 }));
 
 vi.mock("../vacationNotifier.js", () => ({
@@ -703,6 +709,46 @@ describe("vacationTransitions", () => {
       await commentOnRequest({ auth: mockAuthData, vacationId: FIRST_ID, message: "Hello" });
 
       expect(mockAssertApprovalWithinQuota).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("calendar sync", () => {
+    it("hands the rows before and after the change to dirty marking, after the commit and the mail", async () => {
+      const pending = pendingVacation();
+      const approved = pendingVacation({ approvedAt: new Date() });
+      mockGetVacationById.mockResolvedValue(pending);
+      mockApproveVacation.mockImplementation(trackedResolve("mutate", approved));
+      mockMarkTargetsDirty.mockImplementation(trackedResolve("markDirty", undefined));
+
+      await approveRequest({ auth: mockAuthData, vacationId: FIRST_ID, reason: null });
+
+      expect(timeline).toEqual(["mutate", "event", "commit", "notify", "markDirty"]);
+      expect(mockMarkTargetsDirty).toHaveBeenCalledWith([pending, approved]);
+    });
+
+    it("hands every row a bulk cancel loaded and changed", async () => {
+      const rows = [
+        pendingVacation({ approvedAt: new Date() }),
+        pendingVacation({ id: SECOND_ID, approvedAt: new Date() }),
+      ];
+      mockGetVacationsByIds.mockResolvedValue(rows);
+      mockCancelVacationsBulk.mockResolvedValue(rows);
+
+      await cancelRequestBatch({
+        auth: { ...mockAuthData, userId: "vacation_user_123" },
+        vacationIds: [FIRST_ID, SECOND_ID],
+        reason: null,
+      });
+
+      expect(mockMarkTargetsDirty).toHaveBeenCalledWith([...rows, ...rows]);
+    });
+
+    it("marks nothing for a comment, which changes no row", async () => {
+      mockGetVacationById.mockResolvedValue(pendingVacation());
+
+      await commentOnRequest({ auth: mockAuthData, vacationId: FIRST_ID, message: "Any news?" });
+
+      expect(mockMarkTargetsDirty).not.toHaveBeenCalled();
     });
   });
 });

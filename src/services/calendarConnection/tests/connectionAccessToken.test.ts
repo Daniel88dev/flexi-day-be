@@ -6,13 +6,15 @@ import {
 } from "../providers/tests/fakeTokenEndpoint.js";
 import type { CalendarProviderAdapter } from "../providers/types.js";
 
-const { writes, adapterRef } = vi.hoisted(() => ({
+const { writes, adapterRef, storedRow } = vi.hoisted(() => ({
   writes: [] as { table: string; values: Record<string, unknown> }[],
   adapterRef: { value: undefined as CalendarProviderAdapter | undefined },
+  storedRow: { value: undefined as unknown },
 }));
 
 vi.mock("../../../db/db.js", () => {
   const executor = {
+    select: () => ({ from: () => ({ where: async () => [storedRow.value] }) }),
     update: (table: unknown) => ({
       set: (values: Record<string, unknown>) => ({
         where: async () => {
@@ -63,6 +65,7 @@ const connection = (
   capability: calendarCapability.Unknown,
   status: calendarConnectionStatus.Active,
   lastErrorAt: null,
+  syncLeaseUntil: null,
   revokedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -81,6 +84,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   writes.length = 0;
+  storedRow.value = connection();
   endpoint.requests.length = 0;
   adapterRef.value = createMicrosoftAdapter({
     clientId: "client-id",
@@ -184,6 +188,19 @@ describe("connectionAccessToken after the provider refused the token", () => {
     expect(await source({ forceRefresh: true })).toBe("access-2");
     expect(await source()).toBe("access-2");
     expect(endpoint.requests).toHaveLength(1);
+  });
+
+  it("reads the row again on a forced refresh, so a rotated refresh token is never replayed", async () => {
+    endpoint.answer(() => ({
+      status: 200,
+      body: { access_token: "access-3", refresh_token: "refresh-3", expires_in: 3600 },
+    }));
+    const source = connectionTokenSource(stillGood());
+    await source();
+    storedRow.value = connection({ refreshTokenEnc: "enc(refresh-2)" });
+
+    expect(await source({ forceRefresh: true })).toBe("access-3");
+    expect(endpoint.requests[0]!.form.get("refresh_token")).toBe("refresh-2");
   });
 
   it("asks again after a failed attempt instead of repeating the failure", async () => {

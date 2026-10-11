@@ -247,9 +247,13 @@ export const calendarSyncRouter = (): Router => {
    *       better-auth secret and binds the caller, the config, the time zone and
    *       the provider for ten minutes. Google asks for
    *       `calendar.events.owned` alone with offline access; Microsoft asks for
-   *       `Calendars.ReadWrite offline_access` on the `common` authority. Both
-   *       force the consent screen, so each connection has its own refresh
-   *       token, separate from any sign-in link.
+   *       `Calendars.ReadWrite offline_access` on the `common` authority. Google
+   *       forces the consent screen, because it returns a refresh token only on
+   *       consent; Microsoft lets the user pick the account and shows consent
+   *       only for a scope not yet granted, so a tenant whose admin consented
+   *       for everyone connects without it. Either way each connection redeems
+   *       its own code and keeps its own refresh token, separate from any
+   *       sign-in link.
    *     operationId: handlePostConnectionStart
    *     security:
    *       - bearerAuth: []

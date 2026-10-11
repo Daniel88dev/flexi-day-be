@@ -1,16 +1,521 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { calendarSync } from "../../db/schema/calendar-sync-schema.js";
-import { calendarSyncEvents } from "../../db/schema/calendar-connection-schema.js";
+import {
+  calendarCapability,
+  calendarConnection,
+  calendarConnectionStatus,
+  calendarProvider,
+  calendarSyncEvents,
+} from "../../db/schema/calendar-connection-schema.js";
+import { logger } from "../../middleware/logger.js";
+import { errorName } from "../../utils/errorName.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
+import {
+  connectionTokenSource,
+  markNeedsReconnect,
+} from "../calendarConnection/calendarConnectionServices.js";
+import { isCalendarSyncEntitled } from "../calendarConnection/entitlement.js";
+import type {
+  CalendarConnectionRecord,
+  CalendarSyncEventRecord,
+} from "../calendarConnection/types.js";
+import { getCalendarSyncById, getFeedRecords } from "./calendarSyncServices.js";
+import { calendarDriver } from "./drivers/index.js";
+import type { CalendarDriver, DriverContext, DriverFailure } from "./drivers/types.js";
+import { buildDesired, type DesiredEvent } from "./eventBuilder.js";
+import { recordTypeLabels } from "./labels.js";
+import type { CalendarFeedRecord, SyncOutcome } from "./types.js";
+
+const DONE: SyncOutcome = { status: "done" };
+const LEASE = sql`now() + interval '10 minutes'`;
+const PURGE_LEASE_WAIT_MS = 30_000;
+const PURGE_LEASE_POLL_MS = 500;
+const PURGE_DELETE_RETRIES = 3;
+const PURGE_RETRY_CAP_SECONDS = 5;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const locks = new Map<string, Promise<unknown>>();
+
+// The in-process fast path; the lease below is what holds across instances.
+const withConnectionLock = async <T>(connectionId: string, work: () => Promise<T>): Promise<T> => {
+  const current = (locks.get(connectionId) ?? Promise.resolve()).then(work);
+  const tail = current.catch(() => undefined);
+  locks.set(connectionId, tail);
+  try {
+    return await current;
+  } finally {
+    if (locks.get(connectionId) === tail) locks.delete(connectionId);
+  }
+};
 
 /**
- * Removes everything the app wrote for one target and switches the target off.
- * Today it drops the ledger locally; BE-4 (T-295) deletes each ledger event at
- * the provider first.
+ * Microsoft rotates the refresh token on every refresh, so no two instances
+ * may sync or purge one connection at once.
  */
-export const purgeTarget = async (configId: string): Promise<void> => {
+const claimLease = async (connectionId: string): Promise<boolean> => {
+  const [claimed] = await db
+    .update(calendarConnection)
+    .set({ syncLeaseUntil: LEASE })
+    .where(
+      and(
+        eq(calendarConnection.id, connectionId),
+        or(
+          isNull(calendarConnection.syncLeaseUntil),
+          lt(calendarConnection.syncLeaseUntil, sql`now()`)
+        )
+      )
+    )
+    .returning({ id: calendarConnection.id });
+  return claimed !== undefined;
+};
+
+const releaseLease = async (connectionId: string) => {
+  await db
+    .update(calendarConnection)
+    .set({ syncLeaseUntil: null })
+    .where(eq(calendarConnection.id, connectionId));
+};
+
+type Run = {
+  configId: string;
+  connectionId: string;
+  provider: calendarProvider;
+  capability: calendarCapability;
+  timeZone: string;
+  records: CalendarFeedRecord[];
+  driver: CalendarDriver;
+  context: DriverContext;
+};
+
+type Failure = DriverFailure | undefined;
+
+const targetConnectionId = async (configId: string): Promise<string | null | undefined> => {
+  const [target] = await db
+    .select({ connectionId: calendarSync.connectionId })
+    .from(calendarSync)
+    .where(eq(calendarSync.id, configId));
+  return target?.connectionId;
+};
+
+const loadConnection = async (connectionId: string) => {
+  const [connection] = await db
+    .select()
+    .from(calendarConnection)
+    .where(eq(calendarConnection.id, connectionId));
+  return connection;
+};
+
+const loadLedger = (configId: string): Promise<CalendarSyncEventRecord[]> =>
+  db.select().from(calendarSyncEvents).where(eq(calendarSyncEvents.calendarSyncId, configId));
+
+const dropLedgerRow = async (id: string) => {
+  await db.delete(calendarSyncEvents).where(eq(calendarSyncEvents.id, id));
+};
+
+const eventTypeOf = (event: DesiredEvent): string | null =>
+  event.provider === calendarProvider.Google ? event.payload.eventType : null;
+
+const ledgerContent = (event: DesiredEvent) => ({
+  kind: event.kind,
+  eventType: eventTypeOf(event),
+  contentHash: event.contentHash,
+});
+
+const build = (run: Run, record: CalendarFeedRecord, ledgerId: string) =>
+  buildDesired({
+    record,
+    provider: run.provider,
+    capability: run.capability,
+    timeZone: run.timeZone,
+    labels: recordTypeLabels("en"),
+    configId: run.configId,
+    ledgerId,
+  });
+
+const learnStatusCapability = async (run: Run, event: DesiredEvent) => {
+  const statusType = eventTypeOf(event) !== null && eventTypeOf(event) !== "default";
+  if (run.capability !== calendarCapability.Unknown || !statusType) return;
+  run.capability = calendarCapability.Status;
+  await db
+    .update(calendarConnection)
+    .set({ capability: calendarCapability.Status })
+    .where(
+      and(
+        eq(calendarConnection.id, run.connectionId),
+        eq(calendarConnection.capability, calendarCapability.Unknown)
+      )
+    );
+};
+
+const sendInsert = async (run: Run, ledgerId: string, event: DesiredEvent): Promise<Failure> => {
+  const result = await run.driver.insert(run.context, event);
+  if (!result.ok) return result;
+  await db
+    .update(calendarSyncEvents)
+    .set({ providerEventId: result.providerEventId })
+    .where(eq(calendarSyncEvents.id, ledgerId));
+  await learnStatusCapability(run, event);
+  return undefined;
+};
+
+/** The ledger row goes in first, so a crash after the provider's answer still names the event. */
+const insertFresh = async (run: Run, record: CalendarFeedRecord): Promise<Failure> => {
+  const ledgerId = generateRandomUUID();
+  const event = build(run, record, ledgerId);
+  if (!event) return undefined;
+  await db.insert(calendarSyncEvents).values({
+    id: ledgerId,
+    calendarSyncId: run.configId,
+    vacationId: record.id,
+    ...ledgerContent(event),
+  });
+  return sendInsert(run, ledgerId, event);
+};
+
+const removeEvent = async (run: Run, row: CalendarSyncEventRecord): Promise<Failure> => {
+  if (row.providerEventId) {
+    const result = await run.driver.delete(run.context, row.providerEventId);
+    if (!result.ok) return result;
+  }
+  await dropLedgerRow(row.id);
+  return undefined;
+};
+
+const writeEvent = async (
+  run: Run,
+  record: CalendarFeedRecord,
+  event: DesiredEvent,
+  existing: CalendarSyncEventRecord | undefined
+): Promise<Failure> => {
+  if (!existing) return insertFresh(run, record);
+
+  if (!existing.providerEventId) {
+    // An insert that never confirmed. Retrying under the same ledger id lets
+    // Graph match its `transactionId`.
+    await db
+      .update(calendarSyncEvents)
+      .set(ledgerContent(event))
+      .where(eq(calendarSyncEvents.id, existing.id));
+    return sendInsert(run, existing.id, event);
+  }
+
+  if (existing.contentHash === event.contentHash) return undefined;
+
+  // Google never lets an event change its type, so that change replaces the event.
+  if (run.provider === calendarProvider.Google && existing.eventType !== eventTypeOf(event)) {
+    return (await removeEvent(run, existing)) ?? insertFresh(run, record);
+  }
+
+  const result = await run.driver.patch(run.context, existing.providerEventId, event);
+  if (result.ok) {
+    await db
+      .update(calendarSyncEvents)
+      .set({ ...ledgerContent(event), providerEventId: result.providerEventId })
+      .where(eq(calendarSyncEvents.id, existing.id));
+    return undefined;
+  }
+  if (result.error !== "not_found") return result;
+  // A new ledger id: Graph may match a reused `transactionId` to the deleted event.
+  await dropLedgerRow(existing.id);
+  return insertFresh(run, record);
+};
+
+const reconcile = async (run: Run): Promise<Failure> => {
+  const ledger = await loadLedger(run.configId);
+  const byVacation = new Map(
+    ledger.flatMap((row) => (row.vacationId ? [[row.vacationId, row] as const] : []))
+  );
+
+  const desired = new Map<string, { record: CalendarFeedRecord; event: DesiredEvent }>();
+  for (const record of run.records) {
+    const event = build(run, record, byVacation.get(record.id)?.id ?? generateRandomUUID());
+    if (event) desired.set(record.id, { record, event });
+  }
+
+  for (const row of ledger) {
+    if (row.vacationId && desired.has(row.vacationId)) continue;
+    const failure = await removeEvent(run, row);
+    if (failure) return failure;
+  }
+  for (const { record, event } of desired.values()) {
+    const failure = await writeEvent(run, record, event, byVacation.get(record.id));
+    if (failure) return failure;
+  }
+  return undefined;
+};
+
+/** Clears the due marker unless a change marked the target again after `since`. */
+const dueUnlessBumped = (since: Date) =>
+  sql`CASE WHEN ${calendarSync.syncDueAt} > ${since.toISOString()} THEN ${calendarSync.syncDueAt} ELSE NULL END`;
+
+const stopTarget = async (configId: string, lastError: string | null, since: Date) => {
+  await db
+    .update(calendarSync)
+    .set({
+      syncDueAt: dueUnlessBumped(since),
+      syncAttempts: 0,
+      ...(lastError ? { lastError } : {}),
+    })
+    .where(eq(calendarSync.id, configId));
+};
+
+const recordFailure = async (configId: string, lastError: string): Promise<SyncOutcome> => {
+  const [row] = await db
+    .update(calendarSync)
+    .set({ syncAttempts: sql`${calendarSync.syncAttempts} + 1`, lastError })
+    .where(eq(calendarSync.id, configId))
+    .returning({ attempts: calendarSync.syncAttempts });
+  return { status: "retry", attempts: row?.attempts ?? 1 };
+};
+
+const recordSuccess = async (configId: string, startedAt: Date) => {
+  await db
+    .update(calendarSync)
+    .set({
+      lastSyncedAt: new Date(),
+      syncAttempts: 0,
+      lastError: null,
+      syncDueAt: dueUnlessBumped(startedAt),
+    })
+    .where(eq(calendarSync.id, configId));
+};
+
+const failureReason = (failure: DriverFailure): string =>
+  "reason" in failure ? failure.reason : failure.error;
+
+const runSync = async (
+  configId: string,
+  connection: CalendarConnectionRecord,
+  driver: CalendarDriver,
+  timeZone: string,
+  userId: string,
+  startedAt: Date
+): Promise<SyncOutcome> => {
+  const config = await getCalendarSyncById(configId, userId);
+  if (!config) return DONE;
+  const run: Run = {
+    configId,
+    connectionId: connection.id,
+    provider: connection.provider,
+    capability: connection.capability,
+    timeZone,
+    records: await getFeedRecords(config),
+    driver,
+    context: { connection, accessToken: connectionTokenSource(connection) },
+  };
+
+  let failure = await reconcile(run);
+  if (failure?.error === "capability_refused" && run.capability !== calendarCapability.Plain) {
+    logger.info("calendar_sync.capability_plain", {
+      configId,
+      connectionId: connection.id,
+      reason: failure.reason,
+    });
+    run.capability = calendarCapability.Plain;
+    await db
+      .update(calendarConnection)
+      .set({ capability: calendarCapability.Plain })
+      .where(eq(calendarConnection.id, connection.id));
+    failure = await reconcile(run);
+  }
+
+  if (!failure) {
+    await recordSuccess(configId, startedAt);
+    return DONE;
+  }
+
+  logger.warn("calendar_sync.failed", {
+    configId,
+    provider: connection.provider,
+    error: failure.error,
+    reason: failureReason(failure),
+  });
+  switch (failure.error) {
+    case "auth_revoked":
+      await markNeedsReconnect(connection.id);
+      return DONE;
+    case "throttled":
+      await db
+        .update(calendarSync)
+        .set({ lastError: "throttled" })
+        .where(eq(calendarSync.id, configId));
+      return { status: "throttled", retryAfterSeconds: failure.retryAfterSeconds };
+    default:
+      return recordFailure(configId, failureReason(failure));
+  }
+};
+
+const syncLocked = async (configId: string, connectionId: string): Promise<SyncOutcome> => {
+  const startedAt = new Date();
+  try {
+    const [target] = await db
+      .select()
+      .from(calendarSync)
+      .where(and(eq(calendarSync.id, configId), isNull(calendarSync.deletedAt)));
+    if (!target) return DONE;
+    if (target.connectionId !== connectionId) {
+      await stopTarget(configId, null, startedAt);
+      return DONE;
+    }
+
+    const known = await loadConnection(connectionId);
+    if (!known || known.revokedAt) {
+      await stopTarget(configId, null, startedAt);
+      return DONE;
+    }
+    if (known.status === calendarConnectionStatus.NeedsReconnect) {
+      await stopTarget(configId, "auth_revoked", startedAt);
+      return DONE;
+    }
+    const driver = calendarDriver(known.provider);
+    if (!driver) {
+      // The target stays due, so switching the provider back on picks it up at boot.
+      logger.info("calendar_sync.provider_off", { configId, provider: known.provider });
+      return DONE;
+    }
+    if (!(await isCalendarSyncEntitled(target.userId))) {
+      await stopTarget(configId, "plan", startedAt);
+      return DONE;
+    }
+
+    if (!(await claimLease(connectionId))) return { status: "busy" };
+    try {
+      // Read under the lease: another instance may have rotated the tokens.
+      const connection = await loadConnection(connectionId);
+      if (!connection) return DONE;
+      return await runSync(
+        configId,
+        connection,
+        driver,
+        target.timeZone ?? "UTC",
+        target.userId,
+        startedAt
+      );
+    } finally {
+      await releaseLease(connectionId);
+    }
+  } catch (error) {
+    logger.error("calendar_sync.error", { configId, error: errorName(error) });
+    return recordFailure(configId, "error");
+  }
+};
+
+/**
+ * Brings one target's calendar in line with the owner's approved records:
+ * inserts, patches and deletes by the ledger's content hashes, so a rerun of a
+ * finished sync calls the provider not once.
+ */
+export const syncTarget = async (configId: string): Promise<SyncOutcome> => {
+  const connectionId = await targetConnectionId(configId);
+  if (!connectionId) return DONE;
+  return withConnectionLock(connectionId, () => syncLocked(configId, connectionId));
+};
+
+/** Targets still marked due, for the boot catch-up. */
+export const getDueCalendarTargetIds = async (): Promise<string[]> => {
+  const rows = await db
+    .select({ id: calendarSync.id })
+    .from(calendarSync)
+    .where(
+      and(
+        isNotNull(calendarSync.syncDueAt),
+        isNotNull(calendarSync.connectionId),
+        isNull(calendarSync.deletedAt)
+      )
+    );
+  return rows.map((row) => row.id);
+};
+
+const deleteWithRetries = async (
+  driver: CalendarDriver,
+  context: DriverContext,
+  providerEventId: string
+) => {
+  let result = await driver.delete(context, providerEventId);
+  for (let retry = 0; retry < PURGE_DELETE_RETRIES && !result.ok; retry += 1) {
+    if (result.error !== "throttled" && result.error !== "other") break;
+    const seconds = result.error === "throttled" ? (result.retryAfterSeconds ?? 1) : 1;
+    await sleep(Math.min(seconds, PURGE_RETRY_CAP_SECONDS) * 1000);
+    result = await driver.delete(context, providerEventId);
+  }
+  return result;
+};
+
+/**
+ * Deletes the written events at the provider. Returns the ledger ids whose
+ * delete failed, which stay in the ledger; without a token every row goes.
+ */
+const deleteAtProvider = async (
+  configId: string,
+  connectionId: string,
+  written: CalendarSyncEventRecord[]
+): Promise<string[]> => {
+  const localOnly = (reason: string) => {
+    logger.warn("calendar_sync.purge_local_only", { configId, events: written.length, reason });
+    return [];
+  };
+
+  const connection = await loadConnection(connectionId);
+  if (!connection) return localOnly("no_connection");
+  if (connection.status !== calendarConnectionStatus.Active) return localOnly(connection.status);
+  const driver = calendarDriver(connection.provider);
+  if (!driver) return localOnly("provider_off");
+
+  const context = { connection, accessToken: connectionTokenSource(connection) };
+  try {
+    await context.accessToken();
+  } catch (error) {
+    return localOnly(errorName(error));
+  }
+
+  const kept: string[] = [];
+  for (const row of written) {
+    const result = await deleteWithRetries(driver, context, row.providerEventId!);
+    if (result.ok) continue;
+    if (result.error === "auth_revoked") {
+      await markNeedsReconnect(connectionId);
+      return localOnly("auth_revoked");
+    }
+    kept.push(row.id);
+  }
+  if (kept.length > 0) {
+    logger.warn("calendar_sync.purge_incomplete", { configId, events: kept.length });
+  }
+  return kept;
+};
+
+const claimLeaseForPurge = async (connectionId: string): Promise<boolean> => {
+  for (let waited = 0; waited < PURGE_LEASE_WAIT_MS; waited += PURGE_LEASE_POLL_MS) {
+    if (await claimLease(connectionId)) return true;
+    await sleep(PURGE_LEASE_POLL_MS);
+  }
+  logger.warn("calendar_sync.purge_without_lease", { connectionId });
+  return false;
+};
+
+const purgeLocked = async (configId: string, connectionId: string | null | undefined) => {
+  const written = (await loadLedger(configId)).filter((row) => row.providerEventId);
+  let kept: string[] = [];
+  if (connectionId && written.length > 0) {
+    const leased = await claimLeaseForPurge(connectionId);
+    try {
+      kept = await deleteAtProvider(configId, connectionId, written);
+    } finally {
+      if (leased) await releaseLease(connectionId);
+    }
+  }
+
   await db.transaction(async (tx) => {
-    await tx.delete(calendarSyncEvents).where(eq(calendarSyncEvents.calendarSyncId, configId));
+    await tx
+      .delete(calendarSyncEvents)
+      .where(
+        and(
+          eq(calendarSyncEvents.calendarSyncId, configId),
+          kept.length > 0 ? notInArray(calendarSyncEvents.id, kept) : undefined
+        )
+      );
     await tx
       .update(calendarSync)
       .set({
@@ -23,4 +528,17 @@ export const purgeTarget = async (configId: string): Promise<void> => {
       })
       .where(eq(calendarSync.id, configId));
   });
+};
+
+/**
+ * Removes everything the app wrote for one target and switches the target off.
+ * Without a usable token (needs reconnect, provider switched off, a failed
+ * refresh, a revoked grant) the ledger is dropped locally. Rows whose delete
+ * keeps failing for any other reason stay in the ledger; the target is
+ * cleared either way.
+ */
+export const purgeTarget = async (configId: string): Promise<void> => {
+  const connectionId = await targetConnectionId(configId);
+  if (!connectionId) return purgeLocked(configId, connectionId);
+  return withConnectionLock(connectionId, () => purgeLocked(configId, connectionId));
 };

@@ -169,6 +169,13 @@
       "when": 1791731293622,
       "tag": "0023_calendar_sync_fake_events",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791737115358,
+      "tag": "0024_calendar_sync_lease",
+      "breakpoints": true
     }
   ]
 }

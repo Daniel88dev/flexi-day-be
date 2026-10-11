@@ -427,12 +427,13 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
 ## Calendar direct sync (`src/services/calendarConnection/`)
 
 - **A calendar connection is never a sign-in link.** Connecting Google or Microsoft for direct
-  sync runs its own consent round (`prompt=consent`, the calendar scope alone) and stores its own
-  refresh token, encrypted, in a `calendar_connection` row, even when the user signs in with the
-  same account. Sync code reads tokens only from that row, and `disconnectProvider` deletes only
-  that row and the targets' ledgers; it never reads or writes `account`. Mixing the two would let
-  disconnecting the calendar sign the user out of their provider, or let a sign-in token, which
-  carries no calendar scope, stand in for a grant the user never gave.
+  sync runs its own consent round (the calendar scope alone, with `prompt=consent` on Google,
+  which returns a refresh token only on consent) and stores its own refresh token, encrypted, in
+  a `calendar_connection` row, even when the user signs in with the same account. Sync code
+  reads tokens only from that row, and `disconnectProvider` deletes only that row and the
+  targets' ledgers; it never reads or writes `account`. Mixing the two would let disconnecting
+  the calendar sign the user out of their provider, or let a sign-in token, which carries no
+  calendar scope, stand in for a grant the user never gave.
   `src/tests/e2e/calendarDirectSync.e2e.test.ts` ("disconnects Google, purging its targets and
   leaving the sign-in account untouched") fails if a disconnect touches the user's `account` rows.
 - **The calendar callback authenticates by state alone.**

@@ -107,3 +107,23 @@ export type ValidatedCreateCalendarSync = z.infer<typeof validateCreateCalendarS
 /** Update accepts the same shape as create; the whole config is replaced. */
 export const validateUpdateCalendarSync = validateCreateCalendarSync;
 export type ValidatedUpdateCalendarSync = ValidatedCreateCalendarSync;
+
+export type SyncOutcome =
+  | { status: "done" }
+  /** `attempts` is the target's failure count after this one. */
+  | { status: "retry"; attempts: number }
+  /** The provider asked to slow down; not a failed attempt. */
+  | { status: "throttled"; retryAfterSeconds: number | null }
+  /** Another instance holds the connection's lease. */
+  | { status: "busy" };
+
+export type SyncQueueTimers = {
+  setTimeout: (callback: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+};
+
+export type DirtyRow = {
+  userId: string;
+  vacationType: CalendarRecordType;
+  approvedAt: Date | null;
+};

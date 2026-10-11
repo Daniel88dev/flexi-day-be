@@ -20,6 +20,7 @@ const {
   mockNotifyVacationRequested,
   mockNotifyVacationDecision,
   mockNotifyVacationBookedOnBehalf,
+  mockMarkTargetsDirty,
   mockAssertRequestWithinQuota,
   mockAssertGroupAdmin,
   mockGetUserById,
@@ -35,6 +36,7 @@ const {
   mockNotifyVacationRequested: vi.fn(),
   mockNotifyVacationDecision: vi.fn(),
   mockNotifyVacationBookedOnBehalf: vi.fn(),
+  mockMarkTargetsDirty: vi.fn(),
   mockAssertRequestWithinQuota: vi.fn(),
   mockAssertGroupAdmin: vi.fn(),
   mockGetUserById: vi.fn(),
@@ -62,6 +64,10 @@ vi.mock("../../../services/vacation/vacationNotifier.js", () => ({
   notifyVacationRequested: mockNotifyVacationRequested,
   notifyVacationDecision: mockNotifyVacationDecision,
   notifyVacationBookedOnBehalf: mockNotifyVacationBookedOnBehalf,
+}));
+
+vi.mock("../../../services/calendarSync/markCalendarTargetsDirty.js", () => ({
+  markCalendarTargetsDirty: mockMarkTargetsDirty,
 }));
 
 vi.mock("../../../services/vacation/quotaGuard.js", () => ({
@@ -624,7 +630,18 @@ describe("handlePostVacation", () => {
         name: mockAuthData.userName,
       });
       expect(mockNotifyVacationRequested).not.toHaveBeenCalled();
+      expect(mockMarkTargetsDirty).toHaveBeenCalledWith([
+        expect.objectContaining({ userId: "member_456", approvedAt: expect.any(Date) }),
+      ]);
       expect(res.status).toHaveBeenCalledWith(201);
+    });
+
+    it("marks nothing for calendar sync while a booking still waits for approval", async () => {
+      const { req, res } = makeReqRes({ body: onBehalfBody() });
+
+      await handlePostVacation(req, res);
+
+      expect(mockMarkTargetsDirty).not.toHaveBeenCalled();
     });
 
     it("rejects a non-admin caller passing userId", async () => {

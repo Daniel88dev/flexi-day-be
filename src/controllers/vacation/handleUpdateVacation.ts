@@ -12,6 +12,7 @@ import { assertGroupWritable, assertSickDayRequestable } from "../../services/bi
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { resolveGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { notifyVacationUpdated } from "../../services/vacation/vacationNotifier.js";
+import { markCalendarTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 import { getVacationsByIds, updateVacationRows } from "../../services/vacation/vacationServices.js";
 import { createVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
 
@@ -36,7 +37,7 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
     ...(data.note !== undefined && { note: data.note }),
   };
 
-  const { updated, previous } = await db.transaction(async (tx) => {
+  const { updated, rowsBeforeEdit } = await db.transaction(async (tx) => {
     // Excludes soft-deleted rows, so a cancelled id lands in the 404 too — a
     // cancelled record is history and must be re-created, not edited back.
     // Locked: a concurrent PATCH must wait and re-read, or its change summary
@@ -171,14 +172,16 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
       tx
     );
 
-    return { updated: updatedRows, previous: first };
+    return { updated: updatedRows, rowsBeforeEdit: rows };
   });
 
   // Post-commit and best-effort; the notifier logs its own failures. Editing
   // your own record needs no notice.
-  if (previous.userId !== auth.userId) {
+  if (rowsBeforeEdit[0]?.userId !== auth.userId) {
     await notifyVacationUpdated(updated, { id: auth.userId, name: auth.userName });
   }
+  // The old type too: a retyped row leaves the targets that carried it.
+  await markCalendarTargetsDirty([...rowsBeforeEdit, ...updated]);
 
   return res.status(200).json(updated);
 };

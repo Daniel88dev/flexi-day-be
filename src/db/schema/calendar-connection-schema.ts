@@ -68,6 +68,8 @@ export const calendarConnection = pgTable(
       .notNull()
       .default(calendarConnectionStatus.Active),
     lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    // Held by the instance syncing or purging this connection; any instance may take it once past.
+    syncLeaseUntil: timestamp("sync_lease_until", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -94,6 +96,8 @@ export const calendarSyncEvents = pgTable(
     vacationId: text("vacation_id").references(() => vacation.id, { onDelete: "set null" }),
     providerEventId: text("provider_event_id"),
     kind: calendarSyncEventKindEnum("kind").notNull(),
+    // Google's `eventType`, which Google never lets an existing event change.
+    eventType: text("event_type"),
     contentHash: text("content_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

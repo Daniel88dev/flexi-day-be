@@ -4,6 +4,7 @@ import type { AuthSession } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertGroupsWritable } from "../billing/guards.js";
+import { markCalendarTargetsDirty } from "../calendarSync/markCalendarTargetsDirty.js";
 import { assertMayDecide, assertStillPending, type Decision } from "./decisionGuards.js";
 import { assertApprovalWithinQuota } from "./quotaGuard.js";
 import type { LiveVacationType, VacationType } from "./types.js";
@@ -97,6 +98,7 @@ const runTransition = async (transition: Transition): Promise<TransitionRows> =>
   // Best-effort: the notifier logs its own failures so a mail problem cannot
   // turn a completed decision into an error for the approver.
   await transition.notify(rows);
+  if (transition.mutate) await markCalendarTargetsDirty([...rows.loaded, ...rows.changed]);
   return rows;
 };
 

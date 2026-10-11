@@ -23,6 +23,7 @@ export const connection = (
   capability: calendarCapability.Unknown,
   status: calendarConnectionStatus.Active,
   lastErrorAt: null,
+  syncLeaseUntil: null,
   revokedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
