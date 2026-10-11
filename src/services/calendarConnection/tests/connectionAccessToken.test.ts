@@ -35,7 +35,12 @@ vi.mock("../providers/index.js", () => ({
   providerAdapter: () => adapterRef.value,
 }));
 
-import { connectionAccessToken } from "../calendarConnectionServices.js";
+import {
+  connectionAccessToken,
+  connectionTokenSource,
+  startConnection,
+} from "../calendarConnectionServices.js";
+import { CALENDAR_SYNC_PROVIDER_OFF } from "../types.js";
 import { createMicrosoftAdapter } from "../providers/microsoft.js";
 import { ProviderGrantRevokedError } from "../providers/types.js";
 import {
@@ -151,5 +156,66 @@ describe("connectionAccessToken", () => {
     await expect(connectionAccessToken(connection())).rejects.toThrow();
 
     expect(writes).toEqual([]);
+  });
+});
+
+describe("connectionAccessToken after the provider refused the token", () => {
+  const stillGood = () =>
+    connection({ accessTokenExpiresAt: new Date(Date.now() + 10 * 60 * 1000) });
+
+  it("refreshes on forceRefresh although the stored token has not expired", async () => {
+    endpoint.answer(() => ({
+      status: 200,
+      body: { access_token: "access-2", refresh_token: "refresh-2", expires_in: 3600 },
+    }));
+
+    expect(await connectionAccessToken(stillGood(), { forceRefresh: true })).toBe("access-2");
+    expect(endpoint.requests).toHaveLength(1);
+  });
+
+  it("hands one token to every call of a run until a refresh is forced", async () => {
+    endpoint.answer(() => ({
+      status: 200,
+      body: { access_token: "access-2", refresh_token: "refresh-2", expires_in: 3600 },
+    }));
+    const source = connectionTokenSource(stillGood());
+
+    expect([await source(), await source()]).toEqual(["access-1", "access-1"]);
+    expect(await source({ forceRefresh: true })).toBe("access-2");
+    expect(await source()).toBe("access-2");
+    expect(endpoint.requests).toHaveLength(1);
+  });
+
+  it("asks again after a failed attempt instead of repeating the failure", async () => {
+    endpoint.answer(() => ({ status: 503, body: { error: "temporarily_unavailable" } }));
+    const source = connectionTokenSource(connection());
+
+    await expect(source()).rejects.toThrow();
+    endpoint.answer(() => ({
+      status: 200,
+      body: { access_token: "access-2", refresh_token: "refresh-2", expires_in: 3600 },
+    }));
+
+    expect(await source()).toBe("access-2");
+  });
+});
+
+describe("a provider whose switch is off", () => {
+  it("refuses start and token use with CALENDAR_SYNC_PROVIDER_OFF", async () => {
+    adapterRef.value = undefined;
+    const offError = expect.objectContaining({
+      statusCode: 404,
+      errors: [expect.objectContaining({ publicContext: { code: CALENDAR_SYNC_PROVIDER_OFF } })],
+    });
+
+    await expect(
+      startConnection({
+        userId: "e9dl7v5efgnn0cjrmn7hqz3aswwqxg2b",
+        provider: calendarProvider.Microsoft,
+        configId: "6c1f8a52-9d3e-4b7a-8f21-3e5d7c9a1b40",
+        timeZone: "Europe/Prague",
+      })
+    ).rejects.toEqual(offError);
+    await expect(connectionAccessToken(connection())).rejects.toEqual(offError);
   });
 });

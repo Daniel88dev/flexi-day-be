@@ -82,7 +82,9 @@ export const calendarSyncCallbackRouter = (): Router => {
    *             schema:
    *               type: string
    *       '404':
-   *         description: Unknown provider, or direct sync is switched off for every provider
+   *         description: |
+   *           Unknown provider, or direct sync is switched off for every provider.
+   *           `errors[].context.code` is `CALENDAR_SYNC_PROVIDER_OFF`.
    */
   app.get("/connections/:provider/callback", tryCatch(handleGetConnectionCallback));
 
@@ -296,7 +298,10 @@ export const calendarSyncRouter = (): Router => {
    *           `errors[].context` carries
    *           `{ reason: "PLAN_LIMIT", code: "CALENDAR_SYNC_PLAN_REQUIRED" }`.
    *       '404':
-   *         description: Unknown provider, provider switched off, or calendar not found
+   *         description: |
+   *           Unknown provider, provider switched off, or calendar not found. For an
+   *           unknown or switched-off provider `errors[].context.code` is
+   *           `CALENDAR_SYNC_PROVIDER_OFF`.
    *       '409':
    *         description: |
    *           The config already syncs through the other provider; one target per
@@ -346,7 +351,9 @@ export const calendarSyncRouter = (): Router => {
    *       '401':
    *         description: Unauthorized
    *       '404':
-   *         description: Unknown provider, or no connection to it
+   *         description: |
+   *           Unknown provider, or no connection to it. For an unknown provider
+   *           `errors[].context.code` is `CALENDAR_SYNC_PROVIDER_OFF`.
    */
   app.delete("/connections/:provider", tryCatch(handleDeleteConnection));
 

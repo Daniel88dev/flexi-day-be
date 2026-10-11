@@ -16,6 +16,9 @@ export const CALENDAR_SYNC_TARGET_EXISTS = "CALENDAR_SYNC_TARGET_EXISTS";
 /** `publicContext.code` when Sync now meets a connection that needs a new consent round. */
 export const CALENDAR_SYNC_NEEDS_RECONNECT = "CALENDAR_SYNC_NEEDS_RECONNECT";
 
+/** `publicContext.code` when a provider is unknown or its switch is off. */
+export const CALENDAR_SYNC_PROVIDER_OFF = "CALENDAR_SYNC_PROVIDER_OFF";
+
 export type CalendarConnectionRecord = typeof calendarConnection.$inferSelect;
 export type CalendarConnectionInsert = typeof calendarConnection.$inferInsert;
 export type CalendarSyncEventRecord = typeof calendarSyncEvents.$inferSelect;

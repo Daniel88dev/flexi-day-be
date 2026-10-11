@@ -13,6 +13,7 @@ import { authSecret, decryptStoredOAuthToken, encryptOAuthToken } from "../../ut
 import { logger } from "../../middleware/logger.js";
 import {
   CALENDAR_SYNC_NEEDS_RECONNECT,
+  CALENDAR_SYNC_PROVIDER_OFF,
   CALENDAR_SYNC_TARGET_EXISTS,
   CALENDAR_SYNC_TEAM_SCOPE,
   CALENDAR_TARGET_PAUSED,
@@ -29,6 +30,7 @@ import { providerAdapter } from "./providers/index.js";
 import { ProviderGrantRevokedError, ProviderTokenError } from "./providers/types.js";
 import { purgeTarget } from "../calendarSync/syncEngine.js";
 import { enqueueSync } from "../calendarSync/enqueueSync.js";
+import type { AccessTokenSource } from "../calendarSync/drivers/types.js";
 
 const dueNow = () => ({ syncDueAt: new Date(), syncAttempts: 0, lastError: null });
 
@@ -102,6 +104,7 @@ const providerOff = (provider: calendarProvider) =>
   new AppError({
     code: 404,
     message: "This calendar provider is not available",
+    publicContext: { code: CALENDAR_SYNC_PROVIDER_OFF },
     context: { provider },
   });
 
@@ -337,10 +340,12 @@ export const markNeedsReconnect = async (connectionId: string): Promise<void> =>
 
 /**
  * A usable access token for the connection, refreshed when it is within a
- * minute of expiry. Throws `ProviderGrantRevokedError` once the grant is gone.
+ * minute of expiry, or always with `forceRefresh` (after the provider answered
+ * 401 to it). Throws `ProviderGrantRevokedError` once the grant is gone.
  */
 export const connectionAccessToken = async (
-  connection: CalendarConnectionRecord
+  connection: CalendarConnectionRecord,
+  options: { forceRefresh?: boolean } = {}
 ): Promise<string> => {
   if (connection.status === calendarConnectionStatus.NeedsReconnect) {
     throw new ProviderGrantRevokedError("needs_reconnect");
@@ -355,11 +360,11 @@ export const connectionAccessToken = async (
 
   let fresh;
   try {
-    fresh = await adapter.accessToken({
-      accessToken,
-      expiresAt: connection.accessTokenExpiresAt,
-      refreshToken,
-    });
+    fresh = await adapter.accessToken(
+      options.forceRefresh
+        ? { accessToken: null, expiresAt: null, refreshToken }
+        : { accessToken, expiresAt: connection.accessTokenExpiresAt, refreshToken }
+    );
   } catch (error) {
     if (error instanceof ProviderGrantRevokedError) {
       await markNeedsReconnect(connection.id);
@@ -384,6 +389,24 @@ export const connectionAccessToken = async (
     })
     .where(eq(calendarConnection.id, connection.id));
   return fresh.accessToken;
+};
+
+/**
+ * One run's token for a connection: fetched once, shared by every driver call
+ * of the run, replaced only when a refresh is forced. A failure is not cached.
+ */
+export const connectionTokenSource = (connection: CalendarConnectionRecord): AccessTokenSource => {
+  let current: Promise<string> | undefined;
+  return (options) => {
+    if (!current || options?.forceRefresh) {
+      const attempt = connectionAccessToken(connection, options);
+      current = attempt;
+      attempt.catch(() => {
+        if (current === attempt) current = undefined;
+      });
+    }
+    return current;
+  };
 };
 
 const targetNotFound = (context: Record<string, unknown>) =>

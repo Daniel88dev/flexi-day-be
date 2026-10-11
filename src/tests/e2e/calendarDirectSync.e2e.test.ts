@@ -164,6 +164,7 @@ describe("calendar direct sync routes on the fake driver", () => {
       .send({ configId: meConfigId, timeZone: "+01:00" });
 
     expect(unknown.status).toBe(404);
+    expect(unknown.body.errors[0].context).toEqual({ code: "CALENDAR_SYNC_PROVIDER_OFF" });
     expect(offset.status).toBe(422);
   });
 
