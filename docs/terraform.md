@@ -84,6 +84,32 @@ feeds the attachments bucket's CORS rule, which is for browser origins.
 `terraform validate` passes and `terraform plan` shows exactly the env var, secret and policy change
 you intended and nothing else. Hand the plan to the user and let them apply.
 
+## Calendar direct sync switches
+
+`calendar_sync_google_enabled` and `calendar_sync_microsoft_enabled` are booleans, default `false`,
+that reach App Runner as the plain env vars `CALENDAR_SYNC_GOOGLE_ENABLED` and
+`CALENDAR_SYNC_MICROSOFT_ENABLED` (`"true"` or `"false"`). They add no secrets: a connection reuses
+its provider's sign-in client, so a switch does nothing while `google_client_id` or
+`microsoft_client_id` is empty. `CALENDAR_SYNC_DRIVER` is deliberately absent; the backend defaults
+to the live driver and refuses `fake` when `NODE_ENV=production`.
+
+Both callback URIs must be registered next to the sign-in ones:
+`https://api.flexi-day.com/api/calendar-sync/connections/google/callback` in the Google Cloud console
+and `https://api.flexi-day.com/api/calendar-sync/connections/microsoft/callback` on the Entra app
+registration. T-297 and T-298 registered them on 2026-10-11.
+
+Roll out in this order:
+
+1. Deploy the backend and apply with both switches `false`.
+2. Deploy the web app. Its connect buttons stay hidden while both switches are off.
+3. Set `calendar_sync_google_enabled = true` and apply. Until Google verifies the OAuth app for the
+   calendar scope (T-302), users see the unverified-app warning and the app is capped at 100 users
+   for life.
+4. Set `calendar_sync_microsoft_enabled = true` and apply only after Entra publisher verification
+   (T-301). Before it, users in other companies' tenants cannot consent to the calendar scopes.
+
+Each flip changes only the App Runner env, which rolls out a new deployment.
+
 ## Adding an IAM permission
 
 `iam.tf` holds two App Runner roles that are easy to confuse. The ECR access role only pulls the

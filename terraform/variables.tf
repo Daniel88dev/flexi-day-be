@@ -290,6 +290,19 @@ variable "apple_private_key" {
   default     = ""
 }
 
+# Calendar direct sync (docs/terraform.md has the rollout order)
+variable "calendar_sync_google_enabled" {
+  description = "Turns on Google Calendar direct sync (CALENDAR_SYNC_GOOGLE_ENABLED). Needs google_client_id and google_client_secret set. Until Google verifies the OAuth app for the calendar scope (T-302), every user sees the unverified-app warning and the app is capped at 100 users for life."
+  type        = bool
+  default     = false
+}
+
+variable "calendar_sync_microsoft_enabled" {
+  description = "Turns on Microsoft calendar direct sync (CALENDAR_SYNC_MICROSOFT_ENABLED). Needs microsoft_client_id and microsoft_client_secret set. Keep false until Entra publisher verification is done (T-301); before it, users in other companies' tenants cannot consent to the calendar scopes."
+  type        = bool
+  default     = false
+}
+
 # Attachments (docs/adr/0003)
 variable "attachments_bucket_name" {
   description = "S3 bucket for attachment bytes. Bucket names are global, so override on a collision; empty means <project_name>-<environment>-attachments."
