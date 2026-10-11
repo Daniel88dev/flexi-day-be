@@ -13,3 +13,6 @@ export const encryptOAuthToken = async (token: string): Promise<string> =>
 /** Reads a stored token back, whether it was written encrypted or before encryption went on. */
 export const decryptStoredOAuthToken = async (stored: string): Promise<string> =>
   decryptOAuthToken(stored, await authContext());
+
+/** The key better-auth signs with, for HMACs that must die with it. */
+export const authSecret = async (): Promise<string> => (await authContext()).secret;

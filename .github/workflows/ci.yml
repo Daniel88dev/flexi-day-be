@@ -95,4 +95,13 @@ jobs:
         run: npm run test:unit -- --coverage
 
       - name: Run e2e tests
+        # Calendar direct sync on the fake driver; the client values are dummies it never sends.
+        env:
+          CALENDAR_SYNC_GOOGLE_ENABLED: "true"
+          CALENDAR_SYNC_MICROSOFT_ENABLED: "true"
+          CALENDAR_SYNC_DRIVER: fake
+          GOOGLE_CLIENT_ID: e2e-google-client-id
+          GOOGLE_CLIENT_SECRET: e2e-google-client-secret
+          MICROSOFT_CLIENT_ID: e2e-microsoft-client-id
+          MICROSOFT_CLIENT_SECRET: e2e-microsoft-client-secret
         run: npm run test:e2e

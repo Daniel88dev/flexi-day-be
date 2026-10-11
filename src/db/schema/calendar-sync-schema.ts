@@ -1,7 +1,18 @@
-import { boolean, index, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  check,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
 import { groups } from "./group-schema.js";
+import { calendarConnection } from "./calendar-connection-schema.js";
 import { calendarRecordTypeEnum } from "./vacation-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
@@ -36,6 +47,14 @@ export const calendarSync = pgTable(
     distinguishMine: boolean("distinguish_mine").notNull().default(false),
     token: text("token").notNull(),
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+    connectionId: text("connection_id").references(() => calendarConnection.id, {
+      onDelete: "set null",
+    }),
+    timeZone: text("time_zone"),
+    syncDueAt: timestamp("sync_due_at", { withTimezone: true }),
+    syncAttempts: integer("sync_attempts").notNull().default(0),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -51,6 +70,15 @@ export const calendarSync = pgTable(
       .on(table.token)
       .where(sql`${table.deletedAt} IS NULL`),
     index("idx_calendar_sync_user_id").on(table.userId),
+    index("idx_calendar_sync_connection").on(table.connectionId),
+    index("idx_calendar_sync_sync_due_at")
+      .on(table.syncDueAt)
+      .where(sql`${table.syncDueAt} IS NOT NULL`),
+    // A TEAM feed carries teammates' records; only the owner's own may reach their calendar.
+    check(
+      "calendar_sync_target_me_scope_chk",
+      sql`${table.connectionId} IS NULL OR ${table.scope} = 'ME'`
+    ),
   ]
 );
 

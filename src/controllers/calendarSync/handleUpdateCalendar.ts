@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { validateUpdateCalendarSync } from "../../services/calendarSync/types.js";
-import { feedBaseUrl, resolveTeamIds, serializeConfig } from "./utils.js";
+import { feedBaseUrl, resolveTeamIds, serializeConfigWithTarget } from "./utils.js";
 import { updateCalendarSync } from "../../services/calendarSync/calendarSyncServices.js";
 import { getAllGroupsForUser } from "../../services/groupUser/groupUserServices.js";
 
@@ -56,5 +56,5 @@ export const handleUpdateCalendar = async (req: Request, res: Response) => {
     });
   }
 
-  return res.status(200).json(serializeConfig(config, feedBaseUrl(req), true));
+  return res.status(200).json(await serializeConfigWithTarget(config, feedBaseUrl(req), true));
 };

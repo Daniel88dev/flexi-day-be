@@ -30,6 +30,12 @@ export type CalendarSyncRecord = {
   distinguishMine: boolean;
   token: string;
   lastFetchedAt: Date | null;
+  connectionId: string | null;
+  timeZone: string | null;
+  syncDueAt: Date | null;
+  syncAttempts: number;
+  lastSyncedAt: Date | null;
+  lastError: string | null;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

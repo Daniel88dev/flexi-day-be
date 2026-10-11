@@ -424,6 +424,33 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   organization would go with the account. `src/tests/e2e/accountDeletion.e2e.test.ts` covers the
   blockers and the all-or-nothing rollback.
 
+## Calendar direct sync (`src/services/calendarConnection/`)
+
+- **A calendar connection is never a sign-in link.** Connecting Google or Microsoft for direct
+  sync runs its own consent round (`prompt=consent`, the calendar scope alone) and stores its own
+  refresh token, encrypted, in a `calendar_connection` row, even when the user signs in with the
+  same account. Sync code reads tokens only from that row, and `disconnectProvider` deletes only
+  that row and the targets' ledgers; it never reads or writes `account`. Mixing the two would let
+  disconnecting the calendar sign the user out of their provider, or let a sign-in token, which
+  carries no calendar scope, stand in for a grant the user never gave.
+  `src/tests/e2e/calendarDirectSync.e2e.test.ts` ("disconnects Google, purging its targets and
+  leaving the sign-in account untouched") fails if a disconnect touches the user's `account` rows.
+- **The calendar callback authenticates by state alone.**
+  `GET /api/calendar-sync/connections/:provider/callback` is mounted ahead of `authSession`,
+  because the browser arrives from the provider's domain and a session cookie cannot be relied on
+  to survive that redirect. Its credential is the `state` that `startConnection` signs: an HMAC
+  SHA-256 over the user, config, time zone, provider, a nonce and a ten-minute expiry, keyed with
+  the better-auth secret and compared in constant time (`oauthState.ts`). Nothing is exchanged or
+  written until the state verifies for that provider and its user still owns the `ME` config.
+  The trade-off of a stateless state is that it is not single-use: within its ten minutes, anyone
+  holding a user's consent URL could finish that user's connection with their own account, which
+  the provider's consent screen makes visible to whoever completes it. Every outcome is a redirect
+  to the web with a fixed code, never a token or the provider's own error text.
+  `src/services/calendarConnection/tests/oauthState.test.ts` fails if an expired, rewritten,
+  wrongly keyed or other-provider state verifies, and
+  `src/services/calendarConnection/tests/completeConnection.test.ts` fails if a rejected state or
+  a config its user does not own reaches the code exchange or any write.
+
 ## Billing config is opt-in (`src/config.ts`)
 
 With `PADDLE_API_KEY` unset, `config.paddle` is `undefined` and `/api/billing/*` returns 503. Once

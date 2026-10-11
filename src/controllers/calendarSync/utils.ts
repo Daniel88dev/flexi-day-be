@@ -6,6 +6,9 @@ import type {
 } from "../../services/calendarSync/types.js";
 import { config } from "../../config.js";
 import AppError from "../../utils/appError.js";
+import type { CalendarTargetView } from "../../services/calendarConnection/types.js";
+import { calendarTargetViews } from "../../services/calendarConnection/calendarConnectionServices.js";
+import { getCalendarSyncById } from "../../services/calendarSync/calendarSyncServices.js";
 
 /** Human-readable labels for each calendar record type, used in feed event summaries. */
 export const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
@@ -53,7 +56,8 @@ export const maskToken = (token: string): string => `${token.slice(0, 9)}${"•"
 export const serializeConfig = (
   config: CalendarSyncFull,
   baseUrl: string,
-  revealToken: boolean
+  revealToken: boolean,
+  target: CalendarTargetView | null
 ) => ({
   id: config.id,
   name: config.name,
@@ -69,9 +73,35 @@ export const serializeConfig = (
   feedUrl: revealToken ? feedUrl(baseUrl, config.token) : feedUrl(baseUrl, maskToken(config.token)),
   tokenMasked: !revealToken,
   lastFetchedAt: config.lastFetchedAt ? config.lastFetchedAt.toISOString() : null,
+  target,
   createdAt: config.createdAt.toISOString(),
   updatedAt: config.updatedAt.toISOString(),
 });
+
+/** {@link serializeConfig} for each config, with its direct-sync `target` resolved. */
+export const serializeConfigs = async (
+  configs: CalendarSyncFull[],
+  baseUrl: string,
+  revealToken: boolean
+) => {
+  const targets = await calendarTargetViews(configs);
+  return configs.map((c) => serializeConfig(c, baseUrl, revealToken, targets.get(c.id) ?? null));
+};
+
+export const serializeConfigWithTarget = async (
+  config: CalendarSyncFull,
+  baseUrl: string,
+  revealToken: boolean
+) => (await serializeConfigs([config], baseUrl, revealToken))[0]!;
+
+/** Reloads a config the caller owns and serializes it with its feed URL and target. */
+export const serializeOwnedConfig = async (req: Request, id: string, userId: string) => {
+  const config = await getCalendarSyncById(id, userId);
+  if (!config) {
+    throw new AppError({ code: 404, message: "Calendar not found", context: { id, userId } });
+  }
+  return serializeConfigWithTarget(config, feedBaseUrl(req), true);
+};
 
 /**
  * Validates that every requested team belongs to the user. Returns the list of

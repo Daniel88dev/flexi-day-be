@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
-import { feedBaseUrl, serializeConfig } from "./utils.js";
+import { feedBaseUrl, serializeConfigWithTarget } from "./utils.js";
 import {
   generateFeedToken,
   regenerateToken,
@@ -30,5 +30,5 @@ export const handleRegenerateToken = async (req: Request, res: Response) => {
     });
   }
 
-  return res.status(200).json(serializeConfig(config, feedBaseUrl(req), true));
+  return res.status(200).json(await serializeConfigWithTarget(config, feedBaseUrl(req), true));
 };
