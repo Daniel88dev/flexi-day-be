@@ -18,6 +18,7 @@ import {
   type SeededUser,
   type VacationState,
 } from "../../services/dev/devSeedServices.js";
+import { connectScenarioCalendar } from "../../services/dev/devCalendarServices.js";
 
 export const validatePostDevScenario = z.object({
   teamName: z.string().min(1).max(120).optional(),
@@ -76,7 +77,8 @@ const ADMINISTERED_MEMBERS = [
  * approved / rejected so every dashboard widget and the approvals queue have
  * content. A second team in the owner's organization, run by Dave, has the
  * owner as org admin but not as a member, for the "Groups you administer"
- * views. Re-running it is a no-op rather than an error.
+ * views. Under the fake calendar driver the owner is also connected to a fake
+ * Google target. Re-running it is a no-op rather than an error.
  */
 export const handlePostDevScenario = async (req: Request, res: Response) => {
   const data = req.body as ValidatedPostDevScenarioType;
@@ -227,12 +229,15 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
     administeredBookings
   );
 
+  const calendar = await connectScenarioCalendar(owner);
+
   return res.status(201).json({
     team,
     owner,
     members,
     administeredTeam: { ...administeredTeam, manager, members: administeredMembers },
     vacationsCreated: teamBookingsCreated + administeredBookingsCreated,
+    calendar,
     signInUrl: `${config.email.appUrl}/dev-sign-in/?email=${encodeURIComponent(owner.email)}`,
   });
 };

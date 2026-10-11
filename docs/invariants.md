@@ -179,6 +179,14 @@ never a UUID: a UUID there would let a UUID validator on a user id pass every lo
 browser or on the simulator and fail in production. `src/services/dev/tests/devSeedServices.test.ts`
 pins the shape.
 
+`POST /api/dev/calendar/connect` fabricates a calendar connection with no consent round, so it
+refuses (409) unless `CALENDAR_SYNC_DRIVER=fake`, which boot refuses in production. A fabricated
+connection holds fake tokens and can only ever reach the fake driver, never a real Google or
+Microsoft calendar. `src/tests/e2e/devCalendar.e2e.test.ts` ("refuses to fabricate a connection
+unless the driver is fake") fails if the check goes.
+[`calendar-direct-sync.md`](calendar-direct-sync.md#local-development) has the three calendar
+routes.
+
 The frontend half is gated too: `/dev-sign-in/` only builds when `NEXT_PUBLIC_DEV_TOOLS=1`, and
 `pageExtensions` in `next.config.ts` keeps `page.dev.tsx` files out of production output entirely.
 
@@ -451,6 +459,24 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   wrongly keyed or other-provider state verifies, and
   `src/services/calendarConnection/tests/completeConnection.test.ts` fails if a rejected state or
   a config its user does not own reaches the code exchange or any write.
+
+- **Direct sync writes only the owner's records.** A sync target writes into one person's own
+  calendar, so it may carry nothing but that person's approved records. The check
+  constraint `calendar_sync_target_me_scope_chk` (`connection_id IS NULL OR scope = 'ME'`)
+  keeps a connection off any `TEAM` config, whatever path writes the row, and
+  `assertTargetAttachable` and `attachTarget` refuse one with 400 `CALENDAR_SYNC_TEAM_SCOPE` before
+  the database has to; `updateCalendarSync` refuses to turn a connected config `TEAM`.
+  `markCalendarTargetsDirty` marks due only `scope = ME` targets owned by the changed row's user.
+  The engine builds its desired set from `getFeedRecords` on that `ME` config, the owner's rows
+  alone. Undo any of these and a teammate's absence, or a whole team's, lands in someone's personal
+  Google or Microsoft calendar, where the organization's sharing shows it to people who were never
+  meant to see it. `src/tests/e2e/calendarConnection.e2e.test.ts` ("refuses to attach a TEAM
+  config and leaves it untouched", "holds the rule in the database too"),
+  `src/services/calendarSync/tests/updateCalendarSync.test.ts` ("refuses to turn a connected config
+  TEAM with a 400 the web can map"), `src/tests/e2e/calendarMarkTargetsDirty.e2e.test.ts` ("marks
+  only the owner's connected ME targets whose types include the row's type") and
+  `src/tests/e2e/calendarSyncApproval.e2e.test.ts` ("never touches the owner's calendar for a
+  teammate's approval") fail if the rule gives.
 
 ## Billing config is opt-in (`src/config.ts`)
 

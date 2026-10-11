@@ -21,6 +21,15 @@ import {
   handlePostDevSetPlan,
   validatePostDevSetPlan,
 } from "../controllers/dev/handlePostDevSetPlan.js";
+import {
+  handlePostDevCalendarConnect,
+  validatePostDevCalendarConnect,
+} from "../controllers/dev/handlePostDevCalendarConnect.js";
+import { handleGetDevCalendarEvents } from "../controllers/dev/handleGetDevCalendarEvents.js";
+import {
+  handlePostDevCalendarCapability,
+  validatePostDevCalendarCapability,
+} from "../controllers/dev/handlePostDevCalendarCapability.js";
 
 /**
  * Local-only seeding and impersonation surface, mounted by `server.ts` only
@@ -61,6 +70,20 @@ export const devRouter = (): Router => {
     "/billing/set-plan",
     bodyValidationMiddleware(validatePostDevSetPlan),
     tryCatch(handlePostDevSetPlan)
+  );
+
+  app.post(
+    "/calendar/connect",
+    bodyValidationMiddleware(validatePostDevCalendarConnect),
+    tryCatch(handlePostDevCalendarConnect)
+  );
+
+  app.get("/calendar/events", tryCatch(handleGetDevCalendarEvents));
+
+  app.post(
+    "/calendar/capability",
+    bodyValidationMiddleware(validatePostDevCalendarCapability),
+    tryCatch(handlePostDevCalendarCapability)
   );
 
   return app;

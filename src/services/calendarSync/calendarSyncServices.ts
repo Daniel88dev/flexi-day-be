@@ -95,6 +95,21 @@ const writeChildren = async (
   }
 };
 
+/** Writes a config with its teams and types inside the caller's transaction. */
+export const insertCalendarSync = async (
+  base: CalendarSyncInsert,
+  teamIds: string[],
+  types: CalendarSyncTypeEntry[],
+  tx: DbTransaction
+) => {
+  const [row] = await tx.insert(calendarSync).values(base).returning();
+  if (!row) {
+    throw new Error("Failed to create calendar-sync config");
+  }
+  await writeChildren(row.id, teamIds, types, tx);
+  return row;
+};
+
 /**
  * Creates a config together with its teams and types in a single transaction.
  */
@@ -103,14 +118,7 @@ export const createCalendarSync = async (
   teamIds: string[],
   types: CalendarSyncTypeEntry[]
 ): Promise<CalendarSyncFull> => {
-  const created = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(calendarSync).values(base).returning();
-    if (!row) {
-      throw new Error("Failed to create calendar-sync config");
-    }
-    await writeChildren(row.id, teamIds, types, tx);
-    return row;
-  });
+  const created = await db.transaction((tx) => insertCalendarSync(base, teamIds, types, tx));
 
   const [full] = await assembleConfigs([created]);
   if (!full) {
