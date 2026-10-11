@@ -62,6 +62,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.0",
+    "google-auth-library": "^11.2.0",
     "helmet": "^8.1.0",
     "jose": "^6.2.12",
     "libheif-js": "^1.23.2",

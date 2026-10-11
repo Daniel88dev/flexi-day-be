@@ -2,11 +2,18 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
-import { softDeleteCalendarSync } from "../../services/calendarSync/calendarSyncServices.js";
+import {
+  getCalendarSyncById,
+  softDeleteCalendarSync,
+} from "../../services/calendarSync/calendarSyncServices.js";
+import { purgeTarget } from "../../services/calendarSync/syncEngine.js";
 
 const validateUUID = z.uuid();
 
-/** Soft-deletes a config; the feed link stops resolving immediately. */
+/**
+ * Soft-deletes a config; the feed link stops resolving immediately. A config
+ * syncing to a connected account first removes what it wrote there.
+ */
 export const handleDeleteCalendar = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
@@ -15,6 +22,11 @@ export const handleDeleteCalendar = async (req: Request, res: Response) => {
     throw new AppError({ code: 400, message: "Invalid calendar id" });
   }
   const id = parsedId.data;
+
+  const existing = await getCalendarSyncById(id, auth.userId);
+  if (existing?.connectionId) {
+    await purgeTarget(id);
+  }
 
   const deleted = await softDeleteCalendarSync(id, auth.userId);
 

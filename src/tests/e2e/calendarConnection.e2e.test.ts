@@ -35,7 +35,7 @@ const insertConfig = async (userId: string, scope: calendarSyncScope) => {
   return id;
 };
 
-const insertConnection = (userId: string) =>
+const insertConnection = (userId: string, revokedAt: Date | null = null) =>
   db
     .insert(calendarConnection)
     .values({
@@ -44,6 +44,7 @@ const insertConnection = (userId: string) =>
       provider: calendarProvider.Google,
       refreshTokenEnc: "encrypted-refresh-token",
       grantedScopes: "https://www.googleapis.com/auth/calendar.events.owned",
+      revokedAt,
     })
     .returning();
 
@@ -88,6 +89,26 @@ describe("Calendar direct sync data model E2E", () => {
       db.update(calendarSync).set({ connectionId }).where(eq(calendarSync.id, teamConfigId))
     );
     expect(code).toBe("23514");
+  });
+
+  it.each([
+    ["belongs to another user", () => insertConnection(context.user2.id)],
+    ["was revoked", () => insertConnection(context.user1.id, new Date())],
+  ])("refuses a connection that %s and writes nothing", async (_case, insert) => {
+    const [connection] = await insert();
+
+    await expect(
+      attachTarget({
+        configId: meConfigId,
+        userId: context.user1.id,
+        connectionId: connection!.id,
+        timeZone: "Europe/Prague",
+      })
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    const [row] = await db.select().from(calendarSync).where(eq(calendarSync.id, meConfigId));
+    expect(row?.connectionId).toBeNull();
+    expect(row?.syncDueAt).toBeNull();
   });
 
   it("attaches a ME config with its zone and marks it due", async () => {

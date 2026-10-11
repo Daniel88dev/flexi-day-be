@@ -25,7 +25,7 @@ import { authExtRouter } from "./routes/authExtRouter.js";
 import { usersRouter } from "./routes/usersRouter.js";
 import { bankHolidayRouter } from "./routes/bankHolidayRouter.js";
 import { notificationRouter } from "./routes/notificationRouter.js";
-import { calendarSyncRouter } from "./routes/calendarSyncRouter.js";
+import { calendarSyncCallbackRouter, calendarSyncRouter } from "./routes/calendarSyncRouter.js";
 import { reportRouter } from "./routes/reportRouter.js";
 import { syncRouter } from "./routes/syncRouter.js";
 import { tryCatch } from "./middleware/tryCatch.js";
@@ -98,6 +98,13 @@ export const createServer = () => {
   // environment this branch never runs and the routes simply do not exist.
   if (config.dev) {
     app.use("/api/dev", devRouter());
+  }
+
+  // The calendar provider's redirect after consent. Ahead of `authSession`: the
+  // browser arrives from Google or Microsoft and the signed state is the only
+  // credential. Without a provider switched on the route does not exist.
+  if (config.calendarSync) {
+    app.use("/api/calendar-sync", calendarSyncCallbackRouter());
   }
 
   // The disk store's upload and download routes stand in for S3's presigned

@@ -82,11 +82,18 @@ type AttachmentsConfig = {
   callbackSecret?: string;
 };
 
+type OAuthClientCredentials = { clientId: string; clientSecret: string };
+
 type CalendarSyncConfig = {
   googleEnabled: boolean;
   microsoftEnabled: boolean;
   driver: "live" | "fake";
   appUrl: string;
+  /** Base of the callback URIs registered at the portals: `{apiUrl}/api/calendar-sync/connections/{provider}/callback`. */
+  apiUrl: string;
+  /** The sign-in client, present only while its switch is on. */
+  google?: OAuthClientCredentials;
+  microsoft?: OAuthClientCredentials;
 };
 
 type DevToolsConfig = {
@@ -322,15 +329,34 @@ const parseCalendarSync = (): CalendarSyncConfig | undefined => {
     throw new Error("CALENDAR_SYNC_DRIVER=fake must never be set when NODE_ENV=production");
   }
 
-  const googleEnabled =
-    process.env.CALENDAR_SYNC_GOOGLE_ENABLED === "true" &&
-    Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-  const microsoftEnabled =
-    process.env.CALENDAR_SYNC_MICROSOFT_ENABLED === "true" &&
-    Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
-  if (!googleEnabled && !microsoftEnabled) return undefined;
+  const client = (
+    enabled: string | undefined,
+    clientId: string | undefined,
+    clientSecret: string | undefined
+  ): OAuthClientCredentials | undefined =>
+    enabled === "true" && clientId && clientSecret ? { clientId, clientSecret } : undefined;
 
-  return { googleEnabled, microsoftEnabled, driver: rawDriver, appUrl };
+  const google = client(
+    process.env.CALENDAR_SYNC_GOOGLE_ENABLED,
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET
+  );
+  const microsoft = client(
+    process.env.CALENDAR_SYNC_MICROSOFT_ENABLED,
+    process.env.MICROSOFT_CLIENT_ID,
+    process.env.MICROSOFT_CLIENT_SECRET
+  );
+  if (!google && !microsoft) return undefined;
+
+  return {
+    googleEnabled: Boolean(google),
+    microsoftEnabled: Boolean(microsoft),
+    driver: rawDriver,
+    appUrl,
+    apiUrl: (process.env.BETTER_AUTH_URL || "http://localhost:8080").replace(/\/+$/, ""),
+    google,
+    microsoft,
+  };
 };
 
 export const config: Config = {

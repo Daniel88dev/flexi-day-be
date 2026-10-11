@@ -87,6 +87,9 @@ describe("config calendar direct sync", () => {
       microsoftEnabled: false,
       driver: "live",
       appUrl: "http://localhost:3000",
+      apiUrl: "http://localhost:8080",
+      google: { clientId: "google-id", clientSecret: "google-secret" },
+      microsoft: undefined,
     });
   });
 
@@ -96,7 +99,12 @@ describe("config calendar direct sync", () => {
       ...MICROSOFT_CREDENTIALS,
       CALENDAR_SYNC_MICROSOFT_ENABLED: "true",
     });
-    expect(config.calendarSync).toMatchObject({ googleEnabled: false, microsoftEnabled: true });
+    expect(config.calendarSync).toMatchObject({
+      googleEnabled: false,
+      microsoftEnabled: true,
+      microsoft: { clientId: "microsoft-id", clientSecret: "microsoft-secret" },
+    });
+    expect(config.calendarSync?.google).toBeUndefined();
   });
 
   it("accepts the fake driver outside production", async () => {
@@ -128,12 +136,16 @@ describe("config calendar direct sync", () => {
       ...GOOGLE_CREDENTIALS,
       CALENDAR_SYNC_GOOGLE_ENABLED: "true",
       APP_URL: "https://www.flexi-day.com",
+      BETTER_AUTH_URL: "https://api.flexi-day.com/",
     });
     expect(config.calendarSync).toEqual({
       googleEnabled: true,
       microsoftEnabled: false,
       driver: "live",
       appUrl: "https://www.flexi-day.com",
+      apiUrl: "https://api.flexi-day.com",
+      google: { clientId: "google-id", clientSecret: "google-secret" },
+      microsoft: undefined,
     });
   });
 });

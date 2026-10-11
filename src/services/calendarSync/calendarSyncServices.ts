@@ -9,6 +9,7 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { teamScopeError } from "../calendarConnection/errors.js";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
 import type {
   CalendarFeedRecord,
@@ -176,26 +177,35 @@ export const updateCalendarSync = async (
   teamIds: string[],
   types: CalendarSyncTypeEntry[]
 ): Promise<CalendarSyncFull | undefined> => {
-  const updated = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(calendarSync)
-      .set({
-        name: fields.name,
-        scope: fields.scope,
-        distinguishMine: fields.distinguishMine,
-      })
-      .where(
-        and(
-          eq(calendarSync.id, id),
-          eq(calendarSync.userId, userId),
-          isNull(calendarSync.deletedAt)
+  const updated = await db
+    .transaction(async (tx) => {
+      const [row] = await tx
+        .update(calendarSync)
+        .set({
+          name: fields.name,
+          scope: fields.scope,
+          distinguishMine: fields.distinguishMine,
+        })
+        .where(
+          and(
+            eq(calendarSync.id, id),
+            eq(calendarSync.userId, userId),
+            isNull(calendarSync.deletedAt)
+          )
         )
-      )
-      .returning();
-    if (!row) return undefined;
-    await writeChildren(row.id, teamIds, types, tx);
-    return row;
-  });
+        .returning();
+      if (!row) return undefined;
+      await writeChildren(row.id, teamIds, types, tx);
+      return row;
+    })
+    .catch((error: unknown) => {
+      // A config syncing to a connected account cannot become TEAM; turn the target off first.
+      const cause = (error as { cause?: { code?: string; constraint?: string } }).cause;
+      if (cause?.code === "23514" && cause.constraint === "calendar_sync_target_me_scope_chk") {
+        throw teamScopeError({ configId: id, userId });
+      }
+      throw error;
+    });
 
   if (!updated) return undefined;
   const [full] = await assembleConfigs([updated]);

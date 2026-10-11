@@ -10,6 +10,12 @@ import {
 /** `publicContext.code` when a direct-sync target is asked of a `TEAM` config. */
 export const CALENDAR_SYNC_TEAM_SCOPE = "CALENDAR_SYNC_TEAM_SCOPE";
 
+/** `publicContext.code` when a config already syncs through another provider's connection. */
+export const CALENDAR_SYNC_TARGET_EXISTS = "CALENDAR_SYNC_TARGET_EXISTS";
+
+/** `publicContext.code` when Sync now meets a connection that needs a new consent round. */
+export const CALENDAR_SYNC_NEEDS_RECONNECT = "CALENDAR_SYNC_NEEDS_RECONNECT";
+
 export type CalendarConnectionRecord = typeof calendarConnection.$inferSelect;
 export type CalendarConnectionInsert = typeof calendarConnection.$inferInsert;
 export type CalendarSyncEventRecord = typeof calendarSyncEvents.$inferSelect;

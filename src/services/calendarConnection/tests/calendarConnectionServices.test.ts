@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { selectRows, mockUpdate, mockSet, mockUpdateWhere, updatedRows } = vi.hoisted(() => {
-  const selectRows: { value: unknown[] } = { value: [] };
+  const selectRows: { value: unknown[][] } = { value: [] };
   const updatedRows: { value: unknown[] } = { value: [] };
   const mockUpdateWhere = vi.fn(() => ({ returning: () => Promise.resolve(updatedRows.value) }));
   const mockSet = vi.fn(() => ({ where: mockUpdateWhere }));
@@ -11,7 +11,9 @@ const { selectRows, mockUpdate, mockSet, mockUpdateWhere, updatedRows } = vi.hoi
 
 vi.mock("../../../db/db.js", () => ({
   db: {
-    select: () => ({ from: () => ({ where: () => Promise.resolve(selectRows.value) }) }),
+    select: () => ({
+      from: () => ({ where: () => Promise.resolve(selectRows.value.shift() ?? []) }),
+    }),
     update: mockUpdate,
   },
 }));
@@ -65,7 +67,7 @@ describe("attachTarget", () => {
   });
 
   it("never gives a TEAM config a connection", async () => {
-    selectRows.value = [{ id: INPUT.configId, scope: calendarSyncScope.Team }];
+    selectRows.value = [[{ id: INPUT.configId, scope: calendarSyncScope.Team }]];
 
     const error = await rejectionOf(attachTarget(INPUT));
 
@@ -82,7 +84,7 @@ describe("attachTarget", () => {
   });
 
   it("attaches a ME config with its zone and marks it due", async () => {
-    selectRows.value = [{ id: INPUT.configId, scope: calendarSyncScope.Me }];
+    selectRows.value = [[{ id: INPUT.configId, scope: calendarSyncScope.Me }]];
     const row = { id: INPUT.configId, connectionId: INPUT.connectionId };
     updatedRows.value = [row];
 
@@ -100,12 +102,25 @@ describe("attachTarget", () => {
   });
 
   it("refuses when the config turned TEAM between the read and the write", async () => {
-    selectRows.value = [{ id: INPUT.configId, scope: calendarSyncScope.Me }];
+    selectRows.value = [
+      [{ id: INPUT.configId, scope: calendarSyncScope.Me }],
+      [{ id: INPUT.connectionId }],
+    ];
     updatedRows.value = [];
 
     const error = await rejectionOf(attachTarget(INPUT));
 
     expect(error.statusCode).toBe(400);
     expect(error.errors[0]?.publicContext).toEqual({ code: CALENDAR_SYNC_TEAM_SCOPE });
+  });
+
+  it("answers 404 when the write finds no live connection of the caller's", async () => {
+    selectRows.value = [[{ id: INPUT.configId, scope: calendarSyncScope.Me }], []];
+    updatedRows.value = [];
+
+    const error = await rejectionOf(attachTarget(INPUT));
+
+    expect(error.statusCode).toBe(404);
+    expect(error.message).toBe("Calendar connection not found");
   });
 });
