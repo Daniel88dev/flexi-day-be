@@ -1,30 +1,20 @@
 # Triage Labels
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+The skills speak in terms of five canonical triage roles. In fenro each role is a label of the same
+name, paired with a status. The status is what matters to agents: only `todo` tasks enter the ready
+queue that `list_tasks ready: true` and `start_task` pick from.
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
+| Role              | fenro label       | fenro status                                          | Meaning                                  |
+| ----------------- | ----------------- | ----------------------------------------------------- | ---------------------------------------- |
+| `needs-triage`    | `needs-triage`    | `backlog`                                             | Maintainer needs to evaluate this task   |
+| `needs-info`      | `needs-info`      | `backlog`, with a hold naming who or what it waits on | Waiting on reporter for more information |
+| `ready-for-agent` | `ready-for-agent` | `todo`                                                | Fully specified, ready for an AFK agent  |
+| `ready-for-human` | `ready-for-human` | `backlog`, so no agent claims it                      | Requires human implementation            |
+| `wontfix`         | `wontfix`         | `cancelled`, with the reason as a `decision` note     | Will not be actioned                     |
 
-When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
+When a skill mentions a role (e.g. "apply the AFK-ready triage label"), set both columns: swap the
+label with `save_task` `add_labels` / `remove_labels`, then move the status and hold with
+`set_status` (`hold: null` clears one). A new task is created as `todo` unless `save_task` passes
+`status: "backlog"`, so file anything untriaged as `backlog`.
 
-## Provisioning the labels
-
-Only `wontfix` exists on this repo today — it ships with GitHub's default set. The other four do
-not, and `gh issue edit --add-label` fails on a label that isn't there rather than creating it.
-
-Before applying one for the first time, check and create it:
-
-```bash
-gh label list --json name --jq '.[].name' | grep -qx '<label>' \
-  || gh label create '<label>' --description '<meaning from the table above>'
-```
-
-If creation fails — most often no write access on a fork — say so and leave the issue unlabelled.
-Never invent a near-miss name to work around it; a label nobody queries for is worse than none.
-
-Edit the right-hand column to match whatever vocabulary you actually use.
+`save_task` creates a label that doesn't exist yet, so nothing needs creating up front.

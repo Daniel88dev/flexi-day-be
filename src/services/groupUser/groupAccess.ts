@@ -34,7 +34,7 @@ export const validateUserGroupAccess = async (
  * from the organization rather than a membership — the UI surfaces the
  * difference so nobody edits another team believing they belong to it.
  *
- * The group's manager administers it in their own right (CONTEXT.md: a group
+ * The group's manager administers it in their own right (GLOSSARY.md: a group
  * admin is "the manager, or an org admin"), so a manager reports
  * `viaOrgAdmin: false`. Org admins get only administration through here —
  * approver rights are a workflow role resolved by `getGroupsWhereUserCanApprove`,

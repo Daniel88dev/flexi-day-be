@@ -39,7 +39,7 @@ export const vacation = pgTable(
     groupId: text("group_id")
       .notNull()
       .references(() => groups.id, { onDelete: "cascade" }),
-    // Shared by every day row of one submission — the Request in CONTEXT.md.
+    // Shared by every day row of one submission — the Request in GLOSSARY.md.
     // The database default only serves an API image older than the column;
     // the API always stamps its own id across the whole submission.
     requestId: text("request_id")

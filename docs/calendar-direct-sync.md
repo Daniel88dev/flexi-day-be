@@ -1,7 +1,7 @@
 # Calendar direct sync
 
 The rules behind the Calendar connection, Sync target, Sync ledger and Capability rows in
-[`CONTEXT.md`](../CONTEXT.md). A user on a paid plan connects their own Google or Microsoft account
+[`GLOSSARY.md`](../GLOSSARY.md). A user on a paid plan connects their own Google or Microsoft account
 from a `ME` calendar config, and the backend writes that user's approved absences into the account's
 primary calendar within seconds of a change. The `.ics` feed is untouched and stays free.
 

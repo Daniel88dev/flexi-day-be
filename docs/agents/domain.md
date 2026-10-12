@@ -3,11 +3,11 @@
 How the engineering skills should consume this repo's domain documentation when exploring the
 codebase.
 
-**Layout: single-context.** One `CONTEXT.md` and one `docs/adr/`, both at the repo root.
+**Layout: single-context.** One `GLOSSARY.md` and one `docs/adr/`, both at the repo root.
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`** at the repo root — the glossary and boundaries for this repo.
+- **`GLOSSARY.md`** at the repo root — the glossary and boundaries for this repo.
 - **`docs/adr/`** — the ADRs touching the area you are about to work in.
 
 If either doesn't exist, **proceed silently**. Don't flag its absence; don't suggest creating it
@@ -18,7 +18,7 @@ resolved.
 
 ```text
 /
-├── CONTEXT.md
+├── GLOSSARY.md
 ├── docs/adr/
 │   ├── 0001-....md
 │   └── 0002-....md
@@ -28,12 +28,12 @@ resolved.
 This repo ships independently, so everything scoped to it stays inside it. When you are working
 from the `flexi-day-workspace` checkout rather than a bare clone, decisions that span repos —
 API contracts, SES template naming, auth topology — live in the workspace root's `docs/adr/`
-instead, and the root `CONTEXT-MAP.md` points at each repo's `CONTEXT.md`.
+instead, and the root `GLOSSARY-MAP.md` points at each repo's `GLOSSARY.md`.
 
 ## Use the glossary's vocabulary
 
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a
-test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary
+test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary
 explicitly avoids.
 
 If the concept you need isn't in the glossary yet, that's a signal — either you're inventing

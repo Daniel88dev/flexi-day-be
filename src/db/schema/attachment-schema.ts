@@ -12,7 +12,7 @@ export enum AttachmentStatus {
 export const attachmentStatusEnum = pgEnum("attachment_status", enumToPgEnum(AttachmentStatus));
 
 /**
- * A file bound to one Request (CONTEXT.md). `requestId` carries no foreign key:
+ * A file bound to one Request (GLOSSARY.md). `requestId` carries no foreign key:
  * a Request is the set of `vacation` rows sharing that id, not a table. The row
  * exists as `UPLOADING` before its bytes do — see docs/adr/0003.
  */

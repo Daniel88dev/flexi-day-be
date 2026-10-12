@@ -1,6 +1,6 @@
 # Sync pull
 
-The rules behind the sync glossary rows in [`CONTEXT.md`](../CONTEXT.md). One endpoint,
+The rules behind the sync glossary rows in [`GLOSSARY.md`](../GLOSSARY.md). One endpoint,
 `GET /api/sync/pull?cursor=`, feeds the phone app's local copy of what the caller can see on the
 web. Why the cursor is an `updatedAt` high-water mark rather than a change log:
 [ADR 0005](adr/0005-sync-pull-cursors-on-updated-at.md). The route's own facts, from the compression

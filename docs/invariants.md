@@ -317,7 +317,7 @@ contract rather than a tuning detail. See [`sync-pull.md`](sync-pull.md) for wha
 
 ## Organization admin boundary (`organization_users`)
 
-See [`../CONTEXT.md`](../CONTEXT.md) for what an org admin _is_. The boundaries:
+See [`../GLOSSARY.md`](../GLOSSARY.md) for what an org admin _is_. The boundaries:
 
 - **Owner-or-row.** The owner holds no `organization_users` row; `organizations.ownerUserId` is
   the other half of the answer. Querying the table alone answers half the question — always go

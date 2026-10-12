@@ -133,7 +133,7 @@ const deliver = async (deliveries: Delivery[]): Promise<void> => {
 };
 
 /**
- * The one recipient rule for notices to a group's approvers (CONTEXT.md,
+ * The one recipient rule for notices to a group's approvers (GLOSSARY.md,
  * Approver): main and temp approver, the manager, and every member holding
  * `approverAccess`, de-duplicated, minus the requester and the actor.
  */
