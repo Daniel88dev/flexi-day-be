@@ -1,7 +1,7 @@
 # Social sign-in
 
 The rules behind the **Social sign-in**, **Account link** and **Apple authorization** rows in
-[`CONTEXT.md`](../CONTEXT.md). Google, Microsoft and Apple sign in through better-auth, configured
+[`GLOSSARY.md`](../GLOSSARY.md). Google, Microsoft and Apple sign in through better-auth, configured
 in `src/utils/socialProviders.ts` and wired in `src/utils/auth.ts`. The security boundaries that
 must survive a change are in [`invariants.md`](invariants.md#authentication-srcutilsauthts); this
 page explains how the pieces fit. The Terraform side of the Apple key is in

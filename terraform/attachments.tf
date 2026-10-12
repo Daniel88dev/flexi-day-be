@@ -45,7 +45,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "attachments" {
   }
 }
 
-# The API's nightly sweep is what deletes attachments (CONTEXT.md, Quota
+# The API's nightly sweep is what deletes attachments (GLOSSARY.md, Quota
 # rollover). These rules are the backstop: an upload the Lambda never got to
 # leaves incoming/ within a day, and nothing outlives the sweep's latest
 # possible date (a booking on 31 December of next year, then twelve months of

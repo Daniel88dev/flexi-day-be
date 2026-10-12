@@ -1,6 +1,6 @@
 # Account deletion
 
-The rules behind the **Account deletion** row in [`CONTEXT.md`](../CONTEXT.md). A signed-in user
+The rules behind the **Account deletion** row in [`GLOSSARY.md`](../GLOSSARY.md). A signed-in user
 deletes their own account through two routes in `src/routes/usersRouter.ts`, with the work in
 `src/services/accountDeletion/`. Both accept a web cookie or a Native session.
 

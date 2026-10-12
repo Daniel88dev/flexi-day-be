@@ -1,6 +1,6 @@
 # Attendance
 
-The rules behind the attendance glossary rows in [`CONTEXT.md`](../CONTEXT.md). Roles are the
+The rules behind the attendance glossary rows in [`GLOSSARY.md`](../GLOSSARY.md). Roles are the
 existing ones: an Org admin administers every Employment in the organization, a Group admin those
 of the group's members. No attendance-specific role exists.
 
