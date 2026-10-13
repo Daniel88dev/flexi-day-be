@@ -169,6 +169,40 @@ Lambda runtimes are validated by the AWS provider against a fixed list, which is
 constraint is `~> 6.0`: `nodejs24.x` does not exist in 5.x. Bumping the constraint means
 `terraform init -upgrade` before the next plan.
 
+## RDS instance class and reserved instance
+
+The database runs on `db.t4g.micro`, Single-AZ, and a reserved instance covers its instance hours:
+
+| Field          | Value                                   |
+| -------------- | --------------------------------------- |
+| Reservation ID | `flexi-day-be-production-db-2026`       |
+| Lease ID       | `ef184d37-20fc-4e98-af98-00a8dcf59428`  |
+| Offering ID    | `8d0c7d59-b4ff-4689-bfc3-bc2b51e711dd`  |
+| Covers         | 1 × db.t4g.micro, PostgreSQL, Single-AZ |
+| Term           | 1 year, All Upfront, $104 paid once     |
+| Purchased      | 2026-10-13                              |
+| Expires        | 2027-10-13                              |
+
+It covers instance hours only. Storage, backups beyond the free allowance and the public IPv4
+address stay on the monthly bill.
+
+The reservation is not a Terraform resource. It was bought by hand, because a `destroy` cannot
+refund it and an apply from a fresh checkout could buy a second one. AWS matches it to the running
+instance by class family, engine, deployment and region, with nothing linking the two.
+
+**Change `db_instance_class` only within the `db.t4g` family.** RDS reservations are size-flexible
+inside a family, so a move to `db.t4g.small` keeps this one counting towards the bill. A move to
+another family such as `db.t3` or `db.m7g` leaves it applying to nothing, with the money already
+spent. Switching `db_multi_az` on doubles the instance hours, so the reservation then covers half.
+
+A class change on its own waits for the Monday maintenance window. To take it now, pass
+`-var db_apply_immediately=true` to that one plan and apply, after a manual snapshot. Expect a few
+minutes of downtime while RDS restarts the instance. The next apply without the flag shows
+`apply_immediately` going back to `false`, which changes nothing on the instance.
+
+Before the expiry date, decide whether to buy another year. Otherwise the instance falls back to
+on-demand pricing without any warning.
+
 ## Before you plan
 
 - Applies belong to the user. Run `terraform fmt`, `terraform validate` and `terraform plan`, show
