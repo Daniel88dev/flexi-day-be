@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { RequestListener } from "node:http";
 import type { Express } from "express";
 import type { Pool, PoolClient, QueryConfig } from "pg";
-import { db } from "../../../db/db.js";
+import { pool } from "../../../db/db.js";
 import { listenOnLoopback } from "../../loopbackServer.js";
 
 const scope = new AsyncLocalStorage<string[]>();
@@ -35,8 +35,6 @@ const countingClient = (client: PoolClient): PoolClient =>
 const install = () => {
   if (installed) return;
   installed = true;
-
-  const pool = (db as unknown as { $client: Pool }).$client;
 
   const query = pool.query.bind(pool) as (...args: unknown[]) => unknown;
   pool.query = ((...args: unknown[]) => {
