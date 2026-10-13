@@ -8,7 +8,7 @@ vpc_cidr           = "10.0.0.0/16"
 availability_zones = ["eu-central-1a", "eu-central-1b"] # RDS requires subnets in at least 2 AZs
 
 # RDS Configuration
-db_instance_class          = "db.t3.micro" # Upgrade to db.t3.small+ if the app grows
+db_instance_class          = "db.t4g.micro" # Upgrade to db.t4g.small+ if the app grows
 db_allocated_storage       = 20
 db_name                    = "flexiday"
 db_username                = "postgres"

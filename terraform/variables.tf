@@ -34,7 +34,13 @@ variable "availability_zones" {
 variable "db_instance_class" {
   description = "RDS instance class"
   type        = string
-  default     = "db.t3.micro"
+  default     = "db.t4g.micro"
+}
+
+variable "db_apply_immediately" {
+  description = "Apply RDS modifications now instead of in the maintenance window. Pass with -var for one apply; the next apply without it shows a no-op change back to false."
+  type        = bool
+  default     = false
 }
 
 variable "db_allocated_storage" {

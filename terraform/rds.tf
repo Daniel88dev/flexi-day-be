@@ -33,6 +33,7 @@ resource "aws_db_instance" "main" {
   backup_retention_period   = var.db_backup_retention_period
   backup_window             = "03:00-04:00"
   maintenance_window        = "mon:04:00-mon:05:00"
+  apply_immediately         = var.db_apply_immediately
   skip_final_snapshot       = var.environment != "production"
   final_snapshot_identifier = var.environment == "production" ? "${var.project_name}-${var.environment}-final-snapshot" : null
 
