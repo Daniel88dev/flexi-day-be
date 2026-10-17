@@ -103,6 +103,15 @@ type DevToolsConfig = {
   seedEmailDomain: string;
 };
 
+type ApnsConfig = {
+  keyId: string;
+  teamId: string;
+  /** The app's bundle id, sent as `apns-topic`. */
+  topic: string;
+  /** The `.p8` PEM, with real newlines or the literal `\n` a `.env` line carries. */
+  privateKey: string;
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
@@ -124,6 +133,8 @@ type Config = {
   attachments: AttachmentsConfig;
   /** Direct writes into users' Google or Microsoft calendars. `undefined` when no provider is on. */
   calendarSync?: CalendarSyncConfig;
+  /** Push to phones straight through APNs. `undefined` means the log sender stands in. */
+  apns?: ApnsConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -359,6 +370,32 @@ const parseCalendarSync = (): CalendarSyncConfig | undefined => {
   };
 };
 
+/**
+ * All four or none. None means the log sender, so a dev machine needs no
+ * Apple key; a partial set fails at boot instead of at the first push.
+ */
+const parseApns = (): ApnsConfig | undefined => {
+  const {
+    APNS_KEY_ID: keyId,
+    APNS_TEAM_ID: teamId,
+    APNS_TOPIC: topic,
+    APNS_PRIVATE_KEY: privateKey,
+  } = process.env;
+  if (!keyId && !teamId && !topic && !privateKey) return undefined;
+  if (!keyId || !teamId || !topic || !privateKey) {
+    const missing = Object.entries({
+      APNS_KEY_ID: keyId,
+      APNS_TEAM_ID: teamId,
+      APNS_TOPIC: topic,
+      APNS_PRIVATE_KEY: privateKey,
+    })
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+    throw new Error(`APNs config is all or none, and these are missing: ${missing.join(", ")}`);
+  }
+  return { keyId, teamId, topic, privateKey };
+};
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -414,6 +451,7 @@ export const config: Config = {
   support: parseSupport(),
   attachments: parseAttachments(),
   calendarSync: parseCalendarSync(),
+  apns: parseApns(),
 };
 
-export type { CalendarSyncConfig, PaddleConfig };
+export type { ApnsConfig, CalendarSyncConfig, PaddleConfig };

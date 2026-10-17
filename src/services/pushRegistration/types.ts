@@ -13,3 +13,9 @@ export const validatePutPushRegistration = z.object({
 });
 
 export type PutPushRegistrationBody = z.infer<typeof validatePutPushRegistration>;
+
+export type PushRegistration = {
+  sessionId: string;
+  token: string;
+  environment: pushEnvironment;
+};

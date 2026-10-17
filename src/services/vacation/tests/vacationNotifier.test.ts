@@ -8,6 +8,7 @@ const {
   mockGetUsersByIds,
   mockGetUserById,
   mockGetGroupUsers,
+  mockPushNotifications,
 } = vi.hoisted(() => ({
   mockSendTemplated: vi.fn(),
   mockFilterUsersAcceptingEmail: vi.fn(),
@@ -16,7 +17,10 @@ const {
   mockGetUsersByIds: vi.fn(),
   mockGetUserById: vi.fn(),
   mockGetGroupUsers: vi.fn(),
+  mockPushNotifications: vi.fn(),
 }));
+
+vi.mock("../../push/pushServices.js", () => ({ pushNotifications: mockPushNotifications }));
 
 vi.mock("../../email/index.js", () => ({
   emailSender: { sendTemplated: mockSendTemplated },
@@ -126,6 +130,15 @@ describe("vacation notifier", () => {
     mockGetApprovalUsers.mockResolvedValue(group);
     mockGetGroupUsers.mockResolvedValue([]);
     mockFilterUsersAcceptingEmail.mockImplementation((ids: string[]) => new Set(ids));
+  });
+
+  it("pushes the notices it recorded", async () => {
+    const notice = { id: "notice-1", userId: "approver-1" };
+    mockCreateNotification.mockResolvedValue(notice);
+
+    await notifyVacationRequested([row()], { id: "employee-1", name: "Dana Holt" }, null);
+
+    expect(mockPushNotifications).toHaveBeenCalledWith([notice]);
   });
 
   it("emails the group approver when a request is created", async () => {

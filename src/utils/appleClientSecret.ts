@@ -1,4 +1,4 @@
-import { createPrivateKey, sign, type KeyObject } from "node:crypto";
+import { parseEs256PrivateKey, signEs256Jwt } from "./es256Jwt.js";
 
 const APPLE_AUDIENCE = "https://appleid.apple.com";
 const LIFETIME_SECONDS = 60 * 60;
@@ -10,21 +10,6 @@ type AppleSigningKey = {
   /** The `.p8` PEM, with real newlines or the literal `\n` a `.env` line carries. */
   privateKey: string;
 };
-
-function parsePrivateKey(pem: string): KeyObject {
-  let key: KeyObject;
-  try {
-    key = createPrivateKey(pem.trim().replaceAll("\\n", "\n"));
-  } catch {
-    throw new Error("APPLE_PRIVATE_KEY is not a PEM private key");
-  }
-  if (key.asymmetricKeyType !== "ec" || key.asymmetricKeyDetails?.namedCurve !== "prime256v1") {
-    throw new Error("APPLE_PRIVATE_KEY is not an EC P-256 key, so it cannot sign ES256");
-  }
-  return key;
-}
-
-const encodeJwtPart = (value: object) => Buffer.from(JSON.stringify(value)).toString("base64url");
 
 /**
  * Apple has no static client secret: it is an ES256 JWT signed with the
@@ -42,7 +27,7 @@ export function createAppleSecretMinter({
   keyId,
   privateKey,
 }: AppleSigningKey): AppleSecretMinter {
-  const key = parsePrivateKey(privateKey);
+  const key = parseEs256PrivateKey(privateKey, "APPLE_PRIVATE_KEY");
   const cache = new Map<string, { secret: string; exp: number }>();
 
   return {
@@ -52,18 +37,13 @@ export function createAppleSecretMinter({
       if (cached && cached.exp - now >= REMINT_BELOW_SECONDS) return cached.secret;
 
       const exp = now + LIFETIME_SECONDS;
-      const signingInput = `${encodeJwtPart({ alg: "ES256", kid: keyId })}.${encodeJwtPart({
+      const secret = signEs256Jwt(key, keyId, {
         iss: teamId,
         sub,
         aud: APPLE_AUDIENCE,
         iat: now,
         exp,
-      })}`;
-      const signature = sign("sha256", Buffer.from(signingInput), {
-        key,
-        dsaEncoding: "ieee-p1363",
-      }).toString("base64url");
-      const secret = `${signingInput}.${signature}`;
+      });
 
       cache.set(sub, { secret, exp });
       return secret;

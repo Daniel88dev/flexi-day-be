@@ -26,7 +26,9 @@ A registration ends when:
   one it stored, and a different one deletes every session row, so every registration cascades with
   it;
 - another session registers the same token, which only happens when the phone has moved on to it;
-- APNs answers `410 Unregistered` or `BadDeviceToken` for its token;
+- APNs answers `410` for its token, or `BadDeviceToken` from both hosts. A token sent to the wrong
+  host also gets `BadDeviceToken`, so one refusal is retried on the other host, and the stored
+  environment follows the host that accepts it;
 - the phone finds notification permission revoked and deletes it.
 
 What this costs: the server cannot push to a phone that has no live session, and a phone that

@@ -1,7 +1,11 @@
 import { and, eq, ne, or } from "drizzle-orm";
 import { db } from "../../db/db.js";
-import { pushRegistrations } from "../../db/schema/push-registration-schema.js";
-import type { PutPushRegistrationBody } from "./types.js";
+import { session } from "../../db/schema/auth-schema.js";
+import {
+  pushRegistrations,
+  type pushEnvironment,
+} from "../../db/schema/push-registration-schema.js";
+import type { PushRegistration, PutPushRegistrationBody } from "./types.js";
 
 /**
  * The phone calls this on every foreground, so an unchanged token and
@@ -33,4 +37,39 @@ export const upsertPushRegistration = async (
 
 export const deletePushRegistration = async (sessionId: string): Promise<void> => {
   await db.delete(pushRegistrations).where(eq(pushRegistrations.sessionId, sessionId));
+};
+
+/** Every phone the user is signed in on that registered for push. */
+export const listPushRegistrationsForUser = (userId: string): Promise<PushRegistration[]> =>
+  db
+    .select({
+      sessionId: pushRegistrations.sessionId,
+      token: pushRegistrations.token,
+      environment: pushRegistrations.environment,
+    })
+    .from(pushRegistrations)
+    .innerJoin(session, eq(session.id, pushRegistrations.sessionId))
+    .where(eq(session.userId, userId));
+
+/**
+ * Matches the token too, so a phone that re-registered with a new token
+ * while a push was in flight keeps its new registration.
+ */
+export const deletePushRegistrationToken = async ({
+  sessionId,
+  token,
+}: PushRegistration): Promise<void> => {
+  await db
+    .delete(pushRegistrations)
+    .where(and(eq(pushRegistrations.sessionId, sessionId), eq(pushRegistrations.token, token)));
+};
+
+export const setPushRegistrationEnvironment = async (
+  { sessionId, token }: PushRegistration,
+  environment: pushEnvironment
+): Promise<void> => {
+  await db
+    .update(pushRegistrations)
+    .set({ environment })
+    .where(and(eq(pushRegistrations.sessionId, sessionId), eq(pushRegistrations.token, token)));
 };
