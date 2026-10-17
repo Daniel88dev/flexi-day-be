@@ -361,3 +361,37 @@ export const assertAttendanceActive = async (
     });
   }
 };
+
+export const GROUP_EVENTS_PLAN_REQUIRED = "GROUP_EVENTS_PLAN_REQUIRED";
+
+/**
+ * Throws 402 unless the group's organization resolves to a paid plan, grace
+ * included (S3). Guards creating a group event and the create half of a
+ * split. Reads, edits that create nothing and deletes never call it, so a
+ * lapse hides nothing.
+ */
+export const assertGroupEventsActive = async (
+  groupId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  const group = await getGroup(groupId, tx);
+  if (!group) {
+    throw new AppError({
+      message: "Group not found",
+      logging: true,
+      code: 404,
+      context: { groupId },
+    });
+  }
+
+  const entitlements = await entitlementsForOrganization(group.organizationId, tx);
+  if (entitlements.plan === "FREE") {
+    throw new AppError({
+      message: "Group events require a paid plan",
+      logging: true,
+      code: 402,
+      context: { groupId, organizationId: group.organizationId },
+      publicContext: { reason: "PLAN_LIMIT", code: GROUP_EVENTS_PLAN_REQUIRED },
+    });
+  }
+};

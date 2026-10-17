@@ -29,6 +29,7 @@ import { calendarSyncCallbackRouter, calendarSyncRouter } from "./routes/calenda
 import { reportRouter } from "./routes/reportRouter.js";
 import { syncRouter } from "./routes/syncRouter.js";
 import { birthdayRouter } from "./routes/birthdayRouter.js";
+import { groupEventRouter } from "./routes/groupEventRouter.js";
 import { tryCatch } from "./middleware/tryCatch.js";
 import { handleGetCalendarFeed } from "./controllers/calendarSync/handleGetCalendarFeed.js";
 import { devRouter } from "./routes/devRouter.js";
@@ -138,6 +139,7 @@ export const createServer = () => {
   app.use("/api/attachments", attachmentRouter());
   app.use("/api/sync", syncRouter());
   app.use("/api/birthdays", birthdayRouter());
+  app.use("/api/group-events", groupEventRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
   // deploy explicitly carries an allowlist, so for everyone else these routes

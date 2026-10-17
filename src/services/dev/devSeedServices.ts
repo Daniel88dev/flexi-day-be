@@ -12,6 +12,7 @@ import { supportAccess } from "../../db/schema/support-access-schema.js";
 import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { userBirthdays } from "../../db/schema/user-birthday-schema.js";
+import { groupEvents } from "../../db/schema/group-event-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
 import AppError from "../../utils/appError.js";
@@ -20,6 +21,8 @@ import { createGroup } from "../group/groupServices.js";
 import { createGroupUser } from "../groupUser/groupUserServices.js";
 import { ensureOrganizationForUser } from "../organization/organizationServices.js";
 import { upsertUserYearQuota } from "../userYearQuotas/userYearQuotasServices.js";
+import { insertGroupEvent } from "../groupEvent/groupEventServices.js";
+import type { CreateGroupEventBody } from "../groupEvent/types.js";
 
 export type SeededUser = {
   id: string;
@@ -189,6 +192,26 @@ export const seedBirthday = async (input: {
     .onConflictDoNothing({ target: userBirthdays.userId })
     .returning({ userId: userBirthdays.userId });
   return rows.length > 0;
+};
+
+/** Skips a group that already has a live event with this title. Answers whether it inserted. */
+export const seedGroupEvent = async (
+  input: { createdByUserId: string } & CreateGroupEventBody
+): Promise<boolean> => {
+  const [existing] = await db
+    .select({ id: groupEvents.id })
+    .from(groupEvents)
+    .where(
+      and(
+        eq(groupEvents.groupId, input.groupId),
+        eq(groupEvents.title, input.title),
+        isNull(groupEvents.deletedAt)
+      )
+    )
+    .limit(1);
+  if (existing) return false;
+  await insertGroupEvent({ id: generateRandomUUID(), ...input });
+  return true;
 };
 
 export const setQuota = async (input: {

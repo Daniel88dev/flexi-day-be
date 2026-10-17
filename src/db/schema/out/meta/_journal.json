@@ -211,6 +211,13 @@
       "when": 1792274769571,
       "tag": "0029_user_birthdays",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792275518424,
+      "tag": "0030_group_events",
+      "breakpoints": true
     }
   ]
 }
