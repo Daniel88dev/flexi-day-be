@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockCreateNotification, mockLoggerError } = vi.hoisted(() => ({
+const { mockCreateNotification, mockLoggerError, mockPushNotifications } = vi.hoisted(() => ({
   mockCreateNotification: vi.fn(),
   mockLoggerError: vi.fn(),
+  mockPushNotifications: vi.fn(),
 }));
+
+vi.mock("../../push/pushServices.js", () => ({ pushNotifications: mockPushNotifications }));
 
 vi.mock("../../notification/notificationServices.js", () => ({
   createNotification: mockCreateNotification,
@@ -42,6 +45,15 @@ describe("notifySessionAutoClosed", () => {
       body: "Your clock on 25 Aug 2026 was closed automatically at 18:30, check and correct it.",
       href: "/my-attendance/?date=2026-08-25",
     });
+  });
+
+  it("pushes the recorded notice passive", async () => {
+    const notice = { id: "notice-1", userId: "user-1" };
+    mockCreateNotification.mockResolvedValue(notice);
+
+    await notifySessionAutoClosed(closed);
+
+    expect(mockPushNotifications).toHaveBeenCalledWith([notice], { passive: true });
   });
 
   it("links to the business date even when the close falls on the next calendar day", async () => {

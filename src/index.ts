@@ -5,10 +5,14 @@ import { config } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { startQuotaRolloverJob, stopQuotaRolloverJob } from "./jobs/quotaRolloverJob.js";
 import { startCalendarSyncQueue, stopCalendarSyncQueue } from "./jobs/calendarSyncQueueJob.js";
+import { runAuthSecretCheck } from "./jobs/authSecretCheckJob.js";
 import http from "http";
 
 const app = createServer();
 export const server = http.createServer(app);
+
+// Before listen, so this instance never answers a request on sessions the check is about to delete.
+await runAuthSecretCheck();
 
 server.listen(config.api.port, () => {
   logger.info(`Server listening on port ${config.api.port}`);

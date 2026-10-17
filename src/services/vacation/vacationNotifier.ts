@@ -11,6 +11,7 @@ import type { UserContact } from "../user/userServices.js";
 import { getApprovalUsers } from "../group/groupServices.js";
 import { getGroupUsers } from "../groupUser/groupUserServices.js";
 import { createNotification } from "../notification/notificationServices.js";
+import { pushNotifications } from "../push/pushServices.js";
 import { getUserById, getUsersByIds } from "../user/userServices.js";
 import { filterUsersAcceptingEmail } from "../userSettings/userSettingsServices.js";
 import { ENGLISH_RECORD_TYPE_LABELS } from "../recordType/recordTypeLabels.js";
@@ -100,7 +101,7 @@ const deliver = async (deliveries: Delivery[]): Promise<void> => {
 
   const acceptsEmail = await filterUsersAcceptingEmail(deliveries.map((d) => d.userId));
 
-  await Promise.all(
+  const created = await Promise.all(
     deliveries.map((delivery) =>
       createNotification({
         id: generateRandomUUID(),
@@ -110,14 +111,15 @@ const deliver = async (deliveries: Delivery[]): Promise<void> => {
     )
   );
 
-  await Promise.all(
-    deliveries
+  await Promise.all([
+    pushNotifications(created.filter((row) => row !== undefined)),
+    ...deliveries
       .filter(
         (delivery): delivery is Delivery & { email: TemplatedEmail } =>
           delivery.email !== undefined && acceptsEmail.has(delivery.userId)
       )
-      .map((delivery) => emailSender.sendTemplated(delivery.email))
-  );
+      .map((delivery) => emailSender.sendTemplated(delivery.email)),
+  ]);
 };
 
 /**

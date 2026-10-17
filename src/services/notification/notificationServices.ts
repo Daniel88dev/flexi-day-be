@@ -18,6 +18,10 @@ export const listNotificationsForUser = async (
   return db.select().from(notifications).where(where).orderBy(desc(notifications.createdAt));
 };
 
+/** The phone's badge. `notifications_user_unread_idx` serves it. */
+export const countUnreadNotifications = (userId: string): Promise<number> =>
+  db.$count(notifications, and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+
 /**
  * Marks a notification as read. Only updates rows whose `readAt` is still
  * NULL, so the original first-read timestamp is preserved when the endpoint

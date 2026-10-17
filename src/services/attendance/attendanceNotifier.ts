@@ -3,6 +3,7 @@ import { notificationType } from "../../db/schema/notification-schema.js";
 import { formatDay } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { createNotification } from "../notification/notificationServices.js";
+import { pushNotifications } from "../push/pushServices.js";
 import type { OverdueSession } from "./attendanceCeilingCloses.js";
 
 const formatClockTime = (instant: Date, timeZone: string): string =>
@@ -18,7 +19,7 @@ export const notifySessionAutoClosed = async (
   session: Pick<OverdueSession, "id" | "userId" | "businessDate" | "timezone" | "closeAt">
 ): Promise<void> => {
   try {
-    await createNotification({
+    const notice = await createNotification({
       id: generateRandomUUID(),
       userId: session.userId,
       type: notificationType.SessionAutoClosed,
@@ -26,6 +27,7 @@ export const notifySessionAutoClosed = async (
       body: `Your clock on ${formatDay(session.businessDate)} was closed automatically at ${formatClockTime(session.closeAt, session.timezone)}, check and correct it.`,
       href: `/my-attendance/?date=${session.businessDate}`,
     });
+    if (notice) await pushNotifications([notice], { passive: true });
   } catch (error) {
     logger.error("Could not record the session auto-closed notice", {
       sessionId: session.id,

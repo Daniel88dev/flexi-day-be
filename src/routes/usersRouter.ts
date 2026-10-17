@@ -13,6 +13,10 @@ import { handlePostDeleteMe } from "../controllers/users/handlePostDeleteMe.js";
 import { validatePostDeleteMe } from "../services/accountDeletion/types.js";
 import { handlePostAppleAuthorization } from "../controllers/users/handlePostAppleAuthorization.js";
 import { validatePostAppleAuthorization } from "../services/appleAuthorization/types.js";
+import { handlePutPushRegistration } from "../controllers/users/handlePutPushRegistration.js";
+import { handleDeletePushRegistration } from "../controllers/users/handleDeletePushRegistration.js";
+import { validatePutPushRegistration } from "../services/pushRegistration/types.js";
+import { requireNativeSession } from "../middleware/nativeSessionGuard.js";
 
 export const usersRouter = (): Router => {
   const app = Router();
@@ -625,6 +629,118 @@ export const usersRouter = (): Router => {
     bodyValidationMiddleware(validatePostAppleAuthorization),
     tryCatch(handlePostAppleAuthorization)
   );
+
+  /**
+   * @openapi
+   * /api/users/me/push-registration:
+   *   put:
+   *     tags:
+   *       - Users
+   *     summary: Register the phone's APNs token for push
+   *     description: |
+   *       Binds an APNs device token to the caller's Native session (ADR 0006).
+   *       The phone calls this on every foreground while it is signed in and
+   *       has notification permission, so it is idempotent: a repeat with the
+   *       same token and environment changes nothing, and a new token or
+   *       environment replaces the stored one.
+   *
+   *       A token belongs to one app install, so another session still holding
+   *       the same token loses it. The registration ends with its session,
+   *       whatever ends it: sign-out, a new sign-in on the same phone, a
+   *       password change or reset, a two-factor toggle, account deletion, or
+   *       a changed Better Auth secret at boot. Native session only: a web
+   *       session has no token to give.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [token, environment]
+   *             properties:
+   *               token:
+   *                 type: string
+   *                 pattern: '^([0-9a-fA-F]{2}){32,100}$'
+   *                 description: |
+   *                   The device token from `getDevicePushTokenAsync()`, in hex,
+   *                   32 to 100 bytes. Stored in lower case.
+   *               environment:
+   *                 type: string
+   *                 enum: [sandbox, production]
+   *                 description: |
+   *                   The APNs environment the token was issued for. A debug
+   *                   build's token only works on `sandbox`, a TestFlight or
+   *                   App Store build's only on `production`.
+   *     responses:
+   *       '204':
+   *         description: Registered, or already registered with the same values.
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           A web session, and nothing changed. Checked before the body, so a
+   *           web session gets this whatever it sends. `errors[0].context.reason`
+   *           is `NATIVE_SESSION_REQUIRED`.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/NativeSessionRequiredError'
+   *       '422':
+   *         description: |
+   *           A Native session sent a body that failed validation: `token`
+   *           missing or not 32 to 100 bytes of hex, or `environment` other than
+   *           `sandbox` or `production`.
+   *   delete:
+   *     tags:
+   *       - Users
+   *     summary: Remove the phone's push registration
+   *     description: |
+   *       The phone calls this when it finds notification permission revoked.
+   *       Deletes the registration of the caller's Native session, and answers
+   *       204 whether or not one existed. Native session only.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '204':
+   *         description: No registration remains for this session.
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           A web session, and nothing changed. `errors[0].context.reason`
+   *           is `NATIVE_SESSION_REQUIRED`.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/NativeSessionRequiredError'
+   * components:
+   *   schemas:
+   *     NativeSessionRequiredError:
+   *       type: object
+   *       properties:
+   *         errors:
+   *           type: array
+   *           items:
+   *             type: object
+   *             properties:
+   *               message:
+   *                 type: string
+   *               context:
+   *                 type: object
+   *                 properties:
+   *                   reason:
+   *                     type: string
+   *                     enum: [NATIVE_SESSION_REQUIRED]
+   */
+  app.put(
+    "/me/push-registration",
+    requireNativeSession,
+    bodyValidationMiddleware(validatePutPushRegistration),
+    tryCatch(handlePutPushRegistration)
+  );
+  app.delete("/me/push-registration", requireNativeSession, tryCatch(handleDeletePushRegistration));
 
   return app;
 };

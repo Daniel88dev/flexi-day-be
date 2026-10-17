@@ -155,9 +155,9 @@ deliberately absent from the API docs.
 ## Configuration
 
 `src/config.ts` parses and validates every environment variable, and throws at startup when one is
-missing or invalid. Read it rather than a list here. Four blocks are opt-in and stay that way:
-`DEV_TOOLS_*`, `SUPPORT_ADMIN_USER_IDS`, `PADDLE_*` and `CALENDAR_SYNC_*`. The first three are
-covered in [`docs/invariants.md`](docs/invariants.md).
+missing or invalid. Read it rather than a list here. Five blocks are opt-in and stay that way:
+`DEV_TOOLS_*`, `SUPPORT_ADMIN_USER_IDS`, `PADDLE_*`, `CALENDAR_SYNC_*` and `APNS_*`. The first three
+are covered in [`docs/invariants.md`](docs/invariants.md).
 
 ## Merging pull requests
 

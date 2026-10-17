@@ -26,6 +26,8 @@ import { employments } from "./employment-schema.js";
 import { organizationAttendanceSettings } from "./organization-attendance-settings-schema.js";
 import { attendanceBreaks, attendanceEvents, attendanceSessions } from "./attendance-schema.js";
 import { attendanceSettingsChanges } from "./attendance-settings-change-schema.js";
+import { pushRegistrations } from "./push-registration-schema.js";
+import { authSecretFingerprint } from "./auth-secret-schema.js";
 
 export const schema = {
   account,
@@ -62,4 +64,6 @@ export const schema = {
   attendanceBreaks,
   attendanceEvents,
   attendanceSettingsChanges,
+  pushRegistrations,
+  authSecretFingerprint,
 };

@@ -44,7 +44,10 @@ export const session = pgTable(
     platform: text("platform"),
     appVersion: text("app_version"),
   },
-  (table) => [index("idx_session_device_id").on(table.deviceId)]
+  (table) => [
+    index("idx_session_device_id").on(table.deviceId),
+    index("idx_session_user_id").on(table.userId),
+  ]
 );
 
 export const account = pgTable(

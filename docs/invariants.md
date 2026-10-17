@@ -155,6 +155,26 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   even when someone else signs in" and "stands through a challenge, and is replaced by the session
   that ends it". `src/tests/utils/nativeSession.test.ts` ("one session per device") pins the
   predicate on its own.
+- **A session ends by deleting its row, never by flagging it; a changed Better Auth secret deletes
+  every session on boot.** Push registrations (`push_registrations`, ADR 0006) hang off
+  `session.id` with `ON DELETE CASCADE`, and that cascade is the only thing that stops a phone
+  receiving the previous user's notices. A session marked revoked but left in place would keep its
+  registration, and APNs would keep delivering to it. A rotated secret voids every cookie but
+  deletes no row, so `checkAuthSecret` (`src/services/authSecret/authSecretServices.ts`), which
+  `src/index.ts` awaits through `runAuthSecretCheck` before the server listens, compares an HMAC
+  keyed by the secret with the one in `auth_secret_fingerprint`. A different one deletes every
+  session row; none stored records the current one and deletes nothing. The raw secret is never
+  stored or logged. Without the check, a phone nobody opens after a rotation never gets the 401 that
+  makes it unregister from APNs. A rolling deploy leaves a gap the check cannot close. Instances
+  still on the old secret keep creating sessions after the new instance has run its check, and those
+  rows survive it. Their cookies fail to verify on the new secret, so the phone's next call gets a
+  401 and its Signed-out wipe unregisters it from APNs. The row lingers until something else ends
+  it, but nothing reaches the phone. The "ends with its session" block in
+  `src/tests/e2e/pushRegistration.e2e.test.ts` fails if any session end (sign-out, a sign-in on the
+  same phone, a device mismatch, a password change or reset, a two-factor toggle, account deletion)
+  stops deleting the row, `src/tests/e2e/authSecretCheck.e2e.test.ts` if the check stops deleting or
+  starts deleting on an unchanged secret, and `src/tests/boot.test.ts` if boot stops running it or
+  starts listening before it finishes.
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 
