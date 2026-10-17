@@ -498,6 +498,14 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   `src/tests/e2e/calendarSyncApproval.e2e.test.ts` ("never touches the owner's calendar for a
   teammate's approval") fail if the rule gives.
 
+- **A team feed reads only the groups its owner is still in.** `getFeedRecords` takes a `TEAM`
+  config's groups from `getLiveTeamIds`, the stored `calendar_sync_teams` ids intersected with the
+  owner's live `group_users` rows, on every fetch. The stored rows stay as they are, so a re-join
+  restores the group without editing the feed. Every record kind a team feed carries filters by the
+  same helper. Read the stored ids directly and someone removed from a group keeps a subscription
+  link that shows that group's days off for as long as the link lives.
+  `src/tests/e2e/calendarFeedLiveMembership.e2e.test.ts` fails if the rule gives.
+
 ## Billing config is opt-in (`src/config.ts`)
 
 With `PADDLE_API_KEY` unset, `config.paddle` is `undefined` and `/api/billing/*` returns 503. Once

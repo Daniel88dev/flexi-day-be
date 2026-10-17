@@ -7,6 +7,7 @@ import {
 } from "../../db/schema/calendar-sync-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
+import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { teamScopeError } from "../calendarConnection/errors.js";
@@ -277,9 +278,29 @@ export const touchLastFetched = async (id: string): Promise<void> => {
 };
 
 /**
+ * The stored team ids of a `TEAM` config that its owner is still a live member
+ * of. Every record kind a team feed carries filters by this, not by the stored
+ * rows, which stay untouched so a re-join restores the group.
+ */
+export const getLiveTeamIds = async (config: CalendarSyncFull): Promise<string[]> => {
+  if (config.teamIds.length === 0) return [];
+  const rows = await db
+    .select({ groupId: groupUsers.groupId })
+    .from(groupUsers)
+    .where(
+      and(
+        eq(groupUsers.userId, config.userId),
+        inArray(groupUsers.groupId, config.teamIds),
+        isNull(groupUsers.deletedAt)
+      )
+    );
+  return rows.map((r) => r.groupId);
+};
+
+/**
  * Returns the approved, non-deleted time-off records a config's feed exposes,
- * filtered by its scope, teams and included types, enriched with the owner's
- * display name for the event summary.
+ * filtered by its scope, the teams its owner still belongs to and its included
+ * types, enriched with the owner's display name for the event summary.
  */
 export const getFeedRecords = async (config: CalendarSyncFull): Promise<CalendarFeedRecord[]> => {
   const includedTypes = config.types.map((t) => t.vacationType);
@@ -303,8 +324,9 @@ export const getFeedRecords = async (config: CalendarSyncFull): Promise<Calendar
   if (config.scope === calendarSyncScope.Me) {
     filters.push(eq(vacation.userId, config.userId));
   } else {
-    if (config.teamIds.length === 0) return [];
-    filters.push(inArray(vacation.groupId, config.teamIds));
+    const liveTeamIds = await getLiveTeamIds(config);
+    if (liveTeamIds.length === 0) return [];
+    filters.push(inArray(vacation.groupId, liveTeamIds));
   }
 
   const rows = await db
