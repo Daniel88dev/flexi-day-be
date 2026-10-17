@@ -4,7 +4,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import AppError from "../../utils/appError.js";
 import { validateCreateCalendarSync } from "../../services/calendarSync/types.js";
 import { feedBaseUrl, resolveTeamIds, serializeConfig } from "./utils.js";
-import { userRecordTypeLabels } from "../../services/calendarSync/labels.js";
+import { userRecordTypeLabels } from "../../services/recordType/recordTypeLabels.js";
 import {
   createCalendarSync,
   generateFeedToken,

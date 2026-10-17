@@ -572,7 +572,7 @@ describe("Report API E2E", () => {
       await workbook.xlsx.load(res.body as ArrayBuffer);
       let sickDayRow: { quota: number; planned: number; remaining: number } | undefined;
       workbook.getWorksheet(`Summary ${FUTURE_YEAR.toString()}`)?.eachRow((row, index) => {
-        if (index > 1 && String(row.getCell(3).value) === "Sick Day") {
+        if (index > 1 && String(row.getCell(3).value) === "Sick day") {
           sickDayRow = {
             quota: Number(row.getCell(5).value),
             planned: Number(row.getCell(7).value),
@@ -620,8 +620,8 @@ describe("Report API E2E", () => {
 
       // The booking itself still exports — only the metered summary line is
       // tied to the benefit.
-      expect(summaryTypes).not.toContain("Sick Day");
-      expect(detailTypes).toContain("Sick Day");
+      expect(summaryTypes).not.toContain("Sick day");
+      expect(detailTypes).toContain("Sick day");
     });
 
     it("names a member who has since left the group on the summary sheet", async () => {
@@ -745,7 +745,7 @@ describe("Report API E2E", () => {
       });
 
       expect(types).toContain("Vacation");
-      expect(types).not.toContain("Bank Holiday");
+      expect(types).not.toContain("Bank holiday");
     });
   });
 

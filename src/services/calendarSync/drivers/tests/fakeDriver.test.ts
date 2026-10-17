@@ -10,7 +10,7 @@ import {
 } from "../../../calendarConnection/providers/fake.js";
 import { ProviderGrantRevokedError } from "../../../calendarConnection/providers/types.js";
 import { buildDesired, type BuildInput } from "../../eventBuilder.js";
-import { recordTypeLabels } from "../../labels.js";
+import { recordTypeLabels } from "../../../recordType/recordTypeLabels.js";
 import { createFakeDriver, memoryFakeStore } from "../fakeDriver.js";
 import type { AccessTokenSource, CalendarDriver, DriverContext } from "../types.js";
 import { connection } from "./context.js";

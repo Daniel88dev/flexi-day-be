@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
-import { recordTypeLabels } from "../labels.js";
+import { recordTypeLabels } from "../recordTypeLabels.js";
 
 describe("recordTypeLabels", () => {
   it("names every record type in English", () => {

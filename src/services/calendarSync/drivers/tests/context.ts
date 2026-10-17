@@ -6,7 +6,7 @@ import {
 import { CalendarRecordType } from "../../../../db/schema/vacation-schema.js";
 import type { CalendarConnectionRecord } from "../../../calendarConnection/types.js";
 import { buildDesired, type DesiredEvent } from "../../eventBuilder.js";
-import { recordTypeLabels } from "../../labels.js";
+import { recordTypeLabels } from "../../../recordType/recordTypeLabels.js";
 import type { AccessTokenSource, DriverContext } from "../types.js";
 
 export const connection = (

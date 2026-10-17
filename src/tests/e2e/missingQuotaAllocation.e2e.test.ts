@@ -207,10 +207,10 @@ describe("A member with no quota row", () => {
     expect(sheetRows.get("Vacation")).toEqual(
       asSheetRow(summaryFor(overviewSummary, CalendarRecordType.Vacation))
     );
-    expect(sheetRows.get("Home Office")).toEqual(
+    expect(sheetRows.get("Home office")).toEqual(
       asSheetRow(summaryFor(overviewSummary, CalendarRecordType.HomeOffice))
     );
-    expect(sheetRows.get("Sick Day")).toEqual(
+    expect(sheetRows.get("Sick day")).toEqual(
       asSheetRow(summaryFor(overviewSummary, CalendarRecordType.SickDay))
     );
   });

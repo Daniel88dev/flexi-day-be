@@ -24,7 +24,7 @@ import { getCalendarSyncById, getFeedRecords } from "./calendarSyncServices.js";
 import { calendarDriver } from "./drivers/index.js";
 import type { CalendarDriver, DriverContext, DriverFailure } from "./drivers/types.js";
 import { buildDesired, type DesiredEvent } from "./eventBuilder.js";
-import { userRecordTypeLabels, type RecordTypeLabels } from "./labels.js";
+import { userRecordTypeLabels, type RecordTypeLabels } from "../recordType/recordTypeLabels.js";
 import type { CalendarFeedRecord, SyncOutcome } from "./types.js";
 
 const DONE: SyncOutcome = { status: "done" };

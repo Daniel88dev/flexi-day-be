@@ -7,7 +7,7 @@ import {
 } from "../../../db/schema/calendar-connection-schema.js";
 import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import { buildDesired, type BuildInput } from "../eventBuilder.js";
-import { recordTypeLabels } from "../labels.js";
+import { recordTypeLabels } from "../../recordType/recordTypeLabels.js";
 
 const VACATION_ID = "vac-1";
 const CONFIG_ID = "cfg-1";

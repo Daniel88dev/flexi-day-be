@@ -13,7 +13,7 @@ import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { FAKE_PLAIN_MARKER } from "../../services/calendarConnection/providers/fake.js";
 import type { CalendarConnectionRecord } from "../../services/calendarConnection/types.js";
 import { buildDesired } from "../../services/calendarSync/eventBuilder.js";
-import { recordTypeLabels } from "../../services/calendarSync/labels.js";
+import { recordTypeLabels } from "../../services/recordType/recordTypeLabels.js";
 import { calendarDriver } from "../../services/calendarSync/drivers/index.js";
 import type { DriverContext } from "../../services/calendarSync/drivers/types.js";
 
