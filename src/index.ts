@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { startQuotaRolloverJob, stopQuotaRolloverJob } from "./jobs/quotaRolloverJob.js";
 import { startCalendarSyncQueue, stopCalendarSyncQueue } from "./jobs/calendarSyncQueueJob.js";
+import { runAuthSecretCheck } from "./jobs/authSecretCheckJob.js";
 import http from "http";
 
 const app = createServer();
@@ -18,6 +19,7 @@ server.listen(config.api.port, () => {
     process.exitCode = 1;
   });
 
+  void runAuthSecretCheck();
   startQuotaRolloverJob();
   void startCalendarSyncQueue();
 
