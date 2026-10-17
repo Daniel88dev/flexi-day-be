@@ -379,12 +379,14 @@ describe("calendar direct sync routes on the fake driver", () => {
       {
         id: uuidv4(),
         calendarSyncId: secondMeConfigId,
+        sourceKey: `v:${uuidv4()}`,
         kind: calendarSyncEventKind.Absence,
         contentHash: "hash",
       },
       {
         id: otherTargetEvent,
         calendarSyncId: meConfigId,
+        sourceKey: `v:${uuidv4()}`,
         kind: calendarSyncEventKind.Absence,
         contentHash: "hash",
       },
@@ -400,7 +402,11 @@ describe("calendar direct sync routes on the fake driver", () => {
     expect(res.status).toBe(200);
     expect(again.status).toBe(404);
     const config = await configRow(secondMeConfigId);
-    expect(config).toMatchObject({ connectionId: null, timeZone: null, syncDueAt: null });
+    expect(config).toMatchObject({
+      connectionId: null,
+      timeZone: "Europe/Prague",
+      syncDueAt: null,
+    });
     expect(
       await db
         .select()

@@ -8,7 +8,7 @@ import {
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { teamScopeError } from "../calendarConnection/errors.js";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
@@ -17,6 +17,7 @@ import type {
   CalendarSyncFull,
   CalendarSyncInsert,
   CalendarSyncRecord,
+  CalendarSyncSettings,
   CalendarSyncTypeEntry,
 } from "./types.js";
 
@@ -172,9 +173,10 @@ export const getCalendarSyncByToken = async (
 };
 
 /**
- * Replaces a config's mutable fields and its teams/types. Returns the updated
- * config, or undefined when no live config with that id is owned by the user.
- * A sync target whose type list changed comes back marked due.
+ * Replaces a config's mutable fields and its teams/types. Settings left
+ * undefined keep their stored value. Returns the updated config, or undefined
+ * when no live config with that id is owned by the user. A sync target whose
+ * type list or zone changed comes back marked due.
  */
 export const updateCalendarSync = async (
   id: string,
@@ -183,10 +185,16 @@ export const updateCalendarSync = async (
     name: string;
     scope: calendarSyncScope;
     distinguishMine: boolean;
-  },
+  } & Partial<CalendarSyncSettings>,
   teamIds: string[],
   types: CalendarSyncTypeEntry[]
 ): Promise<CalendarSyncFull | undefined> => {
+  const { timeZone } = fields;
+  // Column references on the right of SET read the row as it was before this update.
+  const zoneMoved =
+    timeZone === undefined
+      ? undefined
+      : sql`${calendarSync.connectionId} IS NOT NULL AND ${calendarSync.timeZone} <> ${timeZone}`;
   const updated = await db
     .transaction(async (tx) => {
       const [row] = await tx
@@ -195,6 +203,17 @@ export const updateCalendarSync = async (
           name: fields.name,
           scope: fields.scope,
           distinguishMine: fields.distinguishMine,
+          timeZone,
+          includeGroupEvents: fields.includeGroupEvents,
+          groupEventsColor: fields.groupEventsColor,
+          includeBirthdays: fields.includeBirthdays,
+          birthdaysColor: fields.birthdaysColor,
+          ...(zoneMoved
+            ? {
+                syncDueAt: sql`CASE WHEN ${zoneMoved} THEN now() ELSE ${calendarSync.syncDueAt} END`,
+                syncAttempts: sql`CASE WHEN ${zoneMoved} THEN 0 ELSE ${calendarSync.syncAttempts} END`,
+              }
+            : {}),
         })
         .where(
           and(

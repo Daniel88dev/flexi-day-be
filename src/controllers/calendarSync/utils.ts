@@ -54,6 +54,11 @@ export const serializeConfig = (
   name: config.name,
   scope: config.scope,
   distinguishMine: config.distinguishMine,
+  timeZone: config.timeZone,
+  includeGroupEvents: config.includeGroupEvents,
+  groupEventsColor: config.groupEventsColor,
+  includeBirthdays: config.includeBirthdays,
+  birthdaysColor: config.birthdaysColor,
   teamIds: config.teamIds,
   types: config.types.map((t) => ({
     type: t.vacationType,
@@ -108,7 +113,7 @@ export const serializeOwnedConfig = async (req: Request, id: string, userId: str
  * not a member of is rejected by returning null.
  */
 export const resolveTeamIds = (
-  data: ValidatedCreateCalendarSync,
+  data: Pick<ValidatedCreateCalendarSync, "teamIds">,
   userGroupIds: Set<string>
 ): string[] | null => {
   for (const id of data.teamIds) {

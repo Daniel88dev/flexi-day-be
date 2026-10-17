@@ -40,6 +40,10 @@ cut at the next midnight.
   Microsoft.
 - The zone is the target's IANA name, for both providers. Graph accepted `Europe/Prague` in the
   OPS-2 probe (T-298), so there is no Windows-name map. The API refuses offsets such as `+01:00`.
+- A config has one zone, `calendar_sync.time_zone`, which the `.ics` feed and the target share. A
+  config created without one, and every config that predates the column, is in `Europe/Prague`.
+  Connecting a target overwrites it with the browser's zone, `PUT /api/calendar-sync/:id` changes
+  it when the body names one, and turning the target off leaves it.
 
 Writes go to the primary calendar only. There is no calendar picker.
 
@@ -82,7 +86,8 @@ admin turned the features off.
    with `lastError = "auth_revoked"`. Events already written stay. Running the consent again revives
    the same row as `ACTIVE` and `UNKNOWN` and re-syncs each target in full.
 6. **Target off.** `DELETE /api/calendar-sync/:id/target` deletes every event the ledger holds for
-   that target at the provider, then the ledger rows and the target columns. Deleting a config with
+   that target at the provider, then the ledger rows and the target columns, all but the zone.
+   Deleting a config with
    a target does the same first. With the provider's switch off the purge is local only: the ledger
    and the target go, and the events stay in the user's calendar.
 7. **Disconnect.** `DELETE /api/calendar-sync/connections/:provider` purges every target on the
@@ -163,8 +168,12 @@ Every config response carries `target`, or `null` when direct sync is off for it
 
 ## The ledger
 
-`calendar_sync_events` holds one row per target and day row: the provider's event id, the kind
-(`ABSENCE` or `HOME_OFFICE`), Google's `eventType` and a content hash. The hash is SHA-256 over the
+`calendar_sync_events` holds one row per target and source record, unique on the config and
+`source_key`: `v:<vacationId>` for a day row, with `ge:<groupEventId>` and `bd:<userId>` reserved
+for group events and birthdays, and a `:<n>` segment for a source that writes several events. Each
+row also carries the source's own column (`vacation_id`, `group_event_id`, `birthday_user_id`), the
+provider's event id, the kind (`ABSENCE`, `HOME_OFFICE`, `GROUP_EVENT` or `BIRTHDAY`), Google's
+`eventType` and a content hash. The hash is SHA-256 over the
 event's canonical JSON. The Microsoft hash leaves out `transactionId`, so it does not depend on the
 ledger id. A sync is a diff against these rows, and a rerun of a finished sync makes no provider call.
 
@@ -176,8 +185,9 @@ ledger id. A sync is a diff against these rows, and a rerun of a finished sync m
   event's type. A missing stored type counts as a change.
 - **Gone at the provider.** A patch that answers `not_found` inserts again under a new ledger id.
 - **Left the set.** A row whose record was cancelled, rejected after approval, retyped out of the
-  config or deleted is deleted at the provider and dropped. A hard-deleted vacation sets the row's
-  `vacationId` to null, which means the same thing.
+  config or deleted is deleted at the provider and dropped. The engine matches by `source_key`,
+  which outlives the source: a hard-deleted vacation sets the row's `vacation_id` to null, and the
+  row still leaves the set.
 
 ## Local development
 

@@ -153,7 +153,7 @@ export const calendarSyncRouter = (): Router => {
    *           format: date-time
    *     CalendarSyncConfig:
    *       type: object
-   *       required: [id, name, scope, distinguishMine, teamIds, types, feedUrl, tokenMasked, lastFetchedAt, target, createdAt, updatedAt]
+   *       required: [id, name, scope, distinguishMine, timeZone, includeGroupEvents, groupEventsColor, includeBirthdays, birthdaysColor, teamIds, types, feedUrl, tokenMasked, lastFetchedAt, target, createdAt, updatedAt]
    *       properties:
    *         id:
    *           type: string
@@ -165,6 +165,26 @@ export const calendarSyncRouter = (): Router => {
    *           enum: [ME, TEAM]
    *         distinguishMine:
    *           type: boolean
+   *         timeZone:
+   *           type: string
+   *           description: |
+   *             IANA zone the config writes timed events in, for the `.ics` feed and the
+   *             direct-sync target alike. Connecting a target overwrites it with the
+   *             browser's zone. Configs that predate the field read `Europe/Prague`.
+   *         includeGroupEvents:
+   *           type: boolean
+   *           description: Whether the feed carries group events. Stored only; no feed reads it yet.
+   *         groupEventsColor:
+   *           type: string
+   *           nullable: true
+   *           description: Swatch palette key for group events
+   *         includeBirthdays:
+   *           type: boolean
+   *           description: Whether the feed carries birthdays. Stored only; no feed reads it yet.
+   *         birthdaysColor:
+   *           type: string
+   *           nullable: true
+   *           description: Swatch palette key for birthdays
    *         teamIds:
    *           type: array
    *           items:
@@ -225,7 +245,7 @@ export const calendarSyncRouter = (): Router => {
    *           enum: [UNKNOWN, STATUS, PLAIN]
    *         timeZone:
    *           type: string
-   *           description: IANA time zone timed events are written in
+   *           description: IANA time zone timed events are written in, the config's `timeZone`
    *         lastSyncedAt:
    *           type: string
    *           format: date-time
@@ -396,6 +416,9 @@ export const calendarSyncRouter = (): Router => {
    *     tags:
    *       - Calendar sync
    *     summary: Create a calendar-sync feed
+   *     description: |
+   *       Without `timeZone` the feed is created in `Europe/Prague`. Group events and
+   *       Birthdays are off unless the body turns them on.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -440,11 +463,41 @@ export const calendarSyncRouter = (): Router => {
    *                       description: Swatch palette key (e.g. "violet")
    *                     mineColor:
    *                       type: string
+   *               timeZone:
+   *                 type: string
+   *                 default: Europe/Prague
+   *                 description: IANA zone, e.g. `Europe/Prague`; offsets are refused
+   *               includeGroupEvents:
+   *                 type: boolean
+   *                 default: false
+   *               groupEventsColor:
+   *                 type: string
+   *                 nullable: true
+   *                 default: null
+   *                 description: Swatch palette key (e.g. "teal")
+   *               includeBirthdays:
+   *                 type: boolean
+   *                 default: false
+   *               birthdaysColor:
+   *                 type: string
+   *                 nullable: true
+   *                 default: null
+   *                 description: Swatch palette key (e.g. "rose")
    *     responses:
    *       '201':
    *         description: The created config, including its full feed URL
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/CalendarSyncConfig'
+   *       '401':
+   *         description: Unauthorized
    *       '403':
    *         description: A requested team is not one the caller belongs to
+   *       '422':
+   *         description: |
+   *           Invalid body: a missing name or type, a colour outside the palette, or a
+   *           time zone that is not an IANA name
    */
   app.post("/", tryCatch(handlePostCalendar));
 
@@ -486,6 +539,10 @@ export const calendarSyncRouter = (): Router => {
    *     tags:
    *       - Calendar sync
    *     summary: Replace a calendar-sync feed's settings, teams and types
+   *     description: |
+   *       Name, scope, teams and types are replaced. `timeZone` and the Group events
+   *       and Birthdays settings change only when the body names them. A connected
+   *       target is marked due when its types or its zone change.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -537,16 +594,47 @@ export const calendarSyncRouter = (): Router => {
    *                       description: Swatch palette key (e.g. "violet")
    *                     mineColor:
    *                       type: string
+   *               timeZone:
+   *                 type: string
+   *                 description: |
+   *                   IANA zone, e.g. `Europe/Prague`; offsets are refused. Left out, the
+   *                   stored zone stays. A new zone marks a connected target due.
+   *               includeGroupEvents:
+   *                 type: boolean
+   *                 description: Left out, the stored value stays
+   *               groupEventsColor:
+   *                 type: string
+   *                 nullable: true
+   *                 description: Swatch palette key; left out, the stored value stays
+   *               includeBirthdays:
+   *                 type: boolean
+   *                 description: Left out, the stored value stays
+   *               birthdaysColor:
+   *                 type: string
+   *                 nullable: true
+   *                 description: Swatch palette key; left out, the stored value stays
    *     responses:
    *       '200':
    *         description: The updated config
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/CalendarSyncConfig'
    *       '400':
    *         description: |
    *           Invalid calendar id, or `scope: TEAM` on a config that syncs to a
    *           connected account; turn its direct sync off first.
    *           `errors[].context.code` is `CALENDAR_SYNC_TEAM_SCOPE`.
+   *       '401':
+   *         description: Unauthorized
+   *       '403':
+   *         description: A requested team is not one the caller belongs to
    *       '404':
    *         description: Calendar not found
+   *       '422':
+   *         description: |
+   *           Invalid body: a missing name or type, a colour outside the palette, or a
+   *           time zone that is not an IANA name
    */
   app.put("/:id", tryCatch(handleUpdateCalendar));
 
@@ -606,7 +694,9 @@ export const calendarSyncRouter = (): Router => {
    *     tags:
    *       - Calendar sync
    *     summary: Change the time zone a direct-sync target writes in
-   *     description: Stores the new zone and marks the target due, so its events are rewritten.
+   *     description: |
+   *       Stores the new zone, which is the `.ics` feed's zone too, and marks the
+   *       target due, so its events are rewritten.
    *     operationId: handlePutTarget
    *     security:
    *       - bearerAuth: []
