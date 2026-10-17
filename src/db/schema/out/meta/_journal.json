@@ -176,6 +176,13 @@
       "when": 1791737115358,
       "tag": "0024_calendar_sync_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792233976609,
+      "tag": "0025_user_settings_language",
+      "breakpoints": true
     }
   ]
 }

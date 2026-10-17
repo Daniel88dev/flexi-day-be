@@ -22,6 +22,14 @@ export const dashboardCalendarViewEnum = pgEnum(
   enumToPgEnum(dashboardCalendarView)
 );
 
+/** The app languages the web has a dictionary for. */
+export enum appLanguage {
+  English = "en",
+  Czech = "cs",
+}
+
+export const appLanguageEnum = pgEnum("app_language", enumToPgEnum(appLanguage));
+
 /**
  * Per-user preferences. Deliberately a separate table rather than columns on
  * `user`, which better-auth owns and migrates.
@@ -52,6 +60,9 @@ export const userSettings = pgTable("user_settings", {
   attendanceLocationNoticeDismissed: boolean("attendance_location_notice_dismissed")
     .notNull()
     .default(false),
+  // The web's active language, written by the web. Null means English. Calendar
+  // sync titles the owner's events in it.
+  language: appLanguageEnum("language"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

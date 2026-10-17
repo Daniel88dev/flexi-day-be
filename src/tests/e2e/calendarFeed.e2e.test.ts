@@ -108,4 +108,67 @@ describe("Calendar feed E2E", () => {
       expect(body).not.toContain(holiday.name);
     }
   });
+
+  it("titles events in the feed owner's app language", async () => {
+    const feed = async () => {
+      const response = await request(server.url).get(`/calendars/${feedToken}.ics`).expect(200);
+      return response.text || String(response.body);
+    };
+    expect(await feed()).toMatch(/SUMMARY:.* — Vacation/);
+
+    await request(server.url)
+      .put("/api/users/me/settings")
+      .set("Cookie", cookie)
+      .send({ language: "cs" })
+      .expect(200);
+
+    const czech = await feed();
+    expect(czech).toMatch(/SUMMARY:.* — Dovolená/);
+    expect(czech).toContain("CATEGORIES:Dovolená");
+  });
+
+  it("labels a config's types in the owner's app language", async () => {
+    const setLanguage = (language: string) =>
+      request(server.url)
+        .put("/api/users/me/settings")
+        .set("Cookie", cookie)
+        .send({ language })
+        .expect(200);
+    const labels = (body: { types: { type: string; label: string }[] }) =>
+      body.types.map((t) => [t.type, t.label]);
+
+    await setLanguage("en");
+    const [english] = (
+      await request(server.url).get("/api/calendar-sync").set("Cookie", cookie).expect(200)
+    ).body;
+    expect(labels(english)).toEqual([
+      ["VACATION", "Vacation"],
+      ["BANK_HOLIDAY", "Bank holiday"],
+    ]);
+
+    await setLanguage("cs");
+    const [listed] = (
+      await request(server.url).get("/api/calendar-sync").set("Cookie", cookie).expect(200)
+    ).body;
+    const detail = (
+      await request(server.url)
+        .get(`/api/calendar-sync/${listed.id}`)
+        .set("Cookie", cookie)
+        .expect(200)
+    ).body;
+    const created = (
+      await request(server.url)
+        .post("/api/calendar-sync")
+        .set("Cookie", cookie)
+        .send({ name: "Mine", scope: "ME", teamIds: [], types: [{ type: "SICK", color: "rose" }] })
+        .expect(201)
+    ).body;
+
+    expect(labels(listed)).toEqual([
+      ["VACATION", "Dovolená"],
+      ["BANK_HOLIDAY", "Státní svátek"],
+    ]);
+    expect(labels(detail)).toEqual(labels(listed));
+    expect(labels(created)).toEqual([["SICK", "Nemoc"]]);
+  });
 });

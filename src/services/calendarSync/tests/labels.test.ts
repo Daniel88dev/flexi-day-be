@@ -17,8 +17,23 @@ describe("recordTypeLabels", () => {
     });
   });
 
+  it("names every record type in Czech", () => {
+    expect(recordTypeLabels("cs")).toEqual({
+      [CalendarRecordType.Vacation]: "Dovolená",
+      [CalendarRecordType.HomeOffice]: "Home office",
+      [CalendarRecordType.Sick]: "Nemoc",
+      [CalendarRecordType.BankHoliday]: "Státní svátek",
+      [CalendarRecordType.NonPaidLeave]: "Neplacené volno",
+      [CalendarRecordType.PaidTimeOff]: "Placené volno",
+      [CalendarRecordType.SickDay]: "Zdravotní volno",
+      [CalendarRecordType.StudyLeave]: "Studijní volno",
+      [CalendarRecordType.Other]: "Ostatní",
+    });
+  });
+
   it("falls back to English for a language it has no table for", () => {
     expect(recordTypeLabels("xx")[CalendarRecordType.StudyLeave]).toBe("Study leave");
     expect(recordTypeLabels(undefined)[CalendarRecordType.Vacation]).toBe("Vacation");
+    expect(recordTypeLabels(null)[CalendarRecordType.Sick]).toBe("Sick");
   });
 });

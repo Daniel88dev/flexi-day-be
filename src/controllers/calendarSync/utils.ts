@@ -8,7 +8,8 @@ import AppError from "../../utils/appError.js";
 import type { CalendarTargetView } from "../../services/calendarConnection/types.js";
 import { calendarTargetViews } from "../../services/calendarConnection/calendarConnectionServices.js";
 import { getCalendarSyncById } from "../../services/calendarSync/calendarSyncServices.js";
-import { recordTypeLabels } from "../../services/calendarSync/labels.js";
+import { recordTypeLabels, type RecordTypeLabels } from "../../services/calendarSync/labels.js";
+import { getUserLanguage } from "../../services/userSettings/userSettingsServices.js";
 
 /**
  * Public base URL used to build feed links. Prefers `FEED_BASE_URL`. In
@@ -36,6 +37,10 @@ export const feedUrl = (baseUrl: string, token: string): string =>
 /** Masks a token for list responses so the secret is never fully echoed. */
 export const maskToken = (token: string): string => `${token.slice(0, 9)}${"•".repeat(18)}`;
 
+/** The record type labels in the app language of the config's owner. */
+export const ownerLabels = async (userId: string): Promise<RecordTypeLabels> =>
+  recordTypeLabels(await getUserLanguage(userId));
+
 /**
  * Shapes a config for API responses. `revealToken` controls whether the full
  * feed URL is returned (create / regenerate / detail) or a masked one (list).
@@ -44,7 +49,8 @@ export const serializeConfig = (
   config: CalendarSyncFull,
   baseUrl: string,
   revealToken: boolean,
-  target: CalendarTargetView | null
+  target: CalendarTargetView | null,
+  labels: RecordTypeLabels
 ) => ({
   id: config.id,
   name: config.name,
@@ -53,7 +59,7 @@ export const serializeConfig = (
   teamIds: config.teamIds,
   types: config.types.map((t) => ({
     type: t.vacationType,
-    label: recordTypeLabels("en")[t.vacationType],
+    label: labels[t.vacationType],
     color: t.color,
     mineColor: t.mineColor,
   })),
@@ -72,7 +78,13 @@ export const serializeConfigs = async (
   revealToken: boolean
 ) => {
   const targets = await calendarTargetViews(configs);
-  return configs.map((c) => serializeConfig(c, baseUrl, revealToken, targets.get(c.id) ?? null));
+  const owners = [...new Set(configs.map((c) => c.userId))];
+  const labels = new Map(
+    await Promise.all(owners.map(async (id) => [id, await ownerLabels(id)] as const))
+  );
+  return configs.map((c) =>
+    serializeConfig(c, baseUrl, revealToken, targets.get(c.id) ?? null, labels.get(c.userId)!)
+  );
 };
 
 export const serializeConfigWithTarget = async (

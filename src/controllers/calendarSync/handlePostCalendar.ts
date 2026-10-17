@@ -3,7 +3,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import AppError from "../../utils/appError.js";
 import { validateCreateCalendarSync } from "../../services/calendarSync/types.js";
-import { feedBaseUrl, resolveTeamIds, serializeConfig } from "./utils.js";
+import { feedBaseUrl, ownerLabels, resolveTeamIds, serializeConfig } from "./utils.js";
 import {
   createCalendarSync,
   generateFeedToken,
@@ -45,5 +45,7 @@ export const handlePostCalendar = async (req: Request, res: Response) => {
     }))
   );
 
-  return res.status(201).json(serializeConfig(config, feedBaseUrl(req), true, null));
+  return res
+    .status(201)
+    .json(serializeConfig(config, feedBaseUrl(req), true, null, await ownerLabels(auth.userId)));
 };

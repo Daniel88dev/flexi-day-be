@@ -24,7 +24,8 @@ import { getCalendarSyncById, getFeedRecords } from "./calendarSyncServices.js";
 import { calendarDriver } from "./drivers/index.js";
 import type { CalendarDriver, DriverContext, DriverFailure } from "./drivers/types.js";
 import { buildDesired, type DesiredEvent } from "./eventBuilder.js";
-import { recordTypeLabels } from "./labels.js";
+import { getUserLanguage } from "../userSettings/userSettingsServices.js";
+import { recordTypeLabels, type RecordTypeLabels } from "./labels.js";
 import type { CalendarFeedRecord, SyncOutcome } from "./types.js";
 
 const DONE: SyncOutcome = { status: "done" };
@@ -84,6 +85,7 @@ type Run = {
   provider: calendarProvider;
   capability: calendarCapability;
   timeZone: string;
+  labels: RecordTypeLabels;
   records: CalendarFeedRecord[];
   driver: CalendarDriver;
   context: DriverContext;
@@ -129,7 +131,7 @@ const build = (run: Run, record: CalendarFeedRecord, ledgerId: string) =>
     provider: run.provider,
     capability: run.capability,
     timeZone: run.timeZone,
-    labels: recordTypeLabels("en"),
+    labels: run.labels,
     configId: run.configId,
     ledgerId,
   });
@@ -301,6 +303,7 @@ const runSync = async (
     provider: connection.provider,
     capability: connection.capability,
     timeZone,
+    labels: recordTypeLabels(await getUserLanguage(userId)),
     records: await getFeedRecords(config),
     driver,
     context: { connection, accessToken: connectionTokenSource(connection) },

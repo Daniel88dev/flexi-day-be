@@ -179,6 +179,9 @@ export const calendarSyncRouter = (): Router => {
    *                 type: string
    *               label:
    *                 type: string
+   *                 description: |
+   *                   The record type's name in the owner's app language
+   *                   (`language` in user settings), English when unset
    *               color:
    *                 type: string
    *               mineColor:

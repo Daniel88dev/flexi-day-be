@@ -195,7 +195,7 @@ export const usersRouter = (): Router => {
    *       Users without a stored row are on the defaults
    *       (`emailNotifications: true`, `dashboardScope: MINE`,
    *       `dashboardGroupId: null`, `dashboardCalendarView: LANES`,
-   *       `attendanceLocationNoticeDismissed: false`).
+   *       `attendanceLocationNoticeDismissed: false`, `language: null`).
    *     security:
    *       - bearerAuth: []
    *     responses:
@@ -230,6 +230,10 @@ export const usersRouter = (): Router => {
    *       `dashboardCalendarView` picks how the dashboard month calendar draws
    *       leave: `LANES` (one bar per person, the default) or `STRIPES`
    *       (compact stripes with a day list). Every client reads the same value.
+   *
+   *       `language` is the web's active app language, `en` or `cs`; the web
+   *       writes it whenever it differs from the stored value. `null` means
+   *       English.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -255,7 +259,8 @@ export const usersRouter = (): Router => {
    *         description: |
    *           The body failed validation (no field supplied, or a value outside
    *           its enum, such as a `dashboardCalendarView` other than `LANES` or
-   *           `STRIPES`), or group scope was requested without a group
+   *           `STRIPES`, or a `language` other than `en`, `cs` or `null`), or
+   *           group scope was requested without a group
    * components:
    *   schemas:
    *     UserSettings:
@@ -282,6 +287,14 @@ export const usersRouter = (): Router => {
    *             never shows the notice again; an ordinary preference otherwise,
    *             so sending `false` brings the notice back for that person and
    *             nobody else.
+   *         language:
+   *           type: string
+   *           enum: [en, cs]
+   *           nullable: true
+   *           description: |
+   *             The person's app language, null meaning English. The `.ics`
+   *             feed and direct calendar sync title the person's events with
+   *             record type labels in this language.
    */
   app.get("/me/settings", tryCatch(handleGetMySettings));
   app.put(

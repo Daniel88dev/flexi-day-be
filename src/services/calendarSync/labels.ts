@@ -14,7 +14,22 @@ const ENGLISH: RecordTypeLabels = {
   [CalendarRecordType.Other]: "Other",
 };
 
-const TABLES: ReadonlyMap<string, RecordTypeLabels> = new Map([["en", ENGLISH]]);
+const CZECH: RecordTypeLabels = {
+  [CalendarRecordType.Vacation]: "Dovolená",
+  [CalendarRecordType.HomeOffice]: "Home office",
+  [CalendarRecordType.Sick]: "Nemoc",
+  [CalendarRecordType.BankHoliday]: "Státní svátek",
+  [CalendarRecordType.NonPaidLeave]: "Neplacené volno",
+  [CalendarRecordType.PaidTimeOff]: "Placené volno",
+  [CalendarRecordType.SickDay]: "Zdravotní volno",
+  [CalendarRecordType.StudyLeave]: "Studijní volno",
+  [CalendarRecordType.Other]: "Ostatní",
+};
+
+const TABLES: ReadonlyMap<string, RecordTypeLabels> = new Map([
+  ["en", ENGLISH],
+  ["cs", CZECH],
+]);
 
 /**
  * Record type labels in a language, English when there is no table for it.

@@ -1,5 +1,5 @@
 import { db, type DbTransaction } from "../../db/db.js";
-import { userSettings } from "../../db/schema/user-settings-schema.js";
+import { type appLanguage, userSettings } from "../../db/schema/user-settings-schema.js";
 import { eq, inArray } from "drizzle-orm";
 import { DEFAULT_USER_SETTINGS, type UserSettingsPatch, type UserSettingsRecord } from "./types.js";
 
@@ -14,6 +14,17 @@ export const getUserSettings = async (
     .limit(1);
 
   return row;
+};
+
+/** The user's app language, null when never set (English). */
+export const getUserLanguage = async (userId: string): Promise<appLanguage | null> => {
+  const [row] = await db
+    .select({ language: userSettings.language })
+    .from(userSettings)
+    .where(eq(userSettings.userId, userId))
+    .limit(1);
+
+  return row?.language ?? null;
 };
 
 /**

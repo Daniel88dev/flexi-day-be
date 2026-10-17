@@ -27,8 +27,9 @@ cut at the next midnight.
 | Home office | `workingLocation` `homeOffice`, all-day even when the row has times             | nothing                         | nothing                                      |
 
 - The title is the record type's label. Labels come from one table, `recordTypeLabels()` in
-  `calendarSync/labels.ts`, which the `.ics` feed uses too. User settings carry no language yet, so
-  every label is English (T-306).
+  `calendarSync/labels.ts`, which the `.ics` feed and the config API use too. The language is the
+  owner's `language` in user settings, which the web writes; null or an unknown value means English.
+  Changing it changes every title, so the next sync patches each event once.
 - The description is the record's note followed by "Synced from Flexi Day". Working-location events
   carry the label only.
 - Google events carry `flexiDayVacationId` and `flexiDayConfigId` in `extendedProperties.private`.
