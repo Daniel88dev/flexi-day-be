@@ -149,7 +149,15 @@ vite.config.ts.timestamp-*
 *.tfstate
 *.tfstate.*
 *.tfvars
+*.tfvars.json
 !terraform.tfvars.example
+# Saved plans and their JSON hold every secret in cleartext
+*.tfplan
+*.tfplan.json
+.terraformrc
+terraform.rc
+# Apple private keys (Sign in with Apple, APNs)
+*.p8
 .terraform/
 .terraform.lock.hcl
 crash.log
