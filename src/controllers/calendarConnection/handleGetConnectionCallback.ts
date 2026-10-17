@@ -15,6 +15,7 @@ const redirectTarget = (outcome: CallbackOutcome, slug: string) => {
     url.searchParams.set("config", outcome.configId);
   } else {
     url.searchParams.set("error", outcome.error);
+    url.searchParams.set("provider", slug);
     if (outcome.configId) url.searchParams.set("config", outcome.configId);
   }
   return url.toString();

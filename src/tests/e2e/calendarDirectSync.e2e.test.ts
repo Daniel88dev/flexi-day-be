@@ -261,26 +261,31 @@ describe("calendar direct sync routes on the fake driver", () => {
     const res = await request(server.url).get(`${consent.pathname}${consent.search}`);
 
     expect(res.status).toBe(302);
-    expect(res.headers.location).toBe(`${appUrl()}/calendar-sync/?error=state_invalid`);
+    expect(res.headers.location).toBe(
+      `${appUrl()}/calendar-sync/?error=state_invalid&provider=google`
+    );
     expect(await db.select().from(calendarConnection)).toEqual(before);
     expect((await configRow(secondMeConfigId)).connectionId).toBeNull();
   });
 
-  it("reports a declined consent back to the web", async () => {
-    const start = await request(server.url)
-      .post("/api/calendar-sync/connections/google/start")
-      .set("Cookie", ownerCookie)
-      .send({ configId: secondMeConfigId, timeZone: "Europe/Prague" });
-    const consent = new URL(start.body.url);
-    consent.searchParams.delete("code");
-    consent.searchParams.set("error", "access_denied");
+  it.each(["google", "microsoft"])(
+    "reports a declined %s consent back to the web with the provider",
+    async (provider) => {
+      const start = await request(server.url)
+        .post(`/api/calendar-sync/connections/${provider}/start`)
+        .set("Cookie", ownerCookie)
+        .send({ configId: secondMeConfigId, timeZone: "Europe/Prague" });
+      const consent = new URL(start.body.url);
+      consent.searchParams.delete("code");
+      consent.searchParams.set("error", "access_denied");
 
-    const res = await request(server.url).get(`${consent.pathname}${consent.search}`);
+      const res = await request(server.url).get(`${consent.pathname}${consent.search}`);
 
-    expect(res.headers.location).toBe(
-      `${appUrl()}/calendar-sync/?error=consent_denied&config=${secondMeConfigId}`
-    );
-  });
+      expect(res.headers.location).toBe(
+        `${appUrl()}/calendar-sync/?error=consent_denied&provider=${provider}&config=${secondMeConfigId}`
+      );
+    }
+  );
 
   it("edits the target's time zone and marks it due", async () => {
     await db.update(calendarSync).set({ syncDueAt: null }).where(eq(calendarSync.id, meConfigId));

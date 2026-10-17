@@ -11,6 +11,7 @@ const {
   mockVerify,
   mockCollectApple,
   mockRevokeApple,
+  mockDisconnectCalendars,
   APPLE_CLIENT,
 } = vi.hoisted(() => ({
   mockGetBlockers: vi.fn(),
@@ -22,6 +23,7 @@ const {
   mockVerify: vi.fn(),
   mockCollectApple: vi.fn(),
   mockRevokeApple: vi.fn(),
+  mockDisconnectCalendars: vi.fn(),
   APPLE_CLIENT: { stand: "in for the Apple client" },
 }));
 
@@ -38,6 +40,10 @@ vi.mock("../../../services/accountDeletion/accountDeletionServices.js", () => ({
 
 vi.mock("../../../services/appleAuthorization/appleAuthorizationServices.js", () => ({
   collectAppleRevocations: mockCollectApple,
+}));
+
+vi.mock("../../../services/calendarConnection/calendarConnectionServices.js", () => ({
+  disconnectAllProviders: mockDisconnectCalendars,
 }));
 
 vi.mock("../../../services/appleAuthorization/appleRevocation.js", () => ({
@@ -107,6 +113,8 @@ describe("account deletion handlers", () => {
     vi.mocked(getAuth).mockReturnValue(mockAuthData);
     mockDeleteAccount.mockResolvedValue({ groups: 0, organizations: 0, attachments: [] });
     mockCollectApple.mockResolvedValue(APPLE_REVOCATIONS);
+    mockGetBlockers.mockResolvedValue([]);
+    mockDisconnectCalendars.mockResolvedValue(1);
   });
 
   it("reports the blockers and the confirmation the caller needs", async () => {
@@ -209,6 +217,28 @@ describe("account deletion handlers", () => {
       expect(res.status).toHaveBeenCalledWith(204);
     });
 
+    it("disconnects the calendar connections before the transaction", async () => {
+      mockVerify.mockResolvedValue(true);
+      const { req, res } = deleteRequest({ password: "right" });
+
+      await handlePostDeleteMe(req, res);
+
+      expect(mockDisconnectCalendars).toHaveBeenCalledWith(mockAuthData.userId);
+      expect(firstCall(mockDisconnectCalendars)).toBeLessThan(firstCall(mockDeleteAccount));
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it("leaves the calendar connections alone when a blocker will refuse the deletion", async () => {
+      mockVerify.mockResolvedValue(true);
+      mockGetBlockers.mockResolvedValue([{ kind: "SUPPORT_ADMIN" }]);
+      const blocked = new AppError({ code: 409, publicContext: { reason: "DELETION_BLOCKED" } });
+      mockDeleteAccount.mockRejectedValue(blocked);
+      const { req, res } = deleteRequest({ password: "right" });
+
+      await expect(handlePostDeleteMe(req, res)).rejects.toBe(blocked);
+      expect(mockDisconnectCalendars).not.toHaveBeenCalled();
+    });
+
     it("revokes nothing at Apple when the password is refused", async () => {
       mockVerify.mockResolvedValue(false);
       const { req, res } = deleteRequest({ password: "wrong" });
@@ -216,6 +246,7 @@ describe("account deletion handlers", () => {
       await expect(handlePostDeleteMe(req, res)).rejects.toBeInstanceOf(AppError);
       expect(mockCollectApple).not.toHaveBeenCalled();
       expect(mockRevokeApple).not.toHaveBeenCalled();
+      expect(mockDisconnectCalendars).not.toHaveBeenCalled();
     });
   });
 

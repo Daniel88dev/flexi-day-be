@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { buildIcsCalendar, type IcsEvent } from "../../utils/ics.js";
-import { recordTypeLabels } from "../../services/calendarSync/labels.js";
+import { userRecordTypeLabels } from "../../services/calendarSync/labels.js";
 import {
   getCalendarSyncByToken,
   getFeedRecords,
@@ -36,7 +36,7 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
   }
 
   const records = await getFeedRecords(config);
-  const labels = recordTypeLabels("en");
+  const labels = await userRecordTypeLabels(config.userId);
 
   const events: IcsEvent[] = records.map((r) => {
     const label = labels[r.vacationType];

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  appLanguage,
   dashboardCalendarView,
   dashboardScope,
   type userSettings,
@@ -16,6 +17,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsResponse = {
   dashboardGroupId: null,
   dashboardCalendarView: dashboardCalendarView.Lanes,
   attendanceLocationNoticeDismissed: false,
+  language: null,
 };
 
 /**
@@ -29,6 +31,7 @@ export const validatePutUserSettings = z
     dashboardGroupId: z.string().nullable().optional(),
     dashboardCalendarView: z.enum(dashboardCalendarView).optional(),
     attendanceLocationNoticeDismissed: z.boolean().optional(),
+    language: z.enum(appLanguage).nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one setting must be supplied",

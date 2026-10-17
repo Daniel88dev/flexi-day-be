@@ -37,8 +37,59 @@ import {
 } from "./helpers/authHelper.js";
 import { cookieHeaderOf, nativeHeaders, sessionsOf } from "./helpers/nativeSessionHelpers.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { calendarSync, calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
+import {
+  calendarConnection,
+  calendarProvider,
+  calendarSyncEventKind,
+  calendarSyncEvents,
+} from "../../db/schema/calendar-connection-schema.js";
+import { encryptOAuthToken } from "../../utils/oauthTokens.js";
+import type { FakeCall } from "../../services/calendarSync/drivers/fakeDriver.js";
 
-const { mockUnmarshal } = vi.hoisted(() => ({ mockUnmarshal: vi.fn() }));
+const { mockUnmarshal, providerCalls } = vi.hoisted(() => ({
+  mockUnmarshal: vi.fn(),
+  providerCalls: {
+    revoked: [] as string[],
+    revokeFails: false,
+    driver: [] as { operation: string; providerEventId?: string | null; result: string }[],
+  },
+}));
+
+// The fake provider's calls cascade away with the connection, so they are kept here too.
+vi.mock("../../services/calendarConnection/providers/fake.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../services/calendarConnection/providers/fake.js")>();
+  return {
+    ...actual,
+    createFakeAdapter: (...args: Parameters<typeof actual.createFakeAdapter>) => ({
+      ...actual.createFakeAdapter(...args),
+      revoke: (refreshToken: string) => {
+        if (providerCalls.revokeFails) return Promise.reject(new Error("google down"));
+        providerCalls.revoked.push(refreshToken);
+        return Promise.resolve();
+      },
+    }),
+  };
+});
+
+vi.mock("../../services/calendarSync/drivers/fakeDriver.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../services/calendarSync/drivers/fakeDriver.js")>();
+  return {
+    ...actual,
+    databaseFakeStore: () => {
+      const store = actual.databaseFakeStore();
+      return {
+        ...store,
+        record: (call: FakeCall) => {
+          providerCalls.driver.push(call);
+          return store.record(call);
+        },
+      };
+    },
+  };
+});
 
 vi.mock("../../services/email/index.js", () => ({
   emailSender: { sendTemplated: () => Promise.resolve() },
@@ -77,6 +128,9 @@ describe("account deletion", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    providerCalls.revoked.length = 0;
+    providerCalls.driver.length = 0;
+    providerCalls.revokeFails = false;
   });
 
   afterAll(async () => {
@@ -809,6 +863,99 @@ describe("account deletion", () => {
       expect(
         await db.select().from(organizations).where(eq(organizations.id, organizationId))
       ).toHaveLength(0);
+    });
+  });
+  describe("calendar connections", () => {
+    const REFRESH_TOKEN = "fake-refresh-google-fake-code";
+
+    /** A live Google connection with one ME target that has two events written at the provider. */
+    const connectGoogle = async (userId: string) => {
+      const connectionId = uuidv4();
+      await db.insert(calendarConnection).values({
+        id: connectionId,
+        userId,
+        provider: calendarProvider.Google,
+        refreshTokenEnc: await encryptOAuthToken(REFRESH_TOKEN),
+        grantedScopes: "https://www.googleapis.com/auth/calendar.events.owned",
+      });
+      const configId = uuidv4();
+      await db.insert(calendarSync).values({
+        id: configId,
+        userId,
+        name: "Mine",
+        scope: calendarSyncScope.Me,
+        token: `flx_live_${uuidv4().replaceAll("-", "")}`,
+        connectionId,
+        timeZone: "Europe/Prague",
+      });
+      const providerEventIds = [`evt-${uuidv4()}`, `evt-${uuidv4()}`];
+      await db.insert(calendarSyncEvents).values(
+        providerEventIds.map((providerEventId) => ({
+          id: uuidv4(),
+          calendarSyncId: configId,
+          providerEventId,
+          kind: calendarSyncEventKind.Absence,
+          contentHash: "hash",
+        }))
+      );
+      return { connectionId, providerEventIds };
+    };
+
+    const deletedAtProvider = () =>
+      providerCalls.driver
+        .filter((call) => call.operation === "DELETE" && call.result === "ok")
+        .map((call) => call.providerEventId);
+
+    it("removes the events written to the calendar and revokes the grant before the account goes", async () => {
+      const { id } = await createWebUser("Connected Leaver");
+      const { connectionId, providerEventIds } = await connectGoogle(id);
+
+      const res = await deleteWith(await authCookieFor(id), { password: WEB_TEST_PASSWORD });
+
+      expect(res.status).toBe(204);
+      expect(await userExists(id)).toBe(false);
+      expect(deletedAtProvider().sort()).toEqual([...providerEventIds].sort());
+      expect(providerCalls.revoked).toEqual([REFRESH_TOKEN]);
+      expect(
+        await db.select().from(calendarConnection).where(eq(calendarConnection.id, connectionId))
+      ).toHaveLength(0);
+    });
+
+    it("still deletes the account when Google refuses the revoke, and logs it", async () => {
+      const { id } = await createWebUser("Unrevoked Leaver");
+      const { connectionId } = await connectGoogle(id);
+      providerCalls.revokeFails = true;
+      const logWarn = vi.spyOn(logger, "warn");
+
+      const res = await deleteWith(await authCookieFor(id), { password: WEB_TEST_PASSWORD });
+
+      expect(res.status).toBe(204);
+      expect(await userExists(id)).toBe(false);
+      expect(logWarn).toHaveBeenCalledWith(
+        "calendar_connection.revoke_failed",
+        expect.objectContaining({ connectionId, provider: calendarProvider.Google })
+      );
+    });
+
+    it("touches no calendar when the deletion is refused", async () => {
+      const { id } = await createWebUser("Blocked Connected Manager");
+      const other = await createWebUser("Blocking Member");
+      const groupId = await makeGroup("Connected Team", id, await organizationOf(id));
+      await addMember(groupId, id);
+      await addMember(groupId, other.id);
+      const { connectionId } = await connectGoogle(id);
+      const cookie = await authCookieFor(id);
+
+      const blocked = await deleteWith(cookie, { password: WEB_TEST_PASSWORD });
+      const wrongPassword = await deleteWith(cookie, { password: "not the password" });
+
+      expect(blocked.status).toBe(409);
+      expect(wrongPassword.status).toBe(403);
+      expect(deletedAtProvider()).toEqual([]);
+      expect(providerCalls.revoked).toEqual([]);
+      expect(
+        await db.select().from(calendarConnection).where(eq(calendarConnection.id, connectionId))
+      ).toHaveLength(1);
     });
   });
 });

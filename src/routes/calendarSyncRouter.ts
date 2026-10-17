@@ -41,8 +41,9 @@ export const calendarSyncCallbackRouter = (): Router => {
    *
    *       Always answers with a redirect to the web app:
    *       `{APP_URL}/calendar-sync/?connected={provider}&config={id}` on success,
-   *       `{APP_URL}/calendar-sync/?error={code}&config={id}` on failure. `config`
-   *       is omitted when the state could not be trusted or the config is gone.
+   *       `{APP_URL}/calendar-sync/?error={code}&provider={provider}&config={id}` on
+   *       failure. `provider` is the path's provider, present on every failure.
+   *       `config` is omitted when the state could not be trusted or the config is gone.
    *       Error codes: `state_invalid`, `provider_off`, `consent_denied`,
    *       `provider_error`, `config_not_found`, `team_scope`, `target_exists`,
    *       `scope_denied`, `exchange_failed`, `server_error`. Tokens and the provider's own error
@@ -178,6 +179,9 @@ export const calendarSyncRouter = (): Router => {
    *                 type: string
    *               label:
    *                 type: string
+   *                 description: |
+   *                   The record type's name in the owner's app language
+   *                   (`language` in user settings), English when unset
    *               color:
    *                 type: string
    *               mineColor:

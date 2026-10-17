@@ -562,6 +562,39 @@ export const disconnectProvider = async (
   await db.delete(calendarConnection).where(eq(calendarConnection.id, connection.id));
 };
 
+/**
+ * Account deletion: disconnects every live connection the user has, best
+ * effort. A failure is logged and never refuses the deletion. Returns how many
+ * connections it found.
+ */
+export const disconnectAllProviders = async (userId: string): Promise<number> => {
+  let providers: calendarProvider[];
+  try {
+    providers = (
+      await db
+        .select({ provider: calendarConnection.provider })
+        .from(calendarConnection)
+        .where(and(eq(calendarConnection.userId, userId), isNull(calendarConnection.revokedAt)))
+    ).map((row) => row.provider);
+  } catch (error) {
+    logger.warn("calendar_connection.collect_failed", { userId, reason: failureReason(error) });
+    return 0;
+  }
+
+  for (const provider of providers) {
+    try {
+      await disconnectProvider(userId, provider);
+    } catch (error) {
+      logger.warn("calendar_connection.disconnect_failed", {
+        userId,
+        provider,
+        reason: failureReason(error),
+      });
+    }
+  }
+  return providers.length;
+};
+
 /** The `target` object for each config, `null` where direct sync is off. */
 export const calendarTargetViews = async (
   configs: Pick<

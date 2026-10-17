@@ -24,7 +24,11 @@ import { handleGetMySettings } from "../handleGetMySettings.js";
 import { handlePutMySettings } from "../handlePutMySettings.js";
 import { getAuth } from "../../../middleware/authSession.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
-import { dashboardCalendarView, dashboardScope } from "../../../db/schema/user-settings-schema.js";
+import {
+  appLanguage,
+  dashboardCalendarView,
+  dashboardScope,
+} from "../../../db/schema/user-settings-schema.js";
 
 const DEFAULTS = {
   emailNotifications: true,
@@ -32,6 +36,7 @@ const DEFAULTS = {
   dashboardGroupId: null,
   dashboardCalendarView: dashboardCalendarView.Lanes,
   attendanceLocationNoticeDismissed: false,
+  language: null,
 };
 
 const STORED_ROW = {
@@ -41,6 +46,7 @@ const STORED_ROW = {
   dashboardGroupId: "group_1",
   dashboardCalendarView: dashboardCalendarView.Stripes,
   attendanceLocationNoticeDismissed: true,
+  language: appLanguage.Czech,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-02-01T00:00:00.000Z"),
 };
@@ -51,6 +57,7 @@ const STORED_PREFERENCES = {
   dashboardGroupId: "group_1",
   dashboardCalendarView: dashboardCalendarView.Stripes,
   attendanceLocationNoticeDismissed: true,
+  language: appLanguage.Czech,
 };
 
 const PREFERENCE_KEYS = [
@@ -59,6 +66,7 @@ const PREFERENCE_KEYS = [
   "dashboardGroupId",
   "dashboardCalendarView",
   "attendanceLocationNoticeDismissed",
+  "language",
 ];
 
 const sentBody = (res: Response): unknown => vi.mocked(res.json).mock.calls[0]?.[0];
@@ -77,7 +85,7 @@ describe("user settings endpoints", () => {
     mockGetUserSettings.mockResolvedValue(undefined);
   });
 
-  it("answers GET with only the five preferences, never the row's user id or timestamps", async () => {
+  it("answers GET with only the six preferences, never the row's user id or timestamps", async () => {
     const { req, res } = makeReqRes();
     mockGetUserSettings.mockResolvedValue(STORED_ROW);
 
@@ -87,7 +95,7 @@ describe("user settings endpoints", () => {
     expect(Object.keys(sentBody(res) as object)).toEqual(PREFERENCE_KEYS);
   });
 
-  it("answers PUT with only the five preferences, never the row's user id or timestamps", async () => {
+  it("answers PUT with only the six preferences, never the row's user id or timestamps", async () => {
     const { req, res } = makeReqRes({ body: { emailNotifications: false } });
     mockUpsertUserSettings.mockResolvedValue(STORED_ROW);
 
@@ -97,7 +105,7 @@ describe("user settings endpoints", () => {
     expect(Object.keys(sentBody(res) as object)).toEqual(PREFERENCE_KEYS);
   });
 
-  it("defaults email notifications to on and the calendar to lanes when the user has no stored settings", async () => {
+  it("defaults email notifications to on, the calendar to lanes and the language to none when the user has no stored settings", async () => {
     const { req, res } = makeReqRes();
 
     await handleGetMySettings(req, res);

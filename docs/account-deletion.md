@@ -74,6 +74,8 @@ Goes:
   request still answers 204, because the account is already gone.
 - Every Apple account link, revoked at Apple as well, so the user's Apple settings stop listing the
   app. See "Apple links" below.
+- Every calendar connection, after the events it wrote are deleted from the user's calendar and
+  its grant is revoked at Google. See "Calendar connections" below.
 
 Stays:
 
@@ -127,4 +129,40 @@ revocation is best effort, and never refuses a deletion or an unlink or changes 
 - When Apple is not configured on the server, stored Apple tokens are not revoked and nothing is
   logged: there is no key to sign the request with.
 
-Google and Microsoft links are not revoked.
+Google and Microsoft sign-in links are not revoked.
+
+## Calendar connections
+
+A calendar connection's tokens and its sync ledger cascade with the user, and the ledger is the
+only record of which events the app wrote. So this step runs before the transaction, not after the
+commit like the Apple one:
+
+1. After the confirmation passes, the handler checks the blockers once without locks. Any blocker
+   skips the step, and the transaction then refuses the deletion as usual.
+2. `disconnectAllProviders` runs `disconnectProvider` for each live connection, the same code as
+   `DELETE /api/calendar-sync/connections/:provider` (see
+   [`calendar-direct-sync.md`](calendar-direct-sync.md)). It deletes every written event at the
+   provider, revokes the refresh token at Google, and deletes the connection row. Microsoft has no
+   revoke endpoint.
+3. The transaction deletes the account as above.
+
+The step is best effort and never refuses a deletion or changes its answer:
+
+- A refused deletion touches no calendar. A wrong password or a stale session is refused first,
+  and a blocker found in step 1 skips the step. A blocker that appears between step 1 and the
+  transaction, such as a member who joins in that window, still refuses the deletion, with the
+  calendars already disconnected. The user can connect them again.
+- An event whose delete keeps failing, or a purge without a usable token, follows the purge rules
+  in `calendar-direct-sync.md`: the event stays in the user's calendar and the backend logs
+  `calendar_sync.purge_incomplete` or `calendar_sync.purge_local_only`.
+- A revoke Google refuses or that does not reach Google is logged as
+  `calendar_connection.revoke_failed` with the connection id.
+- A failure to read the connections is logged as `calendar_connection.collect_failed` and skips
+  the step. A disconnect that throws is logged as `calendar_connection.disconnect_failed` and the
+  next connection still runs. The rows cascade with the user either way.
+- With a provider's switch off on the server, its events stay in the calendar and its token stays
+  live at Google until it lapses, as with a disconnect.
+- The purge and the revoke run inline, so a calendar with many written events delays the deletion
+  answer the same way it delays a disconnect.
+
+The `account deleted` log line counts the connections as `calendarConnections`.

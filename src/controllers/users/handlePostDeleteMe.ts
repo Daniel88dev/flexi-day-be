@@ -7,9 +7,11 @@ import { db } from "../../db/db.js";
 import {
   deleteAccountRows,
   getCredentialPasswordHash,
+  getDeletionBlockers,
   getSessionCreatedAt,
   removeAttachmentObjects,
 } from "../../services/accountDeletion/accountDeletionServices.js";
+import { disconnectAllProviders } from "../../services/calendarConnection/calendarConnectionServices.js";
 import { collectAppleRevocations } from "../../services/appleAuthorization/appleAuthorizationServices.js";
 import { revokeAtApple } from "../../services/appleAuthorization/appleRevocation.js";
 import {
@@ -76,6 +78,12 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
 
   await assertConfirmed(session, password);
 
+  // The calendar step needs the ledger and the tokens, which cascade with the
+  // user, so it runs before the transaction and only when nothing blocks it.
+  const calendarConnections =
+    (await getDeletionBlockers(session.userId)).length === 0
+      ? await disconnectAllProviders(session.userId)
+      : 0;
   const appleRevocations = await collectAppleRevocations(session.userId);
   const deleted = await db.transaction((tx) => deleteAccountRows(session.userId, tx));
   await removeAttachmentObjects(session.userId, deleted.attachments);
@@ -86,6 +94,7 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
     organizations: deleted.organizations,
     attachments: deleted.attachments.length,
     appleLinks: appleRevocations.length,
+    calendarConnections,
   });
 
   await clearSessionCookies(res);

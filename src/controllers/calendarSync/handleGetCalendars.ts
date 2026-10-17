@@ -10,5 +10,5 @@ export const handleGetCalendars = async (req: Request, res: Response) => {
   const configs = await getCalendarSyncForUser(auth.userId);
 
   const baseUrl = feedBaseUrl(req);
-  return res.status(200).json(await serializeConfigs(configs, baseUrl, false));
+  return res.status(200).json(await serializeConfigs(auth.userId, configs, baseUrl, false));
 };

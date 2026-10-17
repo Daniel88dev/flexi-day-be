@@ -99,3 +99,49 @@ describe("user settings: dashboard calendar view", () => {
     await putSettings({ dashboardScope: "GROUP" }).expect(403);
   });
 });
+
+describe("user settings: app language", () => {
+  let server: LoopbackServer;
+  let cookie: string;
+
+  const getSettings = () => request(server.url).get("/api/users/me/settings").set("Cookie", cookie);
+  const putSettings = (body: object) =>
+    request(server.url).put("/api/users/me/settings").set("Cookie", cookie).send(body);
+
+  beforeAll(async () => {
+    await cleanupTestData();
+    server = await listenOnLoopback(createServer());
+    const user = await createTestUser("language@test.com", "Lena Language", "password123");
+    cookie = await authCookieFor(user.id);
+  });
+
+  afterAll(async () => {
+    await server?.close();
+    await cleanupTestData();
+  });
+
+  it("is null for a user who never set it", async () => {
+    expect((await getSettings().expect(200)).body.language).toBeNull();
+  });
+
+  it("stores cs, keeps it across other saves, and clears it with null", async () => {
+    expect((await putSettings({ language: "cs" }).expect(200)).body.language).toBe("cs");
+
+    await putSettings({ emailNotifications: false }).expect(200);
+    expect((await getSettings().expect(200)).body.language).toBe("cs");
+
+    await putSettings({ language: "en" }).expect(200);
+    expect((await getSettings().expect(200)).body.language).toBe("en");
+
+    await putSettings({ language: null }).expect(200);
+    expect((await getSettings().expect(200)).body.language).toBeNull();
+  });
+
+  it("rejects a language the app has no dictionary for and keeps the stored one", async () => {
+    await putSettings({ language: "cs" }).expect(200);
+
+    await putSettings({ language: "de" }).expect(422);
+
+    expect((await getSettings().expect(200)).body.language).toBe("cs");
+  });
+});

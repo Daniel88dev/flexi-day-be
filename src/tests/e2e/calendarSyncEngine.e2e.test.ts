@@ -19,6 +19,7 @@ import {
 } from "../../db/schema/calendar-connection-schema.js";
 import { CalendarRecordType, vacation } from "../../db/schema/vacation-schema.js";
 import { encryptOAuthToken } from "../../utils/oauthTokens.js";
+import { appLanguage, userSettings } from "../../db/schema/user-settings-schema.js";
 import {
   FAKE_PLAIN_MARKER,
   FAKE_REVOKED_MARKER,
@@ -147,6 +148,7 @@ describe("calendar sync engine on the fake driver", () => {
     entitled.value = true;
     driverOverride.value = undefined;
     await db.delete(vacation);
+    await db.delete(userSettings).where(eq(userSettings.userId, ownerId));
     await db.delete(calendarSync);
     await db.delete(calendarConnection);
   });
@@ -197,6 +199,26 @@ describe("calendar sync engine on the fake driver", () => {
     expect(outcome).toEqual({ status: "done" });
     expect(await calls()).toHaveLength(2);
     expect(await ledger()).toEqual(before);
+  });
+
+  it("titles events in the owner's app language, English until one is set", async () => {
+    await connect(calendarProvider.Microsoft);
+    await addVacation(day(2));
+    await syncTarget(configId);
+    await db.insert(userSettings).values({ userId: ownerId, language: appLanguage.Czech });
+    await addVacation(day(3));
+
+    await syncTarget(configId);
+
+    const sent = (await calls()).map((call) => [
+      call.operation,
+      (call.payload as { subject: string }).subject,
+    ]);
+    expect(sent).toEqual([
+      ["INSERT", "Vacation"],
+      ["PATCH", "Dovolená"],
+      ["INSERT", "Dovolená"],
+    ]);
   });
 
   it("patches a changed record on Microsoft and keeps its event", async () => {

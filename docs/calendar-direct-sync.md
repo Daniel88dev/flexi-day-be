@@ -27,8 +27,9 @@ cut at the next midnight.
 | Home office | `workingLocation` `homeOffice`, all-day even when the row has times             | nothing                         | nothing                                      |
 
 - The title is the record type's label. Labels come from one table, `recordTypeLabels()` in
-  `calendarSync/labels.ts`, which the `.ics` feed uses too. User settings carry no language yet, so
-  every label is English (T-306).
+  `calendarSync/labels.ts`, which the `.ics` feed and the config API use too. The language is the
+  owner's `language` in user settings, which the web writes; null or an unknown value means English.
+  Changing it changes every title, so the next sync patches each event once.
 - The description is the record's note followed by "Synced from Flexi Day". Working-location events
   carry the label only.
 - Google events carry `flexiDayVacationId` and `flexiDayConfigId` in `extendedProperties.private`.
@@ -71,7 +72,8 @@ admin turned the features off.
    due and redirects to `{APP_URL}/calendar-sync/?connected=<provider>&config=<id>`. Every failure
    redirects with `?error=` and one of `state_invalid`, `provider_off`, `consent_denied`,
    `provider_error`, `config_not_found`, `team_scope`, `target_exists`, `scope_denied`,
-   `exchange_failed` or `server_error`.
+   `exchange_failed` or `server_error`, plus `provider=<provider>` from the callback path, so the
+   web can word a Microsoft `consent_denied` differently even when consent finished in another tab.
 4. **Refresh.** A token within 60 seconds of expiry is refreshed before use. Microsoft rotates the
    refresh token on every refresh, and the new one is saved.
 5. **Needs reconnect.** A refresh that fails with `invalid_grant`, or Microsoft's
@@ -86,7 +88,9 @@ admin turned the features off.
    connection, revokes the refresh token at Google, and deletes the row. Microsoft has no revoke
    endpoint. The purge and the revoke reach the provider only while its switch is on. With it off,
    the row goes, the written events stay in the user's calendar and the token stays live at Google
-   until it lapses. Sign-in `account` rows are never read or written.
+   until it lapses. Sign-in `account` rows are never read or written. Account deletion runs the
+   same disconnect for every connection the user has; see
+   [`account-deletion.md`](account-deletion.md#calendar-connections).
 
 Other routes: `GET /api/calendar-sync/connections` lists the caller's connections and which
 providers are on, `PUT /api/calendar-sync/:id/target` changes the zone and marks the target due, and
@@ -215,8 +219,9 @@ Pro override first when no paid plan covers them. The scenario response carries 
 `calendar`, or `null`. Approving the owner's pending booking then leaves an insert that
 `GET /api/dev/calendar/events?email=owner@dev.local` returns.
 
-Until T-309 adds them to the `flexi-dev` MCP server and the dev CLI, the `ui-test` loop calls the
-three routes with curl and the `x-dev-token` header.
+The `flexi-dev` MCP server wraps the three routes as `dev_calendar_connect`, `dev_calendar_events`
+and `dev_calendar_capability`, and the workspace root runs them as
+`npm run dev:calendar:connect|events|capability`. The `ui-test` loop uses those.
 
 ## Portal prerequisites
 
@@ -282,8 +287,6 @@ lifetime cap above but keeps refresh tokens alive.
 - No probe has yet sent `extendedProperties.private` on a working-location event. The first live
   Google sync must confirm Google accepts it. If Google refuses, drop it from the custom-location
   and home-office payloads in `eventBuilder.ts` and keep it on `outOfOffice` and `default` events.
-- Deleting an account removes its connections by cascade without revoking the tokens at Google
-  (T-304).
 
 ## Research
 
