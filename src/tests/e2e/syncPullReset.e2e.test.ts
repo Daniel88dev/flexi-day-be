@@ -8,6 +8,8 @@ import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
+import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { encodeSyncCursor } from "../../services/sync/syncCursor.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { expectFirstOnlyOnPageOne } from "./helpers/syncPullHelpers.js";
@@ -315,7 +317,67 @@ describe("Sync pull reset triggers E2E", () => {
     });
   });
 
+  describe("a subscription row of a scoped organization", () => {
+    it("answers a sync reset when the organization of the caller's group starts paying", async () => {
+      const manager = await makeUser("Manager");
+      const caller = await makeUser("Caller");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, caller.id);
+      await ageEverything();
+      await upsertSubscription(await organizationIdOf(manager.id), {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Active,
+        graceEndsAt: null,
+      });
+
+      const body = await pull(await authCookieFor(caller.id), staleCursor());
+
+      expect(body.reset).toBe(true);
+      expect(idsOf(body.groups)).toEqual([groupId]);
+    });
+
+    it("answers a sync reset for any write to that row, a cancellation included", async () => {
+      const manager = await makeUser("Manager");
+      const caller = await makeUser("Caller");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await addMember(groupId, caller.id, { viewAccess: true });
+      const organizationId = await organizationIdOf(manager.id);
+      await upsertSubscription(organizationId, {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Active,
+        graceEndsAt: null,
+      });
+      await ageEverything();
+      await upsertSubscription(organizationId, {
+        status: subscriptionStatus.Canceled,
+        graceEndsAt: new Date(Date.now() + 14 * 24 * 60 * MINUTE),
+      });
+
+      expect((await pull(await authCookieFor(caller.id), staleCursor())).reset).toBe(true);
+    });
+  });
+
   describe("a change that is not a trigger", () => {
+    it("answers a delta for a subscription of an organization the caller has no group in", async () => {
+      const manager = await makeUser("Manager");
+      const foreignManager = await makeUser("Foreign Manager");
+      const caller = await makeUser("Caller");
+      const groupId = await makeGroup("Engineering", manager.id);
+      await makeGroup("Finance", foreignManager.id);
+      await addMember(groupId, caller.id, { viewAccess: true });
+      await ageEverything();
+      await upsertSubscription(await organizationIdOf(foreignManager.id), {
+        plan: subscriptionPlan.Pro,
+        status: subscriptionStatus.Active,
+        graceEndsAt: null,
+      });
+
+      const body = await pull(await authCookieFor(caller.id), staleCursor());
+
+      expect(body.reset).toBe(false);
+      expect(body.groups).toEqual([]);
+    });
+
     it("answers a delta for another member's vacation", async () => {
       const manager = await makeUser("Manager");
       const caller = await makeUser("Caller");

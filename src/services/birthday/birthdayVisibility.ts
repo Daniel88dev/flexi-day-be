@@ -33,7 +33,7 @@ const isPaid = (entitlements: Entitlements) => entitlements.plan !== "FREE";
 /** Never `writable`: that means over-limit groups lock, not that the organization paid. */
 const isPaidOrLapsed = (entitlements: Entitlements) => isPaid(entitlements) || entitlements.lapsed;
 
-const liveBirthday = (row: BirthdayRecord | null): Birthday | null => {
+export const liveBirthday = (row: BirthdayRecord | null): Birthday | null => {
   if (!row || row.deletedAt || row.month === null || row.day === null) return null;
   const { deletedAt: _deletedAt, ...rest } = row;
   return { ...rest, month: row.month, day: row.day };
@@ -80,6 +80,12 @@ export const assertCanShareBirthday = async (userId: string): Promise<void> => {
   });
 };
 
+/** The live groups among these whose members' shared birthdays show: paid or lapsed. */
+export const birthdayGroupIds = async (groupIds: string[]): Promise<string[]> =>
+  (await resolveGroupPlans(groupIds))
+    .filter((group) => isPaidOrLapsed(group.entitlements))
+    .map((group) => group.groupId);
+
 /**
  * The viewer's own birthday plus the shared birthdays of live members of every
  * group the viewer sees in full, where that group's organization is paid or
@@ -90,13 +96,10 @@ export const visibleBirthdays = async (viewerId: string, groupId?: string): Prom
   const viewable = scope
     .filter((entry) => entry.access === "all" && (!groupId || entry.groupId === groupId))
     .map((entry) => entry.groupId);
-  const groups = (await resolveGroupPlans(viewable)).filter((group) =>
-    isPaidOrLapsed(group.entitlements)
-  );
 
   const [own, members] = await Promise.all([
     getBirthday(viewerId),
-    getMemberBirthdaysInGroups(groups.map((group) => group.groupId)),
+    birthdayGroupIds(viewable).then((ids) => getMemberBirthdaysInGroups(ids)),
   ]);
 
   const result: Birthday[] = [];

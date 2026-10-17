@@ -5,7 +5,7 @@ import type { SyncCursor, SyncCursorPage, SyncKeyset, SyncTableName } from "./ty
  * Bumped when a row a client already holds gains a field it needs: a cursor of
  * another version is unusable, so every client takes one snapshot.
  */
-export const SYNC_CURSOR_VERSION = 2;
+export const SYNC_CURSOR_VERSION = 3;
 
 /** Past this age a cursor cannot be trusted to have covered hard deletes, so the pull resets. */
 export const SYNC_CURSOR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;

@@ -3,6 +3,7 @@ import {
   asc,
   eq,
   exists,
+  getTableColumns,
   gt,
   gte,
   inArray,
@@ -21,9 +22,12 @@ import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
+import { subscriptions } from "../../db/schema/subscription-schema.js";
+import { userBirthdays } from "../../db/schema/user-birthday-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { ensureBankHolidays } from "../bankHoliday/bankHolidayServices.js";
+import { birthdayGroupIds } from "../birthday/birthdayVisibility.js";
 import { getScopeEntries } from "../report/reportServices.js";
 import type { ReportScopeEntry } from "../report/types.js";
 import { encodeSyncCursor, SYNC_OVERLAP_MS } from "./syncCursor.js";
@@ -32,6 +36,7 @@ import { collectSyncPage } from "./syncPage.js";
 import type {
   SyncBankHolidayRow,
   SyncBankHolidayWindow,
+  SyncBirthdayRow,
   SyncCursor,
   SyncEnvelope,
   SyncGroupMirrorRow,
@@ -748,6 +753,102 @@ const readVacationsPage = async (
 };
 
 /**
+ * Whether the birthday's owner holds a membership row in one of the groups:
+ * live only, or any row that changed inside the window, a removal included.
+ */
+const birthdayOwnerIn = (
+  groupIds: string[],
+  membership: { live: true } | { changedIn: SyncWindow }
+): SQL =>
+  groupIds.length === 0
+    ? sql`false`
+    : exists(
+        db
+          .select({ one: sql`1` })
+          .from(groupUsers)
+          .where(
+            and(
+              eq(groupUsers.userId, userBirthdays.userId),
+              inArray(groupUsers.groupId, groupIds),
+              "live" in membership
+                ? isNull(groupUsers.deletedAt)
+                : inWindow(groupUsers.updatedAt, membership.changedIn)
+            )
+          )
+      );
+
+const toBirthdayRow = (
+  row: typeof userBirthdays.$inferSelect,
+  visible: boolean
+): SyncBirthdayRow => ({
+  id: row.userId,
+  userId: row.userId,
+  month: visible ? row.month : null,
+  day: visible ? row.day : null,
+  year: visible ? row.year : null,
+  shared: visible ? row.shared : false,
+  deletedAt: visible ? null : (row.deletedAt ?? row.updatedAt).toISOString(),
+  createdAt: row.createdAt.toISOString(),
+  updatedAt: row.updatedAt.toISOString(),
+});
+
+/**
+ * `visibleBirthdays`, paged. A delta also carries the birthday of anybody
+ * whose membership row in `groupIds` changed, whatever the birthday's own
+ * `updatedAt`, and ships a row the caller may no longer see shaped as a
+ * tombstone, so the client drops it without being sent the date.
+ */
+const readBirthdaysPage = async (
+  context: SyncReadContext,
+  groupIds: string[],
+  after: SyncKeyset | null,
+  limit: number
+) => {
+  const visible = and(
+    isNull(userBirthdays.deletedAt),
+    or(
+      eq(userBirthdays.userId, context.callerId),
+      and(eq(userBirthdays.shared, true), birthdayOwnerIn(groupIds, { live: true }))
+    )
+  )!;
+  const changed = inWindow(userBirthdays.updatedAt, context.window);
+
+  const rows = await db
+    .select({
+      ...getTableColumns(userBirthdays),
+      visible: sql<boolean>`${visible}`.mapWith(Boolean),
+    })
+    .from(userBirthdays)
+    .where(
+      and(
+        context.liveOnly
+          ? and(visible, changed)
+          : or(
+              and(
+                or(
+                  eq(userBirthdays.userId, context.callerId),
+                  birthdayOwnerIn(groupIds, { live: true })
+                ),
+                changed
+              ),
+              and(
+                birthdayOwnerIn(groupIds, { changedIn: context.window }),
+                lte(userBirthdays.updatedAt, context.window.until)
+              )
+            ),
+        afterKeyset(userBirthdays.updatedAt, userBirthdays.userId, after)
+      )
+    )
+    .orderBy(asc(userBirthdays.updatedAt), asc(userBirthdays.userId))
+    .limit(limit);
+
+  return rows.map(({ visible: isVisible, ...row }) => ({
+    key: { updatedAt: row.updatedAt, id: row.userId },
+    row: toBirthdayRow(row, isVisible),
+  }));
+};
+
+/**
  * One reader per table, in dependency order, each resuming where the last page
  * stopped. `holidayCountries` comes from the caller because the fill that ran
  * before the walk asked the same question; one memo answers both.
@@ -770,6 +871,7 @@ const buildReaders = (
     getOrganizationIdByGroupId(await visibleGroupIds())
   );
   const userIds = memoize(() => getSyncUserIds(context));
+  const birthdayGroups = memoize(() => birthdayGroupIds(context.scope.fullGroupIds));
 
   return [
     {
@@ -810,6 +912,11 @@ const buildReaders = (
       read: async (after, limit) =>
         readVacationsPage(context, await organizationIdByGroupId(), after, limit),
     },
+    {
+      table: "birthdays",
+      read: async (after, limit) =>
+        readBirthdaysPage(context, await birthdayGroups(), after, limit),
+    },
   ];
 };
 
@@ -844,6 +951,7 @@ const buildEnvelope = (payload: {
   userYearQuotas: rowsOf<SyncUserYearQuotaRow>(payload.page, "userYearQuotas"),
   bankHolidays: rowsOf<SyncBankHolidayRow>(payload.page, "bankHolidays"),
   vacations: rowsOf<SyncVacationRow>(payload.page, "vacations"),
+  birthdays: rowsOf<SyncBirthdayRow>(payload.page, "birthdays"),
 });
 
 /**
@@ -992,6 +1100,21 @@ const mirrorOwnerMembershipChanged = async (
   return rows.length > 0;
 };
 
+/**
+ * A plan change can show birthdays a group never showed before, the one move
+ * being from never paid to paid, without touching any row the pull reads.
+ */
+const subscriptionChanged = async (groupIds: string[], window: SyncWindow): Promise<boolean> => {
+  const rows = await db
+    .select({ one: sql`1` })
+    .from(subscriptions)
+    .innerJoin(groups, eq(groups.organizationId, subscriptions.organizationId))
+    .where(and(inArray(groups.id, groupIds), inWindow(subscriptions.updatedAt, window)))
+    .limit(1);
+
+  return rows.length > 0;
+};
+
 const hasSyncResetTrigger = async (callerId: string, window: SyncWindow): Promise<boolean> => {
   const memberships = await db
     .select({
@@ -1011,13 +1134,14 @@ const hasSyncResetTrigger = async (callerId: string, window: SyncWindow): Promis
   ];
   if (groupIds.length === 0) return false;
 
-  const [mirrors, mirrorOwners, scopedGroups] = await Promise.all([
+  const [mirrors, mirrorOwners, scopedGroups, plans] = await Promise.all([
     anyChangedInWindow(groupMirrors, groupMirrors.targetGroupId, groupIds, window),
     mirrorOwnerMembershipChanged(groupIds, window),
     anyChangedInWindow(groups, groups.id, groupIds, window),
+    subscriptionChanged(groupIds, window),
   ]);
 
-  return mirrors || mirrorOwners || scopedGroups;
+  return mirrors || mirrorOwners || scopedGroups || plans;
 };
 
 /**

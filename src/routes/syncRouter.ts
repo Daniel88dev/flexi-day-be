@@ -22,7 +22,7 @@ export const syncRouter = (): Router => {
    *       web. One envelope carries every table in dependency order, so a
    *       client can apply the payload top to bottom: `organizations`,
    *       `users`, `groups`, `groupUsers`, `groupMirrors`, `userYearQuotas`,
-   *       `bankHolidays`, `vacations`. Rows are raw table rows with camelCase
+   *       `bankHolidays`, `vacations`, `birthdays`. Rows are raw table rows with camelCase
    *       keys matching the database columns and timestamps as ISO 8601 UTC;
    *       no joined summaries and no per-row verdicts. Every partitioned row
    *       carries `organizationId`.
@@ -114,6 +114,21 @@ export const syncRouter = (): Router => {
    *       and so no tombstones, and a holiday that leaves the window drops off
    *       at the next sync reset like any other dated row.
    *
+   *       `birthdays` carries the caller's own birthday, shared or not, and
+   *       the shared birthday of every live member of a group the caller sees
+   *       in full, while that group's organization is on a paid plan or has
+   *       lapsed from one; a group whose organization never paid shows none.
+   *       It is keyed by its owner: `id` equals `userId`. The rows are
+   *       unpartitioned and carry no `organizationId`. A delta also carries
+   *       the birthday of anybody whose membership row in one of those groups
+   *       changed since the cursor, whatever the birthday's own `updatedAt`
+   *       says, so a colleague who joins brings their birthday with them. A
+   *       birthday the caller may no longer see, because it was removed,
+   *       unshared, or its owner left every group that showed it, arrives in a
+   *       delta shaped as a tombstone: `month`, `day` and `year` null,
+   *       `shared` false and `deletedAt` set, so the client drops it without
+   *       being sent the date.
+   *
    *       The two dated tables reach back to 1 January of the previous year on
    *       the server clock, read in UTC: `vacations` by `requestedDay`,
    *       `userYearQuotas` by `relatedYear`. A row dated before that boundary
@@ -180,7 +195,7 @@ export const syncRouter = (): Router => {
    *       triggers are a row changed later than the cursor time minus 60
    *       seconds and no later than the position this pull was minted with —
    *       a soft delete counts, because it stamps `updatedAt` like any other
-   *       write — in one of four places:
+   *       write — in one of five places:
    *
    *       - a `groupUsers` row of the caller, in any group: joining, gaining
    *         or losing a flag, or being removed;
@@ -191,7 +206,10 @@ export const syncRouter = (): Router => {
    *         its owner is a member, so the owner joining or leaving changes
    *         what the caller sees without touching the mirror row;
    *       - a `groups` row of a group the caller belongs to: a manager
-   *         transfer, a rename, a holiday country change or a soft delete.
+   *         transfer, a rename, a holiday country change or a soft delete;
+   *       - a `subscriptions` row of the organization of a group the caller
+   *         belongs to: an organization that starts paying shows birthdays
+   *         its groups did not show, without touching any row the pull reads.
    *
    *       Anything else stays a delta carrying only the rows that changed:
    *       another member's booking, a quota edit, a membership change in a
@@ -286,6 +304,7 @@ export const syncRouter = (): Router => {
    *                 - userYearQuotas
    *                 - bankHolidays
    *                 - vacations
+   *                 - birthdays
    *               properties:
    *                 cursor:
    *                   type: string
@@ -591,6 +610,50 @@ export const syncRouter = (): Router => {
    *                       deletedByUserId:
    *                         type: string
    *                         nullable: true
+   *                       createdAt:
+   *                         type: string
+   *                         format: date-time
+   *                       updatedAt:
+   *                         type: string
+   *                         format: date-time
+   *                 birthdays:
+   *                   type: array
+   *                   description: |
+   *                     The caller's own birthday and the shared birthdays they
+   *                     may see, keyed by owner. Unpartitioned
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                         description: The owner's user id, the row's key
+   *                       userId:
+   *                         type: string
+   *                       month:
+   *                         type: integer
+   *                         nullable: true
+   *                         description: Null on a tombstone
+   *                       day:
+   *                         type: integer
+   *                         nullable: true
+   *                         description: |
+   *                           Null on a tombstone. 29 for a 29 February
+   *                           birthday, which the calendar shows on 28 February
+   *                           in a non-leap year
+   *                       year:
+   *                         type: integer
+   *                         nullable: true
+   *                         description: Null when the owner left it out, and on a tombstone
+   *                       shared:
+   *                         type: boolean
+   *                         description: False on a tombstone
+   *                       deletedAt:
+   *                         type: string
+   *                         format: date-time
+   *                         nullable: true
+   *                         description: |
+   *                           Set on a tombstone: a removed birthday, or one the
+   *                           caller may no longer see. Null on a live row
    *                       createdAt:
    *                         type: string
    *                         format: date-time

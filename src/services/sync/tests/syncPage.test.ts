@@ -47,6 +47,7 @@ describe("sync page splitter", () => {
       "userYearQuotas",
       "bankHolidays",
       "vacations",
+      "birthdays",
     ]);
   });
 
