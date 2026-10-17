@@ -7,6 +7,7 @@ import {
   groupEvents,
 } from "../../db/schema/group-event-schema.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
+import type { GroupEventPlan } from "./editPlan.js";
 import { plusDays, occurrences, type IsoDate, type RepeatRule } from "./occurrences.js";
 import {
   GROUP_EVENT_READ_LIMIT,
@@ -176,4 +177,78 @@ export const listGroupEventsInWindow = async (
       event,
       creator: creatorId && creatorName !== null ? { id: creatorId, name: creatorName } : null,
     }));
+};
+
+/** The live group event under a row lock, so concurrent edits never lose a skipped date. */
+export const lockGroupEvent = async (
+  id: string,
+  tx: DbTransaction
+): Promise<GroupEventRecord | undefined> => {
+  const [row] = await tx
+    .select()
+    .from(groupEvents)
+    .where(and(eq(groupEvents.id, id), isNull(groupEvents.deletedAt)))
+    .for("update");
+  return row;
+};
+
+/** The live one-offs a "this event" edit made of the recurring group event's occurrences. */
+export const lockLinkedOneOffs = (recurringEventId: string, tx: DbTransaction) =>
+  tx
+    .select()
+    .from(groupEvents)
+    .where(and(eq(groupEvents.recurringEventId, recurringEventId), isNull(groupEvents.deletedAt)))
+    .orderBy(asc(groupEvents.originalDate))
+    .for("update");
+
+/**
+ * S4: a tombstone keeps `id`, `groupId`, the dates and the one-off link, so the
+ * pull and the sync engine can remove it everywhere; its content goes.
+ */
+const TOMBSTONE = {
+  title: null,
+  note: null,
+  startTime: null,
+  endTime: null,
+  ...repeatColumns(null),
+  skippedDates: [],
+  createdByUserId: null,
+};
+
+/** Writes a plan from `editPlan.ts`. Answers the live rows it wrote, edited or created. */
+export const applyGroupEventPlan = async (
+  plan: GroupEventPlan,
+  tx: DbTransaction
+): Promise<GroupEventRecord[]> => {
+  if (plan.tombstones.length > 0) {
+    await tx
+      .update(groupEvents)
+      .set({ ...TOMBSTONE, deletedAt: new Date() })
+      .where(inArray(groupEvents.id, plan.tombstones));
+  }
+  // Inserts first: a split's later one-offs link to the event it creates.
+  const inserted =
+    plan.inserts.length > 0 ? await tx.insert(groupEvents).values(plan.inserts).returning() : [];
+  const updated: GroupEventRecord[] = [];
+  for (const { id, set } of plan.updates) {
+    const [row] = await tx.update(groupEvents).set(set).where(eq(groupEvents.id, id)).returning();
+    updated.push(row!);
+  }
+  return [...updated, ...inserted];
+};
+
+/** Creator names for the views of `rows`. */
+export const creatorsOf = async (
+  rows: GroupEventRecord[],
+  tx?: DbTransaction
+): Promise<Map<string, { id: string; name: string }>> => {
+  const creatorIds = [
+    ...new Set(rows.map((row) => row.createdByUserId).filter((id): id is string => id !== null)),
+  ];
+  if (creatorIds.length === 0) return new Map();
+  const found = await (tx ?? db)
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .where(inArray(user.id, creatorIds));
+  return new Map(found.map((creator) => [creator.id, creator]));
 };

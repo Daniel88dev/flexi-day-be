@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
-import { validateCreateGroupEvent } from "../services/groupEvent/types.js";
+import { validateCreateGroupEvent, validatePatchGroupEvent } from "../services/groupEvent/types.js";
 import { handleGetGroupEvents } from "../controllers/groupEvent/handleGetGroupEvents.js";
 import { handleGetGroupEventGroups } from "../controllers/groupEvent/handleGetGroupEventGroups.js";
 import { handlePostGroupEvent } from "../controllers/groupEvent/handlePostGroupEvent.js";
+import { handlePatchGroupEvent } from "../controllers/groupEvent/handlePatchGroupEvent.js";
+import { handleGetGroupEventImpact } from "../controllers/groupEvent/handleGetGroupEventImpact.js";
+import { handleDeleteGroupEvent } from "../controllers/groupEvent/handleDeleteGroupEvent.js";
 
 export const groupEventRouter = (): Router => {
   const app = Router();
@@ -366,6 +369,301 @@ export const groupEventRouter = (): Router => {
    *         description: Internal Server Error
    */
   app.post("/", bodyValidationMiddleware(validateCreateGroupEvent), tryCatch(handlePostGroupEvent));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     GroupEventChanges:
+   *       type: object
+   *       description: |
+   *         What an edit changes. A missing field keeps its value; `null`
+   *         clears `note`, makes the event all-day when given for both times,
+   *         and turns repeat off for `repeat`. A moved `startDate` without an
+   *         `endDate` keeps the event's length. The result must pass every
+   *         rule `POST /api/group-events` applies.
+   *
+   *         Per scope on a recurring group event: with `this`, `startDate`
+   *         moves the one occurrence and `repeat` must be absent or the
+   *         current rule; with `following`, `startDate` defaults to
+   *         `occurrenceDate` and is the new event's first day; with `all`,
+   *         `startDate` is the recurring group event's first day, not the
+   *         occurrence's.
+   *       properties:
+   *         title:
+   *           type: string
+   *           minLength: 1
+   *           maxLength: 100
+   *         note:
+   *           type: string
+   *           nullable: true
+   *           maxLength: 1000
+   *         startDate:
+   *           type: string
+   *           format: date
+   *         endDate:
+   *           type: string
+   *           format: date
+   *         startTime:
+   *           type: string
+   *           nullable: true
+   *           pattern: '^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$'
+   *         endTime:
+   *           type: string
+   *           nullable: true
+   *           pattern: '^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$'
+   *         repeat:
+   *           nullable: true
+   *           description: The whole new rule, as on create. `null` turns repeat off.
+   *           allOf:
+   *             - $ref: '#/components/schemas/GroupEventRepeatRule'
+   *     GroupEventWriteResult:
+   *       type: object
+   *       required: [droppedOneOffs, events, deletedIds]
+   *       properties:
+   *         droppedOneOffs:
+   *           type: integer
+   *           minimum: 0
+   *           description: |
+   *             One-off changes the request dropped: linked one-offs it deleted
+   *             plus skipped dates it cleared that no one-off stood for. Always
+   *             0 on a delete.
+   *         events:
+   *           type: array
+   *           description: Every live row the request edited or created.
+   *           items:
+   *             $ref: '#/components/schemas/GroupEvent'
+   *         deletedIds:
+   *           type: array
+   *           description: Rows the request deleted.
+   *           items:
+   *             type: string
+   *             format: uuid
+   *
+   * /api/group-events/{id}/impact:
+   *   get:
+   *     tags:
+   *       - Group events
+   *     summary: Count the one-off changes an edit would drop
+   *     description: |
+   *       A dry run of `PATCH /api/group-events/{id}` with the same inputs,
+   *       for the warning before an edit that drops one-off changes. Writes
+   *       nothing and answers the `droppedOneOffs` the PATCH would answer.
+   *       Refuses what the PATCH would refuse, except the plan check.
+   *     operationId: handleGetGroupEventImpact
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *       - name: scope
+   *         in: query
+   *         required: false
+   *         description: Required for a recurring group event, ignored on a one-off.
+   *         schema:
+   *           type: string
+   *           enum: [this, following, all]
+   *       - name: occurrenceDate
+   *         in: query
+   *         required: false
+   *         description: Required with `this` and `following`.
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - name: changes
+   *         in: query
+   *         required: false
+   *         description: The PATCH body's `changes`, JSON-encoded. Defaults to no change.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/GroupEventChanges'
+   *     responses:
+   *       '200':
+   *         description: What the edit would drop
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [droppedOneOffs]
+   *               properties:
+   *                 droppedOneOffs:
+   *                   type: integer
+   *                   minimum: 0
+   *       '401':
+   *         description: Unauthorized
+   *       '403':
+   *         description: Not the creator while a member of the group, and not its admin
+   *       '404':
+   *         description: No such live group event
+   *       '422':
+   *         description: Invalid inputs, as the PATCH answers them
+   *       '500':
+   *         description: Internal Server Error
+   */
+  app.get("/:id/impact", tryCatch(handleGetGroupEventImpact));
+
+  /**
+   * @openapi
+   * /api/group-events/{id}:
+   *   patch:
+   *     tags:
+   *       - Group events
+   *     summary: Edit a group event, one occurrence, the rest or all of it
+   *     description: |
+   *       The creator while still a member of the group, or a group admin
+   *       (an org admin who is not a member included), edits in one
+   *       transaction. A one-off takes its changes directly, `scope` ignored;
+   *       giving it `repeat` makes it a recurring group event, which unlinks
+   *       it from any recurring group event it replaced a day of. A recurring
+   *       group event needs a `scope`:
+   *
+   *       - `this`: `occurrenceDate` must be a date the rule produces and has
+   *         not skipped. The date joins `skippedDates` and a one-off, linked
+   *         through `recurringEventId` and `originalDate`, takes the changes.
+   *         The rule never changes; the one-off lasts one day.
+   *       - `following`: splits at `occurrenceDate`. The event ends the day
+   *         before through `repeat.until`, and a new recurring group event
+   *         with the changes starts on that date, taking the skipped dates and
+   *         linked one-offs from it on. With `repeat: null` the new row is a
+   *         plain one-off on that date and the later one-off changes drop.
+   *         From the first occurrence it is the same as `all`.
+   *       - `all`: changes the recurring group event. A changed title, note or
+   *         times overwrites them on its linked one-offs; skipped dates stay.
+   *         A changed rule or start drops every one-off change, skipped dates
+   *         included; a change of `repeat.until` alone drops only those past
+   *         the new end. `repeat: null` keeps the first occurrence as a
+   *         one-off.
+   *
+   *       `following` and `all` apply the same carry rule to the part they
+   *       rewrite. Past occurrences have no lock. Only the new event of a
+   *       `following` split needs a paid plan; every other edit works on a
+   *       lapsed group.
+   *     operationId: handlePatchGroupEvent
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               scope:
+   *                 type: string
+   *                 enum: [this, following, all]
+   *                 description: Required for a recurring group event, ignored on a one-off.
+   *               occurrenceDate:
+   *                 type: string
+   *                 format: date
+   *                 description: The occurrence `this` and `following` start from. Ignored by `all`.
+   *               changes:
+   *                 $ref: '#/components/schemas/GroupEventChanges'
+   *     responses:
+   *       '200':
+   *         description: The rows written and what was dropped
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/GroupEventWriteResult'
+   *       '401':
+   *         description: Unauthorized
+   *       '402':
+   *         description: |
+   *           A `following` split on a group whose organization is not on a
+   *           paid plan. `context` is
+   *           `{ reason: "PLAN_LIMIT", code: "GROUP_EVENTS_PLAN_REQUIRED" }`.
+   *       '403':
+   *         description: Not the creator while a member of the group, and not its admin
+   *       '404':
+   *         description: No such live group event
+   *       '422':
+   *         description: |
+   *           Invalid body; no `scope` on a recurring group event; no
+   *           `occurrenceDate`, or one the rule does not produce, with `this`
+   *           or `following`; a new rule or more than one day with `this`; or a
+   *           result `POST /api/group-events` would refuse.
+   *       '500':
+   *         description: Internal Server Error
+   *   delete:
+   *     tags:
+   *       - Group events
+   *     summary: Delete a group event, one occurrence, the rest or all of it
+   *     description: |
+   *       Same rights as the PATCH; never gated on the plan. A delete is final:
+   *       the row keeps only its id, group, dates and one-off link, with
+   *       `deletedAt` set, so the sync pull and connected calendars can remove
+   *       it. Nothing lists or restores it.
+   *
+   *       A one-off is deleted whatever the `scope`; one linked to a recurring
+   *       group event leaves its original date skipped there. A recurring
+   *       group event needs a `scope`: `this` skips `occurrenceDate`,
+   *       `following` ends the event the day before `occurrenceDate` and
+   *       deletes the linked one-offs from that date on (from the first
+   *       occurrence it is `all`), `all` deletes the event and every linked
+   *       one-off.
+   *     operationId: handleDeleteGroupEvent
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: id
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *       - name: scope
+   *         in: query
+   *         required: false
+   *         description: Required for a recurring group event, ignored on a one-off.
+   *         schema:
+   *           type: string
+   *           enum: [this, following, all]
+   *       - name: occurrenceDate
+   *         in: query
+   *         required: false
+   *         description: Required with `this` and `following`; must be a date the rule produces and has not skipped.
+   *         schema:
+   *           type: string
+   *           format: date
+   *     responses:
+   *       '200':
+   *         description: The rows written; `droppedOneOffs` is 0
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/GroupEventWriteResult'
+   *       '401':
+   *         description: Unauthorized
+   *       '403':
+   *         description: Not the creator while a member of the group, and not its admin
+   *       '404':
+   *         description: No such live group event
+   *       '422':
+   *         description: |
+   *           An id that is not a UUID, no `scope` on a recurring group event,
+   *           or a missing or wrong `occurrenceDate`
+   *       '500':
+   *         description: Internal Server Error
+   */
+  app.patch(
+    "/:id",
+    bodyValidationMiddleware(validatePatchGroupEvent),
+    tryCatch(handlePatchGroupEvent)
+  );
+
+  app.delete("/:id", tryCatch(handleDeleteGroupEvent));
 
   return app;
 };

@@ -62,6 +62,8 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Group event**           | An informational entry on one group's calendar, all-day or timed, one day or a run of days. No effect on bookings, quotas or working days. Avoid: custom event, vacation event.                                                                                                                       |
 | **Recurring group event** | A single-day group event with a repeat rule. Avoid: series, repeating event.                                                                                                                                                                                                                          |
 | **Occurrence**            | One dated instance of a recurring group event. Avoid: instance.                                                                                                                                                                                                                                       |
+| **Skipped date**          | A date a recurring group event's rule produces that does not happen, deleted or replaced by a one-off.                                                                                                                                                                                                |
+| **One-off**               | A group event without a repeat rule. One made by a "this event" edit links to the recurring group event and the occurrence it replaced.                                                                                                                                                               |
 
 ## Plans
 

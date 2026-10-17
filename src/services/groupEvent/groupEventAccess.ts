@@ -10,10 +10,13 @@ import { getScopeEntries } from "../report/reportServices.js";
 import {
   canCreateGroupEventIn,
   canEditGroupEvent,
+  creatorsOf,
   listGroupEventsInWindow,
+  lockGroupEvent,
+  lockLinkedOneOffs,
   toGroupEventView,
 } from "./groupEventServices.js";
-import type { GroupEventGroup, GroupEventView } from "./types.js";
+import type { GroupEventGroup, GroupEventRecord, GroupEventView } from "./types.js";
 
 // The month grid shows at most 6 days of each neighbouring month, as `/api/vacation/calendar`.
 const ADJACENT_DAYS = 6;
@@ -105,6 +108,58 @@ export const listGroupEventGroups = async (userId: string): Promise<GroupEventGr
         groupName: group.groupName,
         canCreate: paid && canCreateGroupEventIn(access),
       };
+    })
+  );
+};
+
+type GroupStanding = { group: GroupType; access: { isMember: boolean; canAdmin: boolean } };
+
+/**
+ * Locks a live group event and the one-offs linked to it for an edit or a
+ * delete, or throws: 404 for no such live event or group, 403 unless the caller
+ * is its creator and still a member, or administers the group (S2).
+ */
+export const loadEditableGroupEvent = async (
+  userId: string,
+  id: string,
+  tx: DbTransaction
+): Promise<GroupStanding & { event: GroupEventRecord; oneOffs: GroupEventRecord[] }> => {
+  const event = await lockGroupEvent(id, tx);
+  const group = event ? await getGroup(event.groupId, tx) : undefined;
+  if (!event || !group) {
+    throw new AppError({
+      message: "Group event not found",
+      logging: true,
+      code: 404,
+      context: { groupEventId: id },
+    });
+  }
+  const access = await resolveGroupAccess(userId, group, tx);
+  if (!canEditGroupEvent(event, userId, access)) {
+    throw new AppError({
+      message: "Only the creator or a group admin may change this group event",
+      logging: true,
+      code: 403,
+      context: { userId, groupEventId: id },
+    });
+  }
+  const oneOffs = event.repeatFreq ? await lockLinkedOneOffs(event.id, tx) : [];
+  return { event, oneOffs, group, access };
+};
+
+/** The views of rows an edit or delete wrote, as the caller sees them. */
+export const groupEventViewsFor = async (
+  userId: string,
+  standing: GroupStanding,
+  rows: GroupEventRecord[],
+  tx?: DbTransaction
+): Promise<GroupEventView[]> => {
+  const creators = await creatorsOf(rows, tx);
+  return rows.map((row) =>
+    toGroupEventView(row, {
+      groupName: standing.group.groupName,
+      creator: row.createdByUserId ? (creators.get(row.createdByUserId) ?? null) : null,
+      canEdit: canEditGroupEvent(row, userId, standing.access),
     })
   );
 };
