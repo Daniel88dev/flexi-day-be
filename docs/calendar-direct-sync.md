@@ -189,6 +189,11 @@ ledger id. A sync is a diff against these rows, and a rerun of a finished sync m
   which outlives the source: a hard-deleted vacation sets the row's `vacation_id` to null, and the
   row still leaves the set.
 
+Migration `0028_calendar_sync_sources.sql` keyed every existing row `v:<vacationId>`. A row whose
+vacation had already been hard-deleted had no vacation id left, so it got `orphan:<ledgerId>`
+instead. That key only keeps the row unique; it matches no source, so the next sync of that target
+deletes the event at the provider and drops the row. No code writes the prefix after the migration.
+
 ## Local development
 
 `CALENDAR_SYNC_DRIVER=fake` swaps both providers for fakes that never call out. Boot refuses it
@@ -298,6 +303,12 @@ lifetime cap above but keeps refresh tokens alive.
 - No probe has yet sent `extendedProperties.private` on a working-location event. The first live
   Google sync must confirm Google accepts it. If Google refuses, drop it from the custom-location
   and home-office payloads in `eventBuilder.ts` and keep it on `outOfOffice` and `default` events.
+- The `.ics` feed builds each zone's `VTIMEZONE` from the current UTC year's transitions and trusts
+  a weekday rule only if it also predicts the next two years. Past occurrences in a zone whose rules
+  have changed since can come out shifted by the difference. A zone whose transitions fit no weekday
+  rule, `Africa/Casablanca` among them, gets that year's fixed offsets with no `RRULE`, so next
+  year's occurrences take this year's final offset. `Asia/Jerusalem` gets a `4FR` rule for the
+  start of daylight saving, which is wrong in some years.
 
 ## Research
 

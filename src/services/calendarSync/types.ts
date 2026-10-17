@@ -106,7 +106,7 @@ const configShape = {
   types: z.array(typeEntrySchema).min(1),
 };
 
-type ConfigShape = { scope: calendarSyncScope; teamIds: string[]; types: { type: string }[] };
+type ConfigShape = z.output<z.ZodObject<typeof configShape>>;
 
 const withConfigRules = <T extends z.ZodType<ConfigShape>>(schema: T) =>
   schema

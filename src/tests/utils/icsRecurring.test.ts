@@ -1,4 +1,4 @@
-import { buildIcsCalendar, type IcsEvent, type IcsRepeat } from "../../utils/ics";
+import { buildIcsCalendar, type IcsEvent, type IcsRepeat } from "../../utils/ics.js";
 
 const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
 vi.mock("../../middleware/logger.js", () => ({ logger: { warn } }));

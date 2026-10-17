@@ -173,14 +173,22 @@ export const calendarSyncRouter = (): Router => {
    *             browser's zone. Configs that predate the field read `Europe/Prague`.
    *         includeGroupEvents:
    *           type: boolean
-   *           description: Whether the feed carries group events. Stored only; no feed reads it yet.
+   *           description: |
+   *             Whether the feed carries group events. A personal (`ME`) feed and its
+   *             direct-sync target carry the events of every group the owner is a live
+   *             member of; a `TEAM` feed carries the events of the selected groups the
+   *             owner is still in.
    *         groupEventsColor:
    *           type: string
    *           nullable: true
    *           description: Swatch palette key for group events
    *         includeBirthdays:
    *           type: boolean
-   *           description: Whether the feed carries birthdays. Stored only; no feed reads it yet.
+   *           description: |
+   *             Whether the feed carries birthdays. A personal (`ME`) feed and its
+   *             direct-sync target carry only the owner's own birthday; a `TEAM` feed
+   *             carries the birthdays that members of the selected groups chose to share,
+   *             never with an age.
    *         birthdaysColor:
    *           type: string
    *           nullable: true

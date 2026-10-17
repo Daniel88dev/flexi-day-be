@@ -4,7 +4,7 @@
  * Focus: the minimal iCalendar serializer used by the calendar-sync feed.
  */
 
-import { buildIcsCalendar } from "../../utils/ics";
+import { buildIcsCalendar } from "../../utils/ics.js";
 
 describe("buildIcsCalendar", () => {
   test("wraps events in a VCALENDAR with the calendar name", () => {

@@ -9,13 +9,9 @@ import { logger } from "../middleware/logger.js";
 /** A repeat rule read off the event's start date (spec D5). */
 export type IcsRepeat = {
   freq: "daily" | "weekly" | "monthly" | "yearly";
-  /** 1 to 99. */
   interval: number;
-  /** Weekly only, 0 = Monday … 6 = Sunday. The start's weekday is always included. */
   weekdays?: number[];
-  /** Monthly only: on the start's day, its nth weekday, or its last weekday. Defaults to `day`. */
   monthlyMode?: "day" | "weekday" | "lastWeekday";
-  /** Inclusive last date, `YYYY-MM-DD`; null repeats forever. */
   until: string | null;
 };
 
@@ -27,7 +23,6 @@ type IcsEventBase = {
   /** Free-form categories (e.g. the leave-type label). */
   categories?: string[];
   repeat?: IcsRepeat;
-  /** Occurrence dates left out of the repeat, `YYYY-MM-DD`. */
   skippedDates?: string[];
 };
 
@@ -42,12 +37,9 @@ export type IcsAllDayEvent = IcsEventBase & {
 /** Floating wall-clock times, stamped with `timeZone` on output. */
 export type IcsTimedEvent = IcsEventBase & {
   kind: "timed";
-  /** IANA zone, e.g. `Europe/Prague`. */
   timeZone: string;
   startDate: string;
-  /** `HH:MM` or `HH:MM:SS`. */
   startTime: string;
-  /** Defaults to `startDate`. */
   endDate?: string;
   endTime: string;
 };
@@ -139,14 +131,12 @@ const parseTime = (time: string) => {
   return { hour, minute, second };
 };
 
-/** 0 = Monday … 6 = Sunday. */
 const weekdayOf = ({ year, month, day }: Ymd) =>
   (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
 
 const daysInMonth = (year: number, month: number) =>
   new Date(Date.UTC(year, month, 0)).getUTCDate();
 
-/** Day of the month of the nth (1 to 4) or last (-1) `weekday` in that month. */
 const nthWeekdayDay = (year: number, month: number, weekday: number, n: number) => {
   if (n === -1) {
     const last = daysInMonth(year, month);
@@ -156,7 +146,6 @@ const nthWeekdayDay = (year: number, month: number, weekday: number, n: number) 
   return 1 + ((weekday - first + 7) % 7) + (n - 1) * 7;
 };
 
-/** `YYYYMMDDTHHMMSS`, a local date-time with no zone suffix. */
 const localDateTime = (isoDate: string, time: string) => {
   const { hour, minute, second } = parseTime(time);
   return `${toDateValue(isoDate)}T${pad(hour)}${pad(minute)}${pad(second)}`;
@@ -164,7 +153,6 @@ const localDateTime = (isoDate: string, time: string) => {
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
-/** Minutes the zone's wall clock runs ahead of UTC at `instant` (ms). */
 const offsetMinutes = (timeZone: string, instant: number): number => {
   let formatter = formatters.get(timeZone);
   if (!formatter) {
@@ -195,7 +183,6 @@ const offsetMinutes = (timeZone: string, instant: number): number => {
   return Math.round((wall - at) / MINUTE);
 };
 
-/** The UTC instant at which the zone's wall clock reads `isoDate` `time`. */
 const wallClockToUtc = (timeZone: string, isoDate: string, time: string): Date => {
   const { year, month, day } = parseDate(isoDate);
   const { hour, minute, second } = parseTime(time);
@@ -212,7 +199,6 @@ const formatOffset = (minutes: number) => {
 
 type Transition = { from: number; to: number; wall: Date };
 
-/** Every offset change in `year`, found per day and narrowed to the minute. */
 const transitionsIn = (timeZone: string, year: number): Transition[] => {
   const out: Transition[] = [];
   const end = Date.UTC(year + 1, 0, 1);
@@ -243,7 +229,6 @@ type YearlyRule = { month: number; weekday: number; n: number; time: string };
 const wallTime = (wall: Date) =>
   `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}:${pad(wall.getUTCSeconds())}`;
 
-/** Candidate weekday rules for one transition, "last" first. */
 const candidateRules = ({ wall }: Transition): YearlyRule[] => {
   const year = wall.getUTCFullYear();
   const month = wall.getUTCMonth() + 1;
@@ -284,7 +269,6 @@ const ruleLines = (name: "STANDARD" | "DAYLIGHT", transition: Transition, rule: 
   ];
 };
 
-/** One `DAYLIGHT` and one `STANDARD` with yearly weekday rules, or null when none fit. */
 const weekdayRuleObservances = (
   timeZone: string,
   year: number,
