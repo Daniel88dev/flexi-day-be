@@ -121,13 +121,16 @@ resource "aws_secretsmanager_secret_version" "microsoft_client_secret" {
   }
 }
 
-# Sign in with Apple private key, same opt-in shape. Unlike Google and
-# Microsoft this is not a client secret but the .p8 the backend signs its own
-# short-lived client secrets with. The multi-line PEM is stored as is; the
-# backend's parser accepts both real newlines and the literal \n a .env file
-# carries.
+# The two Apple .p8 keys below are the exception to the shape above: Terraform
+# owns the slot and never the value. terraform/scripts/put-p8.sh uploads each
+# key from 1Password, so neither reaches state or a plan. Each switched-on key
+# is read back by an ephemeral resource, which stores nothing, and its
+# postcondition stops the plan when the slot is empty or holds something other
+# than a PEM private key. docs/terraform.md has the runbooks.
+
+# Sign in with Apple. Like the APNs slot it always exists, so the key can go up
+# before apple_client_id switches it into the service.
 resource "aws_secretsmanager_secret" "apple_private_key" {
-  count                   = var.apple_client_id != "" ? 1 : 0
   name                    = "${var.project_name}-${var.environment}-apple-private-key"
   description             = "Sign in with Apple private key (.p8) for ${var.project_name}"
   recovery_window_in_days = 0
@@ -135,25 +138,72 @@ resource "aws_secretsmanager_secret" "apple_private_key" {
   tags = {
     Name = "${var.project_name}-${var.environment}-apple-private-key"
   }
-}
 
-resource "aws_secretsmanager_secret_version" "apple_private_key" {
-  count         = var.apple_client_id != "" ? 1 : 0
-  secret_id     = aws_secretsmanager_secret.apple_private_key[0].id
-  secret_string = var.apple_private_key
-
-  # A Services ID without its key, team or key id leaves better-auth unable to
-  # mint a client secret; fail at plan time instead of booting a service whose
-  # Apple button 500s.
+  # A Services ID without its team, key id or bundle id leaves better-auth
+  # unable to mint a client secret; fail at plan time instead of booting a
+  # service whose Apple button 500s.
   lifecycle {
     precondition {
-      condition     = var.apple_private_key != ""
-      error_message = "apple_private_key is required when apple_client_id is set (pass it as TF_VAR_apple_private_key)."
-    }
-
-    precondition {
-      condition     = var.apple_team_id != "" && var.apple_key_id != "" && var.apple_app_bundle_identifier != ""
+      condition     = var.apple_client_id == "" || (var.apple_team_id != "" && var.apple_key_id != "" && var.apple_app_bundle_identifier != "")
       error_message = "apple_team_id, apple_key_id and apple_app_bundle_identifier are required when apple_client_id is set."
+    }
+  }
+}
+
+moved {
+  from = aws_secretsmanager_secret.apple_private_key[0]
+  to   = aws_secretsmanager_secret.apple_private_key
+}
+
+# The key used to be written from TF_VAR_apple_private_key. Forgetting the
+# version leaves the live AWSCURRENT value in place.
+removed {
+  from = aws_secretsmanager_secret_version.apple_private_key
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+ephemeral "aws_secretsmanager_secret_version" "apple_private_key" {
+  count     = var.apple_client_id != "" ? 1 : 0
+  secret_id = aws_secretsmanager_secret.apple_private_key.id
+
+  lifecycle {
+    postcondition {
+      condition     = startswith(self.secret_string, "-----BEGIN PRIVATE KEY-----")
+      error_message = "The Sign in with Apple slot does not hold a PEM private key. Upload it with terraform/scripts/put-p8.sh apple."
+    }
+  }
+}
+
+# APNs. The slot always exists, so the key can go up before App Runner needs
+# it; apns_key_id is what wires it into the service.
+resource "aws_secretsmanager_secret" "apns_private_key" {
+  name                    = "${var.project_name}-${var.environment}-apns-private-key"
+  description             = "APNs auth key (.p8) for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-apns-private-key"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.apns_key_id == "" || (var.apple_team_id != "" && var.apple_app_bundle_identifier != "")
+      error_message = "apple_team_id and apple_app_bundle_identifier are required when apns_key_id is set."
+    }
+  }
+}
+
+ephemeral "aws_secretsmanager_secret_version" "apns_private_key" {
+  count     = var.apns_key_id != "" ? 1 : 0
+  secret_id = aws_secretsmanager_secret.apns_private_key.id
+
+  lifecycle {
+    postcondition {
+      condition     = startswith(self.secret_string, "-----BEGIN PRIVATE KEY-----")
+      error_message = "The APNs slot does not hold a PEM private key. Upload it with terraform/scripts/put-p8.sh apns."
     }
   }
 }

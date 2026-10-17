@@ -278,21 +278,20 @@ variable "apple_team_id" {
 }
 
 variable "apple_key_id" {
-  description = "Key ID of the Sign in with Apple key whose .p8 is apple_private_key (public; plain env var). Required if apple_client_id is set."
+  description = "Key ID of the Sign in with Apple key, whose .p8 goes up through terraform/scripts/put-p8.sh apple (public; plain env var). Required if apple_client_id is set."
   type        = string
   default     = ""
 }
 
 variable "apple_app_bundle_identifier" {
-  description = "iOS bundle id the phone's id tokens carry as their audience (public; plain env var). Required if apple_client_id is set."
+  description = "iOS bundle id the phone's id tokens carry as their audience, and the APNs topic (public; plain env var). Required if apple_client_id or apns_key_id is set."
   type        = string
   default     = "com.flexiday.app"
 }
 
-variable "apple_private_key" {
-  description = "Contents of the Sign in with Apple .p8 key (stored in Secrets Manager). Required if apple_client_id is set. Pass it as TF_VAR_apple_private_key, never in terraform.tfvars."
+variable "apns_key_id" {
+  description = "Key ID of the APNs key, whose .p8 goes up through terraform/scripts/put-p8.sh apns (public; plain env var). Set it only once the key is uploaded; it wires APNS_* into App Runner. Leave empty to keep push off."
   type        = string
-  sensitive   = true
   default     = ""
 }
 

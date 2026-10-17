@@ -100,6 +100,14 @@ resource "aws_apprunner_service" "main" {
             APPLE_APP_BUNDLE_IDENTIFIER = var.apple_app_bundle_identifier
           } : {},
 
+          # APNs reuses the Apple team and bundle id but not the Sign in with
+          # Apple switch, so either can run without the other.
+          var.apns_key_id != "" ? {
+            APNS_KEY_ID  = var.apns_key_id
+            APNS_TEAM_ID = var.apple_team_id
+            APNS_TOPIC   = var.apple_app_bundle_identifier
+          } : {},
+
           # Paddle price IDs are public catalog identifiers, not secrets, so
           # they ride as plain env vars. The API key and webhook secret go
           # through Secrets Manager below. Omitted entirely when billing is
@@ -116,7 +124,7 @@ resource "aws_apprunner_service" "main" {
           } : {}
         )
 
-        # Resolved at instance start via the instance role; each env var
+        # Resolved at deployment via the instance role; each env var
         # receives the referenced secret's full string value.
         runtime_environment_secrets = merge(
           {
@@ -131,7 +139,10 @@ resource "aws_apprunner_service" "main" {
             MICROSOFT_CLIENT_SECRET = aws_secretsmanager_secret.microsoft_client_secret[0].arn
           } : {},
           var.apple_client_id != "" ? {
-            APPLE_PRIVATE_KEY = aws_secretsmanager_secret.apple_private_key[0].arn
+            APPLE_PRIVATE_KEY = aws_secretsmanager_secret.apple_private_key.arn
+          } : {},
+          var.apns_key_id != "" ? {
+            APNS_PRIVATE_KEY = aws_secretsmanager_secret.apns_private_key.arn
           } : {},
           var.paddle_api_key != "" ? {
             PADDLE_API_KEY        = aws_secretsmanager_secret.paddle_api_key[0].arn
@@ -166,7 +177,6 @@ resource "aws_apprunner_service" "main" {
     aws_secretsmanager_secret_version.better_auth_secret,
     aws_secretsmanager_secret_version.google_client_secret,
     aws_secretsmanager_secret_version.microsoft_client_secret,
-    aws_secretsmanager_secret_version.apple_private_key,
     aws_secretsmanager_secret_version.paddle_api_key,
     aws_secretsmanager_secret_version.paddle_webhook_secret,
     aws_secretsmanager_secret_version.attachments_callback_secret,
