@@ -183,7 +183,14 @@ describe("an approval reaches the owner's connected calendar", () => {
     const vacationId = await createTestVacation(ownerId, groupId, `${NEXT_YEAR}-04-28`);
     await approve(vacationId).expect(200);
     await queue.drain();
-    const inserted = (await fakeEvents()).at(-1)!;
+    const before = await fakeEvents();
+    const deletedBefore = new Set(
+      before.filter((e) => e.operation === "DELETE").map((e) => e.providerEventId)
+    );
+    const live = before
+      .filter((e) => e.operation === "INSERT" && !deletedBefore.has(e.providerEventId))
+      .map((e) => e.providerEventId);
+    expect(live).toHaveLength(2);
 
     const res = await request(server.url)
       .put(`/api/calendar-sync/${configId}`)
@@ -198,10 +205,10 @@ describe("an approval reaches the owner's connected calendar", () => {
     expect(res.body.target.syncing).toBe(true);
     await queue.drain();
 
-    expect((await fakeEvents()).at(-1)).toMatchObject({
-      operation: "DELETE",
-      providerEventId: inserted.providerEventId,
-    });
+    // The ledger is read in no fixed order, so the deletes may land either way round.
+    const after = (await fakeEvents()).slice(before.length);
+    expect(after.every((e) => e.operation === "DELETE" && e.result === "ok")).toBe(true);
+    expect(after.map((e) => e.providerEventId).sort()).toEqual([...live].sort());
   });
 
   it("leaves the target alone when a pending request is rejected", async () => {
