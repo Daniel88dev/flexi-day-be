@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { ReportBooking } from "./types.js";
+import { ENGLISH_RECORD_TYPE_LABELS } from "../recordType/recordTypeLabels.js";
 
 export type SummaryRow = {
   userName: string;
@@ -12,18 +13,6 @@ export type SummaryRow = {
   plannedRemaining: number;
   pending: number;
   remaining: number;
-};
-
-const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
-  [CalendarRecordType.Vacation]: "Vacation",
-  [CalendarRecordType.HomeOffice]: "Home Office",
-  [CalendarRecordType.Sick]: "Sick",
-  [CalendarRecordType.BankHoliday]: "Bank Holiday",
-  [CalendarRecordType.NonPaidLeave]: "Non-Paid Leave",
-  [CalendarRecordType.PaidTimeOff]: "Paid Time Off",
-  [CalendarRecordType.SickDay]: "Sick Day",
-  [CalendarRecordType.StudyLeave]: "Study Leave",
-  [CalendarRecordType.Other]: "Other",
 };
 
 const MONTH_NAMES = [
@@ -86,7 +75,7 @@ const buildSummarySheet = (workbook: ExcelJS.Workbook, year: number, rows: Summa
   ];
 
   for (const row of rows) {
-    sheet.addRow({ ...row, type: CALENDAR_RECORD_TYPE_LABELS[row.vacationType] });
+    sheet.addRow({ ...row, type: ENGLISH_RECORD_TYPE_LABELS[row.vacationType] });
   }
 
   styleSheet(sheet, [26, 22, 16, 30, 20, 14, 24, 18, 14]);
@@ -113,7 +102,7 @@ const buildDetailSheet = (workbook: ExcelJS.Workbook, bookings: ReportBooking[])
     sheet.addRow({
       userName: booking.userName,
       groupName: booking.groupName,
-      type: CALENDAR_RECORD_TYPE_LABELS[booking.vacationType],
+      type: ENGLISH_RECORD_TYPE_LABELS[booking.vacationType],
       days: booking.days,
       from: booking.from,
       to: booking.to,

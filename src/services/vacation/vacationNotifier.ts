@@ -5,7 +5,6 @@ import type { TemplatedEmail } from "../email/index.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDay } from "../../utils/dateFunc.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
-import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import type { VacationType } from "./types.js";
 import { dayWeightOf } from "./dayWeight.js";
 import type { UserContact } from "../user/userServices.js";
@@ -14,21 +13,10 @@ import { getGroupUsers } from "../groupUser/groupUserServices.js";
 import { createNotification } from "../notification/notificationServices.js";
 import { getUserById, getUsersByIds } from "../user/userServices.js";
 import { filterUsersAcceptingEmail } from "../userSettings/userSettingsServices.js";
+import { ENGLISH_RECORD_TYPE_LABELS } from "../recordType/recordTypeLabels.js";
 
 /** SES renders a missing variable as an empty string, so blanks get a dash. */
 const OR_DASH = "—";
-
-const CALENDAR_RECORD_TYPE_LABELS: Record<CalendarRecordType, string> = {
-  [CalendarRecordType.Vacation]: "Vacation",
-  [CalendarRecordType.HomeOffice]: "Home office",
-  [CalendarRecordType.Sick]: "Sick",
-  [CalendarRecordType.BankHoliday]: "Bank holiday",
-  [CalendarRecordType.NonPaidLeave]: "Non-paid leave",
-  [CalendarRecordType.PaidTimeOff]: "Paid time off",
-  [CalendarRecordType.SickDay]: "Sick day",
-  [CalendarRecordType.StudyLeave]: "Study leave",
-  [CalendarRecordType.Other]: "Other",
-};
 
 /** "12 Aug 2026" for a single day, "12 – 16 Aug 2026" for a span. */
 export const formatDateRange = (isoDays: string[]): string => {
@@ -72,7 +60,7 @@ const summarize = (rows: VacationRow[]): RowSummary | null => {
     rows,
     dateRange: formatDateRange(rows.map((r) => r.requestedDay)),
     dayCount: formatDayCount(rows.reduce((sum, row) => sum + dayWeightOf(row), 0)),
-    calendarRecordTypeLabel: CALENDAR_RECORD_TYPE_LABELS[first.vacationType],
+    calendarRecordTypeLabel: ENGLISH_RECORD_TYPE_LABELS[first.vacationType],
     requestUrl: buildRequestUrl(first.id),
   };
 };

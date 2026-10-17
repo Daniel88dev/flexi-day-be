@@ -58,6 +58,19 @@ describe("buildReportWorkbook", () => {
     }
   });
 
+  it("names record types with the shared English labels", async () => {
+    const workbook = await readBack(
+      await buildReportWorkbook({
+        year: 2026,
+        summary: [summaryRow({ vacationType: CalendarRecordType.SickDay })],
+        bookings: [booking({ vacationType: CalendarRecordType.HomeOffice })],
+      })
+    );
+
+    expect(workbook.getWorksheet("Summary 2026")?.getRow(2).getCell(3).value).toBe("Sick day");
+    expect(workbook.getWorksheet("Detail")?.getRow(2).getCell(3).value).toBe("Home office");
+  });
+
   it("puts the carry-over and remaining figures on the summary sheet", async () => {
     const workbook = await readBack(
       await buildReportWorkbook({ year: 2026, summary: [summaryRow()], bookings: [] })

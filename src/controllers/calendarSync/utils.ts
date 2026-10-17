@@ -8,7 +8,10 @@ import AppError from "../../utils/appError.js";
 import type { CalendarTargetView } from "../../services/calendarConnection/types.js";
 import { calendarTargetViews } from "../../services/calendarConnection/calendarConnectionServices.js";
 import { getCalendarSyncById } from "../../services/calendarSync/calendarSyncServices.js";
-import { userRecordTypeLabels, type RecordTypeLabels } from "../../services/calendarSync/labels.js";
+import {
+  userRecordTypeLabels,
+  type RecordTypeLabels,
+} from "../../services/recordType/recordTypeLabels.js";
 
 /**
  * Public base URL used to build feed links. Prefers `FEED_BASE_URL`. In

@@ -5,7 +5,7 @@ import {
   calendarSyncEventKind,
 } from "../../db/schema/calendar-connection-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
-import type { RecordTypeLabels } from "./labels.js";
+import type { RecordTypeLabels } from "../recordType/recordTypeLabels.js";
 import type { CalendarFeedRecord } from "./types.js";
 
 const FOOTER = "Synced from Flexi Day";
