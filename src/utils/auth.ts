@@ -6,6 +6,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { setSessionCookie } from "better-auth/cookies";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "../db/db.js";
+import { schema } from "../db/schema/index.js";
 import {
   account as accountTable,
   session as sessionTable,
@@ -86,6 +87,7 @@ const sessionOptions = {
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
+    schema,
   }),
   socialProviders,
   account: {
