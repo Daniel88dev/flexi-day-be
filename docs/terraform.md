@@ -44,6 +44,9 @@ secret needs four more edits:
 App Runner injects one whole secret per env var and cannot pull a key out of a JSON secret, so give
 each variable its own plain-string secret.
 
+The two Apple `.p8` keys are the exception: a slot with no secret version, so nothing of theirs goes
+in `depends_on`. See [The Apple `.p8` keys](#the-apple-p8-keys).
+
 ### Optional blocks
 
 A feature that ships switched off follows the shape Paddle, Google, Microsoft and Apple already
@@ -53,31 +56,94 @@ switch is unset. Guard the rest with `lifecycle { precondition { ... } }` in `se
 half-filled config fails at plan time rather than putting App Runner into a boot loop against
 `config.ts`.
 
+The APNs slot breaks this shape: it has no `count`, and `apns_key_id` switches only its App Runner
+wiring. [The Apple `.p8` keys](#the-apple-p8-keys) explains why.
+
+### The Apple `.p8` keys
+
+The Sign in with Apple key and the APNs key are the two secrets Terraform never sees. Terraform
+creates each slot in Secrets Manager, puts its ARN in `runtime_environment_secrets` and on the
+instance role, and stops there. It never writes a secret version, so neither key reaches state, a
+plan or `terraform.tfvars`, and no `TF_VAR_*` carries one.
+
+`terraform/scripts/put-p8.sh apple|apns` uploads a key. It reads the 1Password Document item by
+title from the `Development` vault (`Flexi Day Sign in with Apple key` or `Flexi Day APNs key`),
+refuses anything that doesn't start with `-----BEGIN PRIVATE KEY-----`, and pipes the key into
+`aws secretsmanager put-secret-value --secret-string file:///dev/stdin`, so the key never lands in
+argv, shell history or the terminal. It prints the next step. App Runner reads a secret only at
+deployment, so a new value waits for the next one: a changed key id in `terraform.tfvars` redeploys
+on apply, and `--redeploy` starts one itself, which you need only when re-uploading the same key.
+
+Each switched-on key has an ephemeral `aws_secretsmanager_secret_version` in `secrets.tf`. Terraform
+reads it on every plan and apply and stores nothing. A slot with no value fails the read, and a
+value without the PEM header fails its postcondition, so either one stops `terraform plan` instead
+of booting a backend that throws on the key. The check covers the header only: prove a new key
+locally first, in `.env` with its ids, where the backend parses it at boot.
+
+Terraform no longer notices a value changed in AWS by hand. The `terraform.tfstate.backup` files
+written before this change still hold the old Apple key, like every other secret in state.
+
 ### Sign in with Apple
 
 `apple_client_id`, the Services ID, is the switch. With it set, `apple_team_id`, `apple_key_id` and
-`apple_app_bundle_identifier` ride as plain env vars beside it, and `apple_private_key`, the `.p8`
-key, goes to Secrets Manager as `<project>-<environment>-apple-private-key` and reaches the service
-as the runtime secret `APPLE_PRIVATE_KEY`, with its ARN on the instance role. Two preconditions on
-the secret version fail the plan when the switch is set without the key or without the other three
-ids, because `buildSocialProviders` registers Apple only when all five reach it.
+`apple_app_bundle_identifier` ride as plain env vars beside it, and the slot
+`<project>-<environment>-apple-private-key` reaches the service as the runtime secret
+`APPLE_PRIVATE_KEY`. A precondition on the slot fails the plan when the switch is set without the
+other three ids, because `buildSocialProviders` registers Apple only when all five reach it. The
+key itself goes up with `put-p8.sh apple`.
 
-Pass the key as `TF_VAR_apple_private_key`, never in `terraform.tfvars`; the comment above the
-Apple block in `terraform.tfvars.example` has the command. The variable has to reach both `plan`
-and `apply`: a bare `terraform apply` after a plan that had it builds a fresh plan with the empty
-default and fails the precondition. Either export it in the shell for the whole session, or write
-the plan with `-out` and apply that file. Nothing here expires: the backend signs
-its own one-hour client secrets with the key. Rotation is a second key in Apple's portal, an apply
-with the new key id and key, then revoking the old one.
+Switching Apple on in a fresh environment creates the slot and its check in the same apply, so that
+apply stops on the empty slot. Run `put-p8.sh apple`, then `terraform apply` again.
 
-No plan-time check reads the key itself, so a malformed `TF_VAR_apple_private_key` plans and applies
-cleanly. The backend then refuses to start on it. Prove a new key locally first: put it in `.env` as
-`APPLE_PRIVATE_KEY` with the other four values and start the backend, which builds the provider and
-parses the key at boot. Only then run `terraform apply` and deploy.
+The key used to be written by Terraform from `TF_VAR_apple_private_key`. A `removed` block with
+`destroy = false` forgets that secret version, so the live value stays and nothing is uploaded
+again.
+
+Nothing here expires: the backend signs its own one-hour client secrets with the key. To replace
+the key, in one sitting:
+
+1. Register a second key in Apple's portal (two per App ID) and save its `.p8` into the existing
+   1Password item.
+2. `terraform/scripts/put-p8.sh apple`
+3. Set the new `apple_key_id` in `terraform.tfvars`.
+4. `terraform apply`. The changed key id redeploys the service.
+5. Revoke the old key in Apple's portal.
+
+An image push between steps 2 and 4 deploys the new key with the old key id, and Apple sign-in
+fails until the apply.
 
 Apple POSTs the web callback, so `apprunner.tf` appends `https://appleid.apple.com` to
 `TRUSTED_ORIGINS` whenever the switch is set. Leave it out of `trusted_origins`: that list also
 feeds the attachments bucket's CORS rule, which is for browser origins.
+
+### Push notifications (APNs)
+
+The slot `<project>-<environment>-apns-private-key` always exists, with its ARN on the instance
+role, so the key can go up before the service needs it. `apns_key_id` is the switch. With it set,
+App Runner gets `APNS_KEY_ID`, `APNS_TEAM_ID` from `apple_team_id`, `APNS_TOPIC` from
+`apple_app_bundle_identifier`, and the runtime secret `APNS_PRIVATE_KEY`. It reuses those two values
+but not the Sign in with Apple switch, so push runs with `apple_client_id` empty. A precondition
+fails the plan when `apns_key_id` is set without them.
+
+First rollout:
+
+1. `terraform apply` creates the empty slot.
+2. `terraform/scripts/put-p8.sh apns`
+3. Set `apns_key_id` in `terraform.tfvars`.
+4. `terraform apply` wires the slot into App Runner and redeploys. If step 2 was skipped, the
+   plan-time check stops this apply.
+
+To replace the key, in one sitting:
+
+1. Create a new APNs key in Apple's portal and save its `.p8` into the existing `Flexi Day APNs key`
+   item in 1Password, with its key id.
+2. `terraform/scripts/put-p8.sh apns`
+3. Set the new `apns_key_id` in `terraform.tfvars`.
+4. `terraform apply`. The changed key id redeploys the service.
+5. Revoke the old key in Apple's portal.
+
+An image push between steps 2 and 4 deploys the new key with the old key id, and push fails until
+the apply.
 
 ### Done when
 
@@ -210,9 +276,9 @@ on-demand pricing without any warning.
 - No CI runs Terraform, and no npm script wraps it. Nothing catches a variable declared but never
   injected, or a `terraform.tfvars.example` that has drifted from `variables.tf`. Reading both is the
   whole check.
-- Every secret sits in plain text in `terraform.tfstate`, including the generated RDS password and
-  the Better Auth secret. Passing a value as `TF_VAR_*` instead of writing it into
-  `terraform.tfvars` changes nothing about that.
+- Every secret but the two Apple `.p8` keys sits in plain text in `terraform.tfstate`, including the
+  generated RDS password and the Better Auth secret. Passing a value as `TF_VAR_*` instead of
+  writing it into `terraform.tfvars` changes nothing about that.
 - Advancing `better_auth_rotation_days` signs out every active user and voids pending verification
   and reset tokens. It is not a knob to adjust in passing.
 - Schema migrations do not run from Terraform, from `cd.yml`, or from the deploy.
