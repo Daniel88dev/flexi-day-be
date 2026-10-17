@@ -206,7 +206,8 @@ describe("an approval reaches the owner's connected calendar", () => {
     await queue.drain();
 
     // The ledger is read in no fixed order, so the deletes may land either way round.
-    const after = (await fakeEvents()).slice(before.length);
+    const beforeIds = new Set(before.map((e) => e.id));
+    const after = (await fakeEvents()).filter((e) => !beforeIds.has(e.id));
     expect(after.every((e) => e.operation === "DELETE" && e.result === "ok")).toBe(true);
     expect(after.map((e) => e.providerEventId).sort()).toEqual([...live].sort());
   });
