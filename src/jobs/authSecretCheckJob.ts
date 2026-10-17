@@ -17,7 +17,7 @@ export const runAuthSecretCheck = async (): Promise<void> => {
     }
     logger.debug("Auth secret check", { outcome: result.outcome });
   } catch (error) {
-    logger.error("Auth secret check failed", {
+    logger.error("auth.secret_check_failed", {
       error: error instanceof Error ? error.message : String(error),
     });
   }

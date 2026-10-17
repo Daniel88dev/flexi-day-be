@@ -5,9 +5,7 @@ import type { ApnsAnswer, ApnsPush, ApnsSender } from "./types.js";
 export type FakeApnsAnswer = ApnsAnswer | "hang";
 
 export type FakeApnsSender = ApnsSender & {
-  /** Every push it was handed, in order, without the abort signal. */
   sends: Omit<ApnsPush, "signal">[];
-  /** How one host answers from now on. Both answer 200 until told otherwise. */
   answer(environment: pushEnvironment, answer: FakeApnsAnswer): void;
   reset(): void;
 };

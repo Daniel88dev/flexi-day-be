@@ -58,7 +58,7 @@ describe("runAuthSecretCheck", () => {
     await expect(runAuthSecretCheck()).resolves.toBeUndefined();
 
     expect(logger.error).toHaveBeenCalledWith(
-      "Auth secret check failed",
+      "auth.secret_check_failed",
       expect.objectContaining({ error: "connection refused" })
     );
     expect(everyLogLine()).not.toContain(SECRET);

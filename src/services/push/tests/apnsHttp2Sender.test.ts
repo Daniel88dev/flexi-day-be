@@ -1,7 +1,7 @@
 import http2, { type IncomingHttpHeaders } from "node:http2";
-import type { AddressInfo } from "node:net";
+import net, { type AddressInfo } from "node:net";
 import { verify, type KeyObject } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { pushEnvironment } from "../../../db/schema/push-registration-schema.js";
 import { createApnsHttp2Sender } from "../apnsHttp2Sender.js";
 import type { ApnsPayload } from "../types.js";
@@ -43,6 +43,45 @@ const fakeApnsHost = async (name: string, received: Received[]) => {
     close: () =>
       new Promise<void>((resolve) => {
         for (const session of sessions) session.destroy();
+        server.close(() => resolve());
+      }),
+  };
+};
+
+/**
+ * Sits between the sender and a host. `blackhole()` makes every open connection
+ * swallow traffic both ways without closing, the way a NAT that dropped its
+ * mapping does; connections made afterwards pass traffic again.
+ */
+const tcpRelay = async (target: string) => {
+  const { port } = new URL(target);
+  const open = new Set<{ blackholed: boolean; client: net.Socket; upstream: net.Socket }>();
+  const server = net.createServer((client) => {
+    const upstream = net.connect(Number(port), "127.0.0.1");
+    const pair = { blackholed: false, client, upstream };
+    open.add(pair);
+    client.on("data", (chunk) => pair.blackholed || upstream.write(chunk));
+    upstream.on("data", (chunk) => pair.blackholed || client.write(chunk));
+    const end = () => {
+      open.delete(pair);
+      client.destroy();
+      upstream.destroy();
+    };
+    client.on("close", end);
+    upstream.on("close", end);
+    client.on("error", end);
+    upstream.on("error", end);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    origin: `http://127.0.0.1:${(server.address() as AddressInfo).port.toString()}`,
+    blackhole: () => {
+      for (const pair of open) pair.blackholed = true;
+    },
+    openConnections: () => open.size,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const pair of open) pair.client.destroy();
         server.close(() => resolve());
       }),
   };
@@ -152,6 +191,40 @@ describe("createApnsHttp2Sender", () => {
     expect(decodeJwtPart(third, 1).iat).toBe(new Date("2026-10-17T12:50:00Z").getTime() / 1000);
   });
 
+  it.each(["ExpiredProviderToken", "InvalidProviderToken"])(
+    "signs a fresh provider token for the next send after APNs answers 403 %s",
+    async (reason) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+      const sender = senderFor();
+      const push = { environment: pushEnvironment.Sandbox, token: TOKEN, payload: PAYLOAD };
+
+      sandbox.answerWith({ status: 403, reason });
+      expect(await sender.send(push)).toEqual({ status: 403, reason });
+      sandbox.answerWith({ status: 200 });
+      await sender.send(push);
+      await sender.send(push);
+
+      const [rejected, fresh, reused] = received.map((r) => bearerOf(r.headers));
+      expect(received).toHaveLength(3);
+      expect(fresh).not.toBe(rejected);
+      expect(reused).toBe(fresh);
+    }
+  );
+
+  it("keeps the provider token through a 403 that is not about it", async () => {
+    const sender = senderFor();
+    const push = { environment: pushEnvironment.Sandbox, token: TOKEN, payload: PAYLOAD };
+
+    sandbox.answerWith({ status: 403, reason: "BadEnvironmentKeyIdInToken" });
+    await sender.send(push);
+    sandbox.answerWith({ status: 200 });
+    await sender.send(push);
+
+    const [first, second] = received.map((r) => bearerOf(r.headers));
+    expect(second).toBe(first);
+  });
+
   it("keeps one connection per host across sends", async () => {
     const sender = senderFor();
     const push = { environment: pushEnvironment.Production, token: TOKEN, payload: PAYLOAD };
@@ -172,6 +245,55 @@ describe("createApnsHttp2Sender", () => {
     });
 
     expect(answer).toEqual({ status: 410, reason: "Unregistered" });
+  });
+
+  describe("over a connection that dies silently", () => {
+    let relay: Awaited<ReturnType<typeof tcpRelay>>;
+
+    beforeEach(async () => {
+      relay = await tcpRelay(production.origin);
+    });
+
+    afterEach(async () => {
+      await relay.close();
+    });
+
+    const relayedSender = (timing?: { pingIntervalMs: number; pingTimeoutMs: number }) =>
+      createApnsHttp2Sender(
+        {
+          keyId: "KEY1234567",
+          teamId: "TEAM123456",
+          topic: "com.flexiday.app",
+          privateKey: key.pem,
+        },
+        { sandbox: sandbox.origin, production: relay.origin },
+        timing
+      );
+    const push = { environment: pushEnvironment.Production, token: TOKEN, payload: PAYLOAD };
+
+    it("reconnects for the next push after one times out", async () => {
+      const sender = relayedSender();
+      await sender.send(push);
+      relay.blackhole();
+
+      await expect(sender.send({ ...push, signal: AbortSignal.timeout(200) })).rejects.toThrow();
+
+      await expect(sender.send({ ...push, signal: AbortSignal.timeout(2000) })).resolves.toEqual({
+        status: 200,
+      });
+    });
+
+    it("notices an idle connection that stopped answering and reconnects", async () => {
+      const sender = relayedSender({ pingIntervalMs: 50, pingTimeoutMs: 50 });
+      await sender.send(push);
+      relay.blackhole();
+
+      await vi.waitFor(() => expect(relay.openConnections()).toBe(0), { timeout: 2000 });
+
+      await expect(sender.send({ ...push, signal: AbortSignal.timeout(2000) })).resolves.toEqual({
+        status: 200,
+      });
+    });
   });
 
   it("refuses a key that is not EC P-256", () => {

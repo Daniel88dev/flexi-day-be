@@ -108,7 +108,6 @@ type ApnsConfig = {
   teamId: string;
   /** The app's bundle id, sent as `apns-topic`. */
   topic: string;
-  /** The `.p8` PEM, with real newlines or the literal `\n` a `.env` line carries. */
   privateKey: string;
 };
 
@@ -370,10 +369,6 @@ const parseCalendarSync = (): CalendarSyncConfig | undefined => {
   };
 };
 
-/**
- * All four or none. None means the log sender, so a dev machine needs no
- * Apple key; a partial set fails at boot instead of at the first push.
- */
 const parseApns = (): ApnsConfig | undefined => {
   const {
     APNS_KEY_ID: keyId,

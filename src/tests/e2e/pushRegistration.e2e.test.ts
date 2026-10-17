@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll, vi, type MockInstance } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { base32 } from "@better-auth/utils/base32";
 import { db } from "../../db/db.js";
 import { verification } from "../../db/schema/auth-schema.js";
 import { auth } from "../../utils/auth.js";
-import { pushRegistrations } from "../../db/schema/push-registration-schema.js";
+import { pushEnvironment, pushRegistrations } from "../../db/schema/push-registration-schema.js";
 import { createServer } from "../../server.js";
+import { upsertPushRegistration } from "../../services/pushRegistration/pushRegistrationServices.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { WEB_TEST_PASSWORD, authCookieFor, createWebUser } from "./helpers/authHelper.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
@@ -134,6 +135,36 @@ describe("push registration", () => {
       expect(await registrationOf(later.sessionId)).toMatchObject({ token });
     });
 
+    it("hands the token over when two sessions register it at the same moment", async () => {
+      const earlier = await signInPhone("Push Race Earlier Subject");
+      const later = await signInPhone("Push Race Later Subject");
+      const body = { token: apnsToken(), environment: pushEnvironment.Sandbox };
+      let commitEarlier!: () => void;
+      const earlierHeld = new Promise<void>((resolve) => (commitEarlier = resolve));
+      let earlierWrote!: () => void;
+      const earlierWritten = new Promise<void>((resolve) => (earlierWrote = resolve));
+
+      const earlierTx = db.transaction(async (tx) => {
+        await upsertPushRegistration(earlier.sessionId, body, tx);
+        earlierWrote();
+        await earlierHeld;
+      });
+      await earlierWritten;
+      const laterTx = db.transaction((tx) => upsertPushRegistration(later.sessionId, body, tx));
+      await vi.waitFor(async () => {
+        const { rows } = await db.execute<{ waiting: number }>(
+          sql`select count(*)::int as waiting from pg_locks where not granted`
+        );
+        expect(rows[0]?.waiting).toBeGreaterThan(0);
+      });
+      commitEarlier();
+      await earlierTx;
+
+      await expect(laterTx).resolves.toBeUndefined();
+      expect(await registrationOf(earlier.sessionId)).toBeUndefined();
+      expect(await registrationOf(later.sessionId)).toMatchObject({ token: body.token });
+    });
+
     it("refuses a web session with NATIVE_SESSION_REQUIRED and stores nothing", async () => {
       const { id } = await createWebUser("Push Web Subject");
       const cookie = await authCookieFor(id);
@@ -147,6 +178,18 @@ describe("push registration", () => {
       expect(res.body.errors[0].context.reason).toBe("NATIVE_SESSION_REQUIRED");
       const [webSession] = await sessionsOf(id);
       expect(await registrationOf(webSession!.id)).toBeUndefined();
+    });
+
+    it("refuses a web session before it reads the body", async () => {
+      const { id } = await createWebUser("Push Web Bad Body Subject");
+
+      const res = await request(server.url)
+        .put(ROUTE)
+        .set("Cookie", await authCookieFor(id))
+        .send({ token: "not-a-token" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.errors[0].context.reason).toBe("NATIVE_SESSION_REQUIRED");
     });
 
     it("refuses a token that is not hex", async () => {

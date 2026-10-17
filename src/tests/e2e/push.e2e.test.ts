@@ -14,6 +14,7 @@ import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { notifySessionAutoClosed } from "../../services/attendance/attendanceNotifier.js";
 import { apnsSender } from "../../services/push/index.js";
+import { logger } from "../../middleware/logger.js";
 import type { FakeApnsSender } from "../../services/push/fakeApnsSender.js";
 import { authCookieFor, createTestSession } from "./helpers/authHelper.js";
 import { cleanupTestData, createTestUser, type TestUser } from "./helpers/testSetup.js";
@@ -321,18 +322,27 @@ describe("push", () => {
       { status: 403, reason: "BadEnvironmentKeyIdInToken" },
       { status: 403, reason: "InvalidProviderToken" },
       { status: 403, reason: "ExpiredProviderToken" },
-    ])("never touches the registration on a $status $reason", async (answer) => {
-      const phone = await phoneOf(requester, pushEnvironment.Sandbox);
-      fake.answer(pushEnvironment.Sandbox, answer);
+    ])(
+      "logs a config error and never touches the registration on a $status $reason",
+      async (answer) => {
+        const phone = await phoneOf(requester, pushEnvironment.Sandbox);
+        fake.answer(pushEnvironment.Sandbox, answer);
+        const logged = vi.spyOn(logger, "error");
 
-      await autoClose(requester.id);
+        await autoClose(requester.id);
 
-      expect(sentTo()).toEqual([pushEnvironment.Sandbox]);
-      expect(await registrationOf(phone)).toMatchObject({
-        token: phone.token,
-        environment: pushEnvironment.Sandbox,
-      });
-    });
+        expect(logged).toHaveBeenCalledWith(
+          "push.apns_config_error",
+          expect.objectContaining({ sessionId: phone.sessionId, ...answer })
+        );
+        logged.mockRestore();
+        expect(sentTo()).toEqual([pushEnvironment.Sandbox]);
+        expect(await registrationOf(phone)).toMatchObject({
+          token: phone.token,
+          environment: pushEnvironment.Sandbox,
+        });
+      }
+    );
 
     it.each([
       { status: 429, reason: "TooManyRequests" },

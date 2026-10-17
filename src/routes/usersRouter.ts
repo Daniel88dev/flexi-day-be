@@ -16,6 +16,7 @@ import { validatePostAppleAuthorization } from "../services/appleAuthorization/t
 import { handlePutPushRegistration } from "../controllers/users/handlePutPushRegistration.js";
 import { handleDeletePushRegistration } from "../controllers/users/handleDeletePushRegistration.js";
 import { validatePutPushRegistration } from "../services/pushRegistration/types.js";
+import { requireNativeSession } from "../middleware/nativeSessionGuard.js";
 
 export const usersRouter = (): Router => {
   const app = Router();
@@ -679,7 +680,8 @@ export const usersRouter = (): Router => {
    *         description: Not signed in
    *       '403':
    *         description: |
-   *           A web session, and nothing changed. `errors[0].context.reason`
+   *           A web session, and nothing changed. Checked before the body, so a
+   *           web session gets this whatever it sends. `errors[0].context.reason`
    *           is `NATIVE_SESSION_REQUIRED`.
    *         content:
    *           application/json:
@@ -687,8 +689,9 @@ export const usersRouter = (): Router => {
    *               $ref: '#/components/schemas/NativeSessionRequiredError'
    *       '422':
    *         description: |
-   *           The body failed validation: `token` missing or not 32 to 100 bytes
-   *           of hex, or `environment` other than `sandbox` or `production`.
+   *           A Native session sent a body that failed validation: `token`
+   *           missing or not 32 to 100 bytes of hex, or `environment` other than
+   *           `sandbox` or `production`.
    *   delete:
    *     tags:
    *       - Users
@@ -733,10 +736,11 @@ export const usersRouter = (): Router => {
    */
   app.put(
     "/me/push-registration",
+    requireNativeSession,
     bodyValidationMiddleware(validatePutPushRegistration),
     tryCatch(handlePutPushRegistration)
   );
-  app.delete("/me/push-registration", tryCatch(handleDeletePushRegistration));
+  app.delete("/me/push-registration", requireNativeSession, tryCatch(handleDeletePushRegistration));
 
   return app;
 };

@@ -13,6 +13,9 @@ export const APNS_ORIGINS: Record<pushEnvironment, string> = {
 /** Apple wants a new provider token no sooner than 20 and no later than 60 minutes. */
 const PROVIDER_TOKEN_SECONDS = 50 * 60;
 
+/** Refusals of the cached token itself: the next send signs a fresh one instead of waiting it out. */
+const PROVIDER_TOKEN_REFUSALS = new Set(["ExpiredProviderToken", "InvalidProviderToken"]);
+
 const reasonOf = (body: string): string | undefined => {
   if (!body) return undefined;
   try {
@@ -23,13 +26,23 @@ const reasonOf = (body: string): string | undefined => {
   }
 };
 
+export type ApnsConnectionTiming = { pingIntervalMs: number; pingTimeoutMs: number };
+
+/**
+ * A NAT or load balancer can drop an idle connection without a word, and every
+ * push on it would then time out. An unanswered PING, or a send that timed
+ * out, ends the connection so the next push opens a new one.
+ */
+const CONNECTION_TIMING: ApnsConnectionTiming = { pingIntervalMs: 60_000, pingTimeoutMs: 10_000 };
+
 /**
  * One HTTP/2 connection per host for the life of the process, as Apple asks.
  * One team-scoped key signs for both hosts, so one provider token serves both.
  */
 export function createApnsHttp2Sender(
   { keyId, teamId, topic, privateKey }: ApnsConfig,
-  origins: Record<pushEnvironment, string> = APNS_ORIGINS
+  origins: Record<pushEnvironment, string> = APNS_ORIGINS,
+  { pingIntervalMs, pingTimeoutMs }: ApnsConnectionTiming = CONNECTION_TIMING
 ): ApnsSender {
   const key = parseEs256PrivateKey(privateKey, "APNS_PRIVATE_KEY");
   let providerToken: { jwt: string; iat: number } | undefined;
@@ -43,20 +56,42 @@ export function createApnsHttp2Sender(
     return providerToken.jwt;
   };
 
+  const forget = (origin: string, session: ClientHttp2Session) => {
+    if (sessions.get(origin) === session) sessions.delete(origin);
+  };
+
+  const drop = (origin: string, session: ClientHttp2Session) => {
+    forget(origin, session);
+    if (!session.destroyed) session.destroy();
+  };
+
   const sessionFor = (origin: string): ClientHttp2Session => {
     const open = sessions.get(origin);
     if (open && !open.closed && !open.destroyed) return open;
 
     const session = http2.connect(origin);
     session.unref();
-    const forget = () => {
-      if (sessions.get(origin) === session) sessions.delete(origin);
-    };
-    session.on("goaway", forget);
-    session.on("close", forget);
+    const heartbeat = setInterval(() => {
+      if (session.destroyed) return;
+      const deadline = setTimeout(() => {
+        logger.warn("push.apns_connection_dead", { origin });
+        drop(origin, session);
+      }, pingTimeoutMs);
+      deadline.unref();
+      session.ping((error) => {
+        clearTimeout(deadline);
+        if (error) drop(origin, session);
+      });
+    }, pingIntervalMs);
+    heartbeat.unref();
+    session.on("goaway", () => forget(origin, session));
+    session.on("close", () => {
+      clearInterval(heartbeat);
+      forget(origin, session);
+    });
     session.on("error", (error: Error) => {
-      forget();
       logger.warn("push.apns_connection_error", { origin, error: error.message });
+      drop(origin, session);
     });
     sessions.set(origin, session);
     return session;
@@ -65,13 +100,14 @@ export function createApnsHttp2Sender(
   return {
     send: ({ environment, token, payload, signal }: ApnsPush) =>
       new Promise<ApnsAnswer>((resolve, reject) => {
-        const request = sessionFor(
-          environment === pushEnvironment.Sandbox ? origins.sandbox : origins.production
-        ).request(
+        const origin = origins[environment];
+        const session = sessionFor(origin);
+        const jwt = bearer();
+        const request = session.request(
           {
             ":method": "POST",
             ":path": `/3/device/${token}`,
-            authorization: `bearer ${bearer()}`,
+            authorization: `bearer ${jwt}`,
             "apns-topic": topic,
             "apns-push-type": "alert",
             "content-type": "application/json",
@@ -85,9 +121,15 @@ export function createApnsHttp2Sender(
         request.on("data", (chunk: string) => (body += chunk));
         request.on("end", () => {
           const reason = reasonOf(body);
+          if (status === 403 && reason && PROVIDER_TOKEN_REFUSALS.has(reason)) {
+            if (providerToken?.jwt === jwt) providerToken = undefined;
+          }
           resolve(reason ? { status, reason } : { status });
         });
-        request.on("error", reject);
+        request.on("error", (error) => {
+          if (signal?.aborted) drop(origin, session);
+          reject(error);
+        });
         request.end(JSON.stringify(payload));
       }),
   };

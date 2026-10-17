@@ -18,7 +18,6 @@ export type ApnsPush = {
   signal?: AbortSignal;
 };
 
-/** The HTTP status APNs answered with, and the `reason` from its body when it refused. */
 export type ApnsAnswer = { status: number; reason?: string };
 
 export type ApnsSender = { send(push: ApnsPush): Promise<ApnsAnswer> };

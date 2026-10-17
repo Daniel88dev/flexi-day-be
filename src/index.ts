@@ -11,6 +11,9 @@ import http from "http";
 const app = createServer();
 export const server = http.createServer(app);
 
+// Before listen, so this instance never answers a request on sessions the check is about to delete.
+await runAuthSecretCheck();
+
 server.listen(config.api.port, () => {
   logger.info(`Server listening on port ${config.api.port}`);
 
@@ -19,7 +22,6 @@ server.listen(config.api.port, () => {
     process.exitCode = 1;
   });
 
-  void runAuthSecretCheck();
   startQuotaRolloverJob();
   void startCalendarSyncQueue();
 

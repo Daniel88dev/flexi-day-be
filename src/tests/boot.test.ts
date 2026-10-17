@@ -1,11 +1,24 @@
 import { describe, it, expect, vi } from "vitest";
 
-const { checkMock } = vi.hoisted(() => ({ checkMock: vi.fn(() => Promise.resolve()) }));
+const { steps, checkMock } = vi.hoisted(() => {
+  const steps: string[] = [];
+  return {
+    steps,
+    checkMock: vi.fn(async () => {
+      steps.push("check started");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      steps.push("check finished");
+    }),
+  };
+});
 
 vi.mock("http", () => ({
   default: {
     createServer: () => ({
-      listen: (_port: number, onListening: () => void) => onListening(),
+      listen: (_port: number, onListening: () => void) => {
+        steps.push("listen");
+        onListening();
+      },
       on: vi.fn(),
     }),
   },
@@ -24,9 +37,10 @@ vi.mock("../jobs/calendarSyncQueueJob.js", () => ({
 vi.mock("../jobs/authSecretCheckJob.js", () => ({ runAuthSecretCheck: checkMock }));
 
 describe("boot", () => {
-  it("runs the auth secret check once the server listens", async () => {
+  it("finishes the auth secret check before the server listens", async () => {
     await import("../index.js");
 
     expect(checkMock).toHaveBeenCalledTimes(1);
+    expect(steps).toEqual(["check started", "check finished", "listen"]);
   });
 });
