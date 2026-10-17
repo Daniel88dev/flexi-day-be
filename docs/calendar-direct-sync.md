@@ -87,7 +87,9 @@ admin turned the features off.
    connection, revokes the refresh token at Google, and deletes the row. Microsoft has no revoke
    endpoint. The purge and the revoke reach the provider only while its switch is on. With it off,
    the row goes, the written events stay in the user's calendar and the token stays live at Google
-   until it lapses. Sign-in `account` rows are never read or written.
+   until it lapses. Sign-in `account` rows are never read or written. Account deletion runs the
+   same disconnect for every connection the user has; see
+   [`account-deletion.md`](account-deletion.md#calendar-connections).
 
 Other routes: `GET /api/calendar-sync/connections` lists the caller's connections and which
 providers are on, `PUT /api/calendar-sync/:id/target` changes the zone and marks the target due, and
@@ -216,8 +218,9 @@ Pro override first when no paid plan covers them. The scenario response carries 
 `calendar`, or `null`. Approving the owner's pending booking then leaves an insert that
 `GET /api/dev/calendar/events?email=owner@dev.local` returns.
 
-Until T-309 adds them to the `flexi-dev` MCP server and the dev CLI, the `ui-test` loop calls the
-three routes with curl and the `x-dev-token` header.
+The `flexi-dev` MCP server wraps the three routes as `dev_calendar_connect`, `dev_calendar_events`
+and `dev_calendar_capability`, and the workspace root runs them as
+`npm run dev:calendar:connect|events|capability`. The `ui-test` loop uses those.
 
 ## Portal prerequisites
 
@@ -283,8 +286,6 @@ lifetime cap above but keeps refresh tokens alive.
 - No probe has yet sent `extendedProperties.private` on a working-location event. The first live
   Google sync must confirm Google accepts it. If Google refuses, drop it from the custom-location
   and home-office payloads in `eventBuilder.ts` and keep it on `outOfOffice` and `default` events.
-- Deleting an account removes its connections by cascade without revoking the tokens at Google
-  (T-304).
 
 ## Research
 
