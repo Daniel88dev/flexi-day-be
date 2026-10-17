@@ -24,8 +24,7 @@ import { getCalendarSyncById, getFeedRecords } from "./calendarSyncServices.js";
 import { calendarDriver } from "./drivers/index.js";
 import type { CalendarDriver, DriverContext, DriverFailure } from "./drivers/types.js";
 import { buildDesired, type DesiredEvent } from "./eventBuilder.js";
-import { getUserLanguage } from "../userSettings/userSettingsServices.js";
-import { recordTypeLabels, type RecordTypeLabels } from "./labels.js";
+import { userRecordTypeLabels, type RecordTypeLabels } from "./labels.js";
 import type { CalendarFeedRecord, SyncOutcome } from "./types.js";
 
 const DONE: SyncOutcome = { status: "done" };
@@ -303,7 +302,7 @@ const runSync = async (
     provider: connection.provider,
     capability: connection.capability,
     timeZone,
-    labels: recordTypeLabels(await getUserLanguage(userId)),
+    labels: await userRecordTypeLabels(userId),
     records: await getFeedRecords(config),
     driver,
     context: { connection, accessToken: connectionTokenSource(connection) },

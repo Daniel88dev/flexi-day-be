@@ -415,6 +415,12 @@ export const usersRouter = (): Router => {
    *       - Users
    *     summary: Delete the caller's account
    *     description: |
+   *       Once the confirmation passes and no blocker applies, each live
+   *       calendar connection is disconnected before the transaction: the
+   *       events it wrote are deleted at the provider and its Google grant is
+   *       revoked. This step is best effort; a failure is logged and does not
+   *       fail the request.
+   *
    *       Hard-deletes the account in one transaction: the user and everything
    *       that hangs off them, the groups they manage and the organizations
    *       they own (both only possible once nobody else is in them), with
@@ -479,7 +485,9 @@ export const usersRouter = (): Router => {
    *                             enum: [PASSWORD_INVALID, REAUTH_REQUIRED]
    *       '409':
    *         description: |
-   *           At least one blocker applies, and nothing changed.
+   *           At least one blocker applies, and the account is kept. A
+   *           blocker that appears after the calendar step still refuses the
+   *           deletion, with the calendars already disconnected.
    *           `errors[0].context` carries `reason: DELETION_BLOCKED` and the
    *           full `blockers` list, the same one the deletion status returns.
    *         content:

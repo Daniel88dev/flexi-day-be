@@ -60,8 +60,7 @@ export const userSettings = pgTable("user_settings", {
   attendanceLocationNoticeDismissed: boolean("attendance_location_notice_dismissed")
     .notNull()
     .default(false),
-  // The web's active language, written by the web. Null means English. Calendar
-  // sync titles the owner's events in it.
+  // Null means English.
   language: appLanguageEnum("language"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })

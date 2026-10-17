@@ -8,8 +8,7 @@ import AppError from "../../utils/appError.js";
 import type { CalendarTargetView } from "../../services/calendarConnection/types.js";
 import { calendarTargetViews } from "../../services/calendarConnection/calendarConnectionServices.js";
 import { getCalendarSyncById } from "../../services/calendarSync/calendarSyncServices.js";
-import { recordTypeLabels, type RecordTypeLabels } from "../../services/calendarSync/labels.js";
-import { getUserLanguage } from "../../services/userSettings/userSettingsServices.js";
+import { userRecordTypeLabels, type RecordTypeLabels } from "../../services/calendarSync/labels.js";
 
 /**
  * Public base URL used to build feed links. Prefers `FEED_BASE_URL`. In
@@ -36,10 +35,6 @@ export const feedUrl = (baseUrl: string, token: string): string =>
 
 /** Masks a token for list responses so the secret is never fully echoed. */
 export const maskToken = (token: string): string => `${token.slice(0, 9)}${"•".repeat(18)}`;
-
-/** The record type labels in the app language of the config's owner. */
-export const ownerLabels = async (userId: string): Promise<RecordTypeLabels> =>
-  recordTypeLabels(await getUserLanguage(userId));
 
 /**
  * Shapes a config for API responses. `revealToken` controls whether the full
@@ -71,19 +66,19 @@ export const serializeConfig = (
   updatedAt: config.updatedAt.toISOString(),
 });
 
-/** {@link serializeConfig} for each config, with its direct-sync `target` resolved. */
+/** {@link serializeConfig} for each of one owner's configs, with its direct-sync `target` resolved. */
 export const serializeConfigs = async (
+  ownerId: string,
   configs: CalendarSyncFull[],
   baseUrl: string,
   revealToken: boolean
 ) => {
-  const targets = await calendarTargetViews(configs);
-  const owners = [...new Set(configs.map((c) => c.userId))];
-  const labels = new Map(
-    await Promise.all(owners.map(async (id) => [id, await ownerLabels(id)] as const))
-  );
+  const [targets, labels] = await Promise.all([
+    calendarTargetViews(configs),
+    userRecordTypeLabels(ownerId),
+  ]);
   return configs.map((c) =>
-    serializeConfig(c, baseUrl, revealToken, targets.get(c.id) ?? null, labels.get(c.userId)!)
+    serializeConfig(c, baseUrl, revealToken, targets.get(c.id) ?? null, labels)
   );
 };
 
@@ -91,7 +86,7 @@ export const serializeConfigWithTarget = async (
   config: CalendarSyncFull,
   baseUrl: string,
   revealToken: boolean
-) => (await serializeConfigs([config], baseUrl, revealToken))[0]!;
+) => (await serializeConfigs(config.userId, [config], baseUrl, revealToken))[0]!;
 
 /** Reloads a config the caller owns and serializes it with its feed URL and target. */
 export const serializeOwnedConfig = async (req: Request, id: string, userId: string) => {

@@ -1,4 +1,6 @@
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import { appLanguage } from "../../db/schema/user-settings-schema.js";
+import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 
 export type RecordTypeLabels = Readonly<Record<CalendarRecordType, string>>;
 
@@ -26,14 +28,17 @@ const CZECH: RecordTypeLabels = {
   [CalendarRecordType.Other]: "Ostatní",
 };
 
-const TABLES: ReadonlyMap<string, RecordTypeLabels> = new Map([
-  ["en", ENGLISH],
-  ["cs", CZECH],
-]);
+const TABLES: Readonly<Record<appLanguage, RecordTypeLabels>> = {
+  [appLanguage.English]: ENGLISH,
+  [appLanguage.Czech]: CZECH,
+};
 
 /**
  * Record type labels in a language, English when there is no table for it.
  * The `.ics` feed and direct sync both read this, so they say the same word.
  */
 export const recordTypeLabels = (language: string | null | undefined): RecordTypeLabels =>
-  (language ? TABLES.get(language) : undefined) ?? ENGLISH;
+  language && Object.hasOwn(TABLES, language) ? TABLES[language as appLanguage] : ENGLISH;
+
+export const userRecordTypeLabels = async (userId: string): Promise<RecordTypeLabels> =>
+  recordTypeLabels(await getUserLanguage(userId));
