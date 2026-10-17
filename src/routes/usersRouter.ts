@@ -17,6 +17,10 @@ import { handlePutPushRegistration } from "../controllers/users/handlePutPushReg
 import { handleDeletePushRegistration } from "../controllers/users/handleDeletePushRegistration.js";
 import { validatePutPushRegistration } from "../services/pushRegistration/types.js";
 import { requireNativeSession } from "../middleware/nativeSessionGuard.js";
+import { handleGetMyBirthday } from "../controllers/users/handleGetMyBirthday.js";
+import { handlePutMyBirthday } from "../controllers/users/handlePutMyBirthday.js";
+import { handleDeleteMyBirthday } from "../controllers/users/handleDeleteMyBirthday.js";
+import { validatePutBirthday } from "../services/birthday/types.js";
 
 export const usersRouter = (): Router => {
   const app = Router();
@@ -306,6 +310,155 @@ export const usersRouter = (): Router => {
     bodyValidationMiddleware(validatePutUserSettings),
     tryCatch(handlePutMySettings)
   );
+
+  /**
+   * @openapi
+   * /api/users/me/birthday:
+   *   get:
+   *     tags:
+   *       - Users
+   *     summary: The caller's birthday and who a shared birthday reaches
+   *     description: |
+   *       `birthday` is null until one is saved, and again after it is
+   *       removed. Saving works on any plan.
+   *
+   *       `canShare` says whether `shared` may turn on: true while one of the
+   *       caller's live groups belongs to an organization on a paid plan (Pro,
+   *       Enterprise or Custom, grace included). Turning sharing off always
+   *       works, and a switch already on stays on after every paid group has
+   *       lapsed, so `birthday.shared` may be true while `canShare` is false.
+   *
+   *       `shareGroups` lists the caller's live groups whose organization is
+   *       paid or lapsed (fell to Free from a plan or an override), the groups
+   *       a shared birthday shows in today. A group that never paid is never
+   *       listed. With a year set, whoever sees the birthday sees the age.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: The birthday settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/BirthdaySettings'
+   *       '401':
+   *         description: Not signed in
+   *   put:
+   *     tags:
+   *       - Users
+   *     summary: Save the caller's birthday
+   *     description: |
+   *       Replaces the whole birthday, and brings back one that was removed.
+   *       29 February is accepted with any year and shows on 28 February in
+   *       other years. Only turning `shared` on from off asks the plan: it
+   *       needs one of the caller's live groups on a paid plan. Sending
+   *       `shared: false` always passes, and so does keeping a switch that is
+   *       already on. Answers the same body as the read.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [month, day, shared]
+   *             properties:
+   *               month:
+   *                 type: integer
+   *                 minimum: 1
+   *                 maximum: 12
+   *               day:
+   *                 type: integer
+   *                 minimum: 1
+   *                 maximum: 31
+   *                 description: Must exist in the month; 29 February counts.
+   *               year:
+   *                 type: integer
+   *                 nullable: true
+   *                 minimum: 1900
+   *                 description: |
+   *                   Optional, 1900 to the current year. Omitted or null means
+   *                   no year, and then nobody sees an age.
+   *               shared:
+   *                 type: boolean
+   *                 description: Show the birthday to the members of the caller's groups.
+   *     responses:
+   *       '200':
+   *         description: The stored birthday settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/BirthdaySettings'
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: |
+   *           `shared` was turned on while none of the caller's live groups is
+   *           on a paid plan. Nothing was saved. `errors[0].context` is
+   *           `{ reason: "PLAN_LIMIT", code: "BIRTHDAY_SHARE_PLAN_REQUIRED" }`.
+   *       '422':
+   *         description: |
+   *           The body failed validation: a month outside 1 to 12, a day the
+   *           month never has (31 April, 30 February), a year before 1900 or
+   *           in the future, a non-integer, or `shared` missing.
+   *   delete:
+   *     tags:
+   *       - Users
+   *     summary: Remove the caller's birthday
+   *     description: |
+   *       Wipes the month, day and year and turns sharing off. Answers 204
+   *       whether or not a birthday was stored.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '204':
+   *         description: No birthday remains
+   *       '401':
+   *         description: Not signed in
+   * components:
+   *   schemas:
+   *     BirthdaySettings:
+   *       type: object
+   *       required: [birthday, canShare, shareGroups]
+   *       properties:
+   *         birthday:
+   *           type: object
+   *           nullable: true
+   *           required: [month, day, year, shared]
+   *           properties:
+   *             month:
+   *               type: integer
+   *             day:
+   *               type: integer
+   *             year:
+   *               type: integer
+   *               nullable: true
+   *             shared:
+   *               type: boolean
+   *         canShare:
+   *           type: boolean
+   *           description: Whether `shared` may turn on now.
+   *         shareGroups:
+   *           type: array
+   *           description: The caller's paid and lapsed groups, by name.
+   *           items:
+   *             type: object
+   *             required: [groupId, groupName]
+   *             properties:
+   *               groupId:
+   *                 type: string
+   *                 format: uuid
+   *               groupName:
+   *                 type: string
+   */
+  app.get("/me/birthday", tryCatch(handleGetMyBirthday));
+  app.put(
+    "/me/birthday",
+    bodyValidationMiddleware(validatePutBirthday),
+    tryCatch(handlePutMyBirthday)
+  );
+  app.delete("/me/birthday", tryCatch(handleDeleteMyBirthday));
 
   /**
    * @openapi

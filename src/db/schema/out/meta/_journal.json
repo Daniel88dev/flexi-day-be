@@ -204,6 +204,13 @@
       "when": 1792273585957,
       "tag": "0028_calendar_sync_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792274769571,
+      "tag": "0029_user_birthdays",
+      "breakpoints": true
     }
   ]
 }

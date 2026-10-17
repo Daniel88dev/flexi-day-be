@@ -11,6 +11,7 @@ import { changesSchema } from "../../db/schema/changes-schema.js";
 import { supportAccess } from "../../db/schema/support-access-schema.js";
 import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
+import { userBirthdays } from "../../db/schema/user-birthday-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
 import AppError from "../../utils/appError.js";
@@ -172,6 +173,22 @@ export const addMember = async (input: {
     approverAccess: input.approverAccess ?? false,
     controlledUser: true,
   });
+};
+
+/** Leaves an existing row alone, a removed birthday included. Answers whether it inserted. */
+export const seedBirthday = async (input: {
+  userId: string;
+  month: number;
+  day: number;
+  year: number | null;
+  shared: boolean;
+}): Promise<boolean> => {
+  const rows = await db
+    .insert(userBirthdays)
+    .values(input)
+    .onConflictDoNothing({ target: userBirthdays.userId })
+    .returning({ userId: userBirthdays.userId });
+  return rows.length > 0;
 };
 
 export const setQuota = async (input: {

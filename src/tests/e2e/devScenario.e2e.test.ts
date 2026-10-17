@@ -22,7 +22,7 @@ vi.mock("../../config.js", async (importOriginal) => {
   };
 });
 
-type SeededCounts = { bookings: number; rejected: number; events: number };
+type SeededCounts = { bookings: number; rejected: number; events: number; birthdays: number };
 
 const seededCounts = async (): Promise<SeededCounts> => {
   const result = await db.execute<SeededCounts>(sql`
@@ -33,7 +33,11 @@ const seededCounts = async (): Promise<SeededCounts> => {
          from vacation_events e
          join vacation ev on ev.id = e.vacation_id
          join "user" eu on eu.id = ev.user_id
-        where eu.email like '%@dev.local') as events
+        where eu.email like '%@dev.local') as events,
+      (select count(*)::int
+         from user_birthdays b
+         join "user" bu on bu.id = b.user_id
+        where bu.email like '%@dev.local') as birthdays
     from vacation v
     join "user" u on u.id = v.user_id
     where u.email like '%@dev.local'
@@ -68,5 +72,34 @@ describe("dev scenario", () => {
     expect(second.status).toBe(201);
     expect(second.body.vacationsCreated).toBe(0);
     expect(await seededCounts()).toEqual(afterFirst);
+  });
+
+  it("gives the owner and two members birthdays, one on 29 February, one without a year", async () => {
+    const first = await runScenario();
+    expect(first.status).toBe(201);
+
+    const result = await db.execute<{
+      email: string;
+      month: number;
+      day: number;
+      year: number | null;
+    }>(sql`
+      select u.email, b.month, b.day, b.year
+        from user_birthdays b
+        join "user" u on u.id = b.user_id
+       where u.email like '%@dev.local' and b.deleted_at is null
+       order by u.email
+    `);
+    const rows = result.rows;
+    expect(rows.map((row) => row.email)).toEqual([
+      "alice@dev.local",
+      "bob@dev.local",
+      "owner@dev.local",
+    ]);
+    expect(rows.some((row) => row.month === 2 && row.day === 29)).toBe(true);
+    expect(rows.some((row) => row.year === null)).toBe(true);
+
+    const again = await runScenario();
+    expect(again.body.birthdaysCreated).toBe(0);
   });
 });

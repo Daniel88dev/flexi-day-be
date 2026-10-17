@@ -58,6 +58,17 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Sync target**          | A `ME` calendar config attached to a calendar connection. It writes in the config's time zone, which its `.ics` feed shares. See [`docs/calendar-direct-sync.md`](docs/calendar-direct-sync.md).                                                                                                      |
 | **Sync ledger**          | The per-target record of which provider event stands for which source record, keyed by source (`v:<vacationId>`), with a content hash, so a sync is a diff and a rerun is a no-op. See [`docs/calendar-direct-sync.md`](docs/calendar-direct-sync.md).                                                |
 | **Capability**           | What a connected Google account accepted so far: unknown, status (working location and Out of office), or plain (Busy events only). See [`docs/calendar-direct-sync.md`](docs/calendar-direct-sync.md).                                                                                               |
+| **Birthday**             | A user's month and day, optional year, shared with every group they are in when they choose. Its own `user_birthdays` row; removing it leaves a tombstone. Avoid: date of birth.                                                                                                                      |
+
+## Plans
+
+A plan belongs to an organization and is resolved at read time by `resolveEntitlements`
+(`src/services/billing/entitlements.ts`).
+
+| Term                    | Meaning                                                                                                                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Paid plan**           | Pro, Enterprise or a Custom override, grace included: anything that resolves to a plan other than `FREE`. Avoid: Pro, when Enterprise counts too.                                                                    |
+| **Lapsed organization** | One that fell back to Free from a paid plan or an override (`Entitlements.lapsed`). Nothing it stored disappears; new writes stay closed. An organization that never paid is not lapsed. Avoid: expired, downgraded. |
 
 ## Vacation workflow
 

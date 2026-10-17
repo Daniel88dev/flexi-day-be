@@ -15,6 +15,7 @@ import {
 } from "./calendar-connection-schema.js";
 import { vacationEvents } from "./vacation-event-schema.js";
 import { userSettings } from "./user-settings-schema.js";
+import { userBirthdays } from "./user-birthday-schema.js";
 import { reportExports } from "./report-export-schema.js";
 import { supportAccess } from "./support-access-schema.js";
 import { organizations } from "./organization-schema.js";
@@ -39,6 +40,7 @@ export const schema = {
   groups,
   groupMirrors,
   userSettings,
+  userBirthdays,
   userYearQuotas,
   vacation,
   vacationEvents,

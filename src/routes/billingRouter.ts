@@ -27,7 +27,8 @@ export const billingRouter = (): Router => {
    *       else the one they hold a delegated admin row in — resolved from the
    *       session, never from the request. With it come its subscription row
    *       if any, the resolved entitlements (plan, group/member limits,
-   *       writability, grace end) and usage meters. Callers who administer no
+   *       writability, grace end, and `lapsed`: fell to Free from a paid plan
+   *       or an override) and usage meters. Callers who administer no
    *       organization get Free entitlements with empty usage. Reading is
    *       wider than writing: checkout, slots and the portal stay owner-only,
    *       which `organization.isOwner` tells the client. A delegate's payload

@@ -42,6 +42,7 @@ describe("resolveEntitlements", () => {
       maxMembersPerGroup: PLAN_LIMITS.FREE.membersPerGroup,
       writable: true,
       graceEndsAt: null,
+      lapsed: false,
     });
   });
 
@@ -56,6 +57,7 @@ describe("resolveEntitlements", () => {
           maxMembersPerGroup: PLAN_LIMITS.PRO.membersPerGroup,
           writable: true,
           graceEndsAt: null,
+          lapsed: false,
         });
       }
     );
@@ -88,6 +90,7 @@ describe("resolveEntitlements", () => {
         maxMembersPerGroup: PLAN_LIMITS.ENTERPRISE.membersPerGroup,
         writable: true,
         graceEndsAt: null,
+        lapsed: false,
       });
     });
 
@@ -117,6 +120,7 @@ describe("resolveEntitlements", () => {
           maxMembersPerGroup: PLAN_LIMITS.PRO.membersPerGroup,
           writable: true,
           graceEndsAt: FUTURE.toISOString(),
+          lapsed: false,
         });
       }
     );
@@ -129,6 +133,7 @@ describe("resolveEntitlements", () => {
         maxMembersPerGroup: PLAN_LIMITS.FREE.membersPerGroup,
         writable: false,
         graceEndsAt: null,
+        lapsed: true,
       });
     });
 
@@ -159,6 +164,7 @@ describe("resolveEntitlements", () => {
         maxMembersPerGroup: PLAN_LIMITS.FREE.membersPerGroup,
         writable: false,
         graceEndsAt: null,
+        lapsed: true,
       });
     });
 
@@ -177,6 +183,7 @@ describe("resolveEntitlements", () => {
         maxMembersPerGroup: PLAN_LIMITS.PRO.membersPerGroup,
         writable: true,
         graceEndsAt: null,
+        lapsed: false,
       });
     });
 
@@ -217,6 +224,7 @@ describe("resolveEntitlements", () => {
         maxMembersPerGroup: 500,
         writable: true,
         graceEndsAt: null,
+        lapsed: false,
       });
     });
 
@@ -264,6 +272,59 @@ describe("resolveEntitlements", () => {
       maxMembersPerGroup: PLAN_LIMITS.FREE.membersPerGroup,
       writable: true,
       graceEndsAt: null,
+      lapsed: false,
+    });
+  });
+
+  describe("lapsed", () => {
+    test("false with no subscription row", () => {
+      expect(resolveEntitlements(null, NOW).lapsed).toBe(false);
+    });
+
+    test("false for a checkout in flight, a row with no plan and no override", () => {
+      expect(resolveEntitlements(makeSub({ plan: null, status: null }), NOW).lapsed).toBe(false);
+    });
+
+    test("false while paid, grace included", () => {
+      expect(resolveEntitlements(makeSub({}), NOW).lapsed).toBe(false);
+      expect(
+        resolveEntitlements(
+          makeSub({ status: subscriptionStatus.PastDue, graceEndsAt: FUTURE }),
+          NOW
+        ).lapsed
+      ).toBe(false);
+    });
+
+    test("true once grace has run out", () => {
+      expect(
+        resolveEntitlements(
+          makeSub({ status: subscriptionStatus.Canceled, graceEndsAt: PAST }),
+          NOW
+        ).lapsed
+      ).toBe(true);
+    });
+
+    test("true under a Free override", () => {
+      expect(
+        resolveEntitlements(
+          makeSub({ plan: null, status: null, manualPlanOverride: manualPlanOverride.Free }),
+          NOW
+        ).lapsed
+      ).toBe(true);
+    });
+
+    test("true when a paid override has expired with no subscription behind it", () => {
+      expect(
+        resolveEntitlements(
+          makeSub({
+            plan: null,
+            status: null,
+            manualPlanOverride: manualPlanOverride.Pro,
+            manualPlanUntil: PAST,
+          }),
+          NOW
+        ).lapsed
+      ).toBe(true);
     });
   });
 });
