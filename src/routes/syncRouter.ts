@@ -22,7 +22,7 @@ export const syncRouter = (): Router => {
    *       web. One envelope carries every table in dependency order, so a
    *       client can apply the payload top to bottom: `organizations`,
    *       `users`, `groups`, `groupUsers`, `groupMirrors`, `userYearQuotas`,
-   *       `bankHolidays`, `vacations`, `birthdays`. Rows are raw table rows with camelCase
+   *       `bankHolidays`, `vacations`, `groupEvents`, `birthdays`. Rows are raw table rows with camelCase
    *       keys matching the database columns and timestamps as ISO 8601 UTC;
    *       no joined summaries and no per-row verdicts. Every partitioned row
    *       carries `organizationId`.
@@ -84,7 +84,9 @@ export const syncRouter = (): Router => {
    *       it, who rejected it and who cancelled it. Those actors arrive
    *       whatever their own `updatedAt` says, and on a paged pull they arrive
    *       before the bookings that name them, so no returned booking ever
-   *       names somebody the client cannot resolve. The people on the
+   *       names somebody the client cannot resolve. The creator of every group
+   *       event the pull covers is owed the same way, a former member or an
+   *       admin who is no member included. The people on the
    *       membership rows a pull carries arrive the same way, so a member
    *       added to a group seen in full is never nameless. Everybody else in
    *       the set arrives only when their own row changed since the cursor,
@@ -113,6 +115,18 @@ export const syncRouter = (): Router => {
    *       unpartitioned reference data: no `organizationId`, no `deletedAt`
    *       and so no tombstones, and a holiday that leaves the window drops off
    *       at the next sync reset like any other dated row.
+   *
+   *       `groupEvents` carries every group event of every group the caller
+   *       holds a live membership row in, a self-scoped group included: an
+   *       event belongs to its group, not to a member. Recurring group events
+   *       and one-offs arrive alike, with the repeat rule as flat columns
+   *       holding the database values, and the client expands the
+   *       occurrences. A deleted group event arrives in a delta as a
+   *       tombstone: title, note, times, rule and `createdByUserId` null,
+   *       `skippedDates` empty, `deletedAt` set, the id, group, dates and
+   *       one-off link kept. A snapshot leaves tombstones out. Joining or
+   *       leaving a group is a sync reset, so no event drops out of scope
+   *       inside a delta.
    *
    *       `birthdays` carries the caller's own birthday, shared or not, and
    *       the shared birthday of every live member of a group the caller sees
@@ -304,6 +318,7 @@ export const syncRouter = (): Router => {
    *                 - userYearQuotas
    *                 - bankHolidays
    *                 - vacations
+   *                 - groupEvents
    *                 - birthdays
    *               properties:
    *                 cursor:
@@ -610,6 +625,104 @@ export const syncRouter = (): Router => {
    *                       deletedByUserId:
    *                         type: string
    *                         nullable: true
+   *                       createdAt:
+   *                         type: string
+   *                         format: date-time
+   *                       updatedAt:
+   *                         type: string
+   *                         format: date-time
+   *                 groupEvents:
+   *                   type: array
+   *                   description: |
+   *                     Every group event of the groups the caller is a live
+   *                     member of, recurring and one-off, tombstones in a delta
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       groupId:
+   *                         type: string
+   *                       organizationId:
+   *                         type: string
+   *                       createdByUserId:
+   *                         type: string
+   *                         nullable: true
+   *                         description: |
+   *                           Null once the creator's account is gone, and on a
+   *                           tombstone. Always present in `users` otherwise
+   *                       title:
+   *                         type: string
+   *                         nullable: true
+   *                         description: Null on a tombstone
+   *                       note:
+   *                         type: string
+   *                         nullable: true
+   *                       startDate:
+   *                         type: string
+   *                         format: date
+   *                       endDate:
+   *                         type: string
+   *                         format: date
+   *                         description: Inclusive; equals startDate on a recurring group event
+   *                       startTime:
+   *                         type: string
+   *                         nullable: true
+   *                         description: HH:MM wall-clock time; null with endTime on an all-day event
+   *                       endTime:
+   *                         type: string
+   *                         nullable: true
+   *                       repeatFreq:
+   *                         type: string
+   *                         nullable: true
+   *                         enum:
+   *                           - DAILY
+   *                           - WEEKLY
+   *                           - MONTHLY
+   *                           - YEARLY
+   *                         description: Null on a one-off and on a tombstone
+   *                       repeatInterval:
+   *                         type: integer
+   *                         nullable: true
+   *                       repeatWeekdays:
+   *                         type: array
+   *                         nullable: true
+   *                         items:
+   *                           type: integer
+   *                         description: 0 = Monday to 6 = Sunday; weekly rules only
+   *                       repeatMonthlyMode:
+   *                         type: string
+   *                         nullable: true
+   *                         enum:
+   *                           - DAY
+   *                           - NTH_WEEKDAY
+   *                           - LAST_WEEKDAY
+   *                         description: Monthly rules only
+   *                       repeatUntil:
+   *                         type: string
+   *                         format: date
+   *                         nullable: true
+   *                         description: Inclusive; null repeats forever
+   *                       skippedDates:
+   *                         type: array
+   *                         items:
+   *                           type: string
+   *                           format: date
+   *                         description: Sorted; occurrences the rule no longer produces
+   *                       recurringEventId:
+   *                         type: string
+   *                         nullable: true
+   *                         description: On a one-off made by a "this event" edit, the recurring group event it replaced a day of
+   *                       originalDate:
+   *                         type: string
+   *                         format: date
+   *                         nullable: true
+   *                         description: The occurrence that one-off replaced
+   *                       deletedAt:
+   *                         type: string
+   *                         format: date-time
+   *                         nullable: true
+   *                         description: Set on a tombstone, which the client drops
    *                       createdAt:
    *                         type: string
    *                         format: date-time

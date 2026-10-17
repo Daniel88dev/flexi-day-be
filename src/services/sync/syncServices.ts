@@ -18,6 +18,7 @@ import type { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
+import { groupEvents } from "../../db/schema/group-event-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -39,6 +40,7 @@ import type {
   SyncBirthdayRow,
   SyncCursor,
   SyncEnvelope,
+  SyncGroupEventRow,
   SyncGroupMirrorRow,
   SyncGroupRow,
   SyncGroupUserRow,
@@ -494,14 +496,49 @@ const getVacationActorIds = async (
   return [...ids];
 };
 
+/**
+ * The creators the group events reader names, from the same scope. A creator
+ * may have left the group, or administer it without a membership, so neither
+ * the members nor the managers below cover them.
+ */
+const getGroupEventCreatorIds = async (
+  context: SyncReadContext,
+  window: SyncWindow | null
+): Promise<string[]> => {
+  if (context.scope.groupIds.length === 0) return [];
+
+  const rows = await db
+    .selectDistinct({ createdByUserId: groupEvents.createdByUserId })
+    .from(groupEvents)
+    .where(
+      and(
+        inArray(groupEvents.groupId, context.scope.groupIds),
+        isNotNull(groupEvents.createdByUserId),
+        context.liveOnly ? isNull(groupEvents.deletedAt) : undefined,
+        window === null ? undefined : inWindow(groupEvents.updatedAt, window)
+      )
+    );
+
+  return rows.map((row) => row.createdByUserId).filter((id) => id !== null);
+};
+
 const getSyncUserIds = async (context: SyncReadContext): Promise<SyncUserIds> => {
   // The people on the rows this pull carries are owed whatever their own row
   // says; the people on every visible row are eligible when their own row
   // changed, or a renamed approver on an old booking would never arrive.
-  const actors = new Set(await getVacationActorIds(context, context.window));
-  const everyActor =
-    context.window.since === null ? [...actors] : await getVacationActorIds(context, null);
-  const ids = new Set<string>([context.callerId, ...everyActor]);
+  const [vacationActors, creators] = await Promise.all([
+    getVacationActorIds(context, context.window),
+    getGroupEventCreatorIds(context, context.window),
+  ]);
+  const actors = new Set([...vacationActors, ...creators]);
+  const [everyVacationActor, everyCreator] =
+    context.window.since === null
+      ? [vacationActors, creators]
+      : await Promise.all([
+          getVacationActorIds(context, null),
+          getGroupEventCreatorIds(context, null),
+        ]);
+  const ids = new Set<string>([context.callerId, ...everyVacationActor, ...everyCreator]);
 
   if (context.scope.fullGroupIds.length > 0) {
     const membersWhere = and(
@@ -752,6 +789,65 @@ const readVacationsPage = async (
   }));
 };
 
+const clock = (value: string | null): string | null => (value === null ? null : value.slice(0, 5));
+
+/**
+ * Every group event of every group the caller is a live member of, whatever
+ * that membership lets them see of colleagues: an event belongs to the group,
+ * not to a member. Losing or gaining a group is a reset (the caller's own
+ * membership row changed), so a delta never has to tombstone an event that
+ * merely fell out of scope.
+ */
+const readGroupEventsPage = async (
+  context: SyncReadContext,
+  organizationIdByGroupId: Map<string, string>,
+  after: SyncKeyset | null,
+  limit: number
+) => {
+  if (context.scope.groupIds.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(groupEvents)
+    .where(
+      and(
+        inArray(groupEvents.groupId, context.scope.groupIds),
+        context.liveOnly ? isNull(groupEvents.deletedAt) : undefined,
+        inWindow(groupEvents.updatedAt, context.window),
+        afterKeyset(groupEvents.updatedAt, groupEvents.id, after)
+      )
+    )
+    .orderBy(asc(groupEvents.updatedAt), asc(groupEvents.id))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    key: { updatedAt: row.updatedAt, id: row.id },
+    row: {
+      id: row.id,
+      groupId: row.groupId,
+      organizationId: organizationIdByGroupId.get(row.groupId)!,
+      createdByUserId: row.createdByUserId,
+      title: row.title,
+      note: row.note,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      startTime: clock(row.startTime),
+      endTime: clock(row.endTime),
+      repeatFreq: row.repeatFreq,
+      repeatInterval: row.repeatInterval,
+      repeatWeekdays: row.repeatWeekdays,
+      repeatMonthlyMode: row.repeatMonthlyMode,
+      repeatUntil: row.repeatUntil,
+      skippedDates: [...row.skippedDates].sort(),
+      recurringEventId: row.recurringEventId,
+      originalDate: row.originalDate,
+      deletedAt: toIso(row.deletedAt),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    } satisfies SyncGroupEventRow,
+  }));
+};
+
 /**
  * Whether the birthday's owner holds a membership row in one of the groups:
  * live only, or any row that changed inside the window, a removal included.
@@ -913,6 +1009,11 @@ const buildReaders = (
         readVacationsPage(context, await organizationIdByGroupId(), after, limit),
     },
     {
+      table: "groupEvents",
+      read: async (after, limit) =>
+        readGroupEventsPage(context, await organizationIdByGroupId(), after, limit),
+    },
+    {
       table: "birthdays",
       read: async (after, limit) =>
         readBirthdaysPage(context, await birthdayGroups(), after, limit),
@@ -951,6 +1052,7 @@ const buildEnvelope = (payload: {
   userYearQuotas: rowsOf<SyncUserYearQuotaRow>(payload.page, "userYearQuotas"),
   bankHolidays: rowsOf<SyncBankHolidayRow>(payload.page, "bankHolidays"),
   vacations: rowsOf<SyncVacationRow>(payload.page, "vacations"),
+  groupEvents: rowsOf<SyncGroupEventRow>(payload.page, "groupEvents"),
   birthdays: rowsOf<SyncBirthdayRow>(payload.page, "birthdays"),
 });
 

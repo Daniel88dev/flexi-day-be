@@ -45,6 +45,7 @@ const ENVELOPE_KEYS = [
   "userYearQuotas",
   "bankHolidays",
   "vacations",
+  "groupEvents",
   "birthdays",
 ];
 

@@ -56,6 +56,13 @@ describe("sync cursor codec", () => {
     expect(decodeSyncCursor(encoded, cursorTime)).toBeNull();
   });
 
+  it("rejects a version 3 cursor, minted before the pull carried group events", () => {
+    const cursorTime = new Date("2026-10-18T10:00:00.000Z");
+    const encoded = encodeBody({ v: 3, t: cursorTime.toISOString() });
+
+    expect(decodeSyncCursor(encoded, cursorTime)).toBeNull();
+  });
+
   it("rejects a cursor whose time is missing or unparseable", () => {
     expect(decodeSyncCursor(encodeBody({ v: SYNC_CURSOR_VERSION }))).toBeNull();
     expect(decodeSyncCursor(encodeBody({ v: SYNC_CURSOR_VERSION, t: "yesterday" }))).toBeNull();
