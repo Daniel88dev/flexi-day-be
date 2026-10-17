@@ -71,7 +71,8 @@ admin turned the features off.
    due and redirects to `{APP_URL}/calendar-sync/?connected=<provider>&config=<id>`. Every failure
    redirects with `?error=` and one of `state_invalid`, `provider_off`, `consent_denied`,
    `provider_error`, `config_not_found`, `team_scope`, `target_exists`, `scope_denied`,
-   `exchange_failed` or `server_error`.
+   `exchange_failed` or `server_error`, plus `provider=<provider>` from the callback path, so the
+   web can word a Microsoft `consent_denied` differently even when consent finished in another tab.
 4. **Refresh.** A token within 60 seconds of expiry is refreshed before use. Microsoft rotates the
    refresh token on every refresh, and the new one is saved.
 5. **Needs reconnect.** A refresh that fails with `invalid_grant`, or Microsoft's
