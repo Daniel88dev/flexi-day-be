@@ -65,6 +65,7 @@ esac
 
 need op
 need aws
+need openssl
 
 aws secretsmanager describe-secret \
   --secret-id "$SECRET_ID" \
@@ -76,6 +77,10 @@ key="$(op document get "$ITEM" --vault "$VAULT")" ||
 
 [[ "$key" == "-----BEGIN PRIVATE KEY-----"* ]] ||
   die "\"$ITEM\" is not a PEM private key; nothing uploaded"
+
+# A truncated key keeps its header, so parse the whole thing.
+printf '%s' "$key" | openssl pkey -noout 2>/dev/null ||
+  die "\"$ITEM\" does not parse as a private key; nothing uploaded"
 
 version="$(printf '%s' "$key" | aws secretsmanager put-secret-value \
   --secret-id "$SECRET_ID" \

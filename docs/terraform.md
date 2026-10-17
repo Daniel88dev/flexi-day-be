@@ -56,8 +56,8 @@ switch is unset. Guard the rest with `lifecycle { precondition { ... } }` in `se
 half-filled config fails at plan time rather than putting App Runner into a boot loop against
 `config.ts`.
 
-The APNs slot breaks this shape: it has no `count`, and `apns_key_id` switches only its App Runner
-wiring. [The Apple `.p8` keys](#the-apple-p8-keys) explains why.
+The two `.p8` slots break this shape: neither has a `count`, and `apple_client_id` and `apns_key_id`
+switch only their App Runner wiring. [The Apple `.p8` keys](#the-apple-p8-keys) explains why.
 
 ### The Apple `.p8` keys
 
@@ -68,7 +68,8 @@ plan or `terraform.tfvars`, and no `TF_VAR_*` carries one.
 
 `terraform/scripts/put-p8.sh apple|apns` uploads a key. It reads the 1Password Document item by
 title from the `Development` vault (`Flexi Day Sign in with Apple key` or `Flexi Day APNs key`),
-refuses anything that doesn't start with `-----BEGIN PRIVATE KEY-----`, and pipes the key into
+refuses anything that doesn't start with `-----BEGIN PRIVATE KEY-----` or that `openssl pkey` can't
+parse, and pipes the key into
 `aws secretsmanager put-secret-value --secret-string file:///dev/stdin`, so the key never lands in
 argv, shell history or the terminal. It prints the next step. App Runner reads a secret only at
 deployment, so a new value waits for the next one: a changed key id in `terraform.tfvars` redeploys
@@ -92,8 +93,9 @@ written before this change still hold the old Apple key, like every other secret
 other three ids, because `buildSocialProviders` registers Apple only when all five reach it. The
 key itself goes up with `put-p8.sh apple`.
 
-Switching Apple on in a fresh environment creates the slot and its check in the same apply, so that
-apply stops on the empty slot. Run `put-p8.sh apple`, then `terraform apply` again.
+The slot exists whether or not the switch is set, so in a fresh environment the key goes up before
+Apple is switched on: `terraform apply`, then `put-p8.sh apple`, then set `apple_client_id` and
+apply again. With the switch set and the slot empty, the plan stops before it changes anything.
 
 The key used to be written by Terraform from `TF_VAR_apple_private_key`. A `removed` block with
 `destroy = false` forgets that secret version, so the live value stays and nothing is uploaded

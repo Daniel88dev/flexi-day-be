@@ -139,7 +139,7 @@ resource "aws_apprunner_service" "main" {
             MICROSOFT_CLIENT_SECRET = aws_secretsmanager_secret.microsoft_client_secret[0].arn
           } : {},
           var.apple_client_id != "" ? {
-            APPLE_PRIVATE_KEY = aws_secretsmanager_secret.apple_private_key[0].arn
+            APPLE_PRIVATE_KEY = aws_secretsmanager_secret.apple_private_key.arn
           } : {},
           var.apns_key_id != "" ? {
             APNS_PRIVATE_KEY = aws_secretsmanager_secret.apns_private_key.arn

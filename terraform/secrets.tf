@@ -128,9 +128,9 @@ resource "aws_secretsmanager_secret_version" "microsoft_client_secret" {
 # postcondition stops the plan when the slot is empty or holds something other
 # than a PEM private key. docs/terraform.md has the runbooks.
 
-# Sign in with Apple, switched by apple_client_id like Google and Microsoft.
+# Sign in with Apple. Like the APNs slot it always exists, so the key can go up
+# before apple_client_id switches it into the service.
 resource "aws_secretsmanager_secret" "apple_private_key" {
-  count                   = var.apple_client_id != "" ? 1 : 0
   name                    = "${var.project_name}-${var.environment}-apple-private-key"
   description             = "Sign in with Apple private key (.p8) for ${var.project_name}"
   recovery_window_in_days = 0
@@ -144,10 +144,15 @@ resource "aws_secretsmanager_secret" "apple_private_key" {
   # service whose Apple button 500s.
   lifecycle {
     precondition {
-      condition     = var.apple_team_id != "" && var.apple_key_id != "" && var.apple_app_bundle_identifier != ""
+      condition     = var.apple_client_id == "" || (var.apple_team_id != "" && var.apple_key_id != "" && var.apple_app_bundle_identifier != "")
       error_message = "apple_team_id, apple_key_id and apple_app_bundle_identifier are required when apple_client_id is set."
     }
   }
+}
+
+moved {
+  from = aws_secretsmanager_secret.apple_private_key[0]
+  to   = aws_secretsmanager_secret.apple_private_key
 }
 
 # The key used to be written from TF_VAR_apple_private_key. Forgetting the
@@ -162,7 +167,7 @@ removed {
 
 ephemeral "aws_secretsmanager_secret_version" "apple_private_key" {
   count     = var.apple_client_id != "" ? 1 : 0
-  secret_id = aws_secretsmanager_secret.apple_private_key[0].id
+  secret_id = aws_secretsmanager_secret.apple_private_key.id
 
   lifecycle {
     postcondition {
