@@ -103,10 +103,11 @@ describe("GET /api/users/me/pending-requests", () => {
   });
 
   it("returns a plain member's pending days collapsed into one range", async () => {
+    const requestId = uuidv4();
     const ids = [
-      await book(mia.id, teamA.id, "2026-03-09"),
-      await book(mia.id, teamA.id, "2026-03-10"),
-      await book(mia.id, teamA.id, "2026-03-11"),
+      await book(mia.id, teamA.id, "2026-03-09", { requestId }),
+      await book(mia.id, teamA.id, "2026-03-10", { requestId }),
+      await book(mia.id, teamA.id, "2026-03-11", { requestId }),
     ];
 
     const ranges = await pendingRequestsOf(mia.id);
@@ -123,7 +124,7 @@ describe("GET /api/users/me/pending-requests", () => {
     expect(ranges[0]?.vacationIds).toEqual(ids);
   });
 
-  it("splits ranges at a gap and keeps groups apart", async () => {
+  it("keeps separate requests and groups apart", async () => {
     await book(mia.id, teamA.id, "2026-03-09");
     await book(mia.id, teamA.id, "2026-03-11");
     await book(mia.id, allEng.id, "2026-03-10");
@@ -138,6 +139,31 @@ describe("GET /api/users/me/pending-requests", () => {
       ])
     );
     expect(ranges).toHaveLength(3);
+  });
+
+  it("returns one item per request, across a weekend and apart from an adjacent request", async () => {
+    const trip = uuidv4();
+    const other = uuidv4();
+    const tripIds = [
+      await book(mia.id, teamA.id, "2026-12-24", { requestId: trip }),
+      await book(mia.id, teamA.id, "2026-12-25", { requestId: trip }),
+      await book(mia.id, teamA.id, "2026-12-28", { requestId: trip }),
+    ];
+    const otherIds = [await book(mia.id, teamA.id, "2026-12-29", { requestId: other })];
+
+    const ranges = await pendingRequestsOf(mia.id);
+
+    expect(
+      ranges.map(({ vacationIds, from, to, businessDays }) => ({
+        vacationIds,
+        from,
+        to,
+        businessDays,
+      }))
+    ).toEqual([
+      { vacationIds: tripIds, from: "2026-12-24", to: "2026-12-28", businessDays: 3 },
+      { vacationIds: otherIds, from: "2026-12-29", to: "2026-12-29", businessDays: 1 },
+    ]);
   });
 
   it("never returns decided, cancelled or other people's rows", async () => {
@@ -179,5 +205,80 @@ describe("GET /api/users/me/pending-requests", () => {
 
     expect(pending.flatMap((range) => range.vacationIds)).toEqual([own]);
     expect(approvals.flatMap((range) => range.vacationIds)).not.toContain(own);
+  });
+
+  describe("GET /api/users/me/approvals", () => {
+    const dashboardCountOf = async (userId: string): Promise<number> => {
+      const response = await request(server.url)
+        .get("/api/users/me/dashboard-summary")
+        .set("Cookie", await authCookieFor(userId))
+        .expect(200);
+      return (response.body as { pendingApprovalsCount: number }).pendingApprovalsCount;
+    };
+
+    it("lists a request across a weekend as one item, and the dashboard counts one", async () => {
+      const requestId = uuidv4();
+      const ids = [
+        await book(mia.id, teamA.id, "2026-12-24", { requestId, note: "Christmas" }),
+        await book(mia.id, teamA.id, "2026-12-25", { requestId, note: "Christmas" }),
+        await book(mia.id, teamA.id, "2026-12-28", { requestId, note: "Christmas" }),
+      ];
+
+      const approvals = await approvalsOf(manager.id);
+
+      expect(approvals).toHaveLength(1);
+      expect(approvals[0]).toMatchObject({
+        vacationIds: ids,
+        from: "2026-12-24",
+        to: "2026-12-28",
+        businessDays: 3,
+        note: "Christmas",
+      });
+      expect(await dashboardCountOf(manager.id)).toBe(1);
+    });
+
+    it("keeps two requests on adjacent days as two items with their own notes", async () => {
+      const first = uuidv4();
+      const second = uuidv4();
+      const firstIds = [
+        await book(mia.id, teamA.id, "2026-12-14", { requestId: first, note: "first" }),
+        await book(mia.id, teamA.id, "2026-12-15", { requestId: first, note: "first" }),
+      ];
+      const secondIds = [
+        await book(mia.id, teamA.id, "2026-12-16", { requestId: second, note: "second" }),
+        await book(mia.id, teamA.id, "2026-12-17", { requestId: second, note: "second" }),
+      ];
+
+      const approvals = await approvalsOf(manager.id);
+
+      expect(approvals.map(({ vacationIds, note }) => ({ vacationIds, note }))).toEqual([
+        { vacationIds: firstIds, note: "first" },
+        { vacationIds: secondIds, note: "second" },
+      ]);
+      expect(await dashboardCountOf(manager.id)).toBe(2);
+    });
+
+    it("covers only the pending days of a partly decided request", async () => {
+      const requestId = uuidv4();
+      const mon = await book(mia.id, teamA.id, "2026-12-14", { requestId });
+      await book(mia.id, teamA.id, "2026-12-15", {
+        requestId,
+        approvedAt: new Date(),
+        approvedBy: manager.id,
+      });
+      await book(mia.id, teamA.id, "2026-12-16", { requestId, deletedAt: new Date() });
+      const thu = await book(mia.id, teamA.id, "2026-12-17", { requestId });
+
+      const approvals = await approvalsOf(manager.id);
+
+      expect(approvals).toHaveLength(1);
+      expect(approvals[0]).toMatchObject({
+        vacationIds: [mon, thu],
+        from: "2026-12-14",
+        to: "2026-12-17",
+        businessDays: 2,
+      });
+      expect(await dashboardCountOf(manager.id)).toBe(1);
+    });
   });
 });

@@ -574,11 +574,11 @@ export const vacationRouter = (): Router => {
    *       - Vacations
    *     summary: Atomically approve many vacation rows in one transaction
    *     description: |
-   *       Used together with `/api/users/me/approvals`, which returns
-   *       contiguous day rows collapsed into a single approval entry whose
-   *       `vacationIds` array names every row in the range. Sending that
-   *       array here guarantees the whole range is approved together or not
-   *       at all.
+   *       Used together with `/api/users/me/approvals`, which returns the
+   *       pending days of each request collapsed into a single approval entry
+   *       whose `vacationIds` array names every still-pending row of the
+   *       request. Sending that array here guarantees those rows are approved
+   *       together or not at all.
    *
    *       An optional `reason` is stored on every approval event and shown in
    *       the request history. The approval notification does not carry it.

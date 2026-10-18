@@ -36,7 +36,13 @@ export const usersRouter = (): Router => {
    *       - bearerAuth: []
    *     responses:
    *       '200':
-   *         description: Array of pending approvals with contiguous days collapsed
+   *         description: Array of pending approvals, one item per request
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/PendingRange'
    */
   app.get("/me/approvals", tryCatch(handleGetMyApprovals));
 
@@ -49,9 +55,8 @@ export const usersRouter = (): Router => {
    *     summary: List the caller's own requests still waiting on an approver
    *     description: |
    *       The caller's own pending rows (not approved, rejected or cancelled)
-   *       in every live group, with contiguous days of the same group and
-   *       record type collapsed into one range exactly as
-   *       `/api/users/me/approvals` collapses them. Read-only: the caller
+   *       in every live group, with the pending days of each request collapsed
+   *       into one range exactly as `/api/users/me/approvals` collapses them. Read-only: the caller
    *       cannot decide these.
    *
    *       A row the caller may decide themselves (they have approver access
@@ -89,7 +94,7 @@ export const usersRouter = (): Router => {
    *       properties:
    *         vacationIds:
    *           type: array
-   *           description: Every vacation row in the range, oldest day first.
+   *           description: Every still-pending vacation row of the request, oldest day first.
    *           items:
    *             type: string
    *             format: uuid
@@ -109,10 +114,12 @@ export const usersRouter = (): Router => {
    *         to:
    *           type: string
    *           format: date
-   *           description: Inclusive.
+   *           description: The request's last pending day, inclusive.
    *         businessDays:
    *           type: integer
-   *           description: Monday to Friday days from `from` to `to`, inclusive.
+   *           description: |
+   *             Days the range books, one per row. Weekends and holidays the
+   *             request skipped between `from` and `to` are not counted.
    *         note:
    *           type: string
    *           nullable: true
