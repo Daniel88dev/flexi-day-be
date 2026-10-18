@@ -58,7 +58,7 @@ describe("markCalendarTargetsDirty", () => {
       scope,
       token: `flx_live_${uuidv4().replaceAll("-", "")}`,
       connectionId,
-      timeZone: connectionId ? "Europe/Prague" : null,
+      timeZone: "Europe/Prague",
     });
     await db.insert(calendarSyncTypes).values(
       types.map((vacationType) => ({

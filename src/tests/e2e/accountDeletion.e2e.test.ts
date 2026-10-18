@@ -893,6 +893,7 @@ describe("account deletion", () => {
         providerEventIds.map((providerEventId) => ({
           id: uuidv4(),
           calendarSyncId: configId,
+          sourceKey: `v:${uuidv4()}`,
           providerEventId,
           kind: calendarSyncEventKind.Absence,
           contentHash: "hash",

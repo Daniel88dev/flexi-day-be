@@ -640,7 +640,7 @@ export const calendarTargetViews = async (
       provider: connection.provider,
       status,
       capability: connection.capability,
-      timeZone: config.timeZone ?? "UTC",
+      timeZone: config.timeZone,
       lastSyncedAt: config.lastSyncedAt ? config.lastSyncedAt.toISOString() : null,
       lastError: config.lastError,
       syncing: status === calendarConnectionStatus.Active && config.syncDueAt !== null,

@@ -147,7 +147,7 @@ describe("Calendar direct sync data model E2E", () => {
     expect(revived?.id).toBeDefined();
   });
 
-  it("keeps one ledger row per target and vacation, and outlives a hard-deleted vacation", async () => {
+  it("keeps one ledger row per target and source, and outlives a hard-deleted vacation", async () => {
     const vacationId = uuidv4();
     await db.insert(vacation).values({
       id: vacationId,
@@ -161,6 +161,7 @@ describe("Calendar direct sync data model E2E", () => {
     const ledgerRow = () => ({
       id: uuidv4(),
       calendarSyncId: meConfigId,
+      sourceKey: `v:${vacationId}`,
       vacationId,
       kind: calendarSyncEventKind.Absence,
       contentHash: "hash",
@@ -175,7 +176,7 @@ describe("Calendar direct sync data model E2E", () => {
       .select()
       .from(calendarSyncEvents)
       .where(eq(calendarSyncEvents.id, first.id));
-    expect(orphan?.vacationId).toBeNull();
+    expect(orphan).toMatchObject({ vacationId: null, sourceKey: `v:${vacationId}` });
   });
 
   it("detaches the target when its connection is deleted", async () => {

@@ -40,6 +40,8 @@ export const calendarConnectionStatusEnum = pgEnum(
 export enum calendarSyncEventKind {
   Absence = "ABSENCE",
   HomeOffice = "HOME_OFFICE",
+  GroupEvent = "GROUP_EVENT",
+  Birthday = "BIRTHDAY",
 }
 
 export const calendarSyncEventKindEnum = pgEnum(
@@ -84,7 +86,7 @@ export const calendarConnection = pgTable(
   ]
 );
 
-/** The sync ledger: what the app wrote at the provider for each target and day row. */
+/** The sync ledger: what the app wrote at the provider for each target and source record. */
 export const calendarSyncEvents = pgTable(
   "calendar_sync_events",
   {
@@ -92,8 +94,14 @@ export const calendarSyncEvents = pgTable(
     calendarSyncId: text("calendar_sync_id")
       .notNull()
       .references(() => calendarSync.id, { onDelete: "cascade" }),
+    // `v:<vacationId>`, `ge:<groupEventId>` or `bd:<userId>`, plus `:<n>` when one source writes
+    // several events. It outlives the source's FK column, so a hard delete still leaves the set.
+    sourceKey: text("source_key").notNull(),
     // Null once the vacation row is hard-deleted: the provider event still has to go.
     vacationId: text("vacation_id").references(() => vacation.id, { onDelete: "set null" }),
+    // No FK until `group_events` and `user_birthdays` exist; those tickets add it, `on delete set null`.
+    groupEventId: text("group_event_id"),
+    birthdayUserId: text("birthday_user_id"),
     providerEventId: text("provider_event_id"),
     kind: calendarSyncEventKindEnum("kind").notNull(),
     // Google's `eventType`, which Google never lets an existing event change.
@@ -106,9 +114,9 @@ export const calendarSyncEvents = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("calendar_sync_events_config_vacation_uniq").on(
+    uniqueIndex("calendar_sync_events_config_source_uniq").on(
       table.calendarSyncId,
-      table.vacationId
+      table.sourceKey
     ),
     index("idx_calendar_sync_events_config").on(table.calendarSyncId),
   ]

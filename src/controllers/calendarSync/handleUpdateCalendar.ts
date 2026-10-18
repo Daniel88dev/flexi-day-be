@@ -40,6 +40,11 @@ export const handleUpdateCalendar = async (req: Request, res: Response) => {
       name: data.name,
       scope: data.scope,
       distinguishMine: data.distinguishMine,
+      timeZone: data.timeZone,
+      includeGroupEvents: data.includeGroupEvents,
+      groupEventsColor: data.groupEventsColor,
+      includeBirthdays: data.includeBirthdays,
+      birthdaysColor: data.birthdaysColor,
     },
     teamIds,
     data.types.map((t) => ({

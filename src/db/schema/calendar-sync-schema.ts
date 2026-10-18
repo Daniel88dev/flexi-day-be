@@ -50,7 +50,12 @@ export const calendarSync = pgTable(
     connectionId: text("connection_id").references(() => calendarConnection.id, {
       onDelete: "set null",
     }),
-    timeZone: text("time_zone"),
+    // The zone timed events are written in, for the `.ics` feed and the sync target alike.
+    timeZone: text("time_zone").notNull().default("Europe/Prague"),
+    includeGroupEvents: boolean("include_group_events").notNull().default(false),
+    groupEventsColor: text("group_events_color"),
+    includeBirthdays: boolean("include_birthdays").notNull().default(false),
+    birthdaysColor: text("birthdays_color"),
     syncDueAt: timestamp("sync_due_at", { withTimezone: true }),
     syncAttempts: integer("sync_attempts").notNull().default(0),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),

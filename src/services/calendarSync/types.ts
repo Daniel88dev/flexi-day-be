@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import { timeZoneSchema } from "../calendarConnection/types.js";
 
 /**
  * Swatch palette keys shared with the front-end builder. Colors are stored as
@@ -31,7 +32,11 @@ export type CalendarSyncRecord = {
   token: string;
   lastFetchedAt: Date | null;
   connectionId: string | null;
-  timeZone: string | null;
+  timeZone: string;
+  includeGroupEvents: boolean;
+  groupEventsColor: string | null;
+  includeBirthdays: boolean;
+  birthdaysColor: string | null;
   syncDueAt: Date | null;
   syncAttempts: number;
   lastSyncedAt: Date | null;
@@ -54,10 +59,20 @@ export type CalendarSyncFull = CalendarSyncRecord & {
   types: CalendarSyncTypeEntry[];
 };
 
+/** Zone of a config created without one, and of every config that predates zones. */
+export const DEFAULT_CALENDAR_SYNC_TIME_ZONE = "Europe/Prague";
+
+/** Feed settings beyond the record types: the zone and the Group events and Birthdays rows. */
+export type CalendarSyncSettings = Pick<
+  CalendarSyncRecord,
+  "timeZone" | "includeGroupEvents" | "groupEventsColor" | "includeBirthdays" | "birthdaysColor"
+>;
+
 export type CalendarSyncInsert = Pick<
   CalendarSyncRecord,
   "id" | "userId" | "name" | "scope" | "distinguishMine" | "token"
->;
+> &
+  Partial<CalendarSyncSettings>;
 
 /**
  * A time-off record as it appears in a feed, enriched with the owner's display
@@ -81,32 +96,62 @@ const typeEntrySchema = z.object({
   mineColor: z.enum(CALENDAR_SYNC_PALETTE).optional(),
 });
 
+const paletteColor = z.enum(CALENDAR_SYNC_PALETTE).nullable();
+
+const configShape = {
+  name: z.string().trim().min(1).max(120),
+  scope: z.enum(calendarSyncScope).default(calendarSyncScope.Me),
+  distinguishMine: z.boolean().default(false),
+  teamIds: z.array(z.uuid()).default([]),
+  types: z.array(typeEntrySchema).min(1),
+};
+
+type ConfigShape = z.output<z.ZodObject<typeof configShape>>;
+
+const withConfigRules = <T extends z.ZodType<ConfigShape>>(schema: T) =>
+  schema
+    .refine((data) => data.scope !== calendarSyncScope.Team || data.teamIds.length > 0, {
+      message: "At least one team is required for team scope",
+      path: ["teamIds"],
+    })
+    .refine((data) => new Set(data.types.map((t) => t.type)).size === data.types.length, {
+      message: "Duplicate record types are not allowed",
+      path: ["types"],
+    });
+
 /**
  * Body for creating a calendar-sync config. `teamIds` is required for `TEAM`
  * scope and ignored (but stored) for `ME`. At least one type must be included.
  */
-export const validateCreateCalendarSync = z
-  .object({
-    name: z.string().trim().min(1).max(120),
-    scope: z.enum(calendarSyncScope).default(calendarSyncScope.Me),
-    distinguishMine: z.boolean().default(false),
-    teamIds: z.array(z.uuid()).default([]),
-    types: z.array(typeEntrySchema).min(1),
+export const validateCreateCalendarSync = withConfigRules(
+  z.object({
+    ...configShape,
+    timeZone: timeZoneSchema.default(DEFAULT_CALENDAR_SYNC_TIME_ZONE),
+    includeGroupEvents: z.boolean().default(false),
+    groupEventsColor: paletteColor.default(null),
+    includeBirthdays: z.boolean().default(false),
+    birthdaysColor: paletteColor.default(null),
   })
-  .refine((data) => data.scope !== calendarSyncScope.Team || data.teamIds.length > 0, {
-    message: "At least one team is required for team scope",
-    path: ["teamIds"],
-  })
-  .refine((data) => new Set(data.types.map((t) => t.type)).size === data.types.length, {
-    message: "Duplicate record types are not allowed",
-    path: ["types"],
-  });
+);
 
 export type ValidatedCreateCalendarSync = z.infer<typeof validateCreateCalendarSync>;
 
-/** Update accepts the same shape as create; the whole config is replaced. */
-export const validateUpdateCalendarSync = validateCreateCalendarSync;
-export type ValidatedUpdateCalendarSync = ValidatedCreateCalendarSync;
+/**
+ * Update replaces the name, scope, teams and types. The zone and the Group
+ * events and Birthdays settings change only when the body names them, so a
+ * client that predates them leaves them as they are.
+ */
+export const validateUpdateCalendarSync = withConfigRules(
+  z.object({
+    ...configShape,
+    timeZone: timeZoneSchema.optional(),
+    includeGroupEvents: z.boolean().optional(),
+    groupEventsColor: paletteColor.optional(),
+    includeBirthdays: z.boolean().optional(),
+    birthdaysColor: paletteColor.optional(),
+  })
+);
+export type ValidatedUpdateCalendarSync = z.infer<typeof validateUpdateCalendarSync>;
 
 export type SyncOutcome =
   | { status: "done" }

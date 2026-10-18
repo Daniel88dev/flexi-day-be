@@ -26,6 +26,7 @@ import type { CalendarDriver, DriverContext, DriverFailure } from "./drivers/typ
 import { buildDesired, type DesiredEvent } from "./eventBuilder.js";
 import { userRecordTypeLabels, type RecordTypeLabels } from "../recordType/recordTypeLabels.js";
 import type { CalendarFeedRecord, SyncOutcome } from "./types.js";
+import { ledgerSourceOf } from "./sourceKey.js";
 
 const DONE: SyncOutcome = { status: "done" };
 const LEASE = sql`now() + interval '10 minutes'`;
@@ -169,7 +170,7 @@ const insertFresh = async (run: Run, record: CalendarFeedRecord): Promise<Failur
   await db.insert(calendarSyncEvents).values({
     id: ledgerId,
     calendarSyncId: run.configId,
-    vacationId: record.id,
+    ...ledgerSourceOf(record),
     ...ledgerContent(event),
   });
   return sendInsert(run, ledgerId, event);
@@ -225,23 +226,22 @@ const writeEvent = async (
 
 const reconcile = async (run: Run): Promise<Failure> => {
   const ledger = await loadLedger(run.configId);
-  const byVacation = new Map(
-    ledger.flatMap((row) => (row.vacationId ? [[row.vacationId, row] as const] : []))
-  );
+  const bySource = new Map(ledger.map((row) => [row.sourceKey, row] as const));
 
   const desired = new Map<string, { record: CalendarFeedRecord; event: DesiredEvent }>();
   for (const record of run.records) {
-    const event = build(run, record, byVacation.get(record.id)?.id ?? generateRandomUUID());
-    if (event) desired.set(record.id, { record, event });
+    const { sourceKey } = ledgerSourceOf(record);
+    const event = build(run, record, bySource.get(sourceKey)?.id ?? generateRandomUUID());
+    if (event) desired.set(sourceKey, { record, event });
   }
 
   for (const row of ledger) {
-    if (row.vacationId && desired.has(row.vacationId)) continue;
+    if (desired.has(row.sourceKey)) continue;
     const failure = await removeEvent(run, row);
     if (failure) return failure;
   }
-  for (const { record, event } of desired.values()) {
-    const failure = await writeEvent(run, record, event, byVacation.get(record.id));
+  for (const [sourceKey, { record, event }] of desired) {
+    const failure = await writeEvent(run, record, event, bySource.get(sourceKey));
     if (failure) return failure;
   }
   return undefined;
@@ -387,14 +387,7 @@ const syncLocked = async (configId: string, connectionId: string): Promise<SyncO
       // Read under the lease: another instance may have rotated the tokens.
       const connection = await loadConnection(connectionId);
       if (!connection) return DONE;
-      return await runSync(
-        configId,
-        connection,
-        driver,
-        target.timeZone ?? "UTC",
-        target.userId,
-        startedAt
-      );
+      return await runSync(configId, connection, driver, target.timeZone, target.userId, startedAt);
     } finally {
       await releaseLease(connectionId);
     }
@@ -522,7 +515,6 @@ const purgeLocked = async (configId: string, connectionId: string | null | undef
       .update(calendarSync)
       .set({
         connectionId: null,
-        timeZone: null,
         syncDueAt: null,
         syncAttempts: 0,
         lastSyncedAt: null,
@@ -534,6 +526,7 @@ const purgeLocked = async (configId: string, connectionId: string | null | undef
 
 /**
  * Removes everything the app wrote for one target and switches the target off.
+ * The zone stays: it is the `.ics` feed's zone too.
  * Without a usable token (needs reconnect, provider switched off, a failed
  * refresh, a revoked grant) the ledger is dropped locally. Rows whose delete
  * keeps failing for any other reason stay in the ledger; the target is

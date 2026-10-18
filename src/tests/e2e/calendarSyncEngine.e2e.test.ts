@@ -174,6 +174,9 @@ describe("calendar sync engine on the fake driver", () => {
     ]);
     const rows = await ledger();
     expect(rows.map((row) => row.vacationId).sort()).toEqual([fullDay, homeOffice].sort());
+    expect(rows.map((row) => row.sourceKey).sort()).toEqual(
+      [`v:${fullDay}`, `v:${homeOffice}`].sort()
+    );
     expect(rows.every((row) => row.providerEventId?.startsWith("fake-google-"))).toBe(true);
     expect(rows.find((row) => row.vacationId === homeOffice)).toMatchObject({
       kind: calendarSyncEventKind.HomeOffice,
@@ -428,7 +431,7 @@ describe("calendar sync engine on the fake driver", () => {
     expect((await target()).syncDueAt).toBeNull();
   });
 
-  it("purges exactly the ledger's events and switches the target off", async () => {
+  it("purges exactly the ledger's events and switches the target off, keeping the feed's zone", async () => {
     await connect(calendarProvider.Google);
     await addVacation(day(2));
     await addVacation(day(3));
@@ -437,6 +440,7 @@ describe("calendar sync engine on the fake driver", () => {
     await db.insert(calendarSyncEvents).values({
       id: uuidv4(),
       calendarSyncId: configId,
+      sourceKey: `v:${uuidv4()}`,
       kind: calendarSyncEventKind.Absence,
       contentHash: "never-confirmed",
     });
@@ -448,7 +452,7 @@ describe("calendar sync engine on the fake driver", () => {
     expect(await ledger()).toEqual([]);
     expect(await target()).toMatchObject({
       connectionId: null,
-      timeZone: null,
+      timeZone: "Europe/Prague",
       syncDueAt: null,
       lastSyncedAt: null,
     });
