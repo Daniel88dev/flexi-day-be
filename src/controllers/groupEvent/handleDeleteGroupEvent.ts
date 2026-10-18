@@ -12,22 +12,26 @@ import {
   validateGroupEventId,
   type GroupEventWriteResult,
 } from "../../services/groupEvent/types.js";
+import { markGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 export const handleDeleteGroupEvent = async (req: Request, res: Response) => {
   const auth = getAuth(req);
   const id = validateGroupEventId.parse(req.params.id);
   const query = validateDeleteGroupEventQuery.parse(req.query);
 
-  const result: GroupEventWriteResult = await db.transaction(async (tx) => {
+  const { groupId, ...result } = await db.transaction(async (tx) => {
     const { event, oneOffs, ...standing } = await loadEditableGroupEvent(auth.userId, id, tx);
     const plan = planGroupEventDelete(event, oneOffs, query);
     const rows = await applyGroupEventPlan(plan, tx);
-    return {
+    const written: GroupEventWriteResult & { groupId: string } = {
+      groupId: event.groupId,
       droppedOneOffs: plan.droppedOneOffs,
       events: await groupEventViewsFor(auth.userId, standing, rows, tx),
       deletedIds: plan.tombstones,
     };
+    return written;
   });
+  await markGroupEventTargetsDirty(groupId);
 
   return res.status(200).json(result);
 };

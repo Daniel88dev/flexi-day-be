@@ -4,12 +4,22 @@ import AppError from "../../utils/appError.js";
 import { buildIcsCalendar, type IcsEvent } from "../../utils/ics.js";
 import {
   birthdayLabel,
+  groupEventGroupLine,
   recordTypeLabels,
   type RecordTypeLabels,
 } from "../../services/recordType/recordTypeLabels.js";
 import { getUserLanguage } from "../../services/userSettings/userSettingsServices.js";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
-import type { BirthdayFeedRecord, VacationFeedRecord } from "../../services/calendarSync/types.js";
+import type {
+  BirthdayFeedRecord,
+  CalendarFeedRecord,
+  GroupEventFeedRecord,
+  VacationFeedRecord,
+} from "../../services/calendarSync/types.js";
+import {
+  groupEventDescription,
+  groupEventIcs,
+} from "../../services/calendarSync/groupEventShape.js";
 import {
   getCalendarSyncByToken,
   getFeedRecords,
@@ -46,6 +56,22 @@ const birthdayEvent = (record: BirthdayFeedRecord, label: string, team: boolean)
   },
 });
 
+/** A group event in the feed's own zone (D7), with the line naming its group. */
+const groupEventEvent = (
+  record: GroupEventFeedRecord,
+  groupLine: string,
+  timeZone: string
+): IcsEvent =>
+  groupEventIcs(
+    record,
+    {
+      uid: `ge-${record.id}@flexiday`,
+      summary: record.title,
+      description: groupEventDescription(record, groupLine),
+    },
+    timeZone
+  );
+
 /**
  * Public, token-authenticated iCalendar feed. Mounted OUTSIDE `authSession`:
  * the token in the URL is the only credential, so calendar clients (which
@@ -73,11 +99,21 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
   const labels = recordTypeLabels(language);
   const team = config.scope === calendarSyncScope.Team;
 
-  const events: IcsEvent[] = records.map((record) =>
-    record.kind === "birthday"
-      ? birthdayEvent(record, birthdayLabel(language), team)
-      : vacationEvent(record, labels)
-  );
+  const toEvent = (record: CalendarFeedRecord): IcsEvent => {
+    switch (record.kind) {
+      case "birthday":
+        return birthdayEvent(record, birthdayLabel(language), team);
+      case "groupEvent":
+        return groupEventEvent(
+          record,
+          groupEventGroupLine(language, record.groupName),
+          config.timeZone
+        );
+      default:
+        return vacationEvent(record, labels);
+    }
+  };
+  const events = records.map(toEvent);
 
   const body = buildIcsCalendar({ name: config.name, events });
 

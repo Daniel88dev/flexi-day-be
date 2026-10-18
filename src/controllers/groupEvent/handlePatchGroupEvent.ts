@@ -14,23 +14,27 @@ import {
   type GroupEventEditRequest,
   type GroupEventWriteResult,
 } from "../../services/groupEvent/types.js";
+import { markGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 export const handlePatchGroupEvent = async (req: Request, res: Response) => {
   const auth = getAuth(req);
   const id = validateGroupEventId.parse(req.params.id);
   const body = req.body as GroupEventEditRequest;
 
-  const result: GroupEventWriteResult = await db.transaction(async (tx) => {
+  const { groupId, ...result } = await db.transaction(async (tx) => {
     const { event, oneOffs, ...standing } = await loadEditableGroupEvent(auth.userId, id, tx);
     const plan = planGroupEventEdit(event, oneOffs, body, generateRandomUUID);
     if (plan.splits) await assertGroupEventsActive(event.groupId, tx);
     const rows = await applyGroupEventPlan(plan, tx);
-    return {
+    const written: GroupEventWriteResult & { groupId: string } = {
+      groupId: event.groupId,
       droppedOneOffs: plan.droppedOneOffs,
       events: await groupEventViewsFor(auth.userId, standing, rows, tx),
       deletedIds: plan.tombstones,
     };
+    return written;
   });
+  await markGroupEventTargetsDirty(groupId);
 
   return res.status(200).json(result);
 };

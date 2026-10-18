@@ -18,6 +18,7 @@ import {
   lockOrganization,
   removeOrganizationAdmin,
 } from "../../services/organization/organizationServices.js";
+import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 /**
  * Removes a member from a group (soft delete). This is also how a downgraded
@@ -119,6 +120,7 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
 
     return row;
   });
+  await markMemberGroupEventTargetsDirty(userId);
 
   return res.status(200).json(removed);
 };

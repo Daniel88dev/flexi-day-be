@@ -3,7 +3,8 @@
 The rules behind the Calendar connection, Sync target, Sync ledger and Capability rows in
 [`GLOSSARY.md`](../GLOSSARY.md). A user on a paid plan connects their own Google or Microsoft account
 from a `ME` calendar config, and the backend writes that user's approved absences into the account's
-primary calendar within seconds of a change. The `.ics` feed is untouched and stays free.
+primary calendar within seconds of a change, along with the events of the groups the user is in.
+The `.ics` feed is untouched and stays free.
 
 Code lives in `src/services/calendarConnection/` (consent, tokens, targets) and
 `src/services/calendarSync/` (builder, drivers, engine, queue, dirty marking). The invariants that
@@ -14,8 +15,10 @@ keep teammates' records out of a personal calendar are in
 
 The engine writes the records the `.ics` feed would show for the same config: `getFeedRecords` on a
 `ME` config. That is the owner's approved, live rows, twelve months back and everything ahead, and,
-with the config's Birthdays row on, the owner's own birthday. One provider event stands for one day
-row. Attendance sessions and colleagues' birthdays are never written.
+with the config's Group events row on, the events of every group the owner is a live member of,
+and with its Birthdays row on, the owner's own birthday. One provider event stands for one day row,
+one group event or one recurring group event. Attendance sessions and colleagues' birthdays are
+never written.
 
 A row with both `startTime` and `endTime` is timed and spans those times in the target's time zone.
 Every other row is a full day, `halfDay` included. A timed row whose end is at or before its start is
@@ -45,6 +48,40 @@ cut at the next midnight.
   config created without one, and every config that predates the column, is in `Europe/Prague`.
   Connecting a target overwrites it with the browser's zone, `PUT /api/calendar-sync/:id` changes
   it when the body names one, and turning the target off leaves it.
+
+### Group events
+
+With `includeGroupEvents` on, a target carries the live events of every group the owner is a live
+member of, whoever created them. Membership is read on every sync, so leaving a group takes its
+events off the calendar on the next one. A deleted event (its tombstone) never goes out. The ledger
+keys an event `ge:<groupEventId>` with kind `GROUP_EVENT`.
+
+- Every event is a plain free event on every capability, never Out of office or a working
+  location: Google `eventType: default`, `transparency: transparent`, `reminders.useDefault:
+false`; Microsoft `showAs: free`, `isReminderOn: false`.
+- The title is the event's title. The description is its note, then a line naming the group
+  ("Group: Dev Team", "Skupina: Dev Team" in Czech), then "Synced from Flexi Day".
+- Times are floating wall clock. A timed event is a local `dateTime` stamped with the target's zone;
+  an all-day event or run of days is all-day, its end the day after the last day.
+- A recurring group event goes out as one series. Google gets `recurrence` with the same `RRULE`
+  and `EXDATE` lines the `.ics` feed writes (`recurrenceLines` in `utils/ics.ts`), so a skipped
+  date is a patch. Graph gets a `patternedRecurrence`: `daily`, `weekly` with `daysOfWeek` and
+  `firstDayOfWeek: monday`, `absoluteMonthly` on the start's day (Graph lands day 29 to 31 on a
+  short month's last day itself), `relativeMonthly` with `index` `first` to `fourth` or `last`,
+  `absoluteYearly`; the range is `endDate` on the rule's end or `noEnd`.
+- Graph has no exception dates, so after a series goes in the engine cancels each skipped date with
+  the driver's `cancelOccurrence`: one `GET /me/events/{id}/instances` over that day, then a
+  `DELETE` of the occurrence whose start falls on it in the target's zone. Any change to a Graph
+  series deletes it and inserts it again before the cancels (S11), so the cancelled dates always
+  equal the skipped dates. A cancel that fails leaves the row's hash unmatched, and the next sync
+  replaces the series again. The call count of a change is 2 plus 1 to 2 per skipped date.
+- Google events carry `flexiDaySourceKey` and `flexiDayConfigId` in `extendedProperties.private`.
+- The zone Graph gets passes through `graphTimeZone` in `eventBuilder.ts`, which returns the IANA
+  name as is. The T-348 probe has not shown yet that Graph takes an IANA zone on a recurring event;
+  if it refuses, that function maps to the Windows name and nothing else changes.
+- A write to a group event, every scope of create, edit and delete, marks the targets of the
+  group's live members with Group events on. Joining a group marks the new member's targets and
+  leaving marks the leaver's. Turning the row on or off marks the target too.
 
 ### Birthdays
 
@@ -148,13 +185,23 @@ Callers:
 - `handlePostVacation`, on the auto-approve path only. Other bookings start pending.
 - `handleUpdateVacation`, with the rows before and after the edit, so a retyped row leaves the old
   type's targets too.
-- `updateCalendarSync` marks its own target due when the config's type list, zone or Birthdays row
-  changes, and `handleUpdateCalendar` enqueues it.
+- `updateCalendarSync` marks its own target due when the config's type list, zone, Group events row
+  or Birthdays row changes, and `handleUpdateCalendar` enqueues it.
 
 `markBirthdayTargetsDirty(userId)` does the same for a birthday write: `PUT` and `DELETE
 /api/users/me/birthday` call it after the write, and it marks the user's own targets with Birthdays
-on. A colleague's birthday marks nothing, because no target carries it. Both markers share one
-`UPDATE` helper, `markTargetsDue`, and differ only in the condition that picks the configs.
+on. A colleague's birthday marks nothing, because no target carries it.
+
+`markGroupEventTargetsDirty(groupId)` runs after the commit of `POST`, `PATCH` and `DELETE
+/api/group-events`, and marks the targets with Group events on of everyone holding a live
+membership of the group. `markMemberGroupEventTargetsDirty(userId)` runs after a membership is
+added or removed: `handleDeleteGroupUser` for the removed member, and for the joining one
+`handlePostGroup` (the creator's row), `handlePostGroupUser` (invite code), `handlePostInviteJoin`
+(invite link) and `handlePostInviteSignUp`. Sign-up with a new team marks nothing: the account was
+created in the same request and has no target yet. The dev seed adds members without marking.
+
+Every marker shares one `UPDATE` helper, `markTargetsDue`, and differs only in the condition that
+picks the configs.
 
 ## The queue
 
@@ -197,7 +244,7 @@ Every config response carries `target`, or `null` when direct sync is off for it
 
 `calendar_sync_events` holds one row per target and source record, unique on the config and
 `source_key`: `v:<vacationId>` for a day row, `bd:<userId>` for a birthday, `ge:<groupEventId>`
-reserved for group events, and a `:<n>` segment for a source that writes several events. Each
+for a group event, and a `:<n>` segment for a source that writes several events. Each
 row also carries the source's own column (`vacation_id`, `group_event_id`, `birthday_user_id`), the
 provider's event id, the kind (`ABSENCE`, `HOME_OFFICE`, `GROUP_EVENT` or `BIRTHDAY`), Google's
 `eventType` and a content hash. The hash is SHA-256 over the
@@ -207,7 +254,8 @@ ledger id. A sync is a diff against these rows, and a rerun of a finished sync m
 - **New row.** The engine writes the ledger row first, then inserts, then stores the provider id. A
   row with no provider id is an insert that never confirmed, and the next run retries it under the
   same id.
-- **Changed hash.** Microsoft patches. Google patches when the stored `eventType` stays the same and
+- **Changed hash.** Microsoft patches, except a recurring group event, which is deleted and
+  inserted again with its skipped dates cancelled. Its hash covers the skipped dates. Google patches when the stored `eventType` stays the same and
   otherwise deletes and inserts again under a new ledger id, because Google refuses to change an
   event's type. A missing stored type counts as a change.
 - **Gone at the provider.** A patch that answers `not_found` inserts again under a new ledger id.
@@ -321,7 +369,21 @@ lifetime cap above but keeps refresh tokens alive.
 - The Google app is unverified until T-302, with the interstitial and the 100-user lifetime cap.
 - A broken connection sends no email. The card is the only signal.
 - Teammates' records are never written, by design. That covers their birthdays: a shared birthday
-  reaches team `.ics` feeds only.
+  reaches team `.ics` feeds only. The one shared record a target carries is a group event of a
+  group the owner is in.
+- Group event times are floating: 10:00 is 10:00 for every viewer, and each output stamps its own
+  zone, the target's here and the feed's own in `.ics`. A group spread across time zones sees the
+  same wall clock, not the same instant.
+- Subscribed `.ics` feeds refresh on the client's clock: Outlook.com every 3 to 24 hours, Google
+  on an unstated schedule, Apple as the user sets it. Direct sync is the fast path.
+- Monthly on day 29 or 30 goes into feeds and Google as `BYMONTHDAY=28,29,30;BYSETPOS=-1` (and
+  `28,29` for day 29), pending the T-348 probe. If a client mishandles it, `monthlyDayRule` in
+  `utils/ics.ts` switches to the D11 fallback. Graph uses `absoluteMonthly` and needs no such form.
+- A web day chip shows about eight characters of a group event's title; the popover has the rest.
+- A colleague who leaves a group keeps their birthday in the phone store until the next snapshot.
+  The read hides it.
+- A feed or target reads at most 500 group events (S6), the earliest first, so a group past that
+  loses its furthest-ahead events from calendars until older ones age out of the window.
 - No age leaves Flexi Day. A series has one title, so the year a birthday carries stays in the app.
 - A purge that cannot delete an event leaves it. Each failed delete is retried three times, waiting
   the `Retry-After` up to 5 s. A row whose delete still fails stays in the ledger and its event

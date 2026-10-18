@@ -8,7 +8,9 @@ import {
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { groups } from "../../db/schema/group-schema.js";
+import { groupEvents } from "../../db/schema/group-event-schema.js";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { teamScopeError } from "../calendarConnection/errors.js";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
@@ -17,6 +19,8 @@ import { liveBirthday, sharedBirthdaysInGroups } from "../birthday/birthdayVisib
 import { firstBirthdayOnOrAfter } from "../birthday/birthdayOccurrence.js";
 import type { Birthday } from "../birthday/types.js";
 import { getUsersByIds } from "../user/userServices.js";
+import { repeatRuleOf } from "../groupEvent/groupEventServices.js";
+import { GROUP_EVENT_READ_LIMIT } from "../groupEvent/types.js";
 import type {
   BirthdayFeedRecord,
   CalendarFeedRecord,
@@ -25,6 +29,7 @@ import type {
   CalendarSyncRecord,
   CalendarSyncSettings,
   CalendarSyncTypeEntry,
+  GroupEventFeedRecord,
   VacationFeedRecord,
 } from "./types.js";
 
@@ -183,7 +188,7 @@ export const getCalendarSyncByToken = async (
  * Replaces a config's mutable fields and its teams/types. Settings left
  * undefined keep their stored value. Returns the updated config, or undefined
  * when no live config with that id is owned by the user. A sync target whose
- * type list, zone or Birthdays row changed comes back marked due.
+ * type list, zone, Group events or Birthdays row changed comes back marked due.
  */
 export const updateCalendarSync = async (
   id: string,
@@ -196,10 +201,13 @@ export const updateCalendarSync = async (
   teamIds: string[],
   types: CalendarSyncTypeEntry[]
 ): Promise<CalendarSyncFull | undefined> => {
-  const { timeZone, includeBirthdays } = fields;
+  const { timeZone, includeGroupEvents, includeBirthdays } = fields;
   // Column references on the right of SET read the row as it was before this update.
   const moved = [
     timeZone === undefined ? undefined : sql`${calendarSync.timeZone} <> ${timeZone}`,
+    includeGroupEvents === undefined
+      ? undefined
+      : sql`${calendarSync.includeGroupEvents} <> ${includeGroupEvents}`,
     includeBirthdays === undefined
       ? undefined
       : sql`${calendarSync.includeBirthdays} <> ${includeBirthdays}`,
@@ -333,6 +341,16 @@ export const getLiveTeamIds = async (config: CalendarSyncFull): Promise<string[]
 type FeedGroups = string[] | null;
 
 /**
+ * The first day of the feed's window: all future dates plus the last 12
+ * months of history, so the query cost and the `.ics` size stay bounded.
+ */
+const feedWindowStart = (): string => {
+  const windowStart = new Date();
+  windowStart.setUTCMonth(windowStart.getUTCMonth() - 12);
+  return windowStart.toISOString().slice(0, 10);
+};
+
+/**
  * The approved, non-deleted time-off records in the feed's window, of the
  * owner on a personal feed or of the live selected groups on a team feed.
  */
@@ -343,12 +361,7 @@ const vacationRecords = async (
   const includedTypes = config.types.map((t) => t.vacationType);
   if (includedTypes.length === 0 || groupIds?.length === 0) return [];
 
-  // Bound the feed to a rolling window so both the query cost and the generated
-  // .ics size stay constant as approved history accumulates. All future dates
-  // plus the last 12 months of history are exposed.
-  const windowStart = new Date();
-  windowStart.setUTCMonth(windowStart.getUTCMonth() - 12);
-  const windowStartDay = windowStart.toISOString().slice(0, 10);
+  const windowStartDay = feedWindowStart();
 
   const filters = [
     isNull(vacation.deletedAt),
@@ -409,6 +422,70 @@ const birthdayRecords = async (
     .sort((a, b) => a.userName.localeCompare(b.userName) || a.userId.localeCompare(b.userId));
 };
 
+/** The live groups a user is a live member of. */
+const liveMemberGroupIds = async (userId: string): Promise<string[]> => {
+  const rows = await db
+    .select({ groupId: groupUsers.groupId })
+    .from(groupUsers)
+    .innerJoin(groups, eq(groups.id, groupUsers.groupId))
+    .where(
+      and(eq(groupUsers.userId, userId), isNull(groupUsers.deletedAt), isNull(groups.deletedAt))
+    );
+  return rows.map((row) => row.groupId);
+};
+
+/**
+ * Live group events in the feed's window: on a personal feed and on direct
+ * sync every group the owner is a live member of, on a team feed the live
+ * selected groups. A recurring one passes while its rule runs into the
+ * window, a one-off while it ends inside it. Tombstones never go out.
+ */
+const groupEventRecords = async (
+  config: CalendarSyncFull,
+  groupIds: FeedGroups
+): Promise<GroupEventFeedRecord[]> => {
+  if (!config.includeGroupEvents) return [];
+  const ids = groupIds ?? (await liveMemberGroupIds(config.userId));
+  if (ids.length === 0) return [];
+
+  const windowStartDay = feedWindowStart();
+  const rows = await db
+    .select({ event: groupEvents, groupName: groups.groupName })
+    .from(groupEvents)
+    .innerJoin(groups, eq(groups.id, groupEvents.groupId))
+    .where(
+      and(
+        inArray(groupEvents.groupId, ids),
+        isNull(groupEvents.deletedAt),
+        isNull(groups.deletedAt),
+        or(
+          and(isNull(groupEvents.repeatFreq), gte(groupEvents.endDate, windowStartDay)),
+          and(
+            isNotNull(groupEvents.repeatFreq),
+            or(isNull(groupEvents.repeatUntil), gte(groupEvents.repeatUntil, windowStartDay))
+          )
+        )
+      )
+    )
+    .orderBy(asc(groupEvents.startDate), asc(groupEvents.id))
+    .limit(GROUP_EVENT_READ_LIMIT);
+
+  return rows.map(({ event, groupName }) => ({
+    kind: "groupEvent",
+    id: event.id,
+    groupId: event.groupId,
+    groupName,
+    title: event.title ?? "",
+    note: event.note,
+    startDate: event.startDate,
+    endDate: event.endDate,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    repeat: repeatRuleOf(event),
+    skippedDates: event.skippedDates,
+  }));
+};
+
 /**
  * Everything a config's feed and sync target carry, one source per record
  * kind, each filtered by the config's toggles. A team feed reads only the
@@ -416,9 +493,10 @@ const birthdayRecords = async (
  */
 export const getFeedRecords = async (config: CalendarSyncFull): Promise<CalendarFeedRecord[]> => {
   const groupIds = config.scope === calendarSyncScope.Me ? null : await getLiveTeamIds(config);
-  const [vacations, birthdays] = await Promise.all([
+  const [vacations, events, birthdays] = await Promise.all([
     vacationRecords(config, groupIds),
+    groupEventRecords(config, groupIds),
     birthdayRecords(config, groupIds),
   ]);
-  return [...vacations, ...birthdays];
+  return [...vacations, ...events, ...birthdays];
 };

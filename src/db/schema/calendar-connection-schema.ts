@@ -139,7 +139,7 @@ export const calendarSyncFakeEvents = pgTable(
       .notNull()
       .references(() => calendarConnection.id, { onDelete: "cascade" }),
     provider: calendarProviderEnum("provider").notNull(),
-    operation: text("operation").$type<"INSERT" | "PATCH" | "DELETE">().notNull(),
+    operation: text("operation").$type<"INSERT" | "PATCH" | "DELETE" | "CANCEL">().notNull(),
     providerEventId: text("provider_event_id"),
     payload: jsonb("payload"),
     // "ok", or the failure the driver returned.

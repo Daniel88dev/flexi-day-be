@@ -123,6 +123,18 @@ export const createFakeDriver = (
     provider,
     insert: (context, event) => write(context, "INSERT", event),
     patch: (context, providerEventId, event) => write(context, "PATCH", event, providerEventId),
+    cancelOccurrence: (context, seriesId, date) =>
+      withAccessToken(context, async () => {
+        await store.record({
+          connectionId: context.connection.id,
+          provider,
+          operation: "CANCEL",
+          providerEventId: seriesId,
+          payload: { date },
+          result: "ok",
+        });
+        return { ok: true };
+      }),
     delete: (context, providerEventId) =>
       withAccessToken(context, async () => {
         await store.record({

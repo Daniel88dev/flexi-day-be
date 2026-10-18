@@ -458,8 +458,8 @@ export const calendarSyncRouter = (): Router => {
    *               types:
    *                 type: array
    *                 description: |
-   *                   May be empty when `includeBirthdays` is true; a feed carrying
-   *                   nothing answers 422.
+   *                   May be empty when `includeGroupEvents` or `includeBirthdays` is
+   *                   true; a feed carrying nothing answers 422.
    *                 items:
    *                   type: object
    *                   required:
@@ -506,7 +506,8 @@ export const calendarSyncRouter = (): Router => {
    *         description: A requested team is not one the caller belongs to
    *       '422':
    *         description: |
-   *           Invalid body: a missing name, no record type with Birthdays off, a colour
+   *           Invalid body: a missing name, no record type with Group events and
+   *           Birthdays both off, a colour
    *           outside the palette, or a time zone that is not an IANA name
    */
   app.post("/", tryCatch(handlePostCalendar));
@@ -552,7 +553,8 @@ export const calendarSyncRouter = (): Router => {
    *     description: |
    *       Name, scope, teams and types are replaced. `timeZone` and the Group events
    *       and Birthdays settings change only when the body names them. A connected
-   *       target is marked due when its types or its zone change.
+   *       target is marked due when its types, its zone, or its Group events or
+   *       Birthdays row change.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -591,8 +593,8 @@ export const calendarSyncRouter = (): Router => {
    *               types:
    *                 type: array
    *                 description: |
-   *                   May be empty when `includeBirthdays` is true; a feed carrying
-   *                   nothing answers 422.
+   *                   May be empty when `includeGroupEvents` or `includeBirthdays` is
+   *                   true; a feed carrying nothing answers 422.
    *                 items:
    *                   type: object
    *                   required:
@@ -613,7 +615,9 @@ export const calendarSyncRouter = (): Router => {
    *                   stored zone stays. A new zone marks a connected target due.
    *               includeGroupEvents:
    *                 type: boolean
-   *                 description: Left out, the stored value stays
+   *                 description: |
+   *                   Left out, the stored value stays. A change marks a connected
+   *                   target due.
    *               groupEventsColor:
    *                 type: string
    *                 nullable: true
@@ -647,7 +651,8 @@ export const calendarSyncRouter = (): Router => {
    *         description: Calendar not found
    *       '422':
    *         description: |
-   *           Invalid body: a missing name, no record type with Birthdays off, a colour
+   *           Invalid body: a missing name, no record type with Group events and
+   *           Birthdays both off, a colour
    *           outside the palette, or a time zone that is not an IANA name
    */
   app.put("/:id", tryCatch(handleUpdateCalendar));

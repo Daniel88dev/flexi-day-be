@@ -178,3 +178,78 @@ describe("Microsoft driver, failures", () => {
     });
   });
 });
+
+describe("Microsoft driver, cancelling one occurrence", () => {
+  const instance = (id: string, utc: string) => ({
+    id,
+    start: { dateTime: `${utc}.0000000`, timeZone: "UTC" },
+  });
+
+  it("reads the instances around that day and deletes the one on it in the event's zone", async () => {
+    graph.answer((request) =>
+      request.method === "GET"
+        ? {
+            status: 200,
+            body: {
+              value: [
+                instance("occ-21", "2026-12-21T08:00:00"),
+                instance("occ-22", "2026-12-22T08:00:00"),
+                instance("occ-23", "2026-12-23T08:00:00"),
+              ],
+            },
+          }
+        : { status: 204 }
+    );
+
+    const result = await driver().cancelOccurrence!(
+      context(ms),
+      "AAMk/series",
+      "2026-12-22",
+      "Europe/Prague"
+    );
+
+    expect(result).toEqual({ ok: true });
+    const [read, remove] = graph.requests;
+    expect(read?.method).toBe("GET");
+    const url = new URL(read!.path, "http://graph.test");
+    expect(url.pathname).toBe("/me/events/AAMk%2Fseries/instances");
+    expect(url.searchParams.get("startDateTime")).toBe("2026-12-21T00:00:00Z");
+    expect(url.searchParams.get("endDateTime")).toBe("2026-12-24T00:00:00Z");
+    expect(read?.headers.prefer).toBe('IdType="ImmutableId"');
+    expect(remove?.method).toBe("DELETE");
+    expect(remove?.path).toBe("/me/events/occ-22");
+    expect(graph.requests).toHaveLength(2);
+  });
+
+  it("matches an all-day occurrence that starts the evening before in UTC", async () => {
+    graph.answer((request) =>
+      request.method === "GET"
+        ? { status: 200, body: { value: [instance("occ-22", "2026-12-21T23:00:00")] } }
+        : { status: 204 }
+    );
+
+    await driver().cancelOccurrence!(context(ms), "series", "2026-12-22", "Europe/Prague");
+
+    expect(graph.requests[1]?.path).toBe("/me/events/occ-22");
+  });
+
+  it("does nothing more when no occurrence falls on that day", async () => {
+    graph.answer(() => ({
+      status: 200,
+      body: { value: [instance("occ-21", "2026-12-21T08:00:00")] },
+    }));
+
+    expect(
+      await driver().cancelOccurrence!(context(ms), "series", "2026-12-22", "Europe/Prague")
+    ).toEqual({ ok: true });
+    expect(graph.requests).toHaveLength(1);
+  });
+
+  it("maps a failed instances read like any other call", async () => {
+    graph.answer(() => ({ status: 429, body: graphError("TooManyRequests") }));
+
+    expect(
+      await driver().cancelOccurrence!(context(ms), "series", "2026-12-22", "Europe/Prague")
+    ).toEqual({ ok: false, error: "throttled", retryAfterSeconds: null });
+  });
+});

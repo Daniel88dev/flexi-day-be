@@ -23,9 +23,16 @@ import type {
 import { getCalendarSyncById, getFeedRecords } from "./calendarSyncServices.js";
 import { calendarDriver } from "./drivers/index.js";
 import type { CalendarDriver, DriverContext, DriverFailure } from "./drivers/types.js";
-import { buildBirthdayDesired, buildDesired, type DesiredEvent } from "./eventBuilder.js";
+import {
+  buildBirthdayDesired,
+  buildDesired,
+  buildGroupEventDesired,
+  graphTimeZone,
+  type DesiredEvent,
+} from "./eventBuilder.js";
 import {
   birthdayLabel,
+  groupEventGroupLine,
   recordTypeLabels,
   type RecordTypeLabels,
 } from "../recordType/recordTypeLabels.js";
@@ -92,6 +99,7 @@ type Run = {
   timeZone: string;
   labels: RecordTypeLabels;
   birthdayTitle: string;
+  groupLine: (groupName: string) => string;
   records: CalendarFeedRecord[];
   driver: CalendarDriver;
   context: DriverContext;
@@ -136,9 +144,10 @@ const build = (
   record: CalendarFeedRecord,
   source: SyncSource,
   ledgerId: string
-): DesiredEvent | null =>
-  record.kind === "birthday"
-    ? buildBirthdayDesired({
+): DesiredEvent | null => {
+  switch (record.kind) {
+    case "birthday":
+      return buildBirthdayDesired({
         record,
         segment: source.segment,
         provider: run.provider,
@@ -146,8 +155,18 @@ const build = (
         title: run.birthdayTitle,
         configId: run.configId,
         ledgerId,
-      })
-    : buildDesired({
+      });
+    case "groupEvent":
+      return buildGroupEventDesired({
+        record,
+        provider: run.provider,
+        timeZone: run.timeZone,
+        groupLine: run.groupLine(record.groupName),
+        configId: run.configId,
+        ledgerId,
+      });
+    default:
+      return buildDesired({
         record,
         provider: run.provider,
         capability: run.capability,
@@ -156,6 +175,8 @@ const build = (
         configId: run.configId,
         ledgerId,
       });
+  }
+};
 
 type Wanted = { record: CalendarFeedRecord; source: SyncSource };
 
@@ -174,6 +195,30 @@ const learnStatusCapability = async (run: Run, event: DesiredEvent) => {
     );
 };
 
+/** A hash no event has, so the next run replaces a series whose cancels did not all land. */
+const CANCELS_PENDING = "cancels-pending";
+
+/** S11: Graph takes no exception dates, so each skipped date is cancelled after the insert. */
+const cancelSkippedDates = async (
+  run: Run,
+  ledgerId: string,
+  seriesId: string,
+  event: DesiredEvent
+): Promise<Failure> => {
+  const cancel = run.driver.cancelOccurrence;
+  if (!event.cancelledDates || event.cancelledDates.length === 0 || !cancel) return undefined;
+  for (const date of event.cancelledDates) {
+    const result = await cancel(run.context, seriesId, date, graphTimeZone(run.timeZone));
+    if (result.ok) continue;
+    await db
+      .update(calendarSyncEvents)
+      .set({ contentHash: CANCELS_PENDING })
+      .where(eq(calendarSyncEvents.id, ledgerId));
+    return result;
+  }
+  return undefined;
+};
+
 const sendInsert = async (run: Run, ledgerId: string, event: DesiredEvent): Promise<Failure> => {
   const result = await run.driver.insert(run.context, event);
   if (!result.ok) return result;
@@ -182,7 +227,7 @@ const sendInsert = async (run: Run, ledgerId: string, event: DesiredEvent): Prom
     .set({ providerEventId: result.providerEventId })
     .where(eq(calendarSyncEvents.id, ledgerId));
   await learnStatusCapability(run, event);
-  return undefined;
+  return cancelSkippedDates(run, ledgerId, result.providerEventId, event);
 };
 
 /** The ledger row goes in first, so a crash after the provider's answer still names the event. */
@@ -234,6 +279,11 @@ const writeEvent = async (
 
   // Google never lets an event change its type, so that change replaces the event.
   if (run.provider === calendarProvider.Google && existing.eventType !== eventTypeOf(event)) {
+    return (await removeEvent(run, existing)) ?? insertFresh(run, wanted);
+  }
+  // A Graph series is replaced on any change, so its cancelled dates are always
+  // the skipped dates (S11); a patch could bring cancelled occurrences back.
+  if (event.cancelledDates) {
     return (await removeEvent(run, existing)) ?? insertFresh(run, wanted);
   }
 
@@ -334,6 +384,7 @@ const runSync = async (
     timeZone,
     labels: recordTypeLabels(language),
     birthdayTitle: birthdayLabel(language),
+    groupLine: (groupName) => groupEventGroupLine(language, groupName),
     records: await getFeedRecords(config),
     driver,
     context: { connection, accessToken: connectionTokenSource(connection) },

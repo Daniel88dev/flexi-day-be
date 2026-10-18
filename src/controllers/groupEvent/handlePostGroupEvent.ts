@@ -10,6 +10,7 @@ import {
   toGroupEventView,
 } from "../../services/groupEvent/groupEventServices.js";
 import type { CreateGroupEventBody } from "../../services/groupEvent/types.js";
+import { markGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 export const handlePostGroupEvent = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -24,6 +25,7 @@ export const handlePostGroupEvent = async (req: Request, res: Response) => {
     );
     return { event, groupName: group.groupName, access };
   });
+  await markGroupEventTargetsDirty(event.groupId);
 
   return res.status(201).json(
     toGroupEventView(event, {

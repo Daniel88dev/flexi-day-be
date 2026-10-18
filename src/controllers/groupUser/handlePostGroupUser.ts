@@ -6,6 +6,7 @@ import { normalizeInviteCode } from "../../utils/inviteCode.js";
 import AppError from "../../utils/appError.js";
 import { getInviteLinkByCode, inviteStatus } from "../../services/groupUser/inviteLinkServices.js";
 import { redeemInvite } from "../../services/groupUser/inviteRedemption.js";
+import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 export const handlePostGroupUser = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -83,6 +84,7 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
 
     return redeemInvite(validateLink, auth.userId, tx, { url: req.url });
   });
+  await markMemberGroupEventTargetsDirty(auth.userId);
 
   return res.status(201).json(result);
 };

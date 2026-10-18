@@ -2,6 +2,7 @@ import { z } from "zod";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { timeZoneSchema } from "../calendarConnection/types.js";
+import type { IsoDate, RepeatRule } from "../groupEvent/occurrences.js";
 
 /**
  * Swatch palette keys shared with the front-end builder. Colors are stored as
@@ -102,8 +103,27 @@ export type BirthdayFeedRecord = {
   startDate: string;
 };
 
+/**
+ * A live group event. Times are floating wall clock (`HH:MM:SS`); each output
+ * stamps its own zone. A recurring one lasts one day and carries its rule.
+ */
+export type GroupEventFeedRecord = {
+  kind: "groupEvent";
+  id: string;
+  groupId: string;
+  groupName: string;
+  title: string;
+  note: string | null;
+  startDate: IsoDate;
+  endDate: IsoDate;
+  startTime: string | null;
+  endTime: string | null;
+  repeat: RepeatRule | null;
+  skippedDates: IsoDate[];
+};
+
 /** One entry per source a feed or a sync target carries. */
-export type CalendarFeedRecord = VacationFeedRecord | BirthdayFeedRecord;
+export type CalendarFeedRecord = VacationFeedRecord | BirthdayFeedRecord | GroupEventFeedRecord;
 
 const typeEntrySchema = z.object({
   type: z.enum(CalendarRecordType),
@@ -121,16 +141,19 @@ const configShape = {
   types: z.array(typeEntrySchema),
 };
 
-type ConfigShape = z.output<z.ZodObject<typeof configShape>> & { includeBirthdays?: boolean };
+type ConfigShape = z.output<z.ZodObject<typeof configShape>> & {
+  includeGroupEvents?: boolean;
+  includeBirthdays?: boolean;
+};
 
 /** Every source a feed can carry; one of them has to be on. */
 const carriesSomething = (data: ConfigShape) =>
-  data.types.length > 0 || data.includeBirthdays === true;
+  data.types.length > 0 || data.includeGroupEvents === true || data.includeBirthdays === true;
 
 const withConfigRules = <T extends z.ZodType<ConfigShape>>(schema: T) =>
   schema
     .refine(carriesSomething, {
-      message: "Include at least one record type or Birthdays",
+      message: "Include at least one record type, Group events or Birthdays",
       path: ["types"],
     })
     .refine((data) => data.scope !== calendarSyncScope.Team || data.teamIds.length > 0, {
@@ -145,7 +168,7 @@ const withConfigRules = <T extends z.ZodType<ConfigShape>>(schema: T) =>
 /**
  * Body for creating a calendar-sync config. `teamIds` is required for `TEAM`
  * scope and ignored (but stored) for `ME`. It carries at least one record type,
- * or Birthdays.
+ * Group events or Birthdays.
  */
 export const validateCreateCalendarSync = withConfigRules(
   z.object({

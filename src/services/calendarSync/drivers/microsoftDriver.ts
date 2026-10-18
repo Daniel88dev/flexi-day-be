@@ -40,13 +40,30 @@ const eventId = (answer: GraphAnswer): WriteResult => {
     : otherFailure("missing_event_id");
 };
 
+const shiftDays = (date: string, days: number): string => {
+  const at = new Date(`${date}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+};
+
+/** The local date of a Graph UTC `dateTime` in `timeZone`. */
+const localDateOf = (utcDateTime: string, timeZone: string): string =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(`${utcDateTime.slice(0, 19)}Z`));
+
+type GraphInstance = { id?: unknown; start?: { dateTime?: unknown } };
+
 export const createMicrosoftDriver = (
   options: { baseUrl?: string; timeoutMs?: number } = {}
 ): CalendarDriver => {
   const baseUrl = options.baseUrl ?? GRAPH_URL;
 
   const request = async (
-    method: "POST" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     token: string,
     body?: object
@@ -98,6 +115,35 @@ export const createMicrosoftDriver = (
         return failure(answer);
       });
     },
+
+    cancelOccurrence: (context, seriesId, date, timeZone) =>
+      withAccessToken(context, async (token): Promise<DriverResult | Unauthorized> => {
+        // A day either side covers every zone; the match below is by local date.
+        const query = new URLSearchParams({
+          startDateTime: `${shiftDays(date, -1)}T00:00:00Z`,
+          endDateTime: `${shiftDays(date, 2)}T00:00:00Z`,
+          $select: "id,start",
+        });
+        const read = await request(
+          "GET",
+          `${eventPath(seriesId)}/instances?${query.toString()}`,
+          token
+        );
+        if (read.status === 404) return { ok: true };
+        if (read.status !== 200) return failure(read);
+        const instances = (read.body as { value?: GraphInstance[] } | undefined)?.value ?? [];
+        const match = instances.find(
+          (instance) =>
+            typeof instance.start?.dateTime === "string" &&
+            localDateOf(instance.start.dateTime, timeZone) === date
+        );
+        if (typeof match?.id !== "string") return { ok: true };
+        const removed = await request("DELETE", eventPath(match.id), token);
+        if (removed.status === 204 || removed.status === 200 || removed.status === 404) {
+          return { ok: true };
+        }
+        return failure(removed);
+      }),
 
     delete: (context, providerEventId) =>
       withAccessToken(context, async (token): Promise<DriverResult | Unauthorized> => {
