@@ -94,6 +94,8 @@ export const birthdayGroupIds = async (groupIds: string[]): Promise<string[]> =>
  * The viewer's own birthday plus the shared birthdays of live members of every
  * group the viewer sees in full, where that group's organization is paid or
  * lapsed. `groupId` narrows the groups to one. Each user appears once.
+ * Membership-only: a birthday is shared with teammates, so administering a
+ * group without belonging to it shows none of its members' birthdays.
  */
 export const visibleBirthdays = async (viewerId: string, groupId?: string): Promise<Birthday[]> => {
   const scope = await getScopeEntries(viewerId);

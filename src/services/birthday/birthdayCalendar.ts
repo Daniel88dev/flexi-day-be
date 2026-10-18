@@ -2,7 +2,7 @@ import AppError from "../../utils/appError.js";
 import type { DateString } from "../../utils/dateFunc.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { canViewWholeGroup } from "../report/reportScope.js";
-import { getScopeEntries } from "../report/reportServices.js";
+import { getReportScopeEntries } from "../report/reportServices.js";
 import { getUsersByIds } from "../user/userServices.js";
 import { birthdayOccurrence } from "./birthdayOccurrence.js";
 import { getBirthday } from "./birthdayServices.js";
@@ -18,7 +18,7 @@ const birthdaysInScope = async (
     return own ? [own] : [];
   }
 
-  if (!canViewWholeGroup(await getScopeEntries(viewerId), groupId)) {
+  if (!canViewWholeGroup(await getReportScopeEntries(viewerId), groupId)) {
     throw new AppError({
       code: 403,
       message: "No access to view this group's records",

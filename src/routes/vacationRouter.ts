@@ -41,8 +41,12 @@ export const vacationRouter = (): Router => {
    *       group's records are returned instead — including records mirrored into
    *       it from another group, which carry a non-null `mirroredFromGroupId`.
    *
-   *       Group scope requires view access on that group (view access, admin
-   *       access, or being its manager); a plain member gets a 403.
+   *       Group scope requires seeing the whole group: view access, admin
+   *       access, being its manager, or administering it through its
+   *       organization, member or not (the groups `GET /api/reports/scope`
+   *       lists with `access: "all"`). A plain member, or anyone outside the
+   *       group, gets a 403. Reading a group never grants deciding in it:
+   *       `canApprove` stays approver-only, so an org admin sees `false`.
    *       Each row includes a denormalized `user` summary used by the calendar UI,
    *       and `canApprove` — the same verdict the decision endpoints enforce, so
    *       a client can render the action without re-deriving the rule.
@@ -94,7 +98,9 @@ export const vacationRouter = (): Router => {
    *       '401':
    *         description: Unauthorized
    *       '403':
-   *         description: No access to view this group's records
+   *         description: |
+   *           No access to view this group's records: the caller neither sees the
+   *           group in full as a member nor administers it
    *       '500':
    *         description: Internal Server Error
    * components:
@@ -148,9 +154,11 @@ export const vacationRouter = (): Router => {
    *
    *       Scope, access and row shape are those of `GET /api/vacation`. Without
    *       `groupId` the caller's own records are returned; with it the whole
-   *       group's, mirrored records included. Group scope requires view access
-   *       on that group (view access, admin access, or being its manager); a
-   *       plain member gets a 403. Cancelled rows are never included.
+   *       group's, mirrored records included. Group scope needs the same
+   *       standing as there: view access, admin access, being its manager, or
+   *       administering it through its organization, member or not. A plain
+   *       member, or anyone outside the group, gets a 403. Cancelled rows are
+   *       never included.
    *     operationId: handleGetVacationCalendar
    *     security:
    *       - bearerAuth: []
@@ -188,7 +196,9 @@ export const vacationRouter = (): Router => {
    *       '401':
    *         description: Unauthorized
    *       '403':
-   *         description: No access to view this group's records
+   *         description: |
+   *           No access to view this group's records: the caller neither sees the
+   *           group in full as a member nor administers it
    *       '422':
    *         description: Missing or out-of-range `year` or `month`
    *       '500':
