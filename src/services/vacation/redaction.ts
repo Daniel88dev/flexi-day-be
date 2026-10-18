@@ -1,0 +1,62 @@
+import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+
+/** What a teammate sees in place of `SICK`. Response-only: never stored, never accepted on a write. */
+export const AWAY_RECORD_TYPE = "AWAY";
+
+export type WireRecordType = CalendarRecordType | typeof AWAY_RECORD_TYPE;
+
+/**
+ * Who is reading. `privilegedGroupIds` holds the groups where the viewer is an
+ * approver or a group admin, from `resolvePrivilegedGroupIds`.
+ */
+export type VacationViewer = {
+  userId: string;
+  privilegedGroupIds: ReadonlySet<string>;
+};
+
+type RedactableRow = {
+  userId: string;
+  groupId: string;
+  vacationType: CalendarRecordType;
+  rejectedAt: Date | null;
+  deletedAt: Date | null;
+};
+
+export type VacationRowAsSeen<T extends RedactableRow> = Omit<T, "vacationType"> & {
+  vacationType: WireRecordType;
+};
+
+const PRIVATE_FIELDS = [
+  "note",
+  "rejectionReason",
+  "rejectedBy",
+  "rejectedByUser",
+  "deletedByUserId",
+  "deletedByUser",
+] as const;
+
+export const isPrivilegedReader = (viewer: VacationViewer, row: RedactableRow): boolean =>
+  row.userId === viewer.userId || viewer.privilegedGroupIds.has(row.groupId);
+
+/**
+ * The row as this viewer may see it, or null when it must not reach them at
+ * all. Standing is read against `row.groupId`, never the group being listed,
+ * so a row mirrored into a group gets the teammate view there.
+ */
+export const viewVacationRowAs = <T extends RedactableRow>(
+  viewer: VacationViewer,
+  row: T
+): VacationRowAsSeen<T> | null => {
+  if (isPrivilegedReader(viewer, row)) return row;
+  if (row.rejectedAt != null || row.deletedAt != null) return null;
+
+  const cleared = Object.fromEntries(
+    PRIVATE_FIELDS.filter((field) => field in row).map((field) => [field, null])
+  );
+  return {
+    ...row,
+    ...cleared,
+    vacationType:
+      row.vacationType === CalendarRecordType.Sick ? AWAY_RECORD_TYPE : row.vacationType,
+  };
+};

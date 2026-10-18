@@ -50,6 +50,15 @@ export const vacationRouter = (): Router => {
    *       Each row includes a denormalized `user` summary used by the calendar UI,
    *       and `canApprove` — the same verdict the decision endpoints enforce, so
    *       a client can render the action without re-deriving the rule.
+   *
+   *       In group scope each row is shaped for the caller. The owner and the
+   *       approvers and group admins of the row's own group (`groupId`, never
+   *       the group being listed) get it in full. Anyone else gets the teammate
+   *       view: `SICK` reads as `AWAY`, and `note`, `rejectionReason`,
+   *       `rejectedBy` and `deletedByUserId` are null. Other people's rejected
+   *       and cancelled rows are left out of the teammate view entirely. A
+   *       row mirrored in from another group gets the teammate view here, even
+   *       for this group's approvers and admins.
    *     operationId: handleGetVacations
    *     security:
    *       - bearerAuth: []
@@ -131,6 +140,22 @@ export const vacationRouter = (): Router => {
    *             mirroredFromGroupName:
    *               type: string
    *               nullable: true
+   *             vacationType:
+   *               type: string
+   *               enum:
+   *                 - VACATION
+   *                 - HOME_OFFICE
+   *                 - SICK
+   *                 - NON_PAID_LEAVE
+   *                 - PAID_TIME_OFF
+   *                 - SICK_DAY
+   *                 - STUDY_LEAVE
+   *                 - OTHER
+   *                 - BANK_HOLIDAY
+   *                 - AWAY
+   *               description: |
+   *                 `AWAY` is response-only: a teammate's view of a `SICK` row.
+   *                 It is never stored and no write accepts it.
    *             canApprove:
    *               type: boolean
    *               description: Whether the caller may decide on this request right now.
@@ -158,7 +183,8 @@ export const vacationRouter = (): Router => {
    *       standing as there: view access, admin access, being its manager, or
    *       administering it through its organization, member or not. A plain
    *       member, or anyone outside the group, gets a 403. Cancelled rows are
-   *       never included.
+   *       never included. Rows get the same teammate view as there: `SICK` as
+   *       `AWAY`, Private details null, no rejected rows of other people.
    *     operationId: handleGetVacationCalendar
    *     security:
    *       - bearerAuth: []
@@ -230,6 +256,15 @@ export const vacationRouter = (): Router => {
    *       the Request has a free slot, and `canDeleteAnyAttachment`, true for
    *       group and organization admins, who may delete files they did not
    *       upload. A member with view access only gets none of the three.
+   *
+   *       Those same readers, the privileged readers of the row's own group,
+   *       get `canReadPrivateDetails: true` and the full row. Anyone else who
+   *       may view it gets the teammate view: `SICK` as `AWAY`, `note`,
+   *       `rejectionReason`, `rejectedBy`, `rejectedByUser`, `deletedByUserId`
+   *       and `deletedByUser` null, `history` empty, and
+   *       `canReadPrivateDetails: false`. Another person's rejected or
+   *       cancelled request answers them with the same 403 as a request they
+   *       may not view.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -285,9 +320,15 @@ export const vacationRouter = (): Router => {
    *                       type: boolean
    *                     canEdit:
    *                       type: boolean
+   *                     canReadPrivateDetails:
+   *                       type: boolean
+   *                       description: |
+   *                         True for the owner and the approvers and group admins
+   *                         of the row's own group. They alone see the note,
+   *                         rejection reason and history, and may comment.
    *                     history:
    *                       type: array
-   *                       description: The append-only event timeline, oldest first.
+   *                       description: The append-only event timeline, oldest first. Empty when `canReadPrivateDetails` is false.
    *                       items:
    *                         type: object
    *                         properties:
@@ -324,7 +365,10 @@ export const vacationRouter = (): Router => {
    *                       type: boolean
    *                       description: Present only for the owner, approvers and admins; true for group and organization admins.
    *       '403':
-   *         description: Not allowed to view this vacation
+   *         description: |
+   *           Not allowed to view this vacation, or it is another person's
+   *           rejected or cancelled request and the caller may not read its
+   *           Private details
    *       '404':
    *         description: Vacation not found
    */
@@ -619,7 +663,9 @@ export const vacationRouter = (): Router => {
    *     summary: Add a comment to a vacation request
    *     description: |
    *       Appends a comment to the request timeline without changing its
-   *       decision. Any caller who can view the request may comment. The other
+   *       decision. Only the owner and the approvers and group admins of the
+   *       request's own group may comment (`canReadPrivateDetails` on
+   *       `GET /api/vacation/{id}`). The other
    *       party — the request owner, or the group's approvers when the owner
    *       comments — is notified by email and in-app.
    *     security:
@@ -651,7 +697,9 @@ export const vacationRouter = (): Router => {
    *           lapsed. `errors[].context` carries
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
-   *         description: Not allowed to view this vacation
+   *         description: |
+   *           Not allowed to comment: the caller is not the owner, nor an
+   *           approver or group admin of the request's group
    *       '404':
    *         description: Vacation not found
    */

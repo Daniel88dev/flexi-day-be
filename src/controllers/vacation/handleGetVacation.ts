@@ -4,6 +4,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import { resolveVacationPermissions } from "../../services/vacation/vacationPermissions.js";
 import { getVacationDetailById } from "../../services/vacation/vacationServices.js";
+import { viewVacationRowAs } from "../../services/vacation/redaction.js";
 import { getVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
 import {
   holdsAttachmentSlot,
@@ -60,8 +61,17 @@ export const handleGetVacation = async (req: Request, res: Response) => {
   }
 
   const permissions = await resolveVacationPermissions(auth.userId, detail);
+  const seen = permissions.canView
+    ? viewVacationRowAs(
+        {
+          userId: auth.userId,
+          privilegedGroupIds: new Set(permissions.canReadPrivateDetails ? [detail.groupId] : []),
+        },
+        detail
+      )
+    : null;
 
-  if (!permissions.canView) {
+  if (!seen) {
     throw new AppError({
       code: 403,
       message: "You are not allowed to view this vacation",
@@ -70,7 +80,7 @@ export const handleGetVacation = async (req: Request, res: Response) => {
     });
   }
 
-  const history = await getVacationEvents(vacationId);
+  const history = permissions.canReadPrivateDetails ? await getVacationEvents(vacationId) : [];
 
   // Absent, not empty, for a view-only member: they may see the day, not the file.
   const attachmentFields = permissions.canViewAttachments
@@ -78,10 +88,11 @@ export const handleGetVacation = async (req: Request, res: Response) => {
     : {};
 
   return res.status(200).json({
-    ...detail,
+    ...seen,
     canApprove: permissions.canApprove,
     canCancel: permissions.canCancel,
     canEdit: permissions.canEdit,
+    canReadPrivateDetails: permissions.canReadPrivateDetails,
     history,
     ...attachmentFields,
   });

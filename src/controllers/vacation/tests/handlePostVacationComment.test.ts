@@ -65,7 +65,7 @@ describe("handlePostVacationComment", () => {
     vi.restoreAllMocks();
   });
 
-  it("stores a COMMENT event and notifies when the caller can view", async () => {
+  it("stores a COMMENT event and notifies when the caller may read private details", async () => {
     const { req, res } = makeReqRes({
       params: { id: vacationId },
       body: { message: "Any update on this?" },
@@ -74,6 +74,7 @@ describe("handlePostVacationComment", () => {
     mockGetVacationById.mockResolvedValue(vacationRow);
     mockResolvePermissions.mockResolvedValue({
       canView: true,
+      canReadPrivateDetails: true,
       canApprove: false,
       canCancel: false,
     });
@@ -98,7 +99,7 @@ describe("handlePostVacationComment", () => {
     expect(res.json).toHaveBeenCalledWith({ message: "Comment added" });
   });
 
-  it("throws 403 when the caller cannot view the vacation", async () => {
+  it("throws 403 when the caller may only view the vacation", async () => {
     const { req, res } = makeReqRes({
       params: { id: vacationId },
       body: { message: "hi" },
@@ -106,7 +107,8 @@ describe("handlePostVacationComment", () => {
 
     mockGetVacationById.mockResolvedValue(vacationRow);
     mockResolvePermissions.mockResolvedValue({
-      canView: false,
+      canView: true,
+      canReadPrivateDetails: false,
       canApprove: false,
       canCancel: false,
     });

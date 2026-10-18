@@ -8,6 +8,7 @@ const {
   mockGetGroupsWhereUserCanApprove,
   mockGetGroupUser,
   mockHasMirrorIntoGroup,
+  mockResolveGroupAdmin,
 } = vi.hoisted(() => ({
   mockGetVacationsForUser: vi.fn(),
   mockGetVacationsForGroup: vi.fn(),
@@ -15,6 +16,7 @@ const {
   mockGetGroupsWhereUserCanApprove: vi.fn(),
   mockGetGroupUser: vi.fn(),
   mockHasMirrorIntoGroup: vi.fn(),
+  mockResolveGroupAdmin: vi.fn(),
 }));
 
 vi.mock("../../../utils/dateFunc.js", () => ({
@@ -31,6 +33,10 @@ vi.mock("../../../services/group/groupServices.js", () => ({
 
 vi.mock("../../../services/groupMirror/groupMirrorServices.js", () => ({
   hasMirrorIntoGroup: mockHasMirrorIntoGroup,
+}));
+
+vi.mock("../../../services/groupUser/groupAccess.js", () => ({
+  resolveGroupAdmin: mockResolveGroupAdmin,
 }));
 
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
@@ -82,6 +88,7 @@ describe("handleGetVacations", () => {
     mockGetGroupsWhereUserCanApprove.mockResolvedValue([]);
     mockGetGroupUser.mockResolvedValue(undefined);
     mockHasMirrorIntoGroup.mockResolvedValue(false);
+    mockResolveGroupAdmin.mockResolvedValue({ canAdmin: false, viaOrgAdmin: false });
   });
 
   afterEach(() => {

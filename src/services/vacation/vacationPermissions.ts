@@ -1,5 +1,6 @@
 import type { DbTransaction } from "../../db/db.js";
 import type { LiveVacationType, VacationType } from "./types.js";
+import type { VacationViewer } from "./redaction.js";
 import { mayDecideOwn } from "./decisionGuards.js";
 import { resolveGroupAdmin } from "../groupUser/groupAccess.js";
 import { getGroupsWhereUserCanApprove } from "../group/groupServices.js";
@@ -14,6 +15,8 @@ export type VacationPermissions = {
   canCancel: boolean;
   /** May edit its per-day fields — group or organization admins only. */
   canEdit: boolean;
+  /** May read its Private details and comment on it: the owner, or an approver or group admin of the row's own group. */
+  canReadPrivateDetails: boolean;
   /** May see and fetch the Request's attachments — owner, approvers and admins, not view-only members. */
   canViewAttachments: boolean;
   /** May add an attachment to the Request — the owner or an admin, while it is neither cancelled nor rejected. Plan and count apply on top. */
@@ -51,17 +54,50 @@ export const resolveVacationPermissions = async (
     isOwner && isApprover ? await mayDecideOwn(userId, vacationRow.groupId, tx) : false;
 
   const canEdit = canAdmin && !isCancelled && vacationRow.rejectedAt === null;
+  const canReadPrivateDetails = isOwner || isApprover || canAdmin;
 
   return {
     canView: isOwner || isApprover || canAdmin || (membership?.viewAccess ?? false),
     canApprove: isApprover && isDecidable && (!isOwner || ownAllowed),
     canCancel: !isCancelled && (isOwner || canAdmin || isApprover),
     canEdit,
-    canViewAttachments: isOwner || isApprover || canAdmin,
+    canReadPrivateDetails,
+    canViewAttachments: canReadPrivateDetails,
     canAttach: (isOwner && !isCancelled && vacationRow.rejectedAt === null) || canEdit,
     canDeleteAnyAttachment: canAdmin,
   };
 };
+
+/**
+ * The groups among `groupIds` where the user is an approver or a group admin:
+ * the privileged set a `VacationViewer` carries. Queries scale with the
+ * distinct groups, not the rows.
+ */
+export const resolvePrivilegedGroupIds = async (
+  userId: string,
+  groupIds: string[],
+  tx?: DbTransaction
+): Promise<Set<string>> => {
+  const distinct = Array.from(new Set(groupIds));
+  const privileged = new Set(await getGroupsWhereUserCanApprove(distinct, userId, tx));
+
+  for (const groupId of distinct) {
+    const { canAdmin } = await resolveGroupAdmin(userId, groupId, tx);
+    if (canAdmin) privileged.add(groupId);
+  }
+
+  return privileged;
+};
+
+/** The viewer `viewVacationRowAs` takes, for rows from any of `groupIds`. */
+export const resolveVacationViewer = async (
+  userId: string,
+  groupIds: string[],
+  tx?: DbTransaction
+): Promise<VacationViewer> => ({
+  userId,
+  privilegedGroupIds: await resolvePrivilegedGroupIds(userId, groupIds, tx),
+});
 
 type LiveVacationRow = Pick<LiveVacationType, "userId" | "groupId" | "deletedAt">;
 
@@ -78,17 +114,13 @@ export const resolveCanCancelForList = async <T extends LiveVacationRow>(
   rows: T[],
   tx?: DbTransaction
 ): Promise<(row: T) => boolean> => {
-  const groupIds = Array.from(new Set(rows.map((row) => row.groupId)));
-  const approvable = new Set(await getGroupsWhereUserCanApprove(groupIds, userId, tx));
+  const privileged = await resolvePrivilegedGroupIds(
+    userId,
+    rows.map((row) => row.groupId),
+    tx
+  );
 
-  const adminGroups = new Set<string>();
-  for (const groupId of groupIds) {
-    const { canAdmin } = await resolveGroupAdmin(userId, groupId, tx);
-    if (canAdmin) adminGroups.add(groupId);
-  }
-
-  return (row) =>
-    row.userId === userId || approvable.has(row.groupId) || adminGroups.has(row.groupId);
+  return (row) => row.userId === userId || privileged.has(row.groupId);
 };
 
 type DecidableRow = Pick<

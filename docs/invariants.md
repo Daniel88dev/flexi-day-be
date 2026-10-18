@@ -415,6 +415,37 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for what an org admin _is_. The boundarie
   is deliberately not a lookup by email, which would let an owner probe whether an address has an
   account.
 
+## Private details and Away (`src/services/vacation/redaction.ts`)
+
+See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The rule:
+
+- **Privileged readers.** The owner of a vacation row, and the approvers and group admins of the
+  row's own group (`getGroupsWhereUserCanApprove`, `resolveGroupAdmin`, so an org admin of the
+  owning organization counts, member or not). `resolveVacationViewer` in
+  `vacationPermissions.ts` answers it for a batch, as the viewer `viewVacationRowAs` takes; `canReadPrivateDetails` on
+  `VacationPermissions` answers it for one row.
+- **Everyone else who can see the row is a teammate**, and `viewVacationRowAs` gives them:
+  - `vacationType: "AWAY"` in place of `SICK`. Every other type, `SICK_DAY` included, is unchanged.
+  - `note`, `rejectionReason`, `rejectedBy`, `rejectedByUser`, `deletedByUserId` and
+    `deletedByUser` as null. The detail endpoint sends `history: []` and no attachment fields.
+  - nothing at all for another person's rejected or cancelled row: the list and calendar leave it
+    out, and the detail endpoint answers it with the same 403 as a row the caller may not view.
+- **The record's own group, never the mirror.** Standing is read against `row.groupId`. A row
+  mirrored into a group keeps its source group's `groupId`, so the target group's approvers and
+  admins get the teammate view of it. Keying on the group being listed would hand them the full row.
+- **`AWAY` is wire-only.** It lives in the response types (`WireRecordType`) and the `@openapi`
+  response enums. It is not in the `vacation_type` PG enum, `CalendarRecordType`,
+  `requestableRecordTypeEnum` or any write validator, so no write can store it. Accepting it on a
+  write would store a type no quota, report or attendance rule knows.
+- **Commenting follows reading.** `mayComment` in `vacationTransitions.ts` checks
+  `canReadPrivateDetails`, not `canView`: a comment lands on the timeline only privileged readers
+  see. Checking `canView` again would let any View member write onto a teammate's timeline and
+  notify the owner from it. The detail response carries `canReadPrivateDetails` so a client knows
+  whether to offer the comment box.
+- **Every read of another person's row goes through `viewVacationRowAs`.** Today that is
+  `GET /api/vacation/:id`, `GET /api/vacation?groupId=` and `GET /api/vacation/calendar`.
+  `privateDetails.e2e.test.ts` fails if any of them hands a teammate Sick or a private field.
+
 ## Employment roster (`employments`, `src/services/employment/`)
 
 - **The roster is written by the link, never by a screen.** `syncEmployment` hangs off the service
