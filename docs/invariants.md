@@ -120,6 +120,13 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   cost is that a legitimate social-only user who never confirmed their address loses their provider
   link on reset; the reset email says so, and Settings → Sign-in methods reconnects it.
   `src/tests/e2e/passwordResetSettles.e2e.test.ts` covers this.
+- **Sign-up with team touches only the account it created.** better-auth answers an address that
+  already has an account with a made-up success, so `handleSignUpWithTeam` treats the user as new
+  only when no account had the address before the call and the returned id is a saved row with
+  that address. Anything else creates no team and gets the same 201 as a sign-up without a team
+  name. Rolling back a failed team deletes only the row with that new id and the address, and its
+  verification rows only when that row went.
+  `src/tests/e2e/signUpWithTeam.e2e.test.ts` covers this.
 - **A native session only answers to the device that opened it.** The path-agnostic `hooks.before`
   in `auth.ts` reads the session row behind the request's cookie, and when that row carries a
   `device_id` the request's `x-client-device-id` does not match — a different id, a malformed one

@@ -30,6 +30,10 @@ export const authExtRouter = (): Router => {
    *       `teamName` is optional. When omitted the account is created with no
    *       group and `group` comes back `null`; the user can then create a group
    *       or redeem an invite code. Booking time off requires a group.
+   *
+   *       An address that already has an account gets the same 201 a new
+   *       address without a `teamName` gets: nothing is created or changed, and
+   *       `group` is `null`.
    *     requestBody:
    *       required: true
    *       content:
@@ -43,16 +47,33 @@ export const authExtRouter = (): Router => {
    *             properties:
    *               name:
    *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 120
    *               email:
    *                 type: string
+   *                 format: email
    *               password:
    *                 type: string
+   *                 minLength: 8
+   *                 maxLength: 128
    *               teamName:
    *                 type: string
+   *                 maxLength: 120
    *                 description: Creates and joins a group when present.
    *     responses:
    *       '201':
-   *         description: User created; `group` is null when no teamName was sent
+   *         description: |
+   *           User created, or the address already had an account. `group` is
+   *           null when no teamName was sent or the address already had an
+   *           account.
+   *       '400':
+   *         description: better-auth refused the password, for example one found in a known breach
+   *       '422':
+   *         description: Invalid body, including a password outside 8 to 128 characters
+   *       '500':
+   *         description: |
+   *           better-auth failed or returned no user, or creating the team failed,
+   *           in which case the new account is rolled back
    */
   app.post(
     "/sign-up-with-team",

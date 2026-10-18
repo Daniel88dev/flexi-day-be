@@ -1,6 +1,6 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 export type UserContact = {
   id: string;
@@ -61,4 +61,13 @@ export const markEmailVerified = async (userId: string, tx?: DbTransaction): Pro
 /** Sessions and provider accounts go with the row, through their cascading foreign keys. */
 export const deleteUser = async (userId: string): Promise<void> => {
   await db.delete(user).where(eq(user.id, userId));
+};
+
+/** Deletes the user only when both the id and the address match; reports whether a row went. */
+export const deleteUserByIdAndEmail = async (userId: string, email: string): Promise<boolean> => {
+  const removed = await db
+    .delete(user)
+    .where(and(eq(user.id, userId), eq(user.email, email)))
+    .returning({ id: user.id });
+  return removed.length > 0;
 };
