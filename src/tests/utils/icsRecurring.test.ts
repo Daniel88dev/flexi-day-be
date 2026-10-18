@@ -153,7 +153,7 @@ const allDay = (startDate: string, repeat: IcsRepeat, skippedDates?: string[]): 
 
 const forever = { interval: 1, until: null } as const;
 
-describe("buildIcsCalendar, repeat rules (D5, D11)", () => {
+describe("buildIcsCalendar, repeat rules", () => {
   test("an all-day yearly series on 29 February lands on the last day of February", () => {
     expect(rruleOf(allDay("2028-02-29", { freq: "yearly", ...forever }))).toBe(
       "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1"
@@ -256,7 +256,7 @@ describe("buildIcsCalendar, repeat rules (D5, D11)", () => {
   });
 });
 
-describe("buildIcsCalendar, VTIMEZONE (S10)", () => {
+describe("buildIcsCalendar, VTIMEZONE", () => {
   const vtimezone = (timeZone: string) =>
     block(
       buildIcsCalendar({ name: "Feed", events: [timedIn(timeZone)] }),

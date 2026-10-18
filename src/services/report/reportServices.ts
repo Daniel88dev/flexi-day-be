@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -52,9 +52,10 @@ const quotaScopeColumns = { userId: userYearQuotas.userId, groupId: userYearQuot
  */
 export const getScopeEntries = async (
   userId: string,
-  options: { includeDeletedGroups?: boolean } = {}
+  options: { includeDeletedGroups?: boolean } = {},
+  tx?: DbTransaction
 ): Promise<ReportScopeEntry[]> => {
-  const rows = await db
+  const rows = await (tx ?? db)
     .select({
       groupId: groups.id,
       groupName: groups.groupName,

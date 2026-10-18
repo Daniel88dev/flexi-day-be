@@ -6,13 +6,18 @@
  */
 import { logger } from "../middleware/logger.js";
 
-/** A repeat rule read off the event's start date (spec D5). */
+/** A repeat rule read off the event's start date. */
 export type IcsRepeat = {
   freq: "daily" | "weekly" | "monthly" | "yearly";
   interval: number;
   weekdays?: number[];
   monthlyMode?: "day" | "weekday" | "lastWeekday";
   until: string | null;
+  /**
+   * The date a yearly rule repeats on when the start is not that date: a 29
+   * February birthday whose first occurrence falls on 28 February.
+   */
+  yearlyOn?: { month: number; day: number };
 };
 
 type IcsEventBase = {
@@ -299,7 +304,7 @@ const weekdayRuleObservances = (
 const vtimezoneCache = new Map<string, string[]>();
 
 /**
- * A `VTIMEZONE` derived from the zone's offsets in `year` (spec S10): one
+ * A `VTIMEZONE` derived from the zone's offsets in `year`: one
  * `STANDARD` and one `DAYLIGHT` with yearly weekday rules, which is the shape
  * Outlook reads, or a single `STANDARD` for a zone without daylight saving.
  * Transitions no weekday rule predicts fall back to that year's fixed dates.
@@ -346,7 +351,7 @@ const vtimezoneLines = (timeZone: string, year: number): string[] => {
 };
 
 /**
- * The `RRULE` part for "monthly on day N" (spec D11). Days past 28 must land
+ * The `RRULE` part for "monthly on day N". Days past 28 must land
  * on the month's last day when the month is short, as Outlook and Graph do.
  * Days 29 and 30 use the `BYSETPOS` form pending the provider probe (T-348);
  * its fallback is "day 1 to 28" plus an explicit last day, a change to this
@@ -359,7 +364,8 @@ export const monthlyDayRule = (day: number): string => {
   return `BYMONTHDAY=${days.join(",")};BYSETPOS=-1`;
 };
 
-const rruleLine = (repeat: IcsRepeat, startDate: string, until: string | null): string => {
+/** The `RRULE` line of a repeat; `until` is already in its `DATE` or UTC form. */
+export const rruleLine = (repeat: IcsRepeat, startDate: string, until: string | null): string => {
   const start = parseDate(startDate);
   const parts = [`FREQ=${repeat.freq.toUpperCase()}`];
   if (repeat.interval > 1) parts.push(`INTERVAL=${repeat.interval}`);
@@ -374,12 +380,13 @@ const rruleLine = (repeat: IcsRepeat, startDate: string, until: string | null): 
     if (mode === "day") parts.push(monthlyDayRule(start.day));
     else if (mode === "lastWeekday") parts.push(`BYDAY=-1${code}`);
     else {
-      // A 5th weekday offers only "last" (D5).
+      // A start on a 5th weekday can only repeat on the last one.
       const n = Math.ceil(start.day / 7);
       parts.push(`BYDAY=${n > 4 ? -1 : n}${code}`);
     }
-  } else if (repeat.freq === "yearly" && start.month === 2 && start.day === 29) {
-    parts.push("BYMONTH=2;BYMONTHDAY=-1");
+  } else if (repeat.freq === "yearly") {
+    const on = repeat.yearlyOn ?? start;
+    if (on.month === 2 && on.day === 29) parts.push("BYMONTH=2;BYMONTHDAY=-1");
   }
 
   if (until) parts.push(`UNTIL=${until}`);

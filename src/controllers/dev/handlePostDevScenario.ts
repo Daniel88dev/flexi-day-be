@@ -11,6 +11,7 @@ import {
   findTeam,
   generatePassword,
   nextWorkingDay,
+  seedBirthday,
   seedTeam,
   seedUser,
   setQuota,
@@ -78,7 +79,8 @@ const ADMINISTERED_MEMBERS = [
  * content. A second team in the owner's organization, run by Dave, has the
  * owner as org admin but not as a member, for the "Groups you administer"
  * views. Under the fake calendar driver the owner is also connected to a fake
- * Google target. Re-running it is a no-op rather than an error.
+ * Google target. The owner, Alice (29 February) and Bob (no year) get
+ * birthdays. Re-running it is a no-op rather than an error.
  */
 export const handlePostDevScenario = async (req: Request, res: Response) => {
   const data = req.body as ValidatedPostDevScenarioType;
@@ -159,6 +161,18 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
 
   const teamBookingsCreated = await seedBookings(team.id, owner.id, bookings);
 
+  // The members share on a Free organization on purpose: their birthdays show
+  // once the plan is set to a paid one, and the owner's switch starts off.
+  const birthdays = [
+    { userId: owner.id, month: 10, day: 25, year: 1987, shared: false },
+    { userId: alice.id, month: 2, day: 29, year: 1992, shared: true },
+    { userId: bob.id, month: 10, day: 20, year: null, shared: true },
+  ];
+  let birthdaysCreated = 0;
+  for (const birthday of birthdays) {
+    if (await seedBirthday(birthday)) birthdaysCreated += 1;
+  }
+
   const manager = await seedUser({
     email: `${ADMINISTERED_MANAGER.local}@${domain}`,
     name: ADMINISTERED_MANAGER.name,
@@ -237,6 +251,7 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
     members,
     administeredTeam: { ...administeredTeam, manager, members: administeredMembers },
     vacationsCreated: teamBookingsCreated + administeredBookingsCreated,
+    birthdaysCreated,
     calendar,
     signInUrl: `${config.email.appUrl}/dev-sign-in/?email=${encodeURIComponent(owner.email)}`,
   });

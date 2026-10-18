@@ -44,3 +44,7 @@ export const recordTypeLabels = (language: string | null | undefined): RecordTyp
 
 export const userRecordTypeLabels = async (userId: string): Promise<RecordTypeLabels> =>
   recordTypeLabels(await getUserLanguage(userId));
+
+/** A birthday's title on feeds and synced calendars, in the feed owner's language. */
+export const birthdayLabel = (language: string | null | undefined): string =>
+  language === appLanguage.Czech ? "Narozeniny" : "Birthday";

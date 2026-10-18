@@ -2,7 +2,14 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import AppError from "../../utils/appError.js";
 import { buildIcsCalendar, type IcsEvent } from "../../utils/ics.js";
-import { userRecordTypeLabels } from "../../services/recordType/recordTypeLabels.js";
+import {
+  birthdayLabel,
+  recordTypeLabels,
+  type RecordTypeLabels,
+} from "../../services/recordType/recordTypeLabels.js";
+import { getUserLanguage } from "../../services/userSettings/userSettingsServices.js";
+import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
+import type { BirthdayFeedRecord, VacationFeedRecord } from "../../services/calendarSync/types.js";
 import {
   getCalendarSyncByToken,
   getFeedRecords,
@@ -12,6 +19,32 @@ import {
 // Feed tokens are `flx_live_` + 40 hex chars. Reject anything else before
 // touching the database so scanners don't generate lookups.
 const validateToken = z.string().regex(/^flx_live_[a-f0-9]{40}$/, "Invalid feed token");
+
+const vacationEvent = (record: VacationFeedRecord, labels: RecordTypeLabels): IcsEvent => {
+  const label = labels[record.vacationType];
+  return {
+    uid: `${record.id}@flexiday`,
+    startDate: record.requestedDay,
+    endDate: record.requestedDay,
+    summary: `${record.userName} — ${label}`,
+    description: record.note ?? undefined,
+    categories: [label],
+  };
+};
+
+/** "Birthday" on a personal feed, the person's name before it on a team feed. Never an age. */
+const birthdayEvent = (record: BirthdayFeedRecord, label: string, team: boolean): IcsEvent => ({
+  uid: `bd-${record.userId}@flexiday`,
+  startDate: record.startDate,
+  summary: team ? `${record.userName} — ${label}` : label,
+  categories: [label],
+  repeat: {
+    freq: "yearly",
+    interval: 1,
+    until: null,
+    yearlyOn: { month: record.month, day: record.day },
+  },
+});
 
 /**
  * Public, token-authenticated iCalendar feed. Mounted OUTSIDE `authSession`:
@@ -36,19 +69,15 @@ export const handleGetCalendarFeed = async (req: Request, res: Response) => {
   }
 
   const records = await getFeedRecords(config);
-  const labels = await userRecordTypeLabels(config.userId);
+  const language = await getUserLanguage(config.userId);
+  const labels = recordTypeLabels(language);
+  const team = config.scope === calendarSyncScope.Team;
 
-  const events: IcsEvent[] = records.map((r) => {
-    const label = labels[r.vacationType];
-    return {
-      uid: `${r.id}@flexiday`,
-      startDate: r.requestedDay,
-      endDate: r.requestedDay,
-      summary: `${r.userName} — ${label}`,
-      description: r.note ?? undefined,
-      categories: [label],
-    };
-  });
+  const events: IcsEvent[] = records.map((record) =>
+    record.kind === "birthday"
+      ? birthdayEvent(record, birthdayLabel(language), team)
+      : vacationEvent(record, labels)
+  );
 
   const body = buildIcsCalendar({ name: config.name, events });
 

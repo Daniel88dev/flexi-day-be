@@ -23,10 +23,15 @@ import type {
 import { getCalendarSyncById, getFeedRecords } from "./calendarSyncServices.js";
 import { calendarDriver } from "./drivers/index.js";
 import type { CalendarDriver, DriverContext, DriverFailure } from "./drivers/types.js";
-import { buildDesired, type DesiredEvent } from "./eventBuilder.js";
-import { userRecordTypeLabels, type RecordTypeLabels } from "../recordType/recordTypeLabels.js";
+import { buildBirthdayDesired, buildDesired, type DesiredEvent } from "./eventBuilder.js";
+import {
+  birthdayLabel,
+  recordTypeLabels,
+  type RecordTypeLabels,
+} from "../recordType/recordTypeLabels.js";
+import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 import type { CalendarFeedRecord, SyncOutcome } from "./types.js";
-import { ledgerSourceOf } from "./sourceKey.js";
+import { syncSourcesOf, type SyncSource } from "./sourceKey.js";
 
 const DONE: SyncOutcome = { status: "done" };
 const LEASE = sql`now() + interval '10 minutes'`;
@@ -86,6 +91,7 @@ type Run = {
   capability: calendarCapability;
   timeZone: string;
   labels: RecordTypeLabels;
+  birthdayTitle: string;
   records: CalendarFeedRecord[];
   driver: CalendarDriver;
   context: DriverContext;
@@ -125,16 +131,33 @@ const ledgerContent = (event: DesiredEvent) => ({
   contentHash: event.contentHash,
 });
 
-const build = (run: Run, record: CalendarFeedRecord, ledgerId: string) =>
-  buildDesired({
-    record,
-    provider: run.provider,
-    capability: run.capability,
-    timeZone: run.timeZone,
-    labels: run.labels,
-    configId: run.configId,
-    ledgerId,
-  });
+const build = (
+  run: Run,
+  record: CalendarFeedRecord,
+  source: SyncSource,
+  ledgerId: string
+): DesiredEvent | null =>
+  record.kind === "birthday"
+    ? buildBirthdayDesired({
+        record,
+        segment: source.segment,
+        provider: run.provider,
+        timeZone: run.timeZone,
+        title: run.birthdayTitle,
+        configId: run.configId,
+        ledgerId,
+      })
+    : buildDesired({
+        record,
+        provider: run.provider,
+        capability: run.capability,
+        timeZone: run.timeZone,
+        labels: run.labels,
+        configId: run.configId,
+        ledgerId,
+      });
+
+type Wanted = { record: CalendarFeedRecord; source: SyncSource };
 
 const learnStatusCapability = async (run: Run, event: DesiredEvent) => {
   const statusType = eventTypeOf(event) !== null && eventTypeOf(event) !== "default";
@@ -163,14 +186,18 @@ const sendInsert = async (run: Run, ledgerId: string, event: DesiredEvent): Prom
 };
 
 /** The ledger row goes in first, so a crash after the provider's answer still names the event. */
-const insertFresh = async (run: Run, record: CalendarFeedRecord): Promise<Failure> => {
+const insertFresh = async (run: Run, { record, source }: Wanted): Promise<Failure> => {
   const ledgerId = generateRandomUUID();
-  const event = build(run, record, ledgerId);
+  const event = build(run, record, source, ledgerId);
   if (!event) return undefined;
+  const { sourceKey, vacationId, groupEventId, birthdayUserId } = source;
   await db.insert(calendarSyncEvents).values({
     id: ledgerId,
     calendarSyncId: run.configId,
-    ...ledgerSourceOf(record),
+    sourceKey,
+    vacationId,
+    groupEventId,
+    birthdayUserId,
     ...ledgerContent(event),
   });
   return sendInsert(run, ledgerId, event);
@@ -187,11 +214,11 @@ const removeEvent = async (run: Run, row: CalendarSyncEventRecord): Promise<Fail
 
 const writeEvent = async (
   run: Run,
-  record: CalendarFeedRecord,
+  wanted: Wanted,
   event: DesiredEvent,
   existing: CalendarSyncEventRecord | undefined
 ): Promise<Failure> => {
-  if (!existing) return insertFresh(run, record);
+  if (!existing) return insertFresh(run, wanted);
 
   if (!existing.providerEventId) {
     // An insert that never confirmed. Retrying under the same ledger id lets
@@ -207,7 +234,7 @@ const writeEvent = async (
 
   // Google never lets an event change its type, so that change replaces the event.
   if (run.provider === calendarProvider.Google && existing.eventType !== eventTypeOf(event)) {
-    return (await removeEvent(run, existing)) ?? insertFresh(run, record);
+    return (await removeEvent(run, existing)) ?? insertFresh(run, wanted);
   }
 
   const result = await run.driver.patch(run.context, existing.providerEventId, event);
@@ -221,18 +248,20 @@ const writeEvent = async (
   if (result.error !== "not_found") return result;
   // A new ledger id: Graph may match a reused `transactionId` to the deleted event.
   await dropLedgerRow(existing.id);
-  return insertFresh(run, record);
+  return insertFresh(run, wanted);
 };
 
 const reconcile = async (run: Run): Promise<Failure> => {
   const ledger = await loadLedger(run.configId);
   const bySource = new Map(ledger.map((row) => [row.sourceKey, row] as const));
 
-  const desired = new Map<string, { record: CalendarFeedRecord; event: DesiredEvent }>();
+  const desired = new Map<string, { wanted: Wanted; event: DesiredEvent }>();
   for (const record of run.records) {
-    const { sourceKey } = ledgerSourceOf(record);
-    const event = build(run, record, bySource.get(sourceKey)?.id ?? generateRandomUUID());
-    if (event) desired.set(sourceKey, { record, event });
+    for (const source of syncSourcesOf(record, run.provider)) {
+      const ledgerId = bySource.get(source.sourceKey)?.id ?? generateRandomUUID();
+      const event = build(run, record, source, ledgerId);
+      if (event) desired.set(source.sourceKey, { wanted: { record, source }, event });
+    }
   }
 
   for (const row of ledger) {
@@ -240,8 +269,8 @@ const reconcile = async (run: Run): Promise<Failure> => {
     const failure = await removeEvent(run, row);
     if (failure) return failure;
   }
-  for (const [sourceKey, { record, event }] of desired) {
-    const failure = await writeEvent(run, record, event, bySource.get(sourceKey));
+  for (const [sourceKey, { wanted, event }] of desired) {
+    const failure = await writeEvent(run, wanted, event, bySource.get(sourceKey));
     if (failure) return failure;
   }
   return undefined;
@@ -296,13 +325,15 @@ const runSync = async (
 ): Promise<SyncOutcome> => {
   const config = await getCalendarSyncById(configId, userId);
   if (!config) return DONE;
+  const language = await getUserLanguage(userId);
   const run: Run = {
     configId,
     connectionId: connection.id,
     provider: connection.provider,
     capability: connection.capability,
     timeZone,
-    labels: await userRecordTypeLabels(userId),
+    labels: recordTypeLabels(language),
+    birthdayTitle: birthdayLabel(language),
     records: await getFeedRecords(config),
     driver,
     context: { connection, accessToken: connectionTokenSource(connection) },

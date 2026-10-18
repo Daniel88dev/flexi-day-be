@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
 import { calendarSync } from "./calendar-sync-schema.js";
 import { vacation } from "./vacation-schema.js";
+import { userBirthdays } from "./user-birthday-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
 export enum calendarProvider {
@@ -99,9 +100,11 @@ export const calendarSyncEvents = pgTable(
     sourceKey: text("source_key").notNull(),
     // Null once the vacation row is hard-deleted: the provider event still has to go.
     vacationId: text("vacation_id").references(() => vacation.id, { onDelete: "set null" }),
-    // No FK until `group_events` and `user_birthdays` exist; those tickets add it, `on delete set null`.
+    // No FK until `group_events` exists; that ticket adds it, `on delete set null`.
     groupEventId: text("group_event_id"),
-    birthdayUserId: text("birthday_user_id"),
+    birthdayUserId: text("birthday_user_id").references(() => userBirthdays.userId, {
+      onDelete: "set null",
+    }),
     providerEventId: text("provider_event_id"),
     kind: calendarSyncEventKindEnum("kind").notNull(),
     // Google's `eventType`, which Google never lets an existing event change.

@@ -21,14 +21,20 @@ export type Entitlements = {
   /** False once grace has expired — groups over the limit become read-only. */
   writable: boolean;
   graceEndsAt: string | null;
+  /**
+   * Fell to Free from a paid plan or an override. Never paid (no row, or a
+   * checkout still in flight) is not lapsed.
+   */
+  lapsed: boolean;
 };
 
-const freeEntitlements = (writable: boolean): Entitlements => ({
+const freeEntitlements = (writable: boolean, lapsed: boolean): Entitlements => ({
   plan: "FREE",
   maxGroups: PLAN_LIMITS.FREE.groups,
   maxMembersPerGroup: PLAN_LIMITS.FREE.membersPerGroup,
   writable,
   graceEndsAt: null,
+  lapsed,
 });
 
 const paidEntitlements = (
@@ -47,6 +53,7 @@ const paidEntitlements = (
     maxMembersPerGroup: limits.membersPerGroup,
     writable: true,
     graceEndsAt: graceEndsAt ? graceEndsAt.toISOString() : null,
+    lapsed: false,
   };
 };
 
@@ -56,7 +63,7 @@ const paidEntitlements = (
  * deliberately no cron sweep flipping state.
  */
 export const resolveEntitlements = (sub: Subscription | null, now: Date): Entitlements => {
-  if (!sub) return freeEntitlements(true);
+  if (!sub) return freeEntitlements(true, false);
 
   // Manual override wins over everything while it has not expired:
   // grandfathering, comped accounts and Enterprise Custom.
@@ -67,7 +74,7 @@ export const resolveEntitlements = (sub: Subscription | null, now: Date): Entitl
     switch (sub.manualPlanOverride) {
       case manualPlanOverride.Free:
         // An explicit downgrade-to-free: enforce read-only over Free limits.
-        return freeEntitlements(false);
+        return freeEntitlements(false, true);
       case manualPlanOverride.Pro:
       case manualPlanOverride.Enterprise: {
         const limits =
@@ -80,6 +87,7 @@ export const resolveEntitlements = (sub: Subscription | null, now: Date): Entitl
           maxMembersPerGroup: sub.manualMaxMembersPerGroup ?? limits.membersPerGroup,
           writable: true,
           graceEndsAt: null,
+          lapsed: false,
         };
       }
       case manualPlanOverride.Custom:
@@ -90,11 +98,12 @@ export const resolveEntitlements = (sub: Subscription | null, now: Date): Entitl
             sub.manualMaxMembersPerGroup ?? PLAN_LIMITS.ENTERPRISE.membersPerGroup,
           writable: true,
           graceEndsAt: null,
+          lapsed: false,
         };
     }
   }
 
-  if (!sub.plan || !sub.status) return freeEntitlements(true);
+  if (!sub.plan || !sub.status) return freeEntitlements(true, sub.manualPlanOverride !== null);
 
   switch (sub.status) {
     case subscriptionStatus.Active:
@@ -108,7 +117,7 @@ export const resolveEntitlements = (sub: Subscription | null, now: Date): Entitl
       if (sub.graceEndsAt && sub.graceEndsAt > now) {
         return paidEntitlements(sub.plan, sub.extraGroupSlots, sub.graceEndsAt);
       }
-      return freeEntitlements(false);
+      return freeEntitlements(false, true);
     }
   }
 };

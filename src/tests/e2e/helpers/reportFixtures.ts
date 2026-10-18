@@ -17,6 +17,7 @@ import { organizations } from "../../../db/schema/organization-schema.js";
 import { subscriptions } from "../../../db/schema/subscription-schema.js";
 import { attachments } from "../../../db/schema/attachment-schema.js";
 import { bankHolidays } from "../../../db/schema/bank-holiday-schema.js";
+import { userBirthdays } from "../../../db/schema/user-birthday-schema.js";
 import { ensureOrganizationForUser } from "../../../services/organization/organizationServices.js";
 
 /**
@@ -283,6 +284,8 @@ export async function ageEverything(): Promise<void> {
   await db.update(userYearQuotas).set({ updatedAt: longAgo });
   await db.update(vacation).set({ updatedAt: longAgo });
   await db.update(bankHolidays).set({ updatedAt: longAgo });
+  await db.update(subscriptions).set({ updatedAt: longAgo });
+  await db.update(userBirthdays).set({ updatedAt: longAgo });
 }
 
 /**

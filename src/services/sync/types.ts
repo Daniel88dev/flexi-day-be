@@ -8,7 +8,8 @@ export type SyncTableName =
   | "groupMirrors"
   | "userYearQuotas"
   | "bankHolidays"
-  | "vacations";
+  | "vacations"
+  | "birthdays";
 
 /** A row's place in its table's `updatedAt, id` order. `updatedAt` is null for a table ordered by id alone. */
 export type SyncKeyset = {
@@ -195,6 +196,24 @@ export type SyncVacationRow = {
 };
 
 /**
+ * Keyed by its owner: `id` is the `userId`, the table having no id of its own.
+ * Unpartitioned, like `users`. A row the caller may no longer see, because its
+ * owner stopped sharing it or left the groups that showed it, ships shaped as
+ * a tombstone: date and year null, `shared` false, `deletedAt` set.
+ */
+export type SyncBirthdayRow = {
+  id: string;
+  userId: string;
+  month: number | null;
+  day: number | null;
+  year: number | null;
+  shared: boolean;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
  * The tables arrive in dependency order so a client can apply a page as it
  * lands. Keys are the Drizzle export names.
  */
@@ -211,4 +230,5 @@ export type SyncEnvelope = {
   userYearQuotas: SyncUserYearQuotaRow[];
   bankHolidays: SyncBankHolidayRow[];
   vacations: SyncVacationRow[];
+  birthdays: SyncBirthdayRow[];
 };

@@ -17,6 +17,7 @@ export const SYNC_TABLE_ORDER: readonly SyncTableName[] = [
   "userYearQuotas",
   "bankHolidays",
   "vacations",
+  "birthdays",
 ];
 
 /**
