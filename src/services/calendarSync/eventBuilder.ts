@@ -5,8 +5,11 @@ import {
   calendarSyncEventKind,
 } from "../../db/schema/calendar-connection-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import { rruleLine } from "../../utils/ics.js";
 import type { RecordTypeLabels } from "../recordType/recordTypeLabels.js";
-import type { CalendarFeedRecord } from "./types.js";
+import { graphBirthdaySeries } from "./birthdaySeries.js";
+import { birthdaySourceKey } from "./sourceKey.js";
+import type { BirthdayFeedRecord, VacationFeedRecord } from "./types.js";
 
 const FOOTER = "Synced from Flexi Day";
 
@@ -25,10 +28,21 @@ export type GoogleEventPayload = {
     | { type: "customLocation"; customLocation: { label: string } };
   outOfOfficeProperties?: { autoDeclineMode: "declineNone" };
   reminders?: { useDefault: false };
-  extendedProperties: { private: { flexiDayVacationId: string; flexiDayConfigId: string } };
+  recurrence?: string[];
+  /** Vacations keep `flexiDayVacationId`, so their payloads and hashes never moved. */
+  extendedProperties: {
+    private:
+      | { flexiDayVacationId: string; flexiDayConfigId: string }
+      | { flexiDaySourceKey: string; flexiDayConfigId: string };
+  };
 };
 
 type GraphWhen = { dateTime: string; timeZone: string };
+
+type GraphRecurrence = {
+  pattern: { type: "absoluteYearly"; interval: number; month: number; dayOfMonth: number };
+  range: { type: "noEnd"; startDate: string };
+};
 
 export type MicrosoftEventPayload = {
   subject: string;
@@ -36,9 +50,10 @@ export type MicrosoftEventPayload = {
   start: GraphWhen;
   end: GraphWhen;
   isAllDay: boolean;
-  showAs: "oof";
+  showAs: "oof" | "free";
   isReminderOn: false;
   transactionId: string;
+  recurrence?: GraphRecurrence;
 };
 
 type Desired<P extends calendarProvider, Payload> = {
@@ -54,7 +69,7 @@ export type DesiredEvent =
 
 export type BuildInput = {
   record: Pick<
-    CalendarFeedRecord,
+    VacationFeedRecord,
     "id" | "vacationType" | "requestedDay" | "startTime" | "endTime" | "note"
   >;
   provider: calendarProvider;
@@ -201,6 +216,76 @@ export const buildDesired = (input: BuildInput): DesiredEvent | null => {
 
   if (homeOffice) return null;
   const payload = microsoftPayload(input, span);
+  const { transactionId: _immutable, ...content } = payload;
+  return { provider: input.provider, kind, payload, contentHash: hashOf(kind, content) };
+};
+
+export type BirthdayBuildInput = {
+  record: BirthdayFeedRecord;
+  /** Which of `graphBirthdaySeries` this event is; null for the only one. */
+  segment: number | null;
+  provider: calendarProvider;
+  timeZone: string;
+  /** "Birthday" in the owner's language. */
+  title: string;
+  configId: string;
+  ledgerId: string;
+};
+
+/** A birthday on a sync target: a free all-day yearly series, the same on every capability. */
+export const buildBirthdayDesired = (input: BirthdayBuildInput): DesiredEvent => {
+  const kind = calendarSyncEventKind.Birthday;
+  const { record } = input;
+
+  if (input.provider === calendarProvider.Google) {
+    const repeat = {
+      freq: "yearly" as const,
+      interval: 1,
+      until: null,
+      yearlyOn: { month: record.month, day: record.day },
+    };
+    const payload: GoogleEventPayload = {
+      eventType: "default",
+      summary: input.title,
+      description: FOOTER,
+      start: { date: record.startDate },
+      end: { date: nextDay(record.startDate) },
+      transparency: "transparent",
+      reminders: { useDefault: false },
+      recurrence: [rruleLine(repeat, record.startDate, null)],
+      extendedProperties: {
+        private: {
+          flexiDaySourceKey: birthdaySourceKey(record.userId, input.segment),
+          flexiDayConfigId: input.configId,
+        },
+      },
+    };
+    return { provider: input.provider, kind, payload, contentHash: hashOf(kind, payload) };
+  }
+
+  const series =
+    graphBirthdaySeries(record).find((s) => s.segment === input.segment) ??
+    graphBirthdaySeries(record)[0]!;
+  const zone = input.timeZone;
+  const payload: MicrosoftEventPayload = {
+    subject: input.title,
+    body: { contentType: "text", content: FOOTER },
+    start: { dateTime: `${series.startDate}T00:00:00`, timeZone: zone },
+    end: { dateTime: `${nextDay(series.startDate)}T00:00:00`, timeZone: zone },
+    isAllDay: true,
+    showAs: "free",
+    isReminderOn: false,
+    transactionId: input.ledgerId,
+    recurrence: {
+      pattern: {
+        type: "absoluteYearly",
+        interval: series.interval,
+        month: series.month,
+        dayOfMonth: series.dayOfMonth,
+      },
+      range: { type: "noEnd", startDate: series.startDate },
+    },
+  };
   const { transactionId: _immutable, ...content } = payload;
   return { provider: input.provider, kind, payload, contentHash: hashOf(kind, content) };
 };

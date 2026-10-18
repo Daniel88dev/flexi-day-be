@@ -30,3 +30,16 @@ export const birthdayOccurrence = (
   }
   return null;
 };
+
+/**
+ * The first day on or after `from` the birthday falls on: where a yearly
+ * series on feeds and synced calendars starts, so it never moves.
+ */
+export const firstBirthdayOnOrAfter = (
+  birthday: { month: number; day: number },
+  from: DateString
+): DateString => {
+  const nextYear = `${(Number(from.slice(0, 4)) + 1).toString()}${from.slice(4)}`;
+  return birthdayOccurrence({ ...birthday, year: null }, { startDate: from, endDate: nextYear })!
+    .date;
+};

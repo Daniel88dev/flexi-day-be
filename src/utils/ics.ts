@@ -13,6 +13,11 @@ export type IcsRepeat = {
   weekdays?: number[];
   monthlyMode?: "day" | "weekday" | "lastWeekday";
   until: string | null;
+  /**
+   * The date a yearly rule repeats on when the start is not that date: a 29
+   * February birthday whose first occurrence falls on 28 February.
+   */
+  yearlyOn?: { month: number; day: number };
 };
 
 type IcsEventBase = {
@@ -359,7 +364,8 @@ export const monthlyDayRule = (day: number): string => {
   return `BYMONTHDAY=${days.join(",")};BYSETPOS=-1`;
 };
 
-const rruleLine = (repeat: IcsRepeat, startDate: string, until: string | null): string => {
+/** The `RRULE` line of a repeat; `until` is already in its `DATE` or UTC form. */
+export const rruleLine = (repeat: IcsRepeat, startDate: string, until: string | null): string => {
   const start = parseDate(startDate);
   const parts = [`FREQ=${repeat.freq.toUpperCase()}`];
   if (repeat.interval > 1) parts.push(`INTERVAL=${repeat.interval}`);
@@ -378,8 +384,9 @@ const rruleLine = (repeat: IcsRepeat, startDate: string, until: string | null): 
       const n = Math.ceil(start.day / 7);
       parts.push(`BYDAY=${n > 4 ? -1 : n}${code}`);
     }
-  } else if (repeat.freq === "yearly" && start.month === 2 && start.day === 29) {
-    parts.push("BYMONTH=2;BYMONTHDAY=-1");
+  } else if (repeat.freq === "yearly") {
+    const on = repeat.yearlyOn ?? start;
+    if (on.month === 2 && on.day === 29) parts.push("BYMONTH=2;BYMONTHDAY=-1");
   }
 
   if (until) parts.push(`UNTIL=${until}`);

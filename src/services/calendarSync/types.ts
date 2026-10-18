@@ -78,7 +78,8 @@ export type CalendarSyncInsert = Pick<
  * A time-off record as it appears in a feed, enriched with the owner's display
  * name for the event summary.
  */
-export type CalendarFeedRecord = {
+export type VacationFeedRecord = {
+  kind: "vacation";
   id: string;
   userId: string;
   userName: string;
@@ -89,6 +90,20 @@ export type CalendarFeedRecord = {
   endTime: string | null;
   note: string | null;
 };
+
+/** A birthday as a yearly all-day series. Never carries the year, so no age leaves Flexi Day. */
+export type BirthdayFeedRecord = {
+  kind: "birthday";
+  userId: string;
+  userName: string;
+  month: number;
+  day: number;
+  /** The first occurrence on or after the row's `createdAt`, so the series never moves. */
+  startDate: string;
+};
+
+/** One entry per source a feed or a sync target carries. */
+export type CalendarFeedRecord = VacationFeedRecord | BirthdayFeedRecord;
 
 const typeEntrySchema = z.object({
   type: z.enum(CalendarRecordType),
@@ -103,13 +118,21 @@ const configShape = {
   scope: z.enum(calendarSyncScope).default(calendarSyncScope.Me),
   distinguishMine: z.boolean().default(false),
   teamIds: z.array(z.uuid()).default([]),
-  types: z.array(typeEntrySchema).min(1),
+  types: z.array(typeEntrySchema),
 };
 
-type ConfigShape = z.output<z.ZodObject<typeof configShape>>;
+type ConfigShape = z.output<z.ZodObject<typeof configShape>> & { includeBirthdays?: boolean };
+
+/** Every source a feed can carry; one of them has to be on. */
+const carriesSomething = (data: ConfigShape) =>
+  data.types.length > 0 || data.includeBirthdays === true;
 
 const withConfigRules = <T extends z.ZodType<ConfigShape>>(schema: T) =>
   schema
+    .refine(carriesSomething, {
+      message: "Include at least one record type or Birthdays",
+      path: ["types"],
+    })
     .refine((data) => data.scope !== calendarSyncScope.Team || data.teamIds.length > 0, {
       message: "At least one team is required for team scope",
       path: ["teamIds"],
@@ -121,7 +144,8 @@ const withConfigRules = <T extends z.ZodType<ConfigShape>>(schema: T) =>
 
 /**
  * Body for creating a calendar-sync config. `teamIds` is required for `TEAM`
- * scope and ignored (but stored) for `ME`. At least one type must be included.
+ * scope and ignored (but stored) for `ME`. It carries at least one record type,
+ * or Birthdays.
  */
 export const validateCreateCalendarSync = withConfigRules(
   z.object({

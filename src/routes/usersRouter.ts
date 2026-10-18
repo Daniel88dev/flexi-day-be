@@ -353,7 +353,8 @@ export const usersRouter = (): Router => {
    *       other years. Only turning `shared` on from off asks the plan: it
    *       needs one of the caller's live groups on a paid plan. Sending
    *       `shared: false` always passes, and so does keeping a switch that is
-   *       already on. Answers the same body as the read.
+   *       already on. Answers the same body as the read. Marks the caller's
+   *       own direct-sync targets with Birthdays on, after the save.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -408,7 +409,8 @@ export const usersRouter = (): Router => {
    *     summary: Remove the caller's birthday
    *     description: |
    *       Wipes the month, day and year and turns sharing off. Answers 204
-   *       whether or not a birthday was stored.
+   *       whether or not a birthday was stored. Removing one marks the
+   *       caller's own direct-sync targets with Birthdays on.
    *     security:
    *       - bearerAuth: []
    *     responses:

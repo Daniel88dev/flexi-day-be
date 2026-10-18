@@ -114,3 +114,20 @@ export const visibleBirthdays = async (viewerId: string, groupId?: string): Prom
   }
   return result;
 };
+
+/**
+ * The shared birthdays of live members of those `groupIds` the viewer sees in
+ * full and whose organization is paid or lapsed, each user once, the viewer's
+ * own included only when shared. What a team feed carries.
+ */
+export const sharedBirthdaysInGroups = async (
+  viewerId: string,
+  groupIds: string[]
+): Promise<Birthday[]> => {
+  const wanted = new Set(groupIds);
+  const viewable = (await getScopeEntries(viewerId))
+    .filter((entry) => entry.access === "all" && wanted.has(entry.groupId))
+    .map((entry) => entry.groupId);
+  const members = await getMemberBirthdaysInGroups(await birthdayGroupIds(viewable));
+  return members.map(liveBirthday).filter((row): row is Birthday => row !== null && row.shared);
+};

@@ -12,13 +12,19 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { teamScopeError } from "../calendarConnection/errors.js";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
+import { getBirthday } from "../birthday/birthdayServices.js";
+import { liveBirthday, sharedBirthdaysInGroups } from "../birthday/birthdayVisibility.js";
+import { firstBirthdayOnOrAfter } from "../birthday/birthdayOccurrence.js";
+import type { Birthday } from "../birthday/types.js";
 import type {
+  BirthdayFeedRecord,
   CalendarFeedRecord,
   CalendarSyncFull,
   CalendarSyncInsert,
   CalendarSyncRecord,
   CalendarSyncSettings,
   CalendarSyncTypeEntry,
+  VacationFeedRecord,
 } from "./types.js";
 
 /**
@@ -176,7 +182,7 @@ export const getCalendarSyncByToken = async (
  * Replaces a config's mutable fields and its teams/types. Settings left
  * undefined keep their stored value. Returns the updated config, or undefined
  * when no live config with that id is owned by the user. A sync target whose
- * type list or zone changed comes back marked due.
+ * type list, zone or Birthdays row changed comes back marked due.
  */
 export const updateCalendarSync = async (
   id: string,
@@ -189,12 +195,18 @@ export const updateCalendarSync = async (
   teamIds: string[],
   types: CalendarSyncTypeEntry[]
 ): Promise<CalendarSyncFull | undefined> => {
-  const { timeZone } = fields;
+  const { timeZone, includeBirthdays } = fields;
   // Column references on the right of SET read the row as it was before this update.
-  const zoneMoved =
-    timeZone === undefined
+  const moved = [
+    timeZone === undefined ? undefined : sql`${calendarSync.timeZone} <> ${timeZone}`,
+    includeBirthdays === undefined
       ? undefined
-      : sql`${calendarSync.connectionId} IS NOT NULL AND ${calendarSync.timeZone} <> ${timeZone}`;
+      : sql`${calendarSync.includeBirthdays} <> ${includeBirthdays}`,
+  ].filter((change) => change !== undefined);
+  const settingsMoved =
+    moved.length === 0
+      ? undefined
+      : sql`${calendarSync.connectionId} IS NOT NULL AND (${sql.join(moved, sql` OR `)})`;
   const updated = await db
     .transaction(async (tx) => {
       const [row] = await tx
@@ -208,10 +220,10 @@ export const updateCalendarSync = async (
           groupEventsColor: fields.groupEventsColor,
           includeBirthdays: fields.includeBirthdays,
           birthdaysColor: fields.birthdaysColor,
-          ...(zoneMoved
+          ...(settingsMoved
             ? {
-                syncDueAt: sql`CASE WHEN ${zoneMoved} THEN now() ELSE ${calendarSync.syncDueAt} END`,
-                syncAttempts: sql`CASE WHEN ${zoneMoved} THEN 0 ELSE ${calendarSync.syncAttempts} END`,
+                syncDueAt: sql`CASE WHEN ${settingsMoved} THEN now() ELSE ${calendarSync.syncDueAt} END`,
+                syncAttempts: sql`CASE WHEN ${settingsMoved} THEN 0 ELSE ${calendarSync.syncAttempts} END`,
               }
             : {}),
         })
@@ -316,14 +328,19 @@ export const getLiveTeamIds = async (config: CalendarSyncFull): Promise<string[]
   return rows.map((r) => r.groupId);
 };
 
+/** The groups a feed reads from: null on a personal feed, the live selected groups on a team feed. */
+type FeedGroups = string[] | null;
+
 /**
- * Returns the approved, non-deleted time-off records a config's feed exposes,
- * filtered by its scope, the teams its owner still belongs to and its included
- * types, enriched with the owner's display name for the event summary.
+ * The approved, non-deleted time-off records in the feed's window, of the
+ * owner on a personal feed or of the live selected groups on a team feed.
  */
-export const getFeedRecords = async (config: CalendarSyncFull): Promise<CalendarFeedRecord[]> => {
+const vacationRecords = async (
+  config: CalendarSyncFull,
+  groupIds: FeedGroups
+): Promise<VacationFeedRecord[]> => {
   const includedTypes = config.types.map((t) => t.vacationType);
-  if (includedTypes.length === 0) return [];
+  if (includedTypes.length === 0 || groupIds?.length === 0) return [];
 
   // Bound the feed to a rolling window so both the query cost and the generated
   // .ics size stay constant as approved history accumulates. All future dates
@@ -338,15 +355,8 @@ export const getFeedRecords = async (config: CalendarSyncFull): Promise<Calendar
     isNotNull(vacation.approvedAt),
     inArray(vacation.vacationType, includedTypes),
     gte(vacation.requestedDay, windowStartDay),
+    groupIds === null ? eq(vacation.userId, config.userId) : inArray(vacation.groupId, groupIds),
   ];
-
-  if (config.scope === calendarSyncScope.Me) {
-    filters.push(eq(vacation.userId, config.userId));
-  } else {
-    const liveTeamIds = await getLiveTeamIds(config);
-    if (liveTeamIds.length === 0) return [];
-    filters.push(inArray(vacation.groupId, liveTeamIds));
-  }
 
   const rows = await db
     .select({
@@ -365,5 +375,57 @@ export const getFeedRecords = async (config: CalendarSyncFull): Promise<Calendar
     .where(and(...filters))
     .orderBy(vacation.requestedDay);
 
-  return rows;
+  return rows.map((row) => ({ kind: "vacation", ...row }));
+};
+
+/**
+ * Birthdays as yearly series: the owner's own on a personal feed and on direct
+ * sync, never a colleague's; on a team feed the shared birthdays of the live
+ * selected groups' members, each person once.
+ */
+const birthdayRecords = async (
+  config: CalendarSyncFull,
+  groupIds: FeedGroups
+): Promise<BirthdayFeedRecord[]> => {
+  if (!config.includeBirthdays) return [];
+  const birthdays =
+    groupIds === null
+      ? [liveBirthday(await getBirthday(config.userId))].filter((b): b is Birthday => b !== null)
+      : await sharedBirthdaysInGroups(config.userId, groupIds);
+  if (birthdays.length === 0) return [];
+
+  const names = await db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .where(
+      inArray(
+        user.id,
+        birthdays.map((b) => b.userId)
+      )
+    );
+  const nameOf = new Map(names.map((row) => [row.id, row.name]));
+  return birthdays
+    .map((b) => ({
+      kind: "birthday" as const,
+      userId: b.userId,
+      userName: nameOf.get(b.userId) ?? "",
+      month: b.month,
+      day: b.day,
+      startDate: firstBirthdayOnOrAfter(b, b.createdAt.toISOString().slice(0, 10)),
+    }))
+    .sort((a, b) => a.userName.localeCompare(b.userName) || a.userId.localeCompare(b.userId));
+};
+
+/**
+ * Everything a config's feed and sync target carry, one source per record
+ * kind, each filtered by the config's toggles. A team feed reads only the
+ * selected groups its owner is still in.
+ */
+export const getFeedRecords = async (config: CalendarSyncFull): Promise<CalendarFeedRecord[]> => {
+  const groupIds = config.scope === calendarSyncScope.Me ? null : await getLiveTeamIds(config);
+  const [vacations, birthdays] = await Promise.all([
+    vacationRecords(config, groupIds),
+    birthdayRecords(config, groupIds),
+  ]);
+  return [...vacations, ...birthdays];
 };

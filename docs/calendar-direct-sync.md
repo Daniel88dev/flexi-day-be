@@ -13,8 +13,9 @@ keep teammates' records out of a personal calendar are in
 ## What gets written
 
 The engine writes the records the `.ics` feed would show for the same config: `getFeedRecords` on a
-`ME` config, so only the owner's approved, live rows, twelve months back and everything ahead. One
-provider event stands for one day row. Attendance sessions are never written.
+`ME` config. That is the owner's approved, live rows, twelve months back and everything ahead, and,
+with the config's Birthdays row on, the owner's own birthday. One provider event stands for one day
+row. Attendance sessions and colleagues' birthdays are never written.
 
 A row with both `startTime` and `endTime` is timed and spans those times in the target's time zone.
 Every other row is a full day, `halfDay` included. A timed row whose end is at or before its start is
@@ -44,6 +45,27 @@ cut at the next midnight.
   config created without one, and every config that predates the column, is in `Europe/Prague`.
   Connecting a target overwrites it with the browser's zone, `PUT /api/calendar-sync/:id` changes
   it when the body names one, and turning the target off leaves it.
+
+### Birthdays
+
+With `includeBirthdays` on, a target carries the owner's own birthday, shared or not, and nobody
+else's. It goes out as one free all-day yearly series with no end, titled "Birthday" ("Narozeniny"
+in Czech) and never with the year or an age. The ledger keys it `bd:<userId>` with kind `BIRTHDAY`.
+
+- The series starts on the birthday's first occurrence on or after the row's `createdAt`, the same
+  `DTSTART` the `.ics` feed writes, so it never moves.
+- Google: a `default` event, `transparency: transparent`, `reminders.useDefault: false`,
+  `recurrence: ["RRULE:FREQ=YEARLY"]`, and `extendedProperties.private` with `flexiDaySourceKey` and
+  `flexiDayConfigId`. A 29 February birthday repeats as `FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1`, so it
+  lands on 28 February in other years.
+- Microsoft: `showAs: free`, `isAllDay: true`, `recurrence` with an `absoluteYearly` pattern on the
+  birthday's month and day and a `noEnd` range.
+- A 29 February birthday goes to Graph as one series on day 29. The T-348 probe has not shown yet
+  that Graph lands it on 28 February in other years. If it does not, `graphBirthdaySeries` in
+  `calendarSync/birthdaySeries.ts` switches to `leapDayFallbackSeries`: four `interval: 4` series,
+  keyed `bd:<userId>:0` to `:3`.
+- Saving or removing a birthday marks the owner's targets with Birthdays on. Turning the row on or
+  off through `PUT /api/calendar-sync/:id` marks the target too.
 
 Writes go to the primary calendar only. There is no calendar picker.
 
@@ -126,8 +148,13 @@ Callers:
 - `handlePostVacation`, on the auto-approve path only. Other bookings start pending.
 - `handleUpdateVacation`, with the rows before and after the edit, so a retyped row leaves the old
   type's targets too.
-- `updateCalendarSync` marks its own target due when the config's type list changes, and
-  `handleUpdateCalendar` enqueues it.
+- `updateCalendarSync` marks its own target due when the config's type list, zone or Birthdays row
+  changes, and `handleUpdateCalendar` enqueues it.
+
+`markBirthdayTargetsDirty(userId)` does the same for a birthday write: `PUT` and `DELETE
+/api/users/me/birthday` call it after the write, and it marks the user's own targets with Birthdays
+on. A colleague's birthday marks nothing, because no target carries it. Both markers share one
+`UPDATE` helper, `markTargetsDue`, and differ only in the condition that picks the configs.
 
 ## The queue
 
@@ -169,8 +196,8 @@ Every config response carries `target`, or `null` when direct sync is off for it
 ## The ledger
 
 `calendar_sync_events` holds one row per target and source record, unique on the config and
-`source_key`: `v:<vacationId>` for a day row, with `ge:<groupEventId>` and `bd:<userId>` reserved
-for group events and birthdays, and a `:<n>` segment for a source that writes several events. Each
+`source_key`: `v:<vacationId>` for a day row, `bd:<userId>` for a birthday, `ge:<groupEventId>`
+reserved for group events, and a `:<n>` segment for a source that writes several events. Each
 row also carries the source's own column (`vacation_id`, `group_event_id`, `birthday_user_id`), the
 provider's event id, the kind (`ABSENCE`, `HOME_OFFICE`, `GROUP_EVENT` or `BIRTHDAY`), Google's
 `eventType` and a content hash. The hash is SHA-256 over the
@@ -293,7 +320,9 @@ lifetime cap above but keeps refresh tokens alive.
 - Entra refresh tokens lapse after 90 idle days, and the card asks to reconnect.
 - The Google app is unverified until T-302, with the interstitial and the 100-user lifetime cap.
 - A broken connection sends no email. The card is the only signal.
-- Teammates' records are never written, by design.
+- Teammates' records are never written, by design. That covers their birthdays: a shared birthday
+  reaches team `.ics` feeds only.
+- No age leaves Flexi Day. A series has one title, so the year a birthday carries stays in the app.
 - A purge that cannot delete an event leaves it. Each failed delete is retried three times, waiting
   the `Retry-After` up to 5 s. A row whose delete still fails stays in the ledger and its event
   stays in the user's calendar. The target is cleared anyway, so turning it off or disconnecting

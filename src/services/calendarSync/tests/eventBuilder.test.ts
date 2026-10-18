@@ -6,7 +6,13 @@ import {
   calendarSyncEventKind,
 } from "../../../db/schema/calendar-connection-schema.js";
 import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
-import { buildDesired, type BuildInput } from "../eventBuilder.js";
+import {
+  buildBirthdayDesired,
+  buildDesired,
+  type BirthdayBuildInput,
+  type BuildInput,
+} from "../eventBuilder.js";
+import { graphBirthdaySeries, leapDayFallbackSeries } from "../birthdaySeries.js";
 import { recordTypeLabels } from "../../recordType/recordTypeLabels.js";
 
 const VACATION_ID = "vac-1";
@@ -289,5 +295,134 @@ describe("buildDesired, content hash", () => {
     expect(microsoft({ ledgerId: "a" })!.contentHash).toBe(
       microsoft({ ledgerId: "b" })!.contentHash
     );
+  });
+});
+
+const OWNER_ID = "e9dl7v5efgnn0cjrmn7hqz3aswwqxg2b";
+
+const birthday = (
+  overrides: Partial<BirthdayBuildInput["record"]> = {}
+): BirthdayBuildInput["record"] => ({
+  kind: "birthday",
+  userId: OWNER_ID,
+  userName: "Olivia Owner",
+  month: 10,
+  day: 25,
+  startDate: "2026-10-25",
+  ...overrides,
+});
+
+const birthdayInput = (overrides: Partial<BirthdayBuildInput> = {}): BirthdayBuildInput => ({
+  record: birthday(),
+  segment: null,
+  provider: calendarProvider.Google,
+  timeZone: "Europe/Prague",
+  title: "Birthday",
+  configId: CONFIG_ID,
+  ledgerId: LEDGER_ID,
+  ...overrides,
+});
+
+const leapDay = birthday({ month: 2, day: 29, startDate: "2027-02-28" });
+
+describe("buildBirthdayDesired, Google", () => {
+  it("writes a free all-day yearly default event keyed by source", () => {
+    const built = buildBirthdayDesired(birthdayInput());
+
+    expect(built.kind).toBe(calendarSyncEventKind.Birthday);
+    expect(built.payload).toEqual({
+      eventType: "default",
+      summary: "Birthday",
+      description: "Synced from Flexi Day",
+      start: { date: "2026-10-25" },
+      end: { date: "2026-10-26" },
+      transparency: "transparent",
+      reminders: { useDefault: false },
+      recurrence: ["RRULE:FREQ=YEARLY"],
+      extendedProperties: {
+        private: { flexiDaySourceKey: `bd:${OWNER_ID}`, flexiDayConfigId: CONFIG_ID },
+      },
+    });
+  });
+
+  it("repeats a 29 February birthday on the last day of February", () => {
+    expect(buildBirthdayDesired(birthdayInput({ record: leapDay })).payload).toMatchObject({
+      start: { date: "2027-02-28" },
+      end: { date: "2027-03-01" },
+      recurrence: ["RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1"],
+    });
+  });
+});
+
+describe("buildBirthdayDesired, Microsoft", () => {
+  it("writes a free all-day absoluteYearly series with no end", () => {
+    const built = buildBirthdayDesired(
+      birthdayInput({ provider: calendarProvider.Microsoft, title: "Narozeniny" })
+    );
+
+    expect(built.kind).toBe(calendarSyncEventKind.Birthday);
+    expect(built.payload).toEqual({
+      subject: "Narozeniny",
+      body: { contentType: "text", content: "Synced from Flexi Day" },
+      start: { dateTime: "2026-10-25T00:00:00", timeZone: "Europe/Prague" },
+      end: { dateTime: "2026-10-26T00:00:00", timeZone: "Europe/Prague" },
+      isAllDay: true,
+      showAs: "free",
+      isReminderOn: false,
+      transactionId: LEDGER_ID,
+      recurrence: {
+        pattern: { type: "absoluteYearly", interval: 1, month: 10, dayOfMonth: 25 },
+        range: { type: "noEnd", startDate: "2026-10-25" },
+      },
+    });
+  });
+
+  it("sends a 29 February birthday as one series on day 29 until the T-348 probe says otherwise", () => {
+    expect(graphBirthdaySeries(leapDay)).toEqual([
+      { segment: null, startDate: "2027-02-28", interval: 1, month: 2, dayOfMonth: 29 },
+    ]);
+    expect(
+      buildBirthdayDesired(birthdayInput({ provider: calendarProvider.Microsoft, record: leapDay }))
+        .payload
+    ).toMatchObject({
+      start: { dateTime: "2027-02-28T00:00:00" },
+      recurrence: {
+        pattern: { type: "absoluteYearly", interval: 1, month: 2, dayOfMonth: 29 },
+        range: { type: "noEnd", startDate: "2027-02-28" },
+      },
+    });
+  });
+
+  it("has a four-series fallback for 29 February, one series per year of a leap cycle", () => {
+    expect(leapDayFallbackSeries(leapDay)).toEqual([
+      { segment: 0, startDate: "2027-02-28", interval: 4, month: 2, dayOfMonth: 28 },
+      { segment: 1, startDate: "2028-02-29", interval: 4, month: 2, dayOfMonth: 29 },
+      { segment: 2, startDate: "2029-02-28", interval: 4, month: 2, dayOfMonth: 28 },
+      { segment: 3, startDate: "2030-02-28", interval: 4, month: 2, dayOfMonth: 28 },
+    ]);
+  });
+
+  it("does not hash the transaction id", () => {
+    const at = (ledgerId: string) =>
+      buildBirthdayDesired(birthdayInput({ provider: calendarProvider.Microsoft, ledgerId }))
+        .contentHash;
+
+    expect(at("a")).toBe(at("b"));
+  });
+});
+
+describe("buildBirthdayDesired, content hash", () => {
+  it("changes with the date and the title, not with the person's name", () => {
+    const base = buildBirthdayDesired(birthdayInput()).contentHash;
+
+    expect(
+      buildBirthdayDesired(birthdayInput({ record: birthday({ userName: "Renamed" }) })).contentHash
+    ).toBe(base);
+    expect(
+      buildBirthdayDesired(
+        birthdayInput({ record: birthday({ day: 26, startDate: "2026-10-26" }) })
+      ).contentHash
+    ).not.toBe(base);
+    expect(buildBirthdayDesired(birthdayInput({ title: "Narozeniny" })).contentHash).not.toBe(base);
   });
 });

@@ -457,7 +457,9 @@ export const calendarSyncRouter = (): Router => {
    *                   format: uuid
    *               types:
    *                 type: array
-   *                 minItems: 1
+   *                 description: |
+   *                   May be empty when `includeBirthdays` is true; a feed carrying
+   *                   nothing answers 422.
    *                 items:
    *                   type: object
    *                   required:
@@ -504,8 +506,8 @@ export const calendarSyncRouter = (): Router => {
    *         description: A requested team is not one the caller belongs to
    *       '422':
    *         description: |
-   *           Invalid body: a missing name or type, a colour outside the palette, or a
-   *           time zone that is not an IANA name
+   *           Invalid body: a missing name, no record type with Birthdays off, a colour
+   *           outside the palette, or a time zone that is not an IANA name
    */
   app.post("/", tryCatch(handlePostCalendar));
 
@@ -588,7 +590,9 @@ export const calendarSyncRouter = (): Router => {
    *                   format: uuid
    *               types:
    *                 type: array
-   *                 minItems: 1
+   *                 description: |
+   *                   May be empty when `includeBirthdays` is true; a feed carrying
+   *                   nothing answers 422.
    *                 items:
    *                   type: object
    *                   required:
@@ -616,7 +620,9 @@ export const calendarSyncRouter = (): Router => {
    *                 description: Swatch palette key; left out, the stored value stays
    *               includeBirthdays:
    *                 type: boolean
-   *                 description: Left out, the stored value stays
+   *                 description: |
+   *                   Left out, the stored value stays. A change marks a connected
+   *                   target due.
    *               birthdaysColor:
    *                 type: string
    *                 nullable: true
@@ -641,8 +647,8 @@ export const calendarSyncRouter = (): Router => {
    *         description: Calendar not found
    *       '422':
    *         description: |
-   *           Invalid body: a missing name or type, a colour outside the palette, or a
-   *           time zone that is not an IANA name
+   *           Invalid body: a missing name, no record type with Birthdays off, a colour
+   *           outside the palette, or a time zone that is not an IANA name
    */
   app.put("/:id", tryCatch(handleUpdateCalendar));
 
