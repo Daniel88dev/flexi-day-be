@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
@@ -233,7 +233,7 @@ describe("birthdays in feeds and direct sync", () => {
       await db
         .update(groupUsers)
         .set({ deletedAt: new Date() })
-        .where(eq(groupUsers.groupId, second));
+        .where(and(eq(groupUsers.groupId, second), eq(groupUsers.userId, owner.id)));
 
       expect((await fetch()).map((event) => line(event, "UID"))).toEqual([
         `UID:bd-${alice.id}@flexiday`,

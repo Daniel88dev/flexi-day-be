@@ -5,6 +5,8 @@
  * from a subscribed feed is implemented.
  */
 import { logger } from "../middleware/logger.js";
+import { isSupportedTimeZone } from "../services/calendarConnection/types.js";
+import { DEFAULT_CALENDAR_SYNC_TIME_ZONE } from "../services/calendarSync/types.js";
 
 /** A repeat rule read off the event's start date. */
 export type IcsRepeat = {
@@ -448,6 +450,17 @@ const eventLines = (event: IcsEvent, now: string): string[] => {
 };
 
 /**
+ * The API validates zones on write, but a stored zone can still be one this
+ * runtime's `Intl` does not know, and formatting with it throws. Such an event
+ * goes out in the default zone rather than failing the whole feed.
+ */
+const withSupportedZone = (event: IcsEvent): IcsEvent => {
+  if (event.kind !== "timed" || isSupportedTimeZone(event.timeZone)) return event;
+  logger.warn("ics.time_zone.unsupported", { timeZone: event.timeZone, uid: event.uid });
+  return { ...event, timeZone: DEFAULT_CALENDAR_SYNC_TIME_ZONE };
+};
+
+/**
  * Renders an iCalendar document. All-day events are `VALUE=DATE` with an
  * exclusive DTEND, which is how calendar clients expect multi-day absences to
  * appear. Timed events carry their zone's `TZID`, and each zone in use gets one
@@ -465,15 +478,16 @@ export const buildIcsCalendar = (calendar: IcsCalendar): string => {
     `X-WR-CALNAME:${escapeText(calendar.name)}`,
   ];
 
+  const events = calendar.events.map(withSupportedZone);
   const zones = new Set<string>();
-  for (const event of calendar.events) {
+  for (const event of events) {
     if (event.kind === "timed") zones.add(event.timeZone);
   }
   for (const zone of zones) {
     lines.push(...vtimezoneLines(zone, nowDate.getUTCFullYear()));
   }
 
-  for (const event of calendar.events) {
+  for (const event of events) {
     lines.push("BEGIN:VEVENT", ...eventLines(event, now), "END:VEVENT");
   }
 

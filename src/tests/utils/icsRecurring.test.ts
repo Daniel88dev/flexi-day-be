@@ -332,6 +332,53 @@ describe("buildIcsCalendar, VTIMEZONE", () => {
     expect(out.indexOf("END:VTIMEZONE")).toBeLessThan(out.indexOf("BEGIN:VEVENT"));
   });
 
+  test("a timed event in a zone the runtime does not know falls back to Europe/Prague", () => {
+    warn.mockClear();
+    const out = buildIcsCalendar({
+      name: "Feed",
+      events: [
+        timedIn("Mars/Olympus", { freq: "weekly", interval: 1, until: "2026-12-29" }),
+        timedIn("Asia/Tokyo"),
+        allDay("2026-10-01", { freq: "daily", ...forever }),
+      ],
+    });
+
+    expect(lines(out).filter((line) => line.startsWith("TZID:"))).toEqual([
+      "TZID:Europe/Prague",
+      "TZID:Asia/Tokyo",
+    ]);
+    expect(out).not.toMatch(/TZID[=:]Mars\/Olympus/);
+    expect(block(out, "BEGIN:VEVENT", "END:VEVENT")).toEqual([
+      "BEGIN:VEVENT",
+      "UID:ge-Mars/Olympus@flexiday",
+      "DTSTART;TZID=Europe/Prague:20261020T090000",
+      "DTEND;TZID=Europe/Prague:20261020T100000",
+      "RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261229T080000Z",
+      "SUMMARY:Standup",
+      "TRANSP:TRANSPARENT",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:ge-Asia/Tokyo@flexiday",
+      "DTSTART;TZID=Asia/Tokyo:20261020T090000",
+      "DTEND;TZID=Asia/Tokyo:20261020T100000",
+      "SUMMARY:Standup",
+      "TRANSP:TRANSPARENT",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:ge-2026-10-01@flexiday",
+      "DTSTART;VALUE=DATE:20261001",
+      "DTEND;VALUE=DATE:20261002",
+      "RRULE:FREQ=DAILY",
+      "SUMMARY:Team day",
+      "TRANSP:TRANSPARENT",
+      "END:VEVENT",
+    ]);
+    expect(warn).toHaveBeenCalledWith("ics.time_zone.unsupported", {
+      timeZone: "Mars/Olympus",
+      uid: "ge-Mars/Olympus@flexiday",
+    });
+  });
+
   test("a single timed event carries its TZID and no repeat", () => {
     const event = block(
       buildIcsCalendar({
