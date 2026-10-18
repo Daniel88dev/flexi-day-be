@@ -2,6 +2,7 @@ import { z } from "zod";
 import { calendarSyncScope } from "../../db/schema/calendar-sync-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { timeZoneSchema } from "../calendarConnection/types.js";
+import type { WireRecordType } from "../vacation/redaction.js";
 import type { IsoDate, RepeatRule } from "../groupEvent/occurrences.js";
 
 /**
@@ -85,7 +86,7 @@ export type VacationFeedRecord = {
   userId: string;
   userName: string;
   groupId: string;
-  vacationType: CalendarRecordType;
+  vacationType: WireRecordType;
   requestedDay: string;
   startTime: string | null;
   endTime: string | null;

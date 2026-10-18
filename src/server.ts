@@ -148,9 +148,46 @@ export const createServer = () => {
     app.use("/api/support", supportRouter());
   }
 
-  // Public, token-authenticated iCalendar feed. Deliberately NOT behind
-  // `authSession`: calendar clients subscribe with just the secret token in
-  // the URL and cannot send session cookies.
+  /**
+   * @openapi
+   * /calendars/{token}.ics:
+   *   get:
+   *     tags:
+   *       - Calendar sync
+   *     summary: A calendar sync config's iCalendar feed
+   *     description: |
+   *       Deliberately outside `authSession`: calendar clients cannot send session
+   *       cookies, so the token in the URL is the only credential and anyone holding
+   *       the URL can read the feed. Carries the config's approved time off in its window
+   *       (the last 12 months and everything ahead), plus group events and birthdays
+   *       when switched on.
+   *
+   *       A time-off event's SUMMARY is `<name> — <type label>` and its CATEGORIES the
+   *       label, in the owner's app language. The owner's own events carry their note
+   *       as DESCRIPTION. On a `TEAM` feed every other person's events get the teammate
+   *       view, whoever owns the feed: no DESCRIPTION, and Sick labelled Away (`Pryč`).
+   *       The config's `SICK` type decides whether those Away events appear.
+   *     operationId: handleGetCalendarFeed
+   *     security: []
+   *     parameters:
+   *       - in: path
+   *         name: token
+   *         required: true
+   *         schema:
+   *           type: string
+   *           pattern: '^flx_live_[a-f0-9]{40}$'
+   *     responses:
+   *       '200':
+   *         description: The feed
+   *         content:
+   *           text/calendar:
+   *             schema:
+   *               type: string
+   *       '404':
+   *         description: Malformed token, or no config holds it
+   *       '429':
+   *         description: Too many fetches for this token (`calendarFeedLimiter`)
+   */
   app.get("/calendars/:token.ics", calendarFeedLimiter, tryCatch(handleGetCalendarFeed));
 
   app.get("/health", (_, res) => {

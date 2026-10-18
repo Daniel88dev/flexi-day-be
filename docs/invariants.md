@@ -445,6 +445,14 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
 - **Every read of another person's row goes through `viewVacationRowAs`.** Today that is
   `GET /api/vacation/:id`, `GET /api/vacation?groupId=` and `GET /api/vacation/calendar`.
   `privateDetails.e2e.test.ts` fails if any of them hands a teammate Sick or a private field.
+- **A team calendar feed has no privileged readers.** `vacationRecords` in
+  `calendarSyncServices.ts` reads every row through `viewVacationRowAs` with `teammateViewer`, a
+  viewer holding no privileged groups, so even an approver's or admin's team feed shows other
+  people's Sick as Away (`Pryč`) and carries no note of theirs. The feed URL is a bearer link: the
+  owner's rights would reach whoever holds it. The owner's own rows stay complete, and a Me feed
+  holds only those. The feed filters on the stored type, so the config's `SICK` toggle decides
+  whether teammates' Away events appear; Away is never a configurable feed type.
+  `calendarFeedPrivateDetails.e2e.test.ts` fails if a team feed hands out a teammate's Sick or note.
 - **Reports and the export go through `viewReportRowAs` instead.** It applies the same privileged
   reader rule but leaves a teammate's Sick out rather than showing Away, because Away means nothing
   as a usage line. `getBookingsForScope`, `aggregateUsageByUserMonth` and `aggregateUsageSplit`

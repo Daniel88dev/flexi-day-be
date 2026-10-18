@@ -14,6 +14,16 @@ export type VacationViewer = {
   privilegedGroupIds: ReadonlySet<string>;
 };
 
+/**
+ * A viewer with no privileged groups: everyone else's rows get the teammate
+ * view, whatever `userId` may approve or administer. Team calendar feeds read
+ * as this, because the feed URL is a bearer link anyone holding it can open.
+ */
+export const teammateViewer = (userId: string): VacationViewer => ({
+  userId,
+  privilegedGroupIds: new Set(),
+});
+
 type RedactableRow = {
   userId: string;
   groupId: string;

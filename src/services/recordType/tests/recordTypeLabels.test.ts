@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
+import { AWAY_RECORD_TYPE } from "../../vacation/redaction.js";
 import { recordTypeLabels } from "../recordTypeLabels.js";
 
 describe("recordTypeLabels", () => {
@@ -14,6 +15,7 @@ describe("recordTypeLabels", () => {
       [CalendarRecordType.SickDay]: "Sick day",
       [CalendarRecordType.StudyLeave]: "Study leave",
       [CalendarRecordType.Other]: "Other",
+      [AWAY_RECORD_TYPE]: "Away",
     });
   });
 
@@ -28,6 +30,7 @@ describe("recordTypeLabels", () => {
       [CalendarRecordType.SickDay]: "Zdravotní volno",
       [CalendarRecordType.StudyLeave]: "Studijní volno",
       [CalendarRecordType.Other]: "Ostatní",
+      [AWAY_RECORD_TYPE]: "Pryč",
     });
   });
 
