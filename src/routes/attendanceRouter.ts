@@ -744,7 +744,11 @@ export const attendanceRouter = (): Router => {
    *
    *       The business date does not move with the times: it is fixed at
    *       clock-in and never recomputed, so a correction changes what a day
-   *       holds rather than which day holds it.
+   *       holds rather than which day holds it. The corrected session, the
+   *       patch applied over what is stored, has to start on that date in the
+   *       zone it was clocked in, end no later than now (or, left open, start
+   *       no later than now), and last no longer than the organization's
+   *       session ceiling. These hold for admins as for the employee.
    *
    *       Correcting an end records who closed the session, so a session the
    *       sweep closed stops being flagged once somebody has overruled it.
@@ -801,9 +805,14 @@ export const attendanceRouter = (): Router => {
    *           session's `{ sessionId, startedAt }` either way.
    *       '422':
    *         description: |
-   *           A patch that changes nothing, a malformed instant, an end at or
-   *           before its start (`END_BEFORE_START`), or times that would leave a
-   *           break outside its session (`BREAK_OUTSIDE_SESSION`).
+   *           A patch that changes nothing, a malformed instant, or
+   *           `context.reason` naming the rule: `END_BEFORE_START`,
+   *           `BREAK_OUTSIDE_SESSION` when the times would leave a break outside
+   *           the session, `START_OFF_DATE` when the start leaves the session's
+   *           business date, `END_IN_FUTURE` for an end after now,
+   *           `START_IN_FUTURE` for an open session's start after now, or
+   *           `OVER_CEILING` with `context.ceilingMinutes` when the session would
+   *           be longer than the ceiling.
    */
   app.patch(
     "/sessions/:sessionId",
@@ -869,9 +878,9 @@ export const attendanceRouter = (): Router => {
    *     description: |
    *       Moves one end of a break or both, under the same authorization as the
    *       session it belongs to. A break has to stay inside its session, end
-   *       after it starts, and overlap no other break of it; `endedAt: null`
-   *       reopens it, and is refused when another break on the session is
-   *       already open.
+   *       after it starts, end no later than now (or, left open, start no later
+   *       than now), and overlap no other break of it; `endedAt: null` reopens
+   *       it, and is refused when another break on the session is already open.
    *
    *       Correcting the end clears `autoClosed`: the flag is the sweep's claim
    *       that nobody has checked the number, and somebody just has.
@@ -929,7 +938,9 @@ export const attendanceRouter = (): Router => {
    *       '422':
    *         description: |
    *           A patch that changes nothing, a malformed instant,
-   *           `END_BEFORE_START`, or `BREAK_OUTSIDE_SESSION`.
+   *           `END_BEFORE_START`, `BREAK_OUTSIDE_SESSION`, `END_IN_FUTURE` for an
+   *           end after now, or `START_IN_FUTURE` for an open break's start after
+   *           now.
    */
   app.patch(
     "/breaks/:breakId",

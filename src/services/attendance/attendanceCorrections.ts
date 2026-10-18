@@ -48,6 +48,13 @@ import {
   type SelfServiceRefusal,
   type SelfServiceWindow,
 } from "./selfServiceWindow.js";
+import {
+  pastNowRefusal,
+  sessionCeilingMinutesOf,
+  spanMessage,
+  spanRefusal,
+  spanRefused,
+} from "./sessionSpan.js";
 
 /** A start and an end, which is all the shape rules below actually read. */
 type Span = { startedAt: Date; endedAt: Date | null };
@@ -65,6 +72,7 @@ type CorrectionSubject = {
   right: AttendanceCorrectionRight;
   /** The organization's zone now, which is what "today" is read in. */
   timezone: string;
+  ceilingMinutes: number;
 };
 
 const invalid = (reason: string, message: string, context?: { [key: string]: unknown }) =>
@@ -279,7 +287,7 @@ const loadCorrectable = async (
   // An open session passes the window whatever its date, and the sweep may have
   // closed it while this waited, so the owner's right is decided again on the
   // session and the Employment as they now stand. An admin's depends on neither.
-  const { right, timezone } =
+  const { right, timezone, settings } =
     unlocked.right === AttendanceCorrectionRight.Admin
       ? unlocked
       : await authorizeAttendanceWrite(viewerUserId, locked, session, tx, now);
@@ -290,6 +298,7 @@ const loadCorrectable = async (
     employment: locked,
     right,
     timezone,
+    ceilingMinutes: sessionCeilingMinutesOf(settings),
   };
 };
 
@@ -418,10 +427,28 @@ export const correctAttendanceSession = async (
   now = new Date()
 ): Promise<AttendanceSessionView> => {
   const subject = await loadCorrectable(viewerUserId, sessionId, tx, now);
-  const { session, breaks, right } = subject;
+  const { session, breaks, right, ceilingMinutes } = subject;
 
   const next = applyCorrection(session, patch);
   assertCoherent(next, breaks);
+
+  // The session's own zone, the one its business date was read in: an
+  // organization that changed zones since must not strand its older days.
+  const refusal = spanRefusal({
+    businessDate: session.businessDate,
+    ...next,
+    timezone: session.timezone,
+    now,
+    ceilingMinutes,
+  });
+  if (refusal) {
+    throw spanRefused({
+      reason: refusal,
+      message: spanMessage(refusal, ceilingMinutes),
+      ceilingMinutes,
+      context: { sessionId: session.id, viewerUserId },
+    });
+  }
 
   if (session.endedAt !== null && next.endedAt === null) {
     const open = await getOpenSession(session.employmentId, tx);
@@ -505,6 +532,14 @@ export const correctAttendanceBreak = async (
     session,
     breaks.map((candidate) => (candidate.id === entry.id ? { ...candidate, ...next } : candidate))
   );
+
+  const pastNow = pastNowRefusal(next, now);
+  if (pastNow) {
+    throw invalid(pastNow, spanMessage(pastNow, subject.ceilingMinutes), {
+      breakId: entry.id,
+      viewerUserId,
+    });
+  }
 
   if (entry.endedAt !== null && next.endedAt === null) {
     const open = await getOpenBreak(session.id, tx);

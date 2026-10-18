@@ -160,7 +160,15 @@ It must sit inside its session and not overlap another break.
   who opened it".
 - No approval workflow: the admin is the authority.
 - A correction moves times, never days. `businessDate` is fixed at clock-in and is not recomputed
-  from a corrected start, so an edit changes what a day holds rather than which day holds it.
+  from a corrected start, so an edit changes what a day holds rather than which day holds it. The
+  corrected start has to stay on that date, read in the zone the session was clocked in; the end
+  may cross midnight. The window and the Employment's spell are read on that date, so they hold the
+  times as well.
+- Whoever corrects it, a corrected session ends no later than now (an open one starts no later than
+  now) and lasts no longer than the session ceiling. Strictly longer is refused, so a session the
+  sweep closed at exactly the ceiling stays correctable. A corrected break ends no later than now,
+  or starts no later than now while open. Each rule judges the session as the correction leaves it,
+  so moving only a clock-out is held to the whole span.
 - Correcting a clock-out records who closed the session, which is how a swept session stops being
   flagged; correcting a break's end clears its auto-closed flag for the same reason. Moving only a
   clock-in leaves both alone — nobody has looked at the end yet.

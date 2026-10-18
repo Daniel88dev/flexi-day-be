@@ -5,7 +5,6 @@ import {
   attendanceSessionOrigin,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
-import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import AppError from "../../utils/appError.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -23,18 +22,19 @@ import {
   type AttendanceSessionView,
   type ValidatedAttendanceEntryType,
 } from "./types.js";
+import {
+  sessionCeilingMinutesOf,
+  spanMessage,
+  spanRefusal,
+  spanRefused,
+  type SpanRefusal,
+} from "./sessionSpan.js";
 
-export type EntryRefusal =
-  "START_OFF_DATE" | "OUTSIDE_EMPLOYMENT" | "END_BEFORE_START" | "END_IN_FUTURE" | "OVER_CEILING";
+export type EntryRefusal = SpanRefusal | "OUTSIDE_EMPLOYMENT";
 
 export const entryRefusal = ({
-  businessDate,
-  startedAt,
-  endedAt,
-  timezone,
-  now,
-  ceilingMinutes,
   spell,
+  ...span
 }: {
   businessDate: DateString;
   startedAt: Date;
@@ -44,23 +44,18 @@ export const entryRefusal = ({
   ceilingMinutes: number;
   spell: { startedAt: Date; endedAt: Date | null };
 }): EntryRefusal | null => {
-  if (businessDateInZone(startedAt, timezone) !== businessDate) return "START_OFF_DATE";
+  const refusal = spanRefusal(span);
+  if (refusal === "START_OFF_DATE") return refusal;
 
+  const { businessDate, timezone } = span;
   const employedFrom = businessDateInZone(spell.startedAt, timezone);
   const employedTo = spell.endedAt === null ? null : businessDateInZone(spell.endedAt, timezone);
   if (businessDate < employedFrom || (employedTo !== null && businessDate > employedTo)) {
     return "OUTSIDE_EMPLOYMENT";
   }
 
-  if (endedAt <= startedAt) return "END_BEFORE_START";
-  if (endedAt > now) return "END_IN_FUTURE";
-  if (endedAt.getTime() - startedAt.getTime() > ceilingMinutes * 60_000) return "OVER_CEILING";
-
-  return null;
+  return refusal;
 };
-
-const hoursAndMinutes = (minutes: number): string =>
-  `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
 
 const entryMessage = (refusal: EntryRefusal, ceilingMinutes: number): string => {
   switch (refusal) {
@@ -68,12 +63,12 @@ const entryMessage = (refusal: EntryRefusal, ceilingMinutes: number): string => 
       return "The session has to start on the day it is entered for";
     case "OUTSIDE_EMPLOYMENT":
       return "That day is outside the employment";
-    case "END_BEFORE_START":
-      return "A session has to end after it starts";
+    case "START_IN_FUTURE":
     case "END_IN_FUTURE":
       return "An entered session has to have ended already. Still working? Clock in, then correct the start.";
+    case "END_BEFORE_START":
     case "OVER_CEILING":
-      return `A session can't be longer than ${hoursAndMinutes(ceilingMinutes)}, the organization's session limit`;
+      return spanMessage(refusal, ceilingMinutes);
   }
 };
 
@@ -109,8 +104,7 @@ export const enterAttendanceSession = async (
     now
   );
 
-  const ceilingMinutes =
-    settings?.sessionCeilingMinutes ?? ATTENDANCE_SETTINGS_DEFAULTS.sessionCeilingMinutes;
+  const ceilingMinutes = sessionCeilingMinutesOf(settings);
   const assertEntryFits = (spell: { startedAt: Date; endedAt: Date | null }) => {
     const refusal = entryRefusal({
       businessDate: input.businessDate,
@@ -122,15 +116,11 @@ export const enterAttendanceSession = async (
       spell,
     });
     if (refusal) {
-      throw new AppError({
+      throw spanRefused({
+        reason: refusal,
         message: entryMessage(refusal, ceilingMinutes),
-        logging: true,
-        code: 422,
+        ceilingMinutes,
         context: { viewerUserId, employmentId: employment.id, businessDate: input.businessDate },
-        publicContext: {
-          reason: refusal,
-          ...(refusal === "OVER_CEILING" ? { ceilingMinutes } : {}),
-        },
       });
     }
   };
