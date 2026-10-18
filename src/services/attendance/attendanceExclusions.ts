@@ -3,6 +3,8 @@ import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { getLiveGroupIdsForOrganizationOrdered } from "../group/groupServices.js";
 import { listExcusingAbsencesForUsers } from "../vacation/vacationServices.js";
 import type { ExcusingAbsence } from "../vacation/types.js";
+import { resolveVacationViewer } from "../vacation/vacationPermissions.js";
+import { teammateViewer, viewRecordTypeAs, type VacationViewer } from "../vacation/redaction.js";
 import { getNonWorkingDays } from "../workingDays/workingDaysServices.js";
 import {
   NonWorkingDayCause,
@@ -30,6 +32,7 @@ export type AttendanceExclusionInput = {
 
 export type AttendanceExclusionsForPeopleInput = {
   organizationId: string;
+  viewerUserId: string;
   people: { userId: string; employment: EmploymentSpell }[];
   dates: DateString[];
   rules: WorkingDayRules;
@@ -60,7 +63,8 @@ const buildExclusions = (
   dates: DateString[],
   timezone: string,
   nonWorking: Map<DateString, NonWorkingDay>,
-  absences: ExcusingAbsence[]
+  absences: ExcusingAbsence[],
+  viewer: VacationViewer
 ): Map<DateString, DayExclusion> => {
   const exclusions = new Map<DateString, DayExclusion>();
 
@@ -92,7 +96,7 @@ const buildExclusions = (
     exclusions.set(absence.requestedDay, {
       cause: AttendanceExclusionCause.Absence,
       extent: absence.halfDay ? AttendanceExclusionExtent.Half : AttendanceExclusionExtent.Full,
-      label: absence.vacationType,
+      label: viewRecordTypeAs(viewer, absence),
     });
   }
 
@@ -105,7 +109,14 @@ const buildExclusions = (
  * once for everybody; only the spell is each person's own.
  */
 export const getAttendanceExclusionsForPeople = async (
-  { organizationId, people, dates, rules, timezone }: AttendanceExclusionsForPeopleInput,
+  {
+    organizationId,
+    viewerUserId,
+    people,
+    dates,
+    rules,
+    timezone,
+  }: AttendanceExclusionsForPeopleInput,
   tx?: DbTransaction
 ): Promise<Map<string, Map<DateString, DayExclusion>>> => {
   const byUser = new Map<string, Map<DateString, DayExclusion>>();
@@ -130,6 +141,20 @@ export const getAttendanceExclusionsForPeople = async (
           tx
         );
 
+  // Standing is read against each absence's own group, as for any vacation
+  // row: administering the person in one group says nothing about another.
+  const foreignGroupIds = [
+    ...new Set(
+      absences
+        .filter((absence) => absence.userId !== viewerUserId)
+        .map((absence) => absence.groupId)
+    ),
+  ];
+  const viewer: VacationViewer =
+    foreignGroupIds.length === 0
+      ? teammateViewer(viewerUserId)
+      : await resolveVacationViewer(viewerUserId, foreignGroupIds, tx);
+
   const absencesByUser = new Map<string, ExcusingAbsence[]>();
   for (const absence of absences) {
     absencesByUser.set(absence.userId, [...(absencesByUser.get(absence.userId) ?? []), absence]);
@@ -143,7 +168,8 @@ export const getAttendanceExclusionsForPeople = async (
         dates,
         timezone,
         nonWorking,
-        absencesByUser.get(person.userId) ?? []
+        absencesByUser.get(person.userId) ?? [],
+        viewer
       )
     );
   }
@@ -151,13 +177,20 @@ export const getAttendanceExclusionsForPeople = async (
   return byUser;
 };
 
-/** {@link getAttendanceExclusionsForPeople} for one person. */
+/** {@link getAttendanceExclusionsForPeople} for one person, read as themselves. */
 export const getAttendanceExclusions = async (
   { organizationId, userId, employment, dates, rules, timezone }: AttendanceExclusionInput,
   tx?: DbTransaction
 ): Promise<Map<DateString, DayExclusion>> => {
   const byUser = await getAttendanceExclusionsForPeople(
-    { organizationId, people: [{ userId, employment }], dates, rules, timezone },
+    {
+      organizationId,
+      viewerUserId: userId,
+      people: [{ userId, employment }],
+      dates,
+      rules,
+      timezone,
+    },
     tx
   );
   return byUser.get(userId) ?? new Map();

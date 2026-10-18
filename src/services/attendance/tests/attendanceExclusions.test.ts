@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockNonWorkingDays, mockGroupIds, mockAbsencesForUsers } = vi.hoisted(() => ({
-  mockNonWorkingDays: vi.fn(),
-  mockGroupIds: vi.fn(),
-  mockAbsencesForUsers: vi.fn(),
-}));
+const { mockNonWorkingDays, mockGroupIds, mockAbsencesForUsers, mockResolveViewer } = vi.hoisted(
+  () => ({
+    mockNonWorkingDays: vi.fn(),
+    mockGroupIds: vi.fn(),
+    mockAbsencesForUsers: vi.fn(),
+    mockResolveViewer: vi.fn(),
+  })
+);
 
 vi.mock("../../workingDays/workingDaysServices.js", () => ({
   getNonWorkingDays: mockNonWorkingDays,
@@ -16,6 +19,10 @@ vi.mock("../../group/groupServices.js", () => ({
 
 vi.mock("../../vacation/vacationServices.js", () => ({
   listExcusingAbsencesForUsers: mockAbsencesForUsers,
+}));
+
+vi.mock("../../vacation/vacationPermissions.js", () => ({
+  resolveVacationViewer: mockResolveViewer,
 }));
 
 const { getAttendanceExclusions, getAttendanceExclusionsForPeople } =
@@ -195,10 +202,12 @@ describe("getAttendanceExclusionsForPeople", () => {
   const employedSince2020 = { startedAt: new Date("2020-01-01T00:00:00Z"), endedAt: null };
 
   const askForPeople = (
-    people: { userId: string; employment: { startedAt: Date; endedAt: Date | null } }[]
+    people: { userId: string; employment: { startedAt: Date; endedAt: Date | null } }[],
+    viewerUserId = "admin-1"
   ) =>
     getAttendanceExclusionsForPeople({
       organizationId: "org-1",
+      viewerUserId,
       people,
       dates: ["2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07"],
       rules: { workingDays: [1, 2, 3, 4, 5], holidayCountry: "CZ" },
@@ -209,6 +218,10 @@ describe("getAttendanceExclusionsForPeople", () => {
     mockNonWorkingDays.mockReset().mockResolvedValue(new Map());
     mockGroupIds.mockReset().mockResolvedValue(["group-1"]);
     mockAbsencesForUsers.mockReset().mockResolvedValue([]);
+    mockResolveViewer.mockReset().mockImplementation(async (userId: string) => ({
+      userId,
+      privilegedGroupIds: new Set(["group-1"]),
+    }));
   });
 
   it("reads the calendar and the absences once for everybody", async () => {
@@ -219,6 +232,7 @@ describe("getAttendanceExclusionsForPeople", () => {
       {
         userId: "user-2",
         requestedDay: "2026-09-04",
+        groupId: "group-1",
         vacationType: CalendarRecordType.Vacation,
         halfDay: false,
       },
@@ -265,5 +279,87 @@ describe("getAttendanceExclusionsForPeople", () => {
   it("answers an empty map per person, and asks nothing, when there is nobody", async () => {
     expect(await askForPeople([])).toEqual(new Map());
     expect(mockNonWorkingDays).not.toHaveBeenCalled();
+  });
+
+  describe("the absence label, read as the viewer", () => {
+    const absence = (
+      requestedDay: string,
+      groupId: string,
+      vacationType: (typeof CalendarRecordType)[keyof typeof CalendarRecordType],
+      halfDay = false
+    ) => ({ userId: "user-2", requestedDay, groupId, vacationType, halfDay });
+
+    const labelsFor = async (viewerUserId = "admin-1") => {
+      const byUser = await askForPeople(
+        [{ userId: "user-2", employment: employedSince2020 }],
+        viewerUserId
+      );
+      return byUser.get("user-2")!;
+    };
+
+    it("keeps Sick from a group the viewer is privileged in", async () => {
+      mockAbsencesForUsers.mockResolvedValue([
+        absence("2026-09-04", "group-1", CalendarRecordType.Sick),
+      ]);
+
+      expect((await labelsFor()).get("2026-09-04")).toEqual({
+        cause: AttendanceExclusionCause.Absence,
+        extent: AttendanceExclusionExtent.Full,
+        label: "SICK",
+      });
+    });
+
+    it("shows Sick from any other group as Away, and keeps the day excluded", async () => {
+      mockAbsencesForUsers.mockResolvedValue([
+        absence("2026-09-04", "group-2", CalendarRecordType.Sick),
+        absence("2026-09-07", "group-2", CalendarRecordType.Sick, true),
+      ]);
+
+      const exclusions = await labelsFor();
+
+      expect(exclusions.get("2026-09-04")).toEqual({
+        cause: AttendanceExclusionCause.Absence,
+        extent: AttendanceExclusionExtent.Full,
+        label: "AWAY",
+      });
+      expect(exclusions.get("2026-09-07")).toEqual({
+        cause: AttendanceExclusionCause.Absence,
+        extent: AttendanceExclusionExtent.Half,
+        label: "AWAY",
+      });
+    });
+
+    it("passes every other type from another group through unchanged", async () => {
+      mockAbsencesForUsers.mockResolvedValue([
+        absence("2026-09-04", "group-2", CalendarRecordType.SickDay),
+        absence("2026-09-07", "group-2", CalendarRecordType.Vacation),
+      ]);
+
+      const exclusions = await labelsFor();
+
+      expect(exclusions.get("2026-09-04")?.label).toBe("SICK_DAY");
+      expect(exclusions.get("2026-09-07")?.label).toBe("VACATION");
+    });
+
+    it("resolves the viewer's standing against the absences' own groups", async () => {
+      mockAbsencesForUsers.mockResolvedValue([
+        absence("2026-09-04", "group-2", CalendarRecordType.Sick),
+        absence("2026-09-07", "group-2", CalendarRecordType.Vacation),
+      ]);
+
+      await labelsFor();
+
+      expect(mockResolveViewer).toHaveBeenCalledTimes(1);
+      expect(mockResolveViewer).toHaveBeenCalledWith("admin-1", ["group-2"], undefined);
+    });
+
+    it("keeps a person's own Sick without asking about their standing", async () => {
+      mockAbsencesForUsers.mockResolvedValue([
+        absence("2026-09-04", "group-2", CalendarRecordType.Sick),
+      ]);
+
+      expect((await labelsFor("user-2")).get("2026-09-04")?.label).toBe("SICK");
+      expect(mockResolveViewer).not.toHaveBeenCalled();
+    });
   });
 });

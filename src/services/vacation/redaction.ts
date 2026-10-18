@@ -54,6 +54,16 @@ export const isPrivilegedReader = (
 ): boolean => row.userId === viewer.userId || viewer.privilegedGroupIds.has(row.groupId);
 
 /**
+ * A row's record type as this viewer may see it, for a surface that shows
+ * the type and nothing else of the row, such as an excluded attendance day.
+ */
+export const viewRecordTypeAs = (
+  viewer: VacationViewer,
+  row: Pick<RedactableRow, "userId" | "groupId" | "vacationType">
+): WireRecordType =>
+  isPrivilegedReader(viewer, row) ? row.vacationType : teammateRecordType(row.vacationType);
+
+/**
  * The row as this viewer may see it, or null when it must not reach them at
  * all. Standing is read against `row.groupId`, never the group being listed,
  * so a row mirrored into a group gets the teammate view there.

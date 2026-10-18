@@ -229,3 +229,11 @@ it started, not rewrite it. No cap on Employments per plan.
 
 A manager's own attendance is visible only to Org admins. An Employment in no group is visible only
 to Org admins. Edit rights follow the same lines.
+
+An excluded day's absence label on the team dashboard follows the Private details rule in
+[`invariants.md`](invariants.md#private-details-and-away-srcservicesvacationredactionts), keyed on
+the absence's own group. Absences count from every group of the organization, so a group admin can
+see a day excused by a booking in a group they don't administer. That day stays excluded, because
+the balance depends on it, but its `SICK` reads `AWAY` unless the viewer approves or administers
+the absence's group. Org admins administer every group and see `SICK`. The person's own month
+always shows their own type.
