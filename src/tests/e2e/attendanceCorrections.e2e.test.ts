@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
 import { and, asc, eq } from "drizzle-orm";
@@ -31,6 +31,13 @@ import { businessDateInZone } from "../../utils/dateFunc.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ZONE = "Europe/Prague";
 
+/**
+ * The clock every test runs at: Wednesday 16 September 2026, 13:00 in Prague.
+ * A correction has to stay on its session's day and in the past, so a fixture
+ * built from the real clock would land on another day for part of every night.
+ */
+const NOW = new Date("2026-09-16T11:00:00Z");
+
 /** Today and yesterday in the organization's zone: the two sides of the self-service window. */
 const today = () => businessDateInZone(new Date(), ZONE);
 const yesterday = () => businessDateInZone(new Date(Date.now() - DAY_MS), ZONE);
@@ -42,8 +49,15 @@ const daysBefore = (date: string, days: number) => {
   return day.toISOString().slice(0, 10);
 };
 
-/** An instant a given number of hours back, so seeded times are always in the past. */
+/** An instant a given number of hours before {@link NOW}. */
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000);
+
+/** The instant a zone's clock reads `time` on `date`. */
+const wallClock = (date: string, time: string, zone = ZONE) => {
+  const naive = new Date(`${date}T${time}:00Z`);
+  const shown = new Date(`${naive.toLocaleString("sv-SE", { timeZone: zone }).replace(" ", "T")}Z`);
+  return new Date(2 * naive.getTime() - shown.getTime());
+};
 
 let ORGANIZATION_ID: string;
 
@@ -93,6 +107,7 @@ describe("attendance corrections", () => {
     businessDate: string;
     startedAt: Date;
     endedAt: Date | null;
+    zone?: string;
     closedBy?: attendanceClosedBy | null;
     breaks?: { startedAt: Date; endedAt: Date | null; autoClosed?: boolean }[];
   }) => {
@@ -103,7 +118,7 @@ describe("attendance corrections", () => {
       businessDate: input.businessDate,
       startedAt: input.startedAt,
       endedAt: input.endedAt,
-      timezone: ZONE,
+      timezone: input.zone ?? ZONE,
       closedBy:
         input.closedBy === undefined
           ? input.endedAt
@@ -224,6 +239,10 @@ describe("attendance corrections", () => {
   });
 
   beforeEach(async () => {
+    // Only `Date` is faked: the pg driver's own timers have to keep running.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+
     await db.delete(attendanceSessions);
     await db.delete(organizationAttendanceSettings);
     // On with 0 days, where every organization that had attendance before the
@@ -237,6 +256,10 @@ describe("attendance corrections", () => {
       selfServiceDays: 0,
     });
     await proActive();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const setWindow = (
@@ -255,18 +278,36 @@ describe("attendance corrections", () => {
       .set({ endedAt })
       .where(eq(employments.id, employmentIds.get(person.id)!));
 
-  /** A closed session on a business date some whole days before today in `zone`. */
-  const seedDaysBack = (person: Person, days: number, zone = ZONE) =>
-    seedSession({
-      person,
-      businessDate: daysBefore(businessDateInZone(new Date(), zone), days),
-      startedAt: hoursAgo(days * 24 + 6),
-      endedAt: hoursAgo(days * 24 + 1),
-      breaks: [{ startedAt: hoursAgo(days * 24 + 4), endedAt: hoursAgo(days * 24 + 3.5) }],
-    });
+  const dayBack = (days: number, zone = ZONE) =>
+    daysBefore(businessDateInZone(new Date(), zone), days);
 
-  /** A correction that is always coherent for a session from {@link seedDaysBack}. */
-  const nudge = (days: number) => ({ endedAt: hoursAgo(days * 24 + 0.5).toISOString() });
+  /**
+   * A closed session from 07:00 to 11:00, with a break from 09:00 to 09:30, on a
+   * business date some whole days before today in `zone`.
+   */
+  const seedDaysBack = (person: Person, days: number, zone = ZONE) => {
+    const date = dayBack(days, zone);
+    return seedSession({
+      person,
+      businessDate: date,
+      zone,
+      startedAt: wallClock(date, "07:00", zone),
+      endedAt: wallClock(date, "11:00", zone),
+      breaks: [
+        { startedAt: wallClock(date, "09:00", zone), endedAt: wallClock(date, "09:30", zone) },
+      ],
+    });
+  };
+
+  /** A correction that always fits a session from {@link seedDaysBack}. */
+  const nudge = (days: number, zone = ZONE) => ({
+    endedAt: wallClock(dayBack(days, zone), "11:30", zone).toISOString(),
+  });
+
+  /** The same for the break of a session from {@link seedDaysBack}. */
+  const nudgeBreak = (days: number, zone = ZONE) => ({
+    endedAt: wallClock(dayBack(days, zone), "09:20", zone).toISOString(),
+  });
 
   describe("the self-service window", () => {
     afterEach(async () => {
@@ -283,9 +324,7 @@ describe("attendance corrections", () => {
         "Your organization manages attendance corrections through an admin. Ask a group admin, or an organization admin."
       );
 
-      await patchBreak(member, breakIds[0]!, {
-        endedAt: hoursAgo(3.4).toISOString(),
-      }).expect(403);
+      await patchBreak(member, breakIds[0]!, nudgeBreak(0)).expect(403);
       await deleteBreak(member, breakIds[0]!).expect(403);
       await deleteSession(member, id).expect(403);
       expect(await eventRows(id)).toHaveLength(0);
@@ -414,21 +453,18 @@ describe("attendance corrections", () => {
     });
 
     it("on with 7 allows seven days back and refuses eight, by the organization's date", async () => {
-      // A zone whose date differs from UTC's right now: Kiritimati runs a day
-      // ahead from 10:00 UTC, Etc/GMT+12 a day behind until 12:00 UTC. Counting
-      // from UTC's date instead would get one side of the boundary wrong.
-      const zone = new Date().getUTCHours() >= 10 ? "Pacific/Kiritimati" : "Etc/GMT+12";
+      // Kiritimati is already on the 17th while UTC is still on the 16th.
+      // Counting from UTC's date instead would get one side of the boundary wrong.
+      const zone = "Pacific/Kiritimati";
       expect(businessDateInZone(new Date(), zone)).not.toBe(businessDateInZone(new Date(), "UTC"));
       await setWindow(true, 7, zone);
 
       const seven = await seedDaysBack(member, 7, zone);
-      await patchSession(member, seven.id, nudge(7)).expect(200);
-      await patchBreak(member, seven.breakIds[0]!, {
-        endedAt: hoursAgo(7 * 24 + 3.4).toISOString(),
-      }).expect(200);
+      await patchSession(member, seven.id, nudge(7, zone)).expect(200);
+      await patchBreak(member, seven.breakIds[0]!, nudgeBreak(7, zone)).expect(200);
 
       const eight = await seedDaysBack(member, 8, zone);
-      const { body } = await patchSession(member, eight.id, nudge(8)).expect(403);
+      const { body } = await patchSession(member, eight.id, nudge(8, zone)).expect(403);
       expect(body.errors[0].context.reason).toBe("SELF_SERVICE_WINDOW");
       await deleteBreak(member, eight.breakIds[0]!).expect(403);
     });
@@ -473,9 +509,7 @@ describe("attendance corrections", () => {
         const { id, breakIds } = await seedDaysBack(member, 30);
 
         await patchSession(groupAdmin, id, nudge(30)).expect(200);
-        await patchBreak(owner, breakIds[0]!, {
-          endedAt: hoursAgo(30 * 24 + 3.4).toISOString(),
-        }).expect(200);
+        await patchBreak(owner, breakIds[0]!, nudgeBreak(30)).expect(200);
         await deleteSession(owner, id).expect(200);
       }
     });
@@ -561,7 +595,41 @@ describe("attendance corrections", () => {
       expect(written[0]!.after).toMatchObject({ closedBy: "ADMIN" });
     });
 
-    it("keeps the business date where it was", async () => {
+    it("keeps the business date where it was when the end moves past midnight", async () => {
+      const date = yesterday();
+      const { id } = await seedSession({
+        person: member,
+        businessDate: date,
+        startedAt: wallClock(date, "20:00"),
+        endedAt: wallClock(date, "22:00"),
+      });
+
+      const { body } = await patchSession(owner, id, {
+        endedAt: wallClock(today(), "01:30").toISOString(),
+      }).expect(200);
+
+      expect(body.businessDate).toBe(date);
+    });
+
+    it("reads the start's day in the zone the session was clocked in", async () => {
+      // 00:20 in Prague is still the day before in UTC, the organization's zone now.
+      await setWindow(true, 0, "UTC");
+      const date = yesterday();
+      const { id } = await seedSession({
+        person: member,
+        businessDate: date,
+        startedAt: wallClock(date, "00:30"),
+        endedAt: wallClock(date, "08:00"),
+      });
+
+      const { body } = await patchSession(owner, id, {
+        startedAt: wallClock(date, "00:20").toISOString(),
+      }).expect(200);
+
+      expect(body.businessDate).toBe(date);
+    });
+
+    it("refuses a start moved off the session's day", async () => {
       const date = yesterday();
       const { id } = await seedSession({
         person: member,
@@ -572,9 +640,10 @@ describe("attendance corrections", () => {
 
       const { body } = await patchSession(owner, id, {
         startedAt: hoursAgo(50).toISOString(),
-      }).expect(200);
+      }).expect(422);
 
-      expect(body.businessDate).toBe(date);
+      expect(body.errors[0].context.reason).toBe("START_OFF_DATE");
+      expect(await eventRows(id)).toHaveLength(0);
     });
 
     it("clears the sweep's mark once the end has been corrected", async () => {
@@ -587,7 +656,7 @@ describe("attendance corrections", () => {
       });
 
       const kept = await patchSession(owner, id, {
-        startedAt: hoursAgo(31).toISOString(),
+        startedAt: hoursAgo(29).toISOString(),
       }).expect(200);
       expect(kept.body.closedBy).toBe("SWEEP");
 

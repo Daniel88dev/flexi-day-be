@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { v4 as uuidv4 } from "uuid";
 import { and, asc, eq } from "drizzle-orm";
@@ -26,6 +26,12 @@ import { businessDateInZone, isWorkingDay, previousDay } from "../../utils/dateF
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ZONE = "Europe/Prague";
 const EMPLOYED_SINCE = new Date("2020-01-01T00:00:00Z");
+
+/**
+ * The clock every test runs at: Wednesday 16 September 2026, 22:00 in Prague,
+ * so today's 07:00–16:00 UTC is already over. A correction may not end after now.
+ */
+const NOW = new Date("2026-09-16T20:00:00Z");
 
 const today = () => businessDateInZone(new Date(), ZONE);
 
@@ -228,6 +234,10 @@ describe("attendance sessions changed after the day", () => {
   });
 
   beforeEach(async () => {
+    // Only `Date` is faked: the pg driver's own timers have to keep running.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+
     await db.delete(attendanceSessions);
     await db
       .update(employments)
@@ -249,6 +259,10 @@ describe("attendance sessions changed after the day", () => {
       status: subscriptionStatus.Active,
       graceEndsAt: null,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("a self-service write to a past day", () => {
