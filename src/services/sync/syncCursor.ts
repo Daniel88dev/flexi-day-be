@@ -2,10 +2,11 @@ import { ID_ORDERED_TABLES, SYNC_TABLE_ORDER } from "./syncPage.js";
 import type { SyncCursor, SyncCursorPage, SyncKeyset, SyncTableName } from "./types.js";
 
 /**
- * Bumped when a row a client already holds gains a field it needs: a cursor of
- * another version is unusable, so every client takes one snapshot.
+ * Bumped when rows a client already holds must be sent again, because they
+ * gained a field or must lose one: a cursor of another version is unusable, so
+ * every client takes one snapshot.
  */
-export const SYNC_CURSOR_VERSION = 4;
+export const SYNC_CURSOR_VERSION = 5;
 
 /** Past this age a cursor cannot be trusted to have covered hard deletes, so the pull resets. */
 export const SYNC_CURSOR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;

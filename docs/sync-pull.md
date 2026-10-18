@@ -31,8 +31,8 @@ The ten table keys are always present, in that dependency order, so a client can
 to bottom. They follow the Drizzle export names, pluralised where the schema's is singular (`users`
 for `user`, `vacations` for `vacation`), with one exception: `birthdays` carries `userBirthdays`.
 Rows are raw table rows: camelCase column names, timestamps ISO 8601 UTC, dates `YYYY-MM-DD`, no
-joined summaries and no per-row verdicts. `note` and `rejectionReason` ship, because the web shows
-them to everyone who can see the row.
+joined summaries and no per-row verdicts. A vacation row of another person reaches the caller as the
+web shows it to them, under [Private details](#private-details) below.
 
 Every partitioned row carries `organizationId`: groups carry their own, `groupUsers`,
 `userYearQuotas`, `vacations` and `groupEvents` their group's, `groupMirrors` the target group's. `users`,
@@ -68,7 +68,8 @@ Detail the table cannot hold:
 
 - **`users`** carries `id`, `name`, `image` and `updatedAt` and nothing else: no email, no account
   state. An actor is anyone a returned booking names, meaning `userId`, `approvedBy`, `rejectedBy`,
-  `createdByUserId` and `deletedByUserId`. The actors on the bookings a pull carries, and the people
+  `createdByUserId` and `deletedByUserId`, as the booking ships: a column the teammate view nulls
+  names nobody. The actors on the bookings a pull carries, and the people
   on the membership rows it carries, arrive whatever their own `updatedAt` says, so no row ever
   names somebody the client cannot resolve. The `createdByUserId` of every group event the pull
   carries is owed the same way, because a creator may have left the group or administer it without
@@ -125,6 +126,51 @@ Detail the table cannot hold:
   country is never empty. The rows it writes are stamped after the pull's position was minted, so
   the next delta carries them once more.
 
+## Private details
+
+The vacation rows follow the rule in
+[`invariants.md`](invariants.md#private-details-and-away-srcservicesvacationredactionts). The owner
+of a row, and the approvers and group admins of the row's own group, an org admin of its
+organization included, read it whole: every column, its rejected and cancelled states included.
+Everyone else who can see the row reads it as a teammate, through `viewVacationRowAs`. Standing is
+read against the row's own group, so a row mirrored in keeps its source group's readers and the
+target group's approvers get the teammate view.
+
+**The header.** `x-client-sync-accepts` is a comma-separated list of tokens, read
+case-insensitively. The token `away` says the client can store `AWAY`, the type a teammate sees in
+place of `SICK`. A pull without it gets no teammate's Sick row at all, live or tombstone, because a
+phone build that predates `AWAY` holds only the nine stored types and fails the whole page on any
+other.
+
+| A teammate's row           | Snapshot | Delta                            |
+| -------------------------- | -------- | -------------------------------- |
+| live                       | redacted | redacted                         |
+| live Sick, without `away`  | absent   | absent                           |
+| rejected or cancelled      | absent   | a content-nulled tombstone       |
+| rejected or cancelled Sick | absent   | a tombstone with `away`, or none |
+
+Redacted means `note`, `rejectionReason`, `rejectedBy` and `deletedByUserId` null and `SICK` sent
+as `AWAY`. Every other column and type is unchanged, `SICK_DAY` included.
+
+A content-nulled tombstone keeps `id`, `userId`, `groupId`, `organizationId`, `requestId`,
+`requestedDay`, `halfDay`, `createdAt` and `updatedAt`, carries the redacted `vacationType` and sets
+`deletedAt` to the row's own `deletedAt`, or to `updatedAt` for a rejection, as a birthday tombstone
+does. Every other column is null. The kept keys are the ones the phone's store declares NOT NULL, so
+the row stays storable on every build. `rejectedBy` and `deletedByUserId` are both null on it, while
+a rejected or cancelled row a privileged reader receives keeps the actor that set it. That is how
+the phone tells the two apart: it drops a tombstone with neither actor and keeps the other as
+history. A build that predates the rule keeps both, the content-nulled one showing as cancelled with
+no private detail.
+
+The exclusions sit in the vacation reader's `WHERE`, never in a filter after it: `collectSyncPage`
+reads a short page as the end of the table, so a row dropped after the read would end the walk
+early. Reshaping a row after the read is safe.
+
+An old build holding a teammate's live row that is later edited to Sick keeps the earlier type
+until its next sync reset, and if that row is then rejected or cancelled, the tombstone is a Sick
+one it is never sent, so it keeps showing the row as live until that reset too. The row carries no
+private detail either way.
+
 ## History window
 
 Two tables are bounded by their date rather than by their `updatedAt`, and one by the calendar. All
@@ -169,7 +215,8 @@ the next pull rather than between the two.
   which a delta would only deliver as each row next changed. Version 2 added
   `sickDayBenefitEnabled` to organization rows. Version 3 added the `birthdays` table, whose
   existing rows only a snapshot delivers. Version 4 added the `groupEvents` table, for the same
-  reason. A cursor that turns unusable mid-loop, the bump
+  reason. Version 5 redacted teammates' vacation rows, so every client replaces the notes and
+  rejection reasons it holds and sweeps the rows it may no longer see. A cursor that turns unusable mid-loop, the bump
   included, is answered with page one of a fresh snapshot, which says `first: true`. The phone
   restarts its loop whenever a page after its first answers `first: true`, so the fresh snapshot
   runs from page one and its sweep runs.
@@ -189,7 +236,7 @@ so does the `cursor` parameter sent more than once.
 
 ## Sync reset triggers
 
-Five changes to what the caller may see, which no set of changed rows can express. Each is read once
+Six changes to what the caller may see, which no set of changed rows can express. Each is read once
 per pull and for a fresh delta only, over the same window the delta would have covered; a pull
 resuming a paged loop stays in the loop it belongs to. A soft delete counts, because it stamps
 `updatedAt` like any other write.
@@ -201,13 +248,19 @@ resuming a paged loop stays in the loop it belongs to. A soft delete counts, bec
 3. A `groupUsers` row of a live mirror's owner in the target group of that mirror, when the caller
    belongs to it. A mirror shows only while its owner is a member, so the owner joining or leaving
    changes what the caller sees without touching the mirror row.
-4. A `groups` row of a group the caller belongs to: a manager transfer, a rename, a holiday country
-   change or a soft delete. A rename resets too, accepted as rare admin activity.
+4. A `groups` row of a group the caller belongs to, or of the source group of a live mirror into
+   one: a manager transfer, an approver change, a rename, a holiday country change or a soft delete.
+   A source group's approvers and manager read its mirrored rows whole without belonging to it, so
+   their change touches no row of the caller's own. A rename resets too, accepted as rare admin
+   activity.
 5. A `subscriptions` row of the organization of a group the caller belongs to: checkout, a plan
    change, a cancellation, a renewal webhook. Going from never paid to paid is the one plan change
    that shows birthdays a group did not show, and it touches no row the pull reads. A lapse hides
    none, so grace running out, which writes nothing, needs no trigger. Every write to the row
    resets, not only that one, accepted because subscription writes are rare.
+6. An `organization_users` row of the caller, read whatever its `deletedAt` says. Gaining or losing
+   org admin changes which groups' rows the caller reads whole, and writes nothing else. A lost
+   grant must not leave teammates' private details on the phone.
 
 Anything else stays a delta: another member's booking, a quota edit, a membership change in a group
 the caller does not belong to, a mirror into one, a birthday saved, shared or removed, a subscription
@@ -215,11 +268,14 @@ of an organization the caller has no group in.
 
 ## Tombstones
 
-A delta carries a soft-deleted row in full with `deletedAt` set. Five cases reach a client:
+A delta carries a soft-deleted row in full with `deletedAt` set. Six cases reach a client:
 
 - another member's membership row in a group the caller sees in full;
-- a cancelled booking, which the client keeps as history rather than dropping, the way the web
-  calendar shows it. A snapshot carries cancelled bookings for the same reason;
+- a cancelled booking the caller reads whole, which the client keeps as history rather than
+  dropping, the way the web calendar shows it. A snapshot carries those cancelled bookings for the
+  same reason;
+- a teammate's booking rejected or cancelled since the cursor. It ships without its content, shaped
+  as described under Private details, and a snapshot leaves it out;
 - the row of a group the caller has left and still holds bookings in;
 - a birthday the caller may no longer see: removed, unshared, or its owner left every group that
   showed it. Unlike the others it ships without its content, shaped as described under Scope;
@@ -230,7 +286,8 @@ A delta carries a soft-deleted row in full with `deletedAt` set. Five cases reac
 The rest are reset triggers, so the snapshot that answers them stops carrying the row instead and
 the client sweeps whatever the snapshot did not re-send: the caller's own removal, the soft delete
 of a group they belong to, and a mirror added to or removed from one of those groups. A
-snapshot holds live membership rows and live mirrors only, cancelled bookings excepted.
+snapshot holds live membership rows and live mirrors only, cancelled bookings the caller reads
+whole excepted.
 
 `organizations`, `users`, `userYearQuotas` and `bankHolidays` carry no `deletedAt` and so ship no
 tombstones at all.

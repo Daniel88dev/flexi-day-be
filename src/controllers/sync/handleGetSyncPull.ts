@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
+import { readSyncCapabilities, SYNC_ACCEPTS_HEADER } from "../../services/sync/syncCapabilities.js";
 import { decodeSyncCursor } from "../../services/sync/syncCursor.js";
 import { buildSyncPull } from "../../services/sync/syncServices.js";
 
@@ -14,7 +15,12 @@ export const handleGetSyncPull = async (req: Request, res: Response) => {
   const sent = req.query.cursor;
   const cursor = typeof sent === "string" ? decodeSyncCursor(sent, cursorTime) : null;
 
-  const envelope = await buildSyncPull(auth.userId, cursor, cursorTime);
+  const envelope = await buildSyncPull(
+    auth.userId,
+    cursor,
+    cursorTime,
+    readSyncCapabilities(req.get(SYNC_ACCEPTS_HEADER))
+  );
 
   res.setHeader("Cache-Control", "no-store");
   return res.status(200).json(envelope);

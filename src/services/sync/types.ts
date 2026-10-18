@@ -1,4 +1,4 @@
-import type { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import type { WireRecordType } from "../vacation/redaction.js";
 
 export type SyncTableName =
   | "organizations"
@@ -35,6 +35,10 @@ export type SyncLoop =
 /** The paging state a cursor carries mid-loop. A cursor without one asks for a fresh pull. */
 export type SyncCursorPage = SyncLoop & {
   position: SyncPagePosition;
+};
+
+export type SyncCapabilities = {
+  acceptsAway: boolean;
 };
 
 export type SyncCursor = {
@@ -181,7 +185,7 @@ export type SyncVacationRow = {
   requestedDay: string;
   startTime: string | null;
   endTime: string | null;
-  vacationType: CalendarRecordType;
+  vacationType: WireRecordType;
   halfDay: boolean;
   approvedAt: string | null;
   approvedBy: string | null;

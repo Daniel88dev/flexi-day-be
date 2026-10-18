@@ -45,6 +45,9 @@ const PRIVATE_FIELDS = [
   "deletedByUser",
 ] as const;
 
+export const teammateRecordType = (type: CalendarRecordType): WireRecordType =>
+  type === CalendarRecordType.Sick ? AWAY_RECORD_TYPE : type;
+
 export const isPrivilegedReader = (
   viewer: VacationViewer,
   row: Pick<RedactableRow, "userId" | "groupId">
@@ -68,8 +71,7 @@ export const viewVacationRowAs = <T extends RedactableRow>(
   return {
     ...row,
     ...cleared,
-    vacationType:
-      row.vacationType === CalendarRecordType.Sick ? AWAY_RECORD_TYPE : row.vacationType,
+    vacationType: teammateRecordType(row.vacationType),
   };
 };
 

@@ -68,9 +68,25 @@ export const syncRouter = (): Router => {
    *       drops it in the sweep that follows a reset. The same holds when the
    *       mirror's owner leaves or rejoins the target group.
    *
-   *       Bookings are raw rows, `note` and `rejectionReason` included, with
-   *       no per-row verdict — whether the caller may approve or cancel one
-   *       stays on the action endpoints.
+   *       Bookings carry no per-row verdict — whether the caller may approve
+   *       or cancel one stays on the action endpoints. The caller's own
+   *       bookings, and those of a group they approve or administer (an org
+   *       admin of its organization included), arrive whole. Standing is read
+   *       against the booking's own group, so a mirrored booking keeps its
+   *       source group's readers. Anybody else's booking arrives as a
+   *       teammate sees it: `note`, `rejectionReason`, `rejectedBy` and
+   *       `deletedByUserId` null, and Sick sent as `AWAY`, but only to a pull
+   *       whose `x-client-sync-accepts` header names `away`. A pull without
+   *       it gets no teammate's Sick booking at all. A teammate's rejected or
+   *       cancelled booking is absent from a snapshot and arrives in a delta
+   *       as a content-nulled tombstone: `id`,
+   *       `userId`, `groupId`, `organizationId`, `requestId`, `requestedDay`,
+   *       `halfDay`, `createdAt`, `updatedAt` and the teammate's
+   *       `vacationType` kept, `deletedAt` set (to `updatedAt` for a
+   *       rejection), every other field null. Its `rejectedBy` and
+   *       `deletedByUserId` are both null, while a rejected or cancelled
+   *       booking a privileged reader receives keeps the actor that set it,
+   *       so the client drops the first kind and keeps the second.
    *
    *       `userYearQuotas` splits the same way but does not reach past the
    *       caller's current groups: every member's rows in a group seen in
@@ -81,7 +97,8 @@ export const syncRouter = (): Router => {
    *       else — no email, no account state. It holds the members and the
    *       manager of every group seen in full, the caller, and every actor
    *       named on a booking this pull covers: who created it, who approved
-   *       it, who rejected it and who cancelled it. Those actors arrive
+   *       it, who rejected it and who cancelled it, as the booking ships, so a
+   *       field the teammate view nulls names nobody. Those actors arrive
    *       whatever their own `updatedAt` says, and on a paged pull they arrive
    *       before the bookings that name them, so no returned booking ever
    *       names somebody the client cannot resolve. The creator of every group
@@ -183,11 +200,12 @@ export const syncRouter = (): Router => {
    *       holds live membership and mirror rows only, for the same reason —
    *       the client sweeps whatever the snapshot did not re-send.
    *
-   *       A cancelled booking arrives the same way, in full with `deletedAt`
-   *       and `deletedByUserId` set, but the client keeps it rather than
-   *       dropping it: the web calendar shows cancelled bookings as history.
-   *       For the same reason a snapshot carries them too, so a sync reset
-   *       does not sweep away history the phone is meant to hold.
+   *       A cancelled booking the caller reads whole arrives the same way, in
+   *       full with `deletedAt` and `deletedByUserId` set, but the client keeps
+   *       it rather than dropping it: the web calendar shows cancelled bookings
+   *       as history. For the same reason a snapshot carries them too, so a
+   *       sync reset does not sweep away history the phone is meant to hold.
+   *       A teammate's cancelled booking is the content-nulled tombstone above.
    *
    *       A pull answers a sync reset — `reset` is `true` and the payload is a
    *       full snapshot rather than a delta — when the request carries no
@@ -209,7 +227,7 @@ export const syncRouter = (): Router => {
    *       triggers are a row changed later than the cursor time minus 60
    *       seconds and no later than the position this pull was minted with —
    *       a soft delete counts, because it stamps `updatedAt` like any other
-   *       write — in one of five places:
+   *       write — in one of six places:
    *
    *       - a `groupUsers` row of the caller, in any group: joining, gaining
    *         or losing a flag, or being removed;
@@ -219,11 +237,15 @@ export const syncRouter = (): Router => {
    *         mirror, when the caller belongs to it: a mirror shows only while
    *         its owner is a member, so the owner joining or leaving changes
    *         what the caller sees without touching the mirror row;
-   *       - a `groups` row of a group the caller belongs to: a manager
-   *         transfer, a rename, a holiday country change or a soft delete;
+   *       - a `groups` row of a group the caller belongs to, or of the
+   *         source group of a live mirror into one: a manager transfer, an
+   *         approver change, a rename, a holiday country change or a soft
+   *         delete;
    *       - a `subscriptions` row of the organization of a group the caller
    *         belongs to: an organization that starts paying shows birthdays
-   *         its groups did not show, without touching any row the pull reads.
+   *         its groups did not show, without touching any row the pull reads;
+   *       - an `organization_users` row of the caller, granted or revoked:
+   *         org admin decides whose bookings the caller reads whole.
    *
    *       Anything else stays a delta carrying only the rows that changed:
    *       another member's booking, a quota edit, a membership change in a
@@ -282,6 +304,17 @@ export const syncRouter = (): Router => {
    *           the server cannot use answers with a sync reset.
    *         schema:
    *           type: string
+   *       - name: x-client-sync-accepts
+   *         in: header
+   *         required: false
+   *         description: |
+   *           Comma-separated tokens naming what the client can store, read
+   *           case-insensitively. `away` lets a teammate's Sick booking arrive
+   *           as `AWAY`; without it those bookings are left out. Unknown tokens
+   *           are ignored.
+   *         schema:
+   *           type: string
+   *           example: away
    *     responses:
    *       '200':
    *         description: One page of the caller's rows
@@ -590,6 +623,10 @@ export const syncRouter = (): Router => {
    *                           - SICK_DAY
    *                           - STUDY_LEAVE
    *                           - OTHER
+   *                           - AWAY
+   *                         description: |
+   *                           `AWAY` is what a teammate sees in place of `SICK`,
+   *                           sent only to a pull that accepts it
    *                       halfDay:
    *                         type: boolean
    *                         description: Authoritative for quota accounting, unlike the times
@@ -621,7 +658,10 @@ export const syncRouter = (): Router => {
    *                         type: string
    *                         format: date-time
    *                         nullable: true
-   *                         description: Set on a cancelled booking, which the client keeps as history
+   *                         description: |
+   *                           Set on a cancelled booking, which the client keeps
+   *                           as history, and on a teammate's tombstone, which
+   *                           carries no actor and which it drops
    *                       deletedByUserId:
    *                         type: string
    *                         nullable: true
