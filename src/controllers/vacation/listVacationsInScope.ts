@@ -1,6 +1,10 @@
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
 import { getReportScopeEntries } from "../../services/report/reportServices.js";
-import { resolveCanApproveForList } from "../../services/vacation/vacationPermissions.js";
+import {
+  resolveCanApproveForList,
+  resolveVacationViewer,
+} from "../../services/vacation/vacationPermissions.js";
+import { viewVacationRowAs } from "../../services/vacation/redaction.js";
 import {
   getVacationsForGroup,
   getVacationsForUser,
@@ -39,6 +43,13 @@ export const listVacationsInScope = async (
 
   const result = await getVacationsForGroup(groupId, range.startDate, range.endDate, null, options);
   const canApprove = await resolveCanApproveForList(userId, result);
+  const viewer = await resolveVacationViewer(
+    userId,
+    result.map((row) => row.groupId)
+  );
 
-  return result.map((row) => ({ ...row, canApprove: canApprove(row) }));
+  return result.flatMap((row) => {
+    const seen = viewVacationRowAs(viewer, row);
+    return seen ? [{ ...seen, canApprove: canApprove(row) }] : [];
+  });
 };

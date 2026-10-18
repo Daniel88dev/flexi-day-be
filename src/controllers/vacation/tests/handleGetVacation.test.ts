@@ -107,6 +107,7 @@ describe("handleGetVacation", () => {
         canApprove: false,
         canCancel: true,
         canEdit: false,
+        canReadPrivateDetails: true,
         history: [{ id: "e-1", eventType: "CREATED" }],
       })
     );

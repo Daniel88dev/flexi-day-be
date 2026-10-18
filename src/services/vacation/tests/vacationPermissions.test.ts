@@ -31,6 +31,7 @@ vi.mock("../decisionGuards.js", () => ({
 import {
   resolveCanApproveForList,
   resolveCanCancelForList,
+  resolvePrivilegedGroupIds,
   resolveVacationPermissions,
 } from "../vacationPermissions.js";
 
@@ -174,6 +175,76 @@ describe("vacationPermissions", () => {
       const canCancel = await resolveCanCancelForList(userId, [liveRow]);
 
       expect(canCancel(liveRow)).toBe(true);
+    });
+  });
+
+  describe("private details", () => {
+    const standings = [
+      {
+        name: "the owner",
+        actor: userId,
+        approvable: [],
+        canAdmin: false,
+        view: false,
+        read: true,
+      },
+      {
+        name: "an approver",
+        actor: "someone_else",
+        approvable: [groupId],
+        canAdmin: false,
+        view: false,
+        read: true,
+      },
+      {
+        name: "a group admin",
+        actor: "someone_else",
+        approvable: [],
+        canAdmin: true,
+        view: false,
+        read: true,
+      },
+      {
+        name: "a view-only member",
+        actor: "someone_else",
+        approvable: [],
+        canAdmin: false,
+        view: true,
+        read: false,
+      },
+    ];
+
+    it.each(standings)("$name: canReadPrivateDetails is $read", async (standing) => {
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue(standing.approvable);
+      mockResolveGroupAdmin.mockResolvedValue({ canAdmin: standing.canAdmin, viaOrgAdmin: false });
+      mockGetGroupUser.mockResolvedValue(
+        standing.view ? { viewAccess: true, adminAccess: false } : null
+      );
+
+      const permissions = await resolveVacationPermissions(standing.actor, liveRow);
+      const privileged = await resolvePrivilegedGroupIds(standing.actor, [groupId]);
+
+      expect(permissions.canReadPrivateDetails).toBe(standing.read);
+      expect(standing.actor === userId || privileged.has(groupId)).toBe(standing.read);
+    });
+
+    it("resolves the privileged groups among those asked about, approver or admin", async () => {
+      const approved = "550e8400-e29b-41d4-a716-446655440010";
+      const administered = "550e8400-e29b-41d4-a716-446655440011";
+      const neither = "550e8400-e29b-41d4-a716-446655440012";
+      mockGetGroupsWhereUserCanApprove.mockResolvedValue([approved]);
+      mockResolveGroupAdmin.mockImplementation(async (_user: string, group: string) => ({
+        canAdmin: group === administered,
+        viaOrgAdmin: false,
+      }));
+
+      const privileged = await resolvePrivilegedGroupIds("someone_else", [
+        approved,
+        administered,
+        neither,
+      ]);
+
+      expect([...privileged].sort()).toEqual([approved, administered].sort());
     });
   });
 });

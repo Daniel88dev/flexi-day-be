@@ -167,7 +167,10 @@ describe("vacationTransitions", () => {
     mockAssertApprovalWithinQuota.mockResolvedValue(undefined);
     mockAssertGroupsWritable.mockResolvedValue(undefined);
     mockResolveGroupAdmin.mockResolvedValue({ canAdmin: false, viaOrgAdmin: false });
-    mockResolveVacationPermissions.mockResolvedValue({ canView: true });
+    mockResolveVacationPermissions.mockResolvedValue({
+      canView: true,
+      canReadPrivateDetails: true,
+    });
 
     mockCreateVacationEvent.mockImplementation(trackedResolve("event", undefined));
     mockCreateVacationEvents.mockImplementation(trackedResolve("event", []));
@@ -681,9 +684,12 @@ describe("vacationTransitions", () => {
       );
     });
 
-    it("refuses a caller who may not view the request", async () => {
+    it("refuses a caller who may view the request but not read its private details", async () => {
       mockGetVacationById.mockResolvedValue(pendingVacation());
-      mockResolveVacationPermissions.mockResolvedValue({ canView: false });
+      mockResolveVacationPermissions.mockResolvedValue({
+        canView: true,
+        canReadPrivateDetails: false,
+      });
 
       await expect(
         commentOnRequest({ auth: mockAuthData, vacationId: FIRST_ID, message: "Hello" })

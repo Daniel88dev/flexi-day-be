@@ -223,7 +223,7 @@ const mayComment =
     }
 
     const permissions = await resolveVacationPermissions(auth.userId, row, tx);
-    if (!permissions.canView) {
+    if (!permissions.canReadPrivateDetails) {
       throw new AppError({
         code: 403,
         message: "You are not allowed to comment on this vacation",
