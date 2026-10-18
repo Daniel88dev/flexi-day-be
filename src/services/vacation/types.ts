@@ -206,6 +206,7 @@ const ids = z.array(z.uuid()).min(1).max(366);
 
 export const validateBulkApproveVacation = z.object({
   ids,
+  reason: z.string().max(1000).optional(),
 });
 
 export type ValidatedBulkApproveVacationType = z.infer<typeof validateBulkApproveVacation>;

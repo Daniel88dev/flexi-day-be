@@ -15,7 +15,11 @@ export const handleBulkApproveVacation = async (req: Request, res: Response) => 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const data: ValidatedBulkApproveVacationType = req.body;
 
-  const approved = await approveRequestBatch({ auth, vacationIds: data.ids });
+  const approved = await approveRequestBatch({
+    auth,
+    vacationIds: data.ids,
+    reason: data.reason || null,
+  });
 
   return res.status(200).json({
     message: "Vacations approved",

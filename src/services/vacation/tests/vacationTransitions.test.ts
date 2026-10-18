@@ -198,7 +198,7 @@ describe("vacationTransitions", () => {
         trackedResolve("mutate", [pendingVacation({ approvedAt: new Date() })])
       );
 
-      await approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID] });
+      await approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID], reason: null });
 
       expect(timeline).toEqual(["mutate", "event", "commit", "notify"]);
     });
@@ -208,7 +208,7 @@ describe("vacationTransitions", () => {
       mockApproveVacationsBulk.mockRejectedValue(new Error("Failed to update vacation"));
 
       await expect(
-        approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID] })
+        approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID], reason: null })
       ).rejects.toThrow("Failed to update vacation");
 
       expect(mockNotifyVacationDecision).not.toHaveBeenCalled();
@@ -300,7 +300,11 @@ describe("vacationTransitions", () => {
       mockGetVacationsByIds.mockResolvedValue([pendingVacation()]);
 
       await expect(
-        approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID, SECOND_ID] })
+        approveRequestBatch({
+          auth: mockAuthData,
+          vacationIds: [FIRST_ID, SECOND_ID],
+          reason: null,
+        })
       ).rejects.toThrow("One or more vacations not found");
     });
 
@@ -339,7 +343,7 @@ describe("vacationTransitions", () => {
       mockApproveVacationsBulk.mockResolvedValue([]);
 
       await expect(
-        approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID] })
+        approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID], reason: null })
       ).rejects.toThrow("One or more of these requests has already been decided");
     });
 
@@ -347,7 +351,7 @@ describe("vacationTransitions", () => {
       mockGetVacationsByIds.mockResolvedValue([]);
 
       await expect(
-        approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID] })
+        approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID], reason: null })
       ).rejects.toThrow("One or more vacations not found");
     });
   });
@@ -375,6 +379,40 @@ describe("vacationTransitions", () => {
       );
       expect(mockNotifyVacationDecision).toHaveBeenCalledWith(
         [approved],
+        "approved",
+        { id: "user_123", name: "Test User" },
+        null
+      );
+    });
+
+    it("stamps every event of a batch approval with the note and keeps it out of the notification", async () => {
+      const rows = [pendingVacation(), pendingVacation({ id: SECOND_ID })];
+      mockGetVacationsByIds.mockResolvedValue(rows);
+      mockApproveVacationsBulk.mockResolvedValue(rows);
+
+      await approveRequestBatch({
+        auth: mockAuthData,
+        vacationIds: [FIRST_ID, SECOND_ID],
+        reason: "Enjoy the break",
+      });
+
+      expect(mockCreateVacationEvents).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            vacationId: FIRST_ID,
+            eventType: "APPROVED",
+            reason: "Enjoy the break",
+          }),
+          expect.objectContaining({
+            vacationId: SECOND_ID,
+            eventType: "APPROVED",
+            reason: "Enjoy the break",
+          }),
+        ],
+        tx
+      );
+      expect(mockNotifyVacationDecision).toHaveBeenCalledWith(
+        rows,
         "approved",
         { id: "user_123", name: "Test User" },
         null
@@ -433,7 +471,11 @@ describe("vacationTransitions", () => {
       mockGetVacationsByIds.mockResolvedValue([pendingVacation()]);
       mockApproveVacationsBulk.mockResolvedValue([pendingVacation({ approvedAt: new Date() })]);
 
-      await approveRequestBatch({ auth: mockAuthData, vacationIds: [FIRST_ID, FIRST_ID] });
+      await approveRequestBatch({
+        auth: mockAuthData,
+        vacationIds: [FIRST_ID, FIRST_ID],
+        reason: null,
+      });
 
       expect(mockGetVacationsByIds).toHaveBeenCalledWith([FIRST_ID], tx);
       expect(mockApproveVacationsBulk).toHaveBeenCalledWith([FIRST_ID], "user_123", tx);

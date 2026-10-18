@@ -579,6 +579,9 @@ export const vacationRouter = (): Router => {
    *       `vacationIds` array names every row in the range. Sending that
    *       array here guarantees the whole range is approved together or not
    *       at all.
+   *
+   *       An optional `reason` is stored on every approval event and shown in
+   *       the request history. The approval notification does not carry it.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -595,6 +598,9 @@ export const vacationRouter = (): Router => {
    *                 items:
    *                   type: string
    *                   format: uuid
+   *               reason:
+   *                 type: string
+   *                 maxLength: 1000
    *     responses:
    *       '200':
    *         description: All requested vacations approved
@@ -607,6 +613,10 @@ export const vacationRouter = (): Router => {
    *         description: Not allowed to approve one or more rows
    *       '404':
    *         description: One or more vacations not found
+   *       '409':
+   *         description: One or more of the requests has already been decided
+   *       '422':
+   *         description: Invalid body, e.g. a `reason` longer than 1000 characters
    */
   app.post(
     "/approve",
