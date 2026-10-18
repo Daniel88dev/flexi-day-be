@@ -1,7 +1,11 @@
 import type { DbTransaction } from "../../db/db.js";
 import AppError from "../../utils/appError.js";
 import { isOrganizationAdmin } from "../organization/organizationServices.js";
-import { administersGroupOfMember, getAdministrableGroupIds } from "../groupUser/groupAccess.js";
+import {
+  administersGroupOfMember,
+  getMemberIdsExcludingManagers,
+  getAdministrableGroupIds,
+} from "../groupUser/groupAccess.js";
 import { getActiveMemberIdsForGroups } from "../groupUser/groupUserServices.js";
 import { getGroup } from "../group/groupServices.js";
 
@@ -17,9 +21,11 @@ import { getGroup } from "../group/groupServices.js";
  * transition path as well as from a controller, and a guard a layer up could
  * not be reached from there.
  *
- * Two corollaries the shape makes rather than states: a manager holds no
- * `group_users` row, so no group admin's scope contains their Employment, and
- * an Employment in no group at all is visible only to org admins.
+ * A group's manager is never one of that group's members here, although group
+ * creation gives them a full `group_users` row: no admin of the group they
+ * manage reaches their Employment, which only org admins and the admins of a
+ * group they are a plain member of do. An Employment in no group at all is
+ * visible only to org admins.
  */
 
 type EmploymentSubject = { organizationId: string; userId: string };
@@ -110,7 +116,7 @@ export const resolveRosterAudience = async (
 
   return {
     everyone: false,
-    userIds: await getActiveMemberIdsForGroups(administrable, tx),
+    userIds: await getMemberIdsExcludingManagers(administrable, tx),
     groupIds: administrable,
   };
 };
@@ -163,7 +169,9 @@ export const resolveTeamAudience = async (
 
   return {
     everyone: audience.everyone,
-    userIds: await getActiveMemberIdsForGroups([groupId], tx),
+    userIds: audience.everyone
+      ? await getActiveMemberIdsForGroups([groupId], tx)
+      : await getMemberIdsExcludingManagers([groupId], tx),
     groupIds,
     group: { id: group.id, groupName: group.groupName },
   };

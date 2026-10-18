@@ -516,8 +516,15 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   boundary.
 - **Reading an Employment is wider than belonging to one.** `attendanceAccess.ts` is the only
   statement of who may read and correct one, and it deliberately leaves the Employment of anybody
-  who belongs to no group — a manager whose own group holds no membership row for them, say — to
-  org admins alone, because a group admin's scope reaches only people who hold a `group_users` row.
+  who belongs to no group to org admins alone, because a group admin's scope reaches only people
+  who hold a `group_users` row.
+- **A group's manager is not one of its members for attendance.** Creating a group gives the
+  manager a full `group_users` row, so `administersGroupOfMember` and `getMemberIdsExcludingManagers`
+  skip a row whose user manages that row's group, as the visibility table in
+  [`attendance.md`](attendance.md#visibility) requires. The rule is per group: a manager who is a plain
+  member of another group stays in that group's scope. Vacation credits the manager's own row on
+  purpose and does not go through these helpers. `attendanceManagerScope.e2e.test.ts` fails if a
+  group admin sees or corrects their own group's manager.
 
 ## Quota allocation (`src/services/userYearQuotas/yearAllocation.ts`)
 

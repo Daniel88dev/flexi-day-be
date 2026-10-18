@@ -9,7 +9,7 @@ import {
   getAdminOrganizationsForUser,
   isOrganizationAdmin,
 } from "../organization/organizationServices.js";
-import { and, eq, exists, isNull, or, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, type DbTransaction } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
@@ -122,6 +122,9 @@ export const getAdministrableGroupIds = async (
  * `adminAccess`; org admins are the caller's to credit first. It inlines the
  * rule {@link getAdministrableGroupIds} states, so a new route to group
  * administration belongs in both.
+ *
+ * A group's manager is never one of its members here, whatever row they hold,
+ * the same rule {@link getMemberIdsExcludingManagers} applies.
  */
 export const administersGroupOfMember = async (
   viewerUserId: string,
@@ -142,6 +145,7 @@ export const administersGroupOfMember = async (
         isNull(groupUsers.deletedAt),
         eq(groups.organizationId, organizationId),
         isNull(groups.deletedAt),
+        ne(groups.managerUserId, memberUserId),
         or(
           eq(groups.managerUserId, viewerUserId),
           exists(
@@ -163,6 +167,33 @@ export const administersGroupOfMember = async (
     .limit(1);
 
   return row !== undefined;
+};
+
+/**
+ * The active members of these groups, each group's manager left out of that
+ * group's own members. Group creation gives the manager a full membership row,
+ * and administering a group must not reach the person who manages it.
+ */
+export const getMemberIdsExcludingManagers = async (
+  groupIds: string[],
+  tx?: DbTransaction
+): Promise<string[]> => {
+  if (groupIds.length === 0) return [];
+
+  const rows = await (tx ?? db)
+    .selectDistinct({ userId: groupUsers.userId })
+    .from(groupUsers)
+    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
+    .where(
+      and(
+        inArray(groupUsers.groupId, groupIds),
+        isNull(groupUsers.deletedAt),
+        isNull(groups.deletedAt),
+        ne(groups.managerUserId, groupUsers.userId)
+      )
+    );
+
+  return rows.map((row) => row.userId);
 };
 
 /** Throws 403 unless the caller's membership carries `adminAccess`, they manage the group, or they administer its organization. */
