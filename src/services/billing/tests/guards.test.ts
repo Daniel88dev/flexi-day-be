@@ -60,6 +60,7 @@ import {
   assertCanCreateGroup,
   assertCanEnableSickDayBenefit,
   isAttachmentUploadAvailable,
+  assertGroupEventsActive,
   assertGroupsWritable,
   assertGroupWritable,
   assertSickDayRequestable,
@@ -504,5 +505,49 @@ describe("attendance activity", () => {
     });
 
     await expect(isAttendanceActive("org-1")).resolves.toBe(true);
+  });
+});
+
+describe("assertGroupEventsActive", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetGroup.mockResolvedValue(GROUP);
+  });
+
+  const planRequired = {
+    code: 402,
+    errors: [
+      expect.objectContaining({
+        publicContext: { reason: "PLAN_LIMIT", code: "GROUP_EVENTS_PLAN_REQUIRED" },
+      }),
+    ],
+  };
+
+  it("404s for a group that does not exist", async () => {
+    mockGetGroup.mockResolvedValue(undefined);
+
+    await expect(assertGroupEventsActive("nope")).rejects.toMatchObject({ code: 404 });
+  });
+
+  it("402s for an organization that never paid", async () => {
+    mockGetSubscription.mockResolvedValue(undefined);
+
+    await expect(assertGroupEventsActive("group-1")).rejects.toMatchObject(planRequired);
+  });
+
+  it("402s once a paid plan has lapsed", async () => {
+    mockGetSubscription.mockResolvedValue(lapsedProSub);
+
+    await expect(assertGroupEventsActive("group-1")).rejects.toMatchObject(planRequired);
+  });
+
+  it("allows a paid plan, grace included", async () => {
+    mockGetSubscription.mockResolvedValue({
+      ...lapsedProSub,
+      status: subscriptionStatus.PastDue,
+      graceEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await expect(assertGroupEventsActive("group-1")).resolves.toBeUndefined();
   });
 });

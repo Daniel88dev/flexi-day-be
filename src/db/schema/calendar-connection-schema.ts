@@ -4,6 +4,7 @@ import { user } from "./auth-schema.js";
 import { calendarSync } from "./calendar-sync-schema.js";
 import { vacation } from "./vacation-schema.js";
 import { userBirthdays } from "./user-birthday-schema.js";
+import { groupEvents } from "./group-event-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
 export enum calendarProvider {
@@ -100,8 +101,9 @@ export const calendarSyncEvents = pgTable(
     sourceKey: text("source_key").notNull(),
     // Null once the vacation row is hard-deleted: the provider event still has to go.
     vacationId: text("vacation_id").references(() => vacation.id, { onDelete: "set null" }),
-    // No FK until `group_events` exists; that ticket adds it, `on delete set null`.
-    groupEventId: text("group_event_id"),
+    groupEventId: text("group_event_id").references(() => groupEvents.id, {
+      onDelete: "set null",
+    }),
     birthdayUserId: text("birthday_user_id").references(() => userBirthdays.userId, {
       onDelete: "set null",
     }),
@@ -137,7 +139,7 @@ export const calendarSyncFakeEvents = pgTable(
       .notNull()
       .references(() => calendarConnection.id, { onDelete: "cascade" }),
     provider: calendarProviderEnum("provider").notNull(),
-    operation: text("operation").$type<"INSERT" | "PATCH" | "DELETE">().notNull(),
+    operation: text("operation").$type<"INSERT" | "PATCH" | "DELETE" | "CANCEL">().notNull(),
     providerEventId: text("provider_event_id"),
     payload: jsonb("payload"),
     // "ok", or the failure the driver returned.

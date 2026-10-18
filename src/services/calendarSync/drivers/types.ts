@@ -40,4 +40,14 @@ export interface CalendarDriver {
   ) => Promise<WriteResult>;
   /** An event already gone at the provider counts as deleted. */
   delete: (context: DriverContext, providerEventId: string) => Promise<DriverResult>;
+  /**
+   * Graph only: removes the occurrence of a series that falls on `date` in
+   * `timeZone`. A day with no occurrence counts as done.
+   */
+  cancelOccurrence?: (
+    context: DriverContext,
+    seriesId: string,
+    date: string,
+    timeZone: string
+  ) => Promise<DriverResult>;
 }

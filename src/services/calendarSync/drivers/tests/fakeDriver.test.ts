@@ -240,3 +240,27 @@ describe("fake driver flipped by the connection's token", () => {
     ).toMatchObject({ ok: true });
   });
 });
+
+describe("fake driver, cancelling one occurrence", () => {
+  it("records the cancel against the series with the date", async () => {
+    const store = memoryFakeStore();
+    const driver = createFakeDriver(calendarProvider.Microsoft, { store });
+
+    const result = await driver.cancelOccurrence!(
+      contextWith(calendarProvider.Microsoft),
+      "fake-series",
+      "2026-12-22",
+      "Europe/Prague"
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        operation: "CANCEL",
+        providerEventId: "fake-series",
+        payload: { date: "2026-12-22" },
+        result: "ok",
+      }),
+    ]);
+  });
+});

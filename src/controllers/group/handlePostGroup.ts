@@ -10,6 +10,7 @@ import { createGroup } from "../../services/group/groupServices.js";
 import { createGroupUser } from "../../services/groupUser/groupUserServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { openQuotaFromGroupDefaults } from "../../services/userYearQuotas/userYearQuotasServices.js";
+import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 const validatePostGroup = z.object({
   groupName: z.string().trim().min(1).max(120),
@@ -107,5 +108,6 @@ export const handlePostGroup = async (req: Request, res: Response) => {
 
     return record;
   });
+  await markMemberGroupEventTargetsDirty(auth.userId);
   return res.status(201).json(result);
 };

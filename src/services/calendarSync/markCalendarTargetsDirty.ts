@@ -10,6 +10,7 @@ import {
   calendarConnectionStatus,
 } from "../../db/schema/calendar-connection-schema.js";
 import type { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { logger } from "../../middleware/logger.js";
 import { errorName } from "../../utils/errorName.js";
 import { enqueueSync } from "./enqueueSync.js";
@@ -101,4 +102,37 @@ export const markCalendarTargetsDirty = async (rows: readonly DirtyRow[]): Promi
 export const markBirthdayTargetsDirty = async (userId: string): Promise<void> =>
   markTargetsDue(() =>
     and(eq(calendarSync.userId, userId), eq(calendarSync.includeBirthdays, true))
+  );
+
+/**
+ * After a commit that wrote a group's events: marks the connected `ME` targets
+ * with Group events on of everyone who is a live member of the group.
+ */
+export const markGroupEventTargetsDirty = async (groupId: string): Promise<void> =>
+  markTargetsDue(() =>
+    and(
+      eq(calendarSync.includeGroupEvents, true),
+      exists(
+        db
+          .select({ id: groupUsers.id })
+          .from(groupUsers)
+          .where(
+            and(
+              eq(groupUsers.groupId, groupId),
+              eq(groupUsers.userId, calendarSync.userId),
+              isNull(groupUsers.deletedAt)
+            )
+          )
+      )
+    )
+  );
+
+/**
+ * After a commit that added or removed a membership: marks the member's
+ * connected `ME` targets with Group events on, so the group's events reach or
+ * leave their calendar on the next sync.
+ */
+export const markMemberGroupEventTargetsDirty = async (userId: string): Promise<void> =>
+  markTargetsDue(() =>
+    and(eq(calendarSync.userId, userId), eq(calendarSync.includeGroupEvents, true))
   );

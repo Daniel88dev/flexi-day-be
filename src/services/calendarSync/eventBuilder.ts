@@ -5,11 +5,13 @@ import {
   calendarSyncEventKind,
 } from "../../db/schema/calendar-connection-schema.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
-import { rruleLine } from "../../utils/ics.js";
+import { recurrenceLines, rruleLine } from "../../utils/ics.js";
+import { weekdayOf } from "../groupEvent/occurrences.js";
 import type { RecordTypeLabels } from "../recordType/recordTypeLabels.js";
 import { graphBirthdaySeries } from "./birthdaySeries.js";
-import { birthdaySourceKey } from "./sourceKey.js";
-import type { BirthdayFeedRecord, VacationFeedRecord } from "./types.js";
+import { groupEventDescription, groupEventIcs } from "./groupEventShape.js";
+import { birthdaySourceKey, groupEventSourceKey } from "./sourceKey.js";
+import type { BirthdayFeedRecord, GroupEventFeedRecord, VacationFeedRecord } from "./types.js";
 
 const FOOTER = "Synced from Flexi Day";
 
@@ -39,9 +41,24 @@ export type GoogleEventPayload = {
 
 type GraphWhen = { dateTime: string; timeZone: string };
 
+type GraphDay = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
+
+type GraphPattern =
+  | { type: "daily"; interval: number }
+  | { type: "weekly"; interval: number; daysOfWeek: GraphDay[]; firstDayOfWeek: "monday" }
+  | { type: "absoluteMonthly"; interval: number; dayOfMonth: number }
+  | {
+      type: "relativeMonthly";
+      interval: number;
+      daysOfWeek: GraphDay[];
+      index: "first" | "second" | "third" | "fourth" | "last";
+    }
+  | { type: "absoluteYearly"; interval: number; month: number; dayOfMonth: number };
+
 type GraphRecurrence = {
-  pattern: { type: "absoluteYearly"; interval: number; month: number; dayOfMonth: number };
-  range: { type: "noEnd"; startDate: string };
+  pattern: GraphPattern;
+  range:
+    { type: "noEnd"; startDate: string } | { type: "endDate"; startDate: string; endDate: string };
 };
 
 export type MicrosoftEventPayload = {
@@ -61,6 +78,11 @@ type Desired<P extends calendarProvider, Payload> = {
   kind: calendarSyncEventKind;
   payload: Payload;
   contentHash: string;
+  /**
+   * Graph only: the skipped dates of a recurring group event, cancelled one by
+   * one after the series goes in, since Graph takes no exception dates.
+   */
+  cancelledDates?: string[];
 };
 
 export type DesiredEvent =
@@ -288,4 +310,176 @@ export const buildBirthdayDesired = (input: BirthdayBuildInput): DesiredEvent =>
   };
   const { transactionId: _immutable, ...content } = payload;
   return { provider: input.provider, kind, payload, contentHash: hashOf(kind, content) };
+};
+
+/**
+ * The zone Graph gets for a group event. IANA names pass as they are; the
+ * T-348 probe has not shown whether Graph takes one on a recurring event.
+ * Should it refuse, map to the Windows name here and nowhere else.
+ */
+export const graphTimeZone = (zone: string): string => zone;
+
+export type GroupEventBuildInput = {
+  record: GroupEventFeedRecord;
+  provider: calendarProvider;
+  /** The target's IANA zone, stamped on the event's floating times. */
+  timeZone: string;
+  /** The line naming the group, in the owner's language. */
+  groupLine: string;
+  configId: string;
+  ledgerId: string;
+};
+
+const GRAPH_DAYS: GraphDay[] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
+
+const GRAPH_INDEX = ["first", "second", "third", "fourth"] as const;
+
+const graphRecurrence = (record: GroupEventFeedRecord): GraphRecurrence | undefined => {
+  const rule = record.repeat;
+  if (!rule) return undefined;
+  const start = record.startDate;
+  const day = Number(start.slice(8, 10));
+  const interval = rule.interval;
+  const weekday = GRAPH_DAYS[weekdayOf(start)]!;
+
+  let pattern: GraphPattern;
+  if (rule.freq === "daily") {
+    pattern = { type: "daily", interval };
+  } else if (rule.freq === "weekly") {
+    const days = new Set([...rule.weekdays, weekdayOf(start)]);
+    pattern = {
+      type: "weekly",
+      interval,
+      daysOfWeek: GRAPH_DAYS.filter((_, i) => days.has(i)),
+      firstDayOfWeek: "monday",
+    };
+  } else if (rule.freq === "monthly") {
+    const nth = Math.ceil(day / 7);
+    if (rule.monthlyMode === "weekday" || rule.monthlyMode === "lastWeekday") {
+      // A start on a 5th weekday can only repeat on the last one.
+      const index = rule.monthlyMode === "lastWeekday" || nth > 4 ? "last" : GRAPH_INDEX[nth - 1]!;
+      pattern = { type: "relativeMonthly", interval, daysOfWeek: [weekday], index };
+    } else {
+      // Graph lands a day the month lacks on its last day, as the app does.
+      pattern = { type: "absoluteMonthly", interval, dayOfMonth: day };
+    }
+  } else {
+    pattern = {
+      type: "absoluteYearly",
+      interval,
+      month: Number(start.slice(5, 7)),
+      dayOfMonth: day,
+    };
+  }
+
+  return {
+    pattern,
+    range: rule.until
+      ? { type: "endDate", startDate: start, endDate: rule.until }
+      : { type: "noEnd", startDate: start },
+  };
+};
+
+/**
+ * A group event on a sync target: a plain `default` event, always free,
+ * never Out of office or a working location, on every capability. Timed ones
+ * carry the target's zone; recurring ones go out as one series.
+ */
+export const buildGroupEventDesired = (input: GroupEventBuildInput): DesiredEvent => {
+  const kind = calendarSyncEventKind.GroupEvent;
+  const { record } = input;
+  const text = `${groupEventDescription(record, input.groupLine)}\n${FOOTER}`;
+  const timed = record.startTime !== null && record.endTime !== null;
+
+  if (input.provider === calendarProvider.Google) {
+    const when: Pick<GoogleEventPayload, "start" | "end"> = timed
+      ? {
+          start: {
+            dateTime: `${record.startDate}T${clock(record.startTime!)}`,
+            timeZone: input.timeZone,
+          },
+          end: {
+            dateTime: `${record.endDate}T${clock(record.endTime!)}`,
+            timeZone: input.timeZone,
+          },
+        }
+      : { start: { date: record.startDate }, end: { date: nextDay(record.endDate) } };
+    const recurrence = recurrenceLines(
+      groupEventIcs(record, { uid: record.id, summary: record.title }, input.timeZone)
+    );
+    const payload: GoogleEventPayload = {
+      eventType: "default",
+      summary: record.title,
+      description: text,
+      ...when,
+      transparency: "transparent",
+      reminders: { useDefault: false },
+      ...(recurrence.length > 0 ? { recurrence } : {}),
+      extendedProperties: {
+        private: {
+          flexiDaySourceKey: groupEventSourceKey(record.id),
+          flexiDayConfigId: input.configId,
+        },
+      },
+    };
+    return { provider: input.provider, kind, payload, contentHash: hashOf(kind, payload) };
+  }
+
+  const zone = graphTimeZone(input.timeZone);
+  const recurrence = graphRecurrence(record);
+  const payload: MicrosoftEventPayload = {
+    subject: record.title,
+    body: { contentType: "text", content: text },
+    start: {
+      dateTime: timed
+        ? `${record.startDate}T${clock(record.startTime!)}`
+        : `${record.startDate}T00:00:00`,
+      timeZone: zone,
+    },
+    end: {
+      dateTime: timed
+        ? `${record.endDate}T${clock(record.endTime!)}`
+        : `${nextDay(record.endDate)}T00:00:00`,
+      timeZone: zone,
+    },
+    isAllDay: !timed,
+    showAs: "free",
+    isReminderOn: false,
+    transactionId: input.ledgerId,
+    ...(recurrence ? { recurrence } : {}),
+  };
+  const { transactionId: _immutable, ...content } = payload;
+  if (!recurrence)
+    return { provider: input.provider, kind, payload, contentHash: hashOf(kind, content) };
+
+  const cancelledDates = [...record.skippedDates].sort();
+  const { start, end, isAllDay } = payload;
+  const shape = hashOf(kind, { start, end, isAllDay, recurrence, cancelledDates });
+  return {
+    provider: input.provider,
+    kind,
+    payload,
+    contentHash: `${shape}${SERIES_SHAPE_SEPARATOR}${hashOf(kind, { ...content, cancelledDates })}`,
+    cancelledDates,
+  };
+};
+
+const SERIES_SHAPE_SEPARATOR = ":";
+
+/**
+ * The part of a Graph series' content hash covering its start, end, rule and
+ * skipped dates, or null for any other event. The engine replaces a series
+ * when this part changes and patches it otherwise.
+ */
+export const seriesShapeOf = (contentHash: string | null): string | null => {
+  const at = contentHash?.indexOf(SERIES_SHAPE_SEPARATOR) ?? -1;
+  return at === -1 ? null : contentHash!.slice(0, at);
 };

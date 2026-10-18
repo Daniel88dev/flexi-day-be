@@ -22,18 +22,20 @@ to the limiters, are in [`invariants.md`](invariants.md#sync-pull-transport-srcr
   "userYearQuotas": [],
   "bankHolidays": [],
   "vacations": [],
+  "groupEvents": [],
   "birthdays": []
 }
 ```
 
-The nine table keys are always present, in that dependency order, so a client can apply a page top
-to bottom. They follow the Drizzle export names, pluralised where the schema's is singular (`users` for
-`user`, `vacations` for `vacation`), with one exception: `birthdays` carries `userBirthdays`. Rows are raw table rows: camelCase column names, timestamps
-ISO 8601 UTC, dates `YYYY-MM-DD`, no joined summaries and no per-row verdicts. `note` and
-`rejectionReason` ship, because the web shows them to everyone who can see the row.
+The ten table keys are always present, in that dependency order, so a client can apply a page top
+to bottom. They follow the Drizzle export names, pluralised where the schema's is singular (`users`
+for `user`, `vacations` for `vacation`), with one exception: `birthdays` carries `userBirthdays`.
+Rows are raw table rows: camelCase column names, timestamps ISO 8601 UTC, dates `YYYY-MM-DD`, no
+joined summaries and no per-row verdicts. `note` and `rejectionReason` ship, because the web shows
+them to everyone who can see the row.
 
 Every partitioned row carries `organizationId`: groups carry their own, `groupUsers`,
-`userYearQuotas` and `vacations` their group's, `groupMirrors` the target group's. `users`,
+`userYearQuotas`, `vacations` and `groupEvents` their group's, `groupMirrors` the target group's. `users`,
 `bankHolidays` and `birthdays` are unpartitioned and carry none: a birthday belongs to a person, not
 to a group.
 
@@ -59,6 +61,7 @@ membership row lives.
 | `userYearQuotas` | every row of the group, a removed member's included                                        | the caller's own rows | nothing, not even from a group the caller has left                               |
 | `bankHolidays`   | the group's holiday country                                                                | the group's country   | nothing                                                                          |
 | `vacations`      | every row of the group, a removed member's included, plus the rows mirrored into the group | the caller's own rows | the caller's own rows in any group at all, a group they have left included       |
+| `groupEvents`    | every group event of the group, recurring and one-off                                      | the same              | nothing                                                                          |
 | `birthdays`      | every live member's shared birthday, while the group's organization is paid or lapsed      | nothing               | the caller's own birthday, shared or not, whatever their groups                  |
 
 Detail the table cannot hold:
@@ -67,7 +70,9 @@ Detail the table cannot hold:
   state. An actor is anyone a returned booking names, meaning `userId`, `approvedBy`, `rejectedBy`,
   `createdByUserId` and `deletedByUserId`. The actors on the bookings a pull carries, and the people
   on the membership rows it carries, arrive whatever their own `updatedAt` says, so no row ever
-  names somebody the client cannot resolve. Everybody else in the set arrives only when their own
+  names somebody the client cannot resolve. The `createdByUserId` of every group event the pull
+  carries is owed the same way, because a creator may have left the group or administer it without
+  a membership row. Everybody else in the set arrives only when their own
   row changed in the window, which is how an approver renamed long after a booking settled reaches
   the client.
 - **A removed member** stays visible in a group seen in full. Their bookings and quota rows are
@@ -87,6 +92,19 @@ Detail the table cannot hold:
   check `getVacationsForGroup` already makes before projecting. A mirror whose owner has left brings
   neither the mirror row nor the bookings it projected. A mirrored booking stays a row of its source
   group, so it carries that group's id and organization, not the target's.
+- **`groupEvents`** ships every group event of every group the caller holds a live membership row
+  in, a self-scoped group included, because an event belongs to its group rather than to a member.
+  A row is the `group_events` row as stored, with the repeat rule as flat columns holding the
+  database values (`repeatFreq` `DAILY`, `WEEKLY`, `MONTHLY` or `YEARLY`; `repeatMonthlyMode`
+  `DAY`, `NTH_WEEKDAY` or `LAST_WEEKDAY`; `repeatWeekdays` 0 = Monday to 6 = Sunday), times as
+  `HH:MM` and `skippedDates` sorted. Nothing viewer-dependent ships: no group name, creator summary
+  or edit right, which the client derives from `groups`, `users` and `groupUsers`. The client
+  expands the occurrences itself. A "this event" edit arrives as two rows, the recurring group event
+  with the date added to `skippedDates` and the one-off with `recurringEventId` and `originalDate`.
+  No date bound applies: a recurring group event has no last day to bound it by. Joining or leaving
+  a group is trigger 1, so no event falls out of scope inside a delta and none needs a tombstone for
+  it. Deleting a creator's account nulls `createdByUserId` without stamping `updatedAt`, so a
+  client keeps the old id until the row next changes or a sync reset.
 - **`birthdays`** is `visibleBirthdays(caller)`, the predicate `GET /api/birthdays` reads. A row is
   keyed by its owner: `id` is the `userId`, because `user_birthdays` has no id of its own, and the
   table pages by `updatedAt` then `userId`. A paid organization is any plan but Free, grace included;
@@ -150,7 +168,8 @@ the next pull rather than between the two.
   client take one snapshot. That is the lever for a field added to rows a client already holds,
   which a delta would only deliver as each row next changed. Version 2 added
   `sickDayBenefitEnabled` to organization rows. Version 3 added the `birthdays` table, whose
-  existing rows only a snapshot delivers. A cursor that turns unusable mid-loop, the bump
+  existing rows only a snapshot delivers. Version 4 added the `groupEvents` table, for the same
+  reason. A cursor that turns unusable mid-loop, the bump
   included, is answered with page one of a fresh snapshot, which says `first: true`. The phone
   restarts its loop whenever a page after its first answers `first: true`, so the fresh snapshot
   runs from page one and its sweep runs.
@@ -196,14 +215,17 @@ of an organization the caller has no group in.
 
 ## Tombstones
 
-A delta carries a soft-deleted row in full with `deletedAt` set. Four cases reach a client:
+A delta carries a soft-deleted row in full with `deletedAt` set. Five cases reach a client:
 
 - another member's membership row in a group the caller sees in full;
 - a cancelled booking, which the client keeps as history rather than dropping, the way the web
   calendar shows it. A snapshot carries cancelled bookings for the same reason;
 - the row of a group the caller has left and still holds bookings in;
 - a birthday the caller may no longer see: removed, unshared, or its owner left every group that
-  showed it. Unlike the others it ships without its content, shaped as described under Scope.
+  showed it. Unlike the others it ships without its content, shaped as described under Scope;
+- a deleted group event, and the one-offs a delete takes with it. The delete itself wipes the
+  content: title, note, times, rule and `createdByUserId` null, `skippedDates` empty. The row keeps
+  `id`, `groupId`, the dates, `recurringEventId` and `originalDate`. A snapshot leaves them out.
 
 The rest are reset triggers, so the snapshot that answers them stops carrying the row instead and
 the client sweeps whatever the snapshot did not re-send: the caller's own removal, the soft delete

@@ -6,6 +6,7 @@ import { user } from "../../../db/schema/auth-schema.js";
 import { groups } from "../../../db/schema/group-schema.js";
 import { groupUsers } from "../../../db/schema/group-users-schema.js";
 import { groupMirrors } from "../../../db/schema/group-mirror-schema.js";
+import { groupEvents } from "../../../db/schema/group-event-schema.js";
 import { vacation, CalendarRecordType } from "../../../db/schema/vacation-schema.js";
 import { userYearQuotas } from "../../../db/schema/user-year-quotas-schema.js";
 import { changesSchema, changesType } from "../../../db/schema/changes-schema.js";
@@ -286,6 +287,7 @@ export async function ageEverything(): Promise<void> {
   await db.update(bankHolidays).set({ updatedAt: longAgo });
   await db.update(subscriptions).set({ updatedAt: longAgo });
   await db.update(userBirthdays).set({ updatedAt: longAgo });
+  await db.update(groupEvents).set({ updatedAt: longAgo });
 }
 
 /**

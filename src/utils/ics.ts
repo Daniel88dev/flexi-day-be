@@ -393,6 +393,31 @@ export const rruleLine = (repeat: IcsRepeat, startDate: string, until: string | 
   return `RRULE:${parts.join(";")}`;
 };
 
+/**
+ * The `RRULE` and `EXDATE` lines of a recurring event, empty for a one-off.
+ * Google's `recurrence` takes the same lines.
+ */
+export const recurrenceLines = (event: IcsEvent): string[] => {
+  if (!event.repeat) return [];
+  if (event.kind === "timed") {
+    const zone = `TZID=${event.timeZone}`;
+    const until = event.repeat.until
+      ? toTimestamp(wallClockToUtc(event.timeZone, event.repeat.until, event.startTime))
+      : null;
+    return [
+      rruleLine(event.repeat, event.startDate, until),
+      ...(event.skippedDates ?? []).map(
+        (date) => `EXDATE;${zone}:${localDateTime(date, event.startTime)}`
+      ),
+    ];
+  }
+  const until = event.repeat.until ? toDateValue(event.repeat.until) : null;
+  return [
+    rruleLine(event.repeat, event.startDate, until),
+    ...(event.skippedDates ?? []).map((date) => `EXDATE;VALUE=DATE:${toDateValue(date)}`),
+  ];
+};
+
 const eventLines = (event: IcsEvent, now: string): string[] => {
   const lines = [`UID:${escapeText(event.uid)}`, `DTSTAMP:${now}`];
 
@@ -402,28 +427,13 @@ const eventLines = (event: IcsEvent, now: string): string[] => {
       `DTSTART;${zone}:${localDateTime(event.startDate, event.startTime)}`,
       `DTEND;${zone}:${localDateTime(event.endDate ?? event.startDate, event.endTime)}`
     );
-    if (event.repeat) {
-      const until = event.repeat.until
-        ? toTimestamp(wallClockToUtc(event.timeZone, event.repeat.until, event.startTime))
-        : null;
-      lines.push(rruleLine(event.repeat, event.startDate, until));
-      for (const date of event.skippedDates ?? []) {
-        lines.push(`EXDATE;${zone}:${localDateTime(date, event.startTime)}`);
-      }
-    }
   } else {
     lines.push(
       `DTSTART;VALUE=DATE:${toDateValue(event.startDate)}`,
       `DTEND;VALUE=DATE:${nextDayValue(event.endDate ?? event.startDate)}`
     );
-    if (event.repeat) {
-      const until = event.repeat.until ? toDateValue(event.repeat.until) : null;
-      lines.push(rruleLine(event.repeat, event.startDate, until));
-      for (const date of event.skippedDates ?? []) {
-        lines.push(`EXDATE;VALUE=DATE:${toDateValue(date)}`);
-      }
-    }
   }
+  lines.push(...recurrenceLines(event));
 
   lines.push(`SUMMARY:${escapeText(event.summary)}`);
   if (event.description) {

@@ -480,9 +480,11 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   `src/services/calendarConnection/tests/completeConnection.test.ts` fails if a rejected state or
   a config its user does not own reaches the code exchange or any write.
 
-- **Direct sync writes only the owner's records.** A sync target writes into one person's own
-  calendar, so it may carry nothing but that person's approved records and their own birthday,
-  never another member's birthday, shared or not. The check
+- **Direct sync writes only the owner's records and the events of the groups the owner is a live
+  member of; never another member's birthday.** A sync target writes into one person's own
+  calendar, so it may carry nothing but that person's approved records, their own birthday and the
+  group events of the groups they are in now, never a teammate's absence and never another
+  member's birthday, shared or not. The check
   constraint `calendar_sync_target_me_scope_chk` (`connection_id IS NULL OR scope = 'ME'`)
   keeps a connection off any `TEAM` config, whatever path writes the row, and
   `assertTargetAttachable` and `attachTarget` refuse one with 400 `CALENDAR_SYNC_TEAM_SCOPE` before
@@ -490,7 +492,9 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   `markCalendarTargetsDirty` marks due only `scope = ME` targets owned by the changed row's user.
   `markBirthdayTargetsDirty` marks only the targets of the user whose birthday changed. The engine
   builds its desired set from `getFeedRecords` on that `ME` config, the owner's rows alone; on a
-  `ME` config its birthday source reads the owner's own row and never `sharedBirthdaysInGroups`.
+  `ME` config its birthday source reads the owner's own row and never `sharedBirthdaysInGroups`,
+  and its group event source reads only the groups the owner holds a live `group_users` row in, on
+  every sync, so leaving a group takes its events off on the next one.
   Undo any of these and a teammate's absence or birthday, or a whole team's, lands in someone's personal
   Google or Microsoft calendar, where the organization's sharing shows it to people who were never
   meant to see it. `src/tests/e2e/calendarConnection.e2e.test.ts` ("refuses to attach a TEAM
@@ -499,8 +503,11 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   TEAM with a 400 the web can map"), `src/tests/e2e/calendarMarkTargetsDirty.e2e.test.ts` ("marks
   only the owner's connected ME targets whose types include the row's type") and
   `src/tests/e2e/calendarSyncApproval.e2e.test.ts` ("never touches the owner's calendar for a
-  teammate's approval") and `src/tests/e2e/calendarBirthdays.e2e.test.ts` ("never writes a
-  colleague's shared birthday to anyone's target") fail if the rule gives.
+  teammate's approval"), `src/tests/e2e/calendarBirthdays.e2e.test.ts` ("never writes a
+  colleague's shared birthday to anyone's target") and `src/tests/e2e/calendarGroupEvents.e2e.test.ts`
+  ("deletes a group's events from a removed member's target and writes them when they join again",
+  "never touches a target with Group events off or one of someone outside the group") fail if the
+  rule gives.
 
 - **A team feed reads only the groups its owner is still in.** `getFeedRecords` takes a `TEAM`
   config's groups from `getLiveTeamIds`, the stored `calendar_sync_teams` ids intersected with the

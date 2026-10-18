@@ -22,7 +22,13 @@ vi.mock("../../config.js", async (importOriginal) => {
   };
 });
 
-type SeededCounts = { bookings: number; rejected: number; events: number; birthdays: number };
+type SeededCounts = {
+  bookings: number;
+  rejected: number;
+  events: number;
+  birthdays: number;
+  groupEvents: number;
+};
 
 const seededCounts = async (): Promise<SeededCounts> => {
   const result = await db.execute<SeededCounts>(sql`
@@ -37,7 +43,12 @@ const seededCounts = async (): Promise<SeededCounts> => {
       (select count(*)::int
          from user_birthdays b
          join "user" bu on bu.id = b.user_id
-        where bu.email like '%@dev.local') as birthdays
+        where bu.email like '%@dev.local') as birthdays,
+      (select count(*)::int
+         from group_events ge
+         join groups g on g.id = ge.group_id
+         join "user" gu on gu.id = g.manager_user_id
+        where gu.email like '%@dev.local') as "groupEvents"
     from vacation v
     join "user" u on u.id = v.user_id
     where u.email like '%@dev.local'
@@ -101,5 +112,49 @@ describe("dev scenario", () => {
 
     const again = await runScenario();
     expect(again.body.birthdaysCreated).toBe(0);
+  });
+
+  it("seeds a weekly standup, a multi-day offsite and a one-off in Dev Team, once", async () => {
+    const first = await runScenario();
+    expect(first.status).toBe(201);
+
+    const result = await db.execute<{
+      title: string;
+      groupName: string;
+      startDate: string;
+      endDate: string;
+      repeatFreq: string | null;
+      repeatWeekdays: number[] | null;
+      startTime: string | null;
+    }>(sql`
+      select ge.title, g.group_name as "groupName", ge.start_date::text as "startDate",
+             ge.end_date::text as "endDate", ge.repeat_freq as "repeatFreq",
+             ge.repeat_weekdays as "repeatWeekdays", ge.start_time::text as "startTime"
+        from group_events ge
+        join groups g on g.id = ge.group_id
+       where g.id = ${first.body.team.id as string}
+       order by ge.title
+    `);
+    const rows = result.rows;
+    expect(rows.map((row) => row.title)).toEqual([
+      "Quarterly planning",
+      "Team offsite",
+      "Weekly standup",
+    ]);
+
+    const [planning, offsite, standup] = rows as [
+      (typeof rows)[number],
+      (typeof rows)[number],
+      (typeof rows)[number],
+    ];
+    expect(planning).toMatchObject({ repeatFreq: null, startTime: "10:00:00" });
+    expect(planning.startDate).toBe(planning.endDate);
+    expect(offsite.repeatFreq).toBeNull();
+    expect(offsite.endDate > offsite.startDate).toBe(true);
+    expect(standup).toMatchObject({ repeatFreq: "WEEKLY", repeatWeekdays: [0] });
+
+    const again = await runScenario();
+    expect(again.body.groupEventsCreated).toBe(0);
+    expect((await seededCounts()).groupEvents).toBe(3);
   });
 });

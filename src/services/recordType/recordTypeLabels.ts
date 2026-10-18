@@ -48,3 +48,9 @@ export const userRecordTypeLabels = async (userId: string): Promise<RecordTypeLa
 /** A birthday's title on feeds and synced calendars, in the feed owner's language. */
 export const birthdayLabel = (language: string | null | undefined): string =>
   language === appLanguage.Czech ? "Narozeniny" : "Birthday";
+
+/** The line naming a group event's group, on feeds and synced calendars, in the owner's language. */
+export const groupEventGroupLine = (
+  language: string | null | undefined,
+  groupName: string
+): string => (language === appLanguage.Czech ? `Skupina: ${groupName}` : `Group: ${groupName}`);

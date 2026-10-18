@@ -15,6 +15,8 @@ export type SyncSource = LedgerSource & { segment: number | null };
 
 export const vacationSourceKey = (vacationId: string): string => `v:${vacationId}`;
 
+export const groupEventSourceKey = (groupEventId: string): string => `ge:${groupEventId}`;
+
 export const birthdaySourceKey = (userId: string, segment: number | null = null): string =>
   segment === null ? `bd:${userId}` : `bd:${userId}:${segment.toString()}`;
 
@@ -45,9 +47,27 @@ const birthdaySources = (
   }));
 };
 
+const groupEventSources = (record: CalendarFeedRecord & { kind: "groupEvent" }): SyncSource[] => [
+  {
+    sourceKey: groupEventSourceKey(record.id),
+    vacationId: null,
+    groupEventId: record.id,
+    birthdayUserId: null,
+    segment: null,
+  },
+];
+
 /** The provider events a record stands for on one provider, each with its ledger key. */
 export const syncSourcesOf = (
   record: CalendarFeedRecord,
   provider: calendarProvider
-): SyncSource[] =>
-  record.kind === "birthday" ? birthdaySources(record, provider) : vacationSources(record);
+): SyncSource[] => {
+  switch (record.kind) {
+    case "birthday":
+      return birthdaySources(record, provider);
+    case "groupEvent":
+      return groupEventSources(record);
+    default:
+      return vacationSources(record);
+  }
+};

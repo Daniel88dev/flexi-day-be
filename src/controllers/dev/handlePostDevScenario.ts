@@ -12,6 +12,7 @@ import {
   generatePassword,
   nextWorkingDay,
   seedBirthday,
+  seedGroupEvent,
   seedTeam,
   seedUser,
   setQuota,
@@ -20,6 +21,8 @@ import {
   type VacationState,
 } from "../../services/dev/devSeedServices.js";
 import { connectScenarioCalendar } from "../../services/dev/devCalendarServices.js";
+import { plusDays, weekdayOf } from "../../services/groupEvent/occurrences.js";
+import type { CreateGroupEventBody } from "../../services/groupEvent/types.js";
 
 export const validatePostDevScenario = z.object({
   teamName: z.string().min(1).max(120).optional(),
@@ -80,7 +83,8 @@ const ADMINISTERED_MEMBERS = [
  * owner as org admin but not as a member, for the "Groups you administer"
  * views. Under the fake calendar driver the owner is also connected to a fake
  * Google target. The owner, Alice (29 February) and Bob (no year) get
- * birthdays. Re-running it is a no-op rather than an error.
+ * birthdays, and Dev Team gets a weekly standup, a three-day offsite and a
+ * one-off planning meeting. Re-running it is a no-op rather than an error.
  */
 export const handlePostDevScenario = async (req: Request, res: Response) => {
   const data = req.body as ValidatedPostDevScenarioType;
@@ -173,6 +177,50 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
     if (await seedBirthday(birthday)) birthdaysCreated += 1;
   }
 
+  // Dates move with today, so the title is what keeps a re-run from adding a second copy.
+  const today = workingDayFromToday(0);
+  const thisMonday = plusDays(today, -weekdayOf(today));
+  const offsiteStart = workingDayFromToday(15);
+  const groupEventSeeds: ({ createdByUserId: string } & CreateGroupEventBody)[] = [
+    {
+      groupId: team.id,
+      createdByUserId: owner.id,
+      title: "Weekly standup",
+      note: "Fifteen minutes, cameras optional.",
+      startDate: plusDays(thisMonday, -28),
+      endDate: plusDays(thisMonday, -28),
+      startTime: "09:30",
+      endTime: "09:45",
+      repeat: { freq: "weekly", interval: 1, weekdays: [0], monthlyMode: null, until: null },
+    },
+    {
+      groupId: team.id,
+      createdByUserId: alice.id,
+      title: "Team offsite",
+      note: "Lake house. The bus leaves the office at 8:00.",
+      startDate: offsiteStart,
+      endDate: plusDays(offsiteStart, 2),
+      startTime: null,
+      endTime: null,
+      repeat: null,
+    },
+    {
+      groupId: team.id,
+      createdByUserId: bob.id,
+      title: "Quarterly planning",
+      note: null,
+      startDate: workingDayFromToday(4),
+      endDate: workingDayFromToday(4),
+      startTime: "10:00",
+      endTime: "12:00",
+      repeat: null,
+    },
+  ];
+  let groupEventsCreated = 0;
+  for (const event of groupEventSeeds) {
+    if (await seedGroupEvent(event)) groupEventsCreated += 1;
+  }
+
   const manager = await seedUser({
     email: `${ADMINISTERED_MANAGER.local}@${domain}`,
     name: ADMINISTERED_MANAGER.name,
@@ -252,6 +300,7 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
     administeredTeam: { ...administeredTeam, manager, members: administeredMembers },
     vacationsCreated: teamBookingsCreated + administeredBookingsCreated,
     birthdaysCreated,
+    groupEventsCreated,
     calendar,
     signInUrl: `${config.email.appUrl}/dev-sign-in/?email=${encodeURIComponent(owner.email)}`,
   });

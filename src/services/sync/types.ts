@@ -9,6 +9,7 @@ export type SyncTableName =
   | "userYearQuotas"
   | "bankHolidays"
   | "vacations"
+  | "groupEvents"
   | "birthdays";
 
 /** A row's place in its table's `updatedAt, id` order. `updatedAt` is null for a table ordered by id alone. */
@@ -196,6 +197,39 @@ export type SyncVacationRow = {
 };
 
 /**
+ * The `group_events` row as stored, repeat columns flat with their database
+ * values, plus the group's organization. A tombstone keeps `id`, `groupId`,
+ * the dates and the one-off link; title, note, times, the rule and the creator
+ * are null and `skippedDates` is empty.
+ */
+export type SyncGroupEventRow = {
+  id: string;
+  groupId: string;
+  organizationId: string;
+  createdByUserId: string | null;
+  title: string | null;
+  note: string | null;
+  startDate: string;
+  endDate: string;
+  /** `HH:MM`, as the group events API answers it. */
+  startTime: string | null;
+  endTime: string | null;
+  repeatFreq: "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | null;
+  repeatInterval: number | null;
+  /** 0 = Monday … 6 = Sunday; weekly only. */
+  repeatWeekdays: number[] | null;
+  repeatMonthlyMode: "DAY" | "NTH_WEEKDAY" | "LAST_WEEKDAY" | null;
+  repeatUntil: string | null;
+  /** Sorted. */
+  skippedDates: string[];
+  recurringEventId: string | null;
+  originalDate: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
  * Keyed by its owner: `id` is the `userId`, the table having no id of its own.
  * Unpartitioned, like `users`. A row the caller may no longer see, because its
  * owner stopped sharing it or left the groups that showed it, ships shaped as
@@ -230,5 +264,6 @@ export type SyncEnvelope = {
   userYearQuotas: SyncUserYearQuotaRow[];
   bankHolidays: SyncBankHolidayRow[];
   vacations: SyncVacationRow[];
+  groupEvents: SyncGroupEventRow[];
   birthdays: SyncBirthdayRow[];
 };

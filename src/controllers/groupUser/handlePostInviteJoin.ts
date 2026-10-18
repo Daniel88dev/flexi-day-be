@@ -6,6 +6,7 @@ import { getInviteLinkBySecretHash } from "../../services/groupUser/inviteLinkSe
 import { assertOpenInviteFor, redeemInvite } from "../../services/groupUser/inviteRedemption.js";
 import type { ValidatedInviteLinkTokenType } from "../../services/groupUser/types.js";
 import { markEmailVerified } from "../../services/user/userServices.js";
+import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 /** Redeems an invite by its link secret and verifies the address: see `docs/invariants.md`. */
 export const handlePostInviteJoin = async (req: Request, res: Response) => {
@@ -30,6 +31,7 @@ export const handlePostInviteJoin = async (req: Request, res: Response) => {
 
     return joined;
   });
+  await markMemberGroupEventTargetsDirty(auth.userId);
 
   return res.status(201).json(membership);
 };

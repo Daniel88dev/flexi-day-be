@@ -11,6 +11,7 @@ import { getInviteLinkBySecretHash } from "../../services/groupUser/inviteLinkSe
 import { assertOpenInviteFor, redeemInvite } from "../../services/groupUser/inviteRedemption.js";
 import type { ValidatedInviteSignUpType } from "../../services/groupUser/types.js";
 import { deleteUser, getUserByEmail, markEmailVerified } from "../../services/user/userServices.js";
+import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 const accountExists = (inviteId: string) =>
   new AppError({
@@ -87,6 +88,7 @@ export const handlePostInviteSignUp = async (req: Request, res: Response) => {
     });
     throw error;
   }
+  await markMemberGroupEventTargetsDirty(userId);
 
   const signIn = await auth.api.signInEmail({
     body: { email, password },
