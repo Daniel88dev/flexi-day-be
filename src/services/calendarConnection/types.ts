@@ -42,6 +42,12 @@ const ianaTimeZone = (value: string): string | undefined => {
   }
 };
 
+/**
+ * Whether a stored zone is one this runtime's `Intl` formats as an IANA zone,
+ * aliases such as `Etc/UTC` included, so a feed can carry it as its TZID.
+ */
+export const isSupportedTimeZone = (zone: string): boolean => ianaTimeZone(zone) !== undefined;
+
 export const timeZoneSchema = z
   .string()
   .trim()
