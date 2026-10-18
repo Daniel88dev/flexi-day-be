@@ -32,9 +32,6 @@ export const validateCalendarProviderParam = z
 
 const IANA_TIME_ZONES = new Set([...Intl.supportedValuesOf("timeZone"), "UTC"]);
 
-/** Whether a stored zone is one the runtime's `Intl` knows, so it is safe to format with. */
-export const isSupportedTimeZone = (zone: string): boolean => IANA_TIME_ZONES.has(zone);
-
 // Intl also accepts offsets such as "+01:00", which neither Google nor Graph takes.
 const ianaTimeZone = (value: string): string | undefined => {
   try {
@@ -44,6 +41,12 @@ const ianaTimeZone = (value: string): string | undefined => {
     return undefined;
   }
 };
+
+/**
+ * Whether a stored zone is one this runtime's `Intl` formats as an IANA zone,
+ * aliases such as `Etc/UTC` included, so a feed can carry it as its TZID.
+ */
+export const isSupportedTimeZone = (zone: string): boolean => ianaTimeZone(zone) !== undefined;
 
 export const timeZoneSchema = z
   .string()

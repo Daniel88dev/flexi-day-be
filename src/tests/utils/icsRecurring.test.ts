@@ -379,6 +379,29 @@ describe("buildIcsCalendar, VTIMEZONE", () => {
     });
   });
 
+  test("a zone Intl knows under another name keeps its own TZID", () => {
+    warn.mockClear();
+    const out = buildIcsCalendar({
+      name: "Feed",
+      events: [timedIn("Etc/UTC", { freq: "weekly", interval: 1, until: "2026-12-29" })],
+    });
+
+    expect(block(out, "BEGIN:VTIMEZONE", "END:VTIMEZONE")).toEqual([
+      "BEGIN:VTIMEZONE",
+      "TZID:Etc/UTC",
+      "BEGIN:STANDARD",
+      "DTSTART:19700101T000000",
+      "TZOFFSETFROM:+0000",
+      "TZOFFSETTO:+0000",
+      "END:STANDARD",
+      "END:VTIMEZONE",
+    ]);
+    expect(lines(out)).toContain("DTSTART;TZID=Etc/UTC:20261020T090000");
+    expect(lines(out)).toContain("RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261229T090000Z");
+    expect(out).not.toContain("Europe/Prague");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   test("a single timed event carries its TZID and no repeat", () => {
     const event = block(
       buildIcsCalendar({
