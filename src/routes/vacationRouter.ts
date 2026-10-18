@@ -306,13 +306,21 @@ export const vacationRouter = (): Router => {
    *                     rangeStart:
    *                       type: string
    *                       format: date
-   *                       description: First day of the contiguous same-type run this row belongs to.
+   *                       description: |
+   *                         First day of the Request this row belongs to, counting only
+   *                         its rows in the same state (pending, approved, rejected or
+   *                         cancelled) as this one. Days the Request skips, such as a
+   *                         weekend or public holiday, do not split it.
    *                     rangeEnd:
    *                       type: string
    *                       format: date
+   *                       description: Last day of those same rows.
    *                     vacationIds:
    *                       type: array
-   *                       description: Every day row of that run, this one included.
+   *                       description: |
+   *                         Every row of this row's Request in the same state, this one
+   *                         included. The decide, cancel and edit endpoints take this list
+   *                         to act on the whole Request.
    *                       items:
    *                         type: string
    *                         format: uuid
@@ -830,7 +838,7 @@ export const vacationRouter = (): Router => {
    *       `vacationType` and `note`. Requires group admin access, being the
    *       group's manager, or admin of the group's organization. All ids must
    *       belong to the same member and
-   *       group; the detail view passes a whole contiguous run so it is edited
+   *       group; the detail view passes its whole Request so it is edited
    *       atomically. Dates are deliberately not editable — moving a record to
    *       another day is a cancel + re-create, both audited.
    *
