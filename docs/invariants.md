@@ -374,13 +374,20 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for what an org admin _is_. The boundarie
 
 - **Scoped to one organization.** `getAdministrableGroupIds` takes an `organizationId`; mirroring
   passes it, or someone who owns org A and is a delegate in org B could project B's leave into A.
-- **Only the report reads administered groups.** `getReportScopeEntries` adds every group the
-  caller administers to their memberships, across all their organizations, since the report shows
-  each group on its own. `getScopeEntries` stays membership-only because the sync pull, the group
-  calendar (`GET /api/vacation?groupId=`), my-settings, team calendar feeds and the dashboard summary
-  read it. Widening it would put groups an
-  org admin doesn't belong to on their phone and calendar. The "outside the report" cases in
-  `reportAdministeredScope.e2e.test.ts` fail if it widens.
+- **Reading a group by id opens administered groups; everything aggregated stays membership-only.**
+  `getReportScopeEntries` adds every group the caller administers to their memberships, across all
+  their organizations. It gates the report and each read that names one group: the list and calendar
+  (`GET /api/vacation?groupId=`, `/api/vacation/calendar`), `GET /api/birthdays?groupId=` and the
+  `dashboardGroupId` check in my-settings. Those are the groups `/api/reports/scope` offers the web's
+  pickers, so the two can't disagree. `getScopeEntries` stays membership-only for the reads that
+  gather across groups without being asked for one: the sync pull, team calendar feeds, the
+  dashboard summary and birthday sharing (`visibleBirthdays`, `sharedBirthdaysInGroups`). Widening
+  it would put every group an org admin administers on their phone, in their feed and in their
+  summary counts, and show them birthdays members shared with teammates. Reading never grants
+  deciding: `canApprove` and the decision endpoints stay on `getGroupsWhereUserCanApprove`, so an org
+  admin sees pending requests in an administered group with `canApprove: false`.
+  `adminGroupScope.e2e.test.ts` and the "outside the report" cases in
+  `reportAdministeredScope.e2e.test.ts` fail if either side moves.
 - **The grant is scoped to membership.** `handleDeleteGroupUser` revokes it when the user leaves
   the organization's last group, under a `lockOrganization` — the count spans the org, so a group
   lock alone lets two concurrent removals each see the other's membership as live.

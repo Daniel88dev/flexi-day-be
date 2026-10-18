@@ -29,6 +29,12 @@ export const reportRouter = (): Router => {
    *       their own rows. `canEditQuotas` is true wherever
    *       `PUT /api/quotas/{groupId}` would accept them: admin access, the
    *       manager, or an org admin, member or not. Groups are ordered by name.
+   *       A group with `access: all` is one `GET /api/vacation`,
+   *       `GET /api/vacation/calendar` and `GET /api/birthdays` accept as
+   *       `groupId`, and one `PUT /api/users/me/settings` accepts as
+   *       `dashboardGroupId`. `groupName` names a group the caller administers
+   *       without belonging to it, which `GET /api/group` (memberships only)
+   *       leaves out.
    *       Never 403s — a caller with no view access anywhere still receives
    *       their own memberships scoped to themselves.
    *     security:

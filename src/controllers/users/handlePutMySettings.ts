@@ -8,7 +8,7 @@ import { toUserSettingsResponse } from "../../services/userSettings/userSettings
 import { dashboardScope } from "../../db/schema/user-settings-schema.js";
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
 import AppError from "../../utils/appError.js";
-import { getScopeEntries } from "../../services/report/reportServices.js";
+import { getReportScopeEntries } from "../../services/report/reportServices.js";
 import {
   getUserSettings,
   upsertUserSettings,
@@ -45,7 +45,7 @@ export const handlePutMySettings = async (req: Request, res: Response) => {
     }
 
     if (nextGroupId) {
-      const scope = await getScopeEntries(auth.userId);
+      const scope = await getReportScopeEntries(auth.userId);
       if (!canViewWholeGroup(scope, nextGroupId)) {
         throw new AppError({
           code: 403,

@@ -23,9 +23,12 @@ export const birthdayRouter = (): Router => {
    *       own birthday comes with the shared birthdays of the group's live
    *       members, when the group's organization is on a paid plan or has
    *       lapsed from one; a group whose organization never paid shows none.
-   *       Group scope requires view access on that group (view access, admin
-   *       access, or being its manager); a plain member or an outsider gets a
-   *       403.
+   *       Group scope requires seeing the group in full, as
+   *       `GET /api/vacation` does: view access, admin access, being its
+   *       manager, or administering it through its organization. A plain
+   *       member or an outsider gets a 403. Shared birthdays reach only
+   *       fellow members: someone who administers the group without belonging
+   *       to it gets a 200 with their own birthday alone.
    *
    *       Each row is one person's birthday on the day it falls in the window.
    *       A birthday on 29 February falls on 28 February in a non-leap year.
@@ -107,7 +110,9 @@ export const birthdayRouter = (): Router => {
    *       '401':
    *         description: Unauthorized
    *       '403':
-   *         description: No access to view this group's records
+   *         description: |
+   *           No access to view this group's records: the caller neither sees the
+   *           group in full as a member nor administers it
    *       '422':
    *         description: Missing or out-of-range `year` or `month`
    *       '500':

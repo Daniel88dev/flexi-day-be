@@ -237,14 +237,27 @@ describe("Report scope for groups the viewer administers", () => {
       }
     });
 
-    it("keeps the administered group's calendar closed to the owner", async () => {
-      const { owner, support } = await seedOrganization();
+    it("opens the administered group's calendar to the owner", async () => {
+      const { owner, erin, support } = await seedOrganization();
 
-      await request(server.url)
+      const res = await request(server.url)
         .get("/api/vacation")
         .query({ year: FUTURE_YEAR, month: 3, groupId: support })
         .set("Cookie", await authCookieFor(owner.id))
-        .expect(403);
+        .expect(200);
+
+      expect((res.body as { userId: string }[]).map((row) => row.userId)).toEqual([erin.id]);
+    });
+
+    it("keeps the administered group out of the owner's dashboard summary counts", async () => {
+      const { owner } = await seedOrganization();
+
+      const res = await request(server.url)
+        .get("/api/users/me/dashboard-summary")
+        .set("Cookie", await authCookieFor(owner.id))
+        .expect(200);
+
+      expect((res.body as { teamSize: number }).teamSize).toBe(1);
     });
   });
 });

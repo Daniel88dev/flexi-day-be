@@ -43,9 +43,9 @@ const quotaScopeColumns = { userId: userYearQuotas.userId, groupId: userYearQuot
  * The groups the caller belongs to, and at what depth they may see each. View
  * access, admin access, or being the group's manager all open the whole
  * group; a plain membership still lets the member see themselves. The sync
- * pull, the calendar, my-settings, team calendar feeds and the dashboard
- * summary rely on it staying membership-only; the report reads
- * {@link getReportScopeEntries} instead.
+ * pull, team calendar feeds, birthday sharing and the dashboard summary rely
+ * on it staying membership-only; the report and the group reads (list,
+ * calendar, birthdays, my-settings) take {@link getReportScopeEntries}.
  *
  * `includeDeletedGroups` is for the sync pull alone: membership rows outlive a
  * soft-deleted group, and a client that already holds the group needs its
@@ -87,7 +87,11 @@ export const getScopeEntries = async (
   });
 };
 
-/** The caller's memberships plus every live group they administer. Report endpoints only. */
+/**
+ * The caller's memberships plus every live group they administer, each
+ * administered group in full. Gates the report and every read of a whole group
+ * by id: the list, the calendar, birthdays and the dashboard default.
+ */
 export const getReportScopeEntries = async (userId: string): Promise<ReportScopeEntry[]> => {
   const [memberships, administrableGroupIds] = await Promise.all([
     getScopeEntries(userId),

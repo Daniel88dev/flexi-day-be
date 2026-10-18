@@ -1,5 +1,5 @@
 import { canViewWholeGroup } from "../../services/report/reportScope.js";
-import { getScopeEntries } from "../../services/report/reportServices.js";
+import { getReportScopeEntries } from "../../services/report/reportServices.js";
 import { resolveCanApproveForList } from "../../services/vacation/vacationPermissions.js";
 import {
   getVacationsForGroup,
@@ -27,7 +27,7 @@ export const listVacationsInScope = async (
     }));
   }
 
-  const scope = await getScopeEntries(userId);
+  const scope = await getReportScopeEntries(userId);
   if (!canViewWholeGroup(scope, groupId)) {
     throw new AppError({
       code: 403,

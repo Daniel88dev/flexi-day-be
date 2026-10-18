@@ -1,18 +1,20 @@
 import type { Response } from "express";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockGetUserSettings, mockUpsertUserSettings, mockGetScopeEntries } = vi.hoisted(() => ({
-  mockGetUserSettings: vi.fn(),
-  mockUpsertUserSettings: vi.fn(),
-  mockGetScopeEntries: vi.fn(),
-}));
+const { mockGetUserSettings, mockUpsertUserSettings, mockGetReportScopeEntries } = vi.hoisted(
+  () => ({
+    mockGetUserSettings: vi.fn(),
+    mockUpsertUserSettings: vi.fn(),
+    mockGetReportScopeEntries: vi.fn(),
+  })
+);
 
 vi.mock("../../../middleware/authSession.js", () => ({
   getAuth: vi.fn(),
 }));
 
 vi.mock("../../../services/report/reportServices.js", () => ({
-  getScopeEntries: mockGetScopeEntries,
+  getReportScopeEntries: mockGetReportScopeEntries,
 }));
 
 vi.mock("../../../services/userSettings/userSettingsServices.js", () => ({
@@ -179,7 +181,7 @@ describe("user settings endpoints", () => {
         dashboardScope: dashboardScope.Group,
         dashboardGroupId: "group_1",
       });
-      mockGetScopeEntries.mockResolvedValue([scopeEntry("self")]);
+      mockGetReportScopeEntries.mockResolvedValue([scopeEntry("self")]);
       mockUpsertUserSettings.mockResolvedValue({
         ...DEFAULTS,
         dashboardScope: dashboardScope.Group,
@@ -189,7 +191,7 @@ describe("user settings endpoints", () => {
 
       await handlePutMySettings(req, res);
 
-      expect(mockGetScopeEntries).not.toHaveBeenCalled();
+      expect(mockGetReportScopeEntries).not.toHaveBeenCalled();
       expect(mockUpsertUserSettings).toHaveBeenCalledWith(mockAuthData.userId, body);
       expect(res.status).toHaveBeenCalledWith(200);
     }
@@ -198,7 +200,7 @@ describe("user settings endpoints", () => {
   it("still re-checks a stored group when the scope is switched to it", async () => {
     const { req, res } = makeReqRes({ body: { dashboardScope: dashboardScope.Group } });
     mockGetUserSettings.mockResolvedValue({ ...DEFAULTS, dashboardGroupId: "group_1" });
-    mockGetScopeEntries.mockResolvedValue([scopeEntry("self")]);
+    mockGetReportScopeEntries.mockResolvedValue([scopeEntry("self")]);
 
     await expect(handlePutMySettings(req, res)).rejects.toMatchObject({ code: 403 });
     expect(mockUpsertUserSettings).not.toHaveBeenCalled();
@@ -208,7 +210,7 @@ describe("user settings endpoints", () => {
     const { req, res } = makeReqRes({
       body: { dashboardScope: dashboardScope.Group, dashboardGroupId: "group_1" },
     });
-    mockGetScopeEntries.mockResolvedValue([scopeEntry("all")]);
+    mockGetReportScopeEntries.mockResolvedValue([scopeEntry("all")]);
     mockUpsertUserSettings.mockResolvedValue({
       ...DEFAULTS,
       dashboardScope: dashboardScope.Group,
@@ -226,7 +228,7 @@ describe("user settings endpoints", () => {
   it("accepts group scope when the group was already stored", async () => {
     const { req, res } = makeReqRes({ body: { dashboardScope: dashboardScope.Group } });
     mockGetUserSettings.mockResolvedValue({ ...DEFAULTS, dashboardGroupId: "group_1" });
-    mockGetScopeEntries.mockResolvedValue([scopeEntry("all")]);
+    mockGetReportScopeEntries.mockResolvedValue([scopeEntry("all")]);
     mockUpsertUserSettings.mockResolvedValue({
       ...DEFAULTS,
       dashboardScope: dashboardScope.Group,
@@ -249,7 +251,7 @@ describe("user settings endpoints", () => {
     const { req, res } = makeReqRes({
       body: { dashboardScope: dashboardScope.Group, dashboardGroupId: "group_1" },
     });
-    mockGetScopeEntries.mockResolvedValue([scopeEntry("self")]);
+    mockGetReportScopeEntries.mockResolvedValue([scopeEntry("self")]);
 
     await expect(handlePutMySettings(req, res)).rejects.toMatchObject({ code: 403 });
     expect(mockUpsertUserSettings).not.toHaveBeenCalled();
@@ -263,7 +265,7 @@ describe("user settings endpoints", () => {
 
     await handlePutMySettings(req, res);
 
-    expect(mockGetScopeEntries).not.toHaveBeenCalled();
+    expect(mockGetReportScopeEntries).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
 });

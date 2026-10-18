@@ -256,7 +256,9 @@ export const usersRouter = (): Router => {
    *       `dashboardScope: GROUP` makes the dashboard calendar show
    *       `dashboardGroupId`'s records instead of only the caller's own. That
    *       group must already be selected or supplied in the same request, and
-   *       the caller must have view access on it. That check runs only when
+   *       the caller must be able to read it in full, as `GET /api/vacation`
+   *       requires: view access, admin access, being its manager, or
+   *       administering it through its organization. That check runs only when
    *       the request sends `dashboardScope` or `dashboardGroupId`, so saving
    *       any other field succeeds even if the stored group is no longer
    *       viewable.
@@ -288,7 +290,9 @@ export const usersRouter = (): Router => {
    *       '401':
    *         description: Not signed in
    *       '403':
-   *         description: No access to view the selected group's records
+   *         description: |
+   *           No access to view the selected group's records: the caller neither
+   *           sees the group in full as a member nor administers it
    *       '422':
    *         description: |
    *           The body failed validation (no field supplied, or a value outside
