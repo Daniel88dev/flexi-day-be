@@ -21,6 +21,9 @@ import type { Birthday } from "../birthday/types.js";
 import { getUsersByIds } from "../user/userServices.js";
 import { repeatRuleOf } from "../groupEvent/groupEventServices.js";
 import { GROUP_EVENT_READ_LIMIT } from "../groupEvent/types.js";
+import { getScopeEntries } from "../report/reportServices.js";
+import { buildScopePredicate } from "../report/reportScope.js";
+import type { ReportScopeEntry } from "../report/types.js";
 import type {
   BirthdayFeedRecord,
   CalendarFeedRecord,
@@ -318,27 +321,20 @@ export const touchLastFetched = async (id: string): Promise<void> => {
 };
 
 /**
- * The stored team ids of a `TEAM` config that its owner is still a live member
- * of. Every record kind a team feed carries filters by this, not by the stored
- * rows, which stay untouched so a re-join restores the group.
+ * The owner's scope over the stored team ids of a `TEAM` config: the groups
+ * they are still a live member of, each at the depth the web reads give them.
+ * Every record kind a team feed carries filters by this, not by the stored
+ * rows, which stay untouched so a re-join or View switched back on restores
+ * the group.
  */
-export const getLiveTeamIds = async (config: CalendarSyncFull): Promise<string[]> => {
+const getTeamFeedScope = async (config: CalendarSyncFull): Promise<ReportScopeEntry[]> => {
   if (config.teamIds.length === 0) return [];
-  const rows = await db
-    .select({ groupId: groupUsers.groupId })
-    .from(groupUsers)
-    .where(
-      and(
-        eq(groupUsers.userId, config.userId),
-        inArray(groupUsers.groupId, config.teamIds),
-        isNull(groupUsers.deletedAt)
-      )
-    );
-  return rows.map((r) => r.groupId);
+  const selected = new Set(config.teamIds);
+  return (await getScopeEntries(config.userId)).filter((entry) => selected.has(entry.groupId));
 };
 
-/** The groups a feed reads from: null on a personal feed, the live selected groups on a team feed. */
-type FeedGroups = string[] | null;
+/** What a feed reads: null on a personal feed, the owner's team scope on a team feed. */
+type FeedScope = ReportScopeEntry[] | null;
 
 /**
  * The first day of the feed's window: all future dates plus the last 12
@@ -352,14 +348,23 @@ const feedWindowStart = (): string => {
 
 /**
  * The approved, non-deleted time-off records in the feed's window, of the
- * owner on a personal feed or of the live selected groups on a team feed.
+ * owner on a personal feed. On a team feed, every member's in the groups the
+ * owner sees in full, and only the owner's own in the rest.
  */
 const vacationRecords = async (
   config: CalendarSyncFull,
-  groupIds: FeedGroups
+  feedScope: FeedScope
 ): Promise<VacationFeedRecord[]> => {
   const includedTypes = config.types.map((t) => t.vacationType);
-  if (includedTypes.length === 0 || groupIds?.length === 0) return [];
+  if (includedTypes.length === 0) return [];
+  const visible =
+    feedScope === null
+      ? eq(vacation.userId, config.userId)
+      : buildScopePredicate(feedScope, config.userId, {
+          userId: vacation.userId,
+          groupId: vacation.groupId,
+        });
+  if (visible === null) return [];
 
   const windowStartDay = feedWindowStart();
 
@@ -369,7 +374,7 @@ const vacationRecords = async (
     isNotNull(vacation.approvedAt),
     inArray(vacation.vacationType, includedTypes),
     gte(vacation.requestedDay, windowStartDay),
-    groupIds === null ? eq(vacation.userId, config.userId) : inArray(vacation.groupId, groupIds),
+    visible,
   ];
 
   const rows = await db
@@ -399,13 +404,16 @@ const vacationRecords = async (
  */
 const birthdayRecords = async (
   config: CalendarSyncFull,
-  groupIds: FeedGroups
+  feedScope: FeedScope
 ): Promise<BirthdayFeedRecord[]> => {
   if (!config.includeBirthdays) return [];
   const birthdays =
-    groupIds === null
+    feedScope === null
       ? [liveBirthday(await getBirthday(config.userId))].filter((b): b is Birthday => b !== null)
-      : await sharedBirthdaysInGroups(config.userId, groupIds);
+      : await sharedBirthdaysInGroups(
+          config.userId,
+          feedScope.map((entry) => entry.groupId)
+        );
   if (birthdays.length === 0) return [];
 
   const names = await getUsersByIds(birthdays.map((b) => b.userId));
@@ -442,10 +450,10 @@ const liveMemberGroupIds = async (userId: string): Promise<string[]> => {
  */
 const groupEventRecords = async (
   config: CalendarSyncFull,
-  groupIds: FeedGroups
+  feedScope: FeedScope
 ): Promise<GroupEventFeedRecord[]> => {
   if (!config.includeGroupEvents) return [];
-  const ids = groupIds ?? (await liveMemberGroupIds(config.userId));
+  const ids = feedScope?.map((entry) => entry.groupId) ?? (await liveMemberGroupIds(config.userId));
   if (ids.length === 0) return [];
 
   const windowStartDay = feedWindowStart();
@@ -489,14 +497,14 @@ const groupEventRecords = async (
 /**
  * Everything a config's feed and sync target carry, one source per record
  * kind, each filtered by the config's toggles. A team feed reads only the
- * selected groups its owner is still in.
+ * selected groups its owner is still in, at the owner's current View depth.
  */
 export const getFeedRecords = async (config: CalendarSyncFull): Promise<CalendarFeedRecord[]> => {
-  const groupIds = config.scope === calendarSyncScope.Me ? null : await getLiveTeamIds(config);
+  const feedScope = config.scope === calendarSyncScope.Me ? null : await getTeamFeedScope(config);
   const [vacations, events, birthdays] = await Promise.all([
-    vacationRecords(config, groupIds),
-    groupEventRecords(config, groupIds),
-    birthdayRecords(config, groupIds),
+    vacationRecords(config, feedScope),
+    groupEventRecords(config, feedScope),
+    birthdayRecords(config, feedScope),
   ]);
   return [...vacations, ...events, ...birthdays];
 };

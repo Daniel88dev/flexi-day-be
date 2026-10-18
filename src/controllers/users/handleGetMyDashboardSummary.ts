@@ -2,10 +2,8 @@ import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
 import { collapsePendingApprovals } from "../../services/vacation/collapsePendingApprovals.js";
-import {
-  countDistinctUsersInGroups,
-  getAllGroupsForUser,
-} from "../../services/groupUser/groupUserServices.js";
+import { countDistinctUsersInScope } from "../../services/groupUser/groupUserServices.js";
+import { getScopeEntries } from "../../services/report/reportServices.js";
 import {
   countApprovedVacationsInRange,
   countUsersOutOnDay,
@@ -15,7 +13,7 @@ import {
 export const handleGetMyDashboardSummary = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
-  const visibleGroupIds = (await getAllGroupsForUser(auth.userId)).map((row) => row.groupId);
+  const scope = await getScopeEntries(auth.userId);
 
   const today = new Date();
   const todayIso = formatDateToISOString(
@@ -36,9 +34,9 @@ export const handleGetMyDashboardSummary = async (req: Request, res: Response) =
   const [pendingApprovalRows, outTodayCount, upcomingNext14DaysCount, teamSize] = await Promise.all(
     [
       getPendingApprovalsForApprover(auth.userId),
-      countUsersOutOnDay(visibleGroupIds, todayIso),
-      countApprovedVacationsInRange(visibleGroupIds, todayIso, upcomingEndIso),
-      countDistinctUsersInGroups(visibleGroupIds),
+      countUsersOutOnDay(scope, auth.userId, todayIso),
+      countApprovedVacationsInRange(scope, auth.userId, todayIso, upcomingEndIso),
+      countDistinctUsersInScope(scope, auth.userId),
     ]
   );
 

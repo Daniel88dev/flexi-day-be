@@ -43,8 +43,9 @@ const quotaScopeColumns = { userId: userYearQuotas.userId, groupId: userYearQuot
  * The groups the caller belongs to, and at what depth they may see each. View
  * access, admin access, or being the group's manager all open the whole
  * group; a plain membership still lets the member see themselves. The sync
- * pull, the calendar and my-settings rely on it staying membership-only; the
- * report reads {@link getReportScopeEntries} instead.
+ * pull, the calendar, my-settings, team calendar feeds and the dashboard
+ * summary rely on it staying membership-only; the report reads
+ * {@link getReportScopeEntries} instead.
  *
  * `includeDeletedGroups` is for the sync pull alone: membership rows outlive a
  * soft-deleted group, and a client that already holds the group needs its

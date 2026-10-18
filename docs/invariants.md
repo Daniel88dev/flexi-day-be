@@ -377,7 +377,8 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for what an org admin _is_. The boundarie
 - **Only the report reads administered groups.** `getReportScopeEntries` adds every group the
   caller administers to their memberships, across all their organizations, since the report shows
   each group on its own. `getScopeEntries` stays membership-only because the sync pull, the group
-  calendar (`GET /api/vacation?groupId=`) and my-settings read it. Widening it would put groups an
+  calendar (`GET /api/vacation?groupId=`), my-settings, team calendar feeds and the dashboard summary
+  read it. Widening it would put groups an
   org admin doesn't belong to on their phone and calendar. The "outside the report" cases in
   `reportAdministeredScope.e2e.test.ts` fail if it widens.
 - **The grant is scoped to membership.** `handleDeleteGroupUser` revokes it when the user leaves
@@ -516,13 +517,18 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   "never touches a target with Group events off or one of someone outside the group") fail if the
   rule gives.
 
-- **A team feed reads only the groups its owner is still in.** `getFeedRecords` takes a `TEAM`
-  config's groups from `getLiveTeamIds`, the stored `calendar_sync_teams` ids intersected with the
-  owner's live `group_users` rows, on every fetch. The stored rows stay as they are, so a re-join
-  restores the group without editing the feed. Every record kind a team feed carries filters by the
-  same helper. Read the stored ids directly and someone removed from a group keeps a subscription
-  link that shows that group's days off for as long as the link lives.
-  `src/tests/e2e/calendarFeedLiveMembership.e2e.test.ts` fails if the rule gives.
+- **A team feed reads only the groups its owner is still in, at the owner's current View depth.**
+  `getFeedRecords` takes a `TEAM` config's groups from `getTeamFeedScope`, the stored
+  `calendar_sync_teams` ids intersected with the owner's `getScopeEntries`, on every fetch. A group
+  the owner sees in full (View, admin access or manager) carries every member's days off; in any
+  other group the feed carries only the owner's own, as the web reads do. Birthdays come only from
+  groups seen in full, and group events from every selected group, as on the web. The stored rows
+  stay as they are, so a re-join or View switched back on restores the group without editing the
+  feed. Read the stored ids directly and someone removed from a group keeps a subscription link
+  that shows that group's days off for as long as the link lives; drop the View depth and a member
+  without View reads every colleague's leave and notes through the link.
+  `src/tests/e2e/calendarFeedLiveMembership.e2e.test.ts` and
+  `src/tests/e2e/calendarFeedViewAccess.e2e.test.ts` fail if the rule gives.
 
 ## Billing config is opt-in (`src/config.ts`)
 

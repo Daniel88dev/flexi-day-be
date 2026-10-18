@@ -131,11 +131,37 @@ export const usersRouter = (): Router => {
    *     tags:
    *       - Users
    *     summary: Rolled-up dashboard counts for the caller
+   *     description: |
+   *       Out today, upcoming and team size cover every member of the groups
+   *       the caller sees in full (View, admin access or manager). In a group
+   *       without that access they count only the caller.
    *     security:
    *       - bearerAuth: []
    *     responses:
    *       '200':
    *         description: Stat-card counts
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 pendingApprovalsCount:
+   *                   type: integer
+   *                   description: Requests awaiting the caller's decision, grouped as in /api/users/me/approvals.
+   *                 outTodayCount:
+   *                   type: integer
+   *                   description: Distinct people with approved time off today.
+   *                 workingTodayCount:
+   *                   type: integer
+   *                   description: teamSize minus outTodayCount, never below 0.
+   *                 upcomingNext14DaysCount:
+   *                   type: integer
+   *                   description: Approved days off from today through the next 13 days.
+   *                 teamSize:
+   *                   type: integer
+   *                   description: Distinct live members counted.
+   *       '401':
+   *         description: Not authenticated
    */
   app.get("/me/dashboard-summary", tryCatch(handleGetMyDashboardSummary));
 
