@@ -104,6 +104,12 @@ export const reportRouter = (): Router => {
    *       `GET /api/reports/scope` returns, so groups the caller administers
    *       without belonging to them are included in full. Filters outside the
    *       caller's scope are silently dropped rather than rejected.
+   *
+   *       Another member's `SICK` usage appears only to the approvers and group
+   *       admins of the row's group, org admins of its organization included.
+   *       For anyone else it is left out of
+   *       `monthly`, also when `types` asks for `SICK`; it is never shown as
+   *       `AWAY`. The caller's own rows are always complete.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -157,6 +163,14 @@ export const reportRouter = (): Router => {
    *       entry of `groups` carries `canEditQuotas` as in
    *       `GET /api/reports/scope`.
    *
+   *       Another member's `SICK` usage and bookings, their rejected bookings
+   *       and the `note` on any of their bookings reach only the approvers and
+   *       group admins of the booking's group, org admins of its organization
+   *       included. Anyone else gets no `SICK` row
+   *       in `monthly` or `bookings`, no booking with `status: rejected`, and
+   *       `note: null`. Sick day and every other type stay. The caller's own
+   *       detail is always complete.
+   *
    *       Each entry of `changes` carries `actor` and `actorDeleted`. An
    *       `actor` of null with `actorDeleted: false` means the quota rollover
    *       made the change; with `actorDeleted: true`, the person who made it
@@ -206,6 +220,14 @@ export const reportRouter = (): Router => {
    *       `report_exports` audit row naming the caller, year and filters.
    *       Covers the scope `GET /api/reports/scope` returns, including groups
    *       the caller administers without belonging to them.
+   *
+   *       Each detail row is decided by its own group. Another member's Sick
+   *       rows and rejected rows appear only when the caller approves or
+   *       administers that group (org admins of its organization included),
+   *       and their Note cell is blank otherwise. Both
+   *       sheets keep the same columns in every export, and the caller's own
+   *       rows are always complete. `report_exports.rowCount` counts the
+   *       bookings actually exported.
    *     security:
    *       - bearerAuth: []
    *     requestBody:

@@ -10,6 +10,7 @@ import {
   getReportScopeEntries,
   getScopeMembers,
 } from "../../services/report/reportServices.js";
+import { resolveVacationViewer } from "../../services/vacation/vacationPermissions.js";
 
 /**
  * The report's main payload: monthly series per member for the charts, plus
@@ -22,11 +23,15 @@ export const handleGetReportOverview = async (req: Request, res: Response) => {
   const { year, groupIds, userIds, types } = validateReportQuery.parse(req.query);
 
   const scope = await getReportScopeEntries(auth.userId);
+  const viewer = await resolveVacationViewer(
+    auth.userId,
+    scope.map((entry) => entry.groupId)
+  );
   const filters = { groupIds, userIds, types };
 
   const [monthly, usage, quotas, allMembers, policies] = await Promise.all([
-    aggregateUsageByUserMonth(scope, auth.userId, year, filters),
-    aggregateUsageSplit(scope, auth.userId, year, filters),
+    aggregateUsageByUserMonth(scope, viewer, year, filters),
+    aggregateUsageSplit(scope, viewer, year, filters),
     getQuotasForScope(scope, auth.userId, year, { groupIds, userIds }),
     getScopeMembers(scope, auth.userId),
     getGroupAllowancePolicies(scope.map((entry) => entry.groupId)),

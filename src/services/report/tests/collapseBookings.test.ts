@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { collapseBookings, type BookingRow } from "../collapseBookings.js";
 import { CalendarRecordType } from "../../../db/schema/vacation-schema.js";
+import { viewReportRowAs } from "../../vacation/redaction.js";
 
 const row = (overrides: Partial<BookingRow> & { requestedDay: string }): BookingRow => ({
   userId: "u1",
@@ -105,5 +106,28 @@ describe("collapseBookings", () => {
 
   it("returns an empty array for no rows", () => {
     expect(collapseBookings([])).toEqual([]);
+  });
+
+  it("builds a teammate's run across a rejected day the viewer no longer sees", () => {
+    const teammate = { userId: "viewer", privilegedGroupIds: new Set<string>() };
+    const pending = { approvedAt: null };
+    const rows = [
+      row({ ...pending, requestedDay: "2027-03-04", note: "first" }),
+      row({ ...pending, requestedDay: "2027-03-05" }),
+      row({ ...pending, requestedDay: "2027-03-05", rejectedAt: new Date() }),
+      row({ ...pending, requestedDay: "2027-03-06" }),
+    ];
+
+    const visible = rows.flatMap((r) => viewReportRowAs(teammate, r) ?? []);
+
+    expect(collapseBookings(visible)).toEqual([
+      expect.objectContaining({
+        from: "2027-03-04",
+        to: "2027-03-06",
+        days: 3,
+        status: "pending",
+        note: null,
+      }),
+    ]);
   });
 });
