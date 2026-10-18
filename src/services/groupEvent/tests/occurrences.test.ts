@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  birthdayOccurrences,
-  occurrences,
-  type OccurrenceSource,
-  type RepeatRule,
-} from "../occurrences.js";
+import { occurrences, type OccurrenceSource, type RepeatRule } from "../occurrences.js";
 
 const rule = (patch: Partial<RepeatRule> & Pick<RepeatRule, "freq">): RepeatRule => ({
   interval: 1,
@@ -23,7 +18,7 @@ const recurring = (
 const dates = (source: OccurrenceSource, from: string, to: string) =>
   occurrences(source, from, to).map((occurrence) => occurrence.startDate);
 
-// Spec section 6.4: the table every copy of `occurrences` (backend, web, phone) passes.
+// The table every copy of `occurrences` (backend, web, phone) passes.
 describe("occurrences, shared vectors", () => {
   it("weekly ×1 Mon,Wed from Mon 5 Oct 2026", () => {
     const source = recurring("2026-10-05", rule({ freq: "weekly", weekdays: [0, 2] }));
@@ -103,12 +98,6 @@ describe("occurrences, shared vectors", () => {
       "2026-10-07",
       "2026-10-10",
     ]);
-  });
-
-  it("birthday 29 Feb, year 1990", () => {
-    expect(
-      birthdayOccurrences({ month: 2, day: 29, year: 1990 }, "2027-01-01", "2027-12-31")
-    ).toEqual([{ date: "2027-02-28", age: 37 }]);
   });
 });
 

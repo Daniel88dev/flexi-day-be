@@ -1,12 +1,36 @@
 import { z } from "zod";
+import type { groupEvents } from "../../db/schema/group-event-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 import { vacationQueryMonth, vacationQueryYear } from "../vacation/types.js";
 import { monthPosition, weekdayOf, type IsoDate, type RepeatRule } from "./occurrences.js";
 
 export const GROUP_EVENT_TITLE_MAX = 100;
 export const GROUP_EVENT_NOTE_MAX = 1000;
-/** S6: no `group_events` query reads more rows than this per call. */
+/** No `group_events` query reads more rows than this per call. */
 export const GROUP_EVENT_READ_LIMIT = 500;
+
+export type GroupEventColumns = Partial<typeof groupEvents.$inferInsert>;
+
+/**
+ * The writes one edit or delete makes, computed without touching the database
+ * so `PATCH` and its `impact` dry run agree on `droppedOneOffs`.
+ */
+export type GroupEventPlan = {
+  droppedOneOffs: number;
+  updates: { id: string; set: GroupEventColumns }[];
+  inserts: (GroupEventColumns & {
+    id: string;
+    groupId: string;
+    startDate: IsoDate;
+    endDate: IsoDate;
+  })[];
+  tombstones: string[];
+  /**
+   * The edit adds occurrences: a "this and following" split writes a new group
+   * event, or a one-off gains a repeat rule. Only these need an active plan.
+   */
+  needsActivePlan: boolean;
+};
 
 export type GroupEventRecord = {
   id: string;
@@ -47,7 +71,7 @@ export type GroupEventView = {
   skippedDates: IsoDate[];
   recurringEventId: string | null;
   originalDate: IsoDate | null;
-  /** Null once the creator deleted their account (S5). */
+  /** Null once the creator deleted their account. */
   createdBy: UserSummary | null;
   canEdit: boolean;
   createdAt: string;
@@ -103,7 +127,10 @@ export type GroupEventShape = {
   repeat: RepeatRule | null;
 };
 
-/** D4 and D5 rules a shape breaks, beyond what each field checks on its own. */
+/**
+ * The rules on dates, times and repeat a shape breaks, beyond what each field
+ * checks on its own.
+ */
 export const groupEventShapeIssues = (
   data: Omit<GroupEventShape, "title" | "note">
 ): { path: string; message: string }[] => {

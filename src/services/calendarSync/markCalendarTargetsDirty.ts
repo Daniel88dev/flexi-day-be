@@ -130,7 +130,7 @@ export const markGroupEventTargetsDirty = async (groupId: string): Promise<void>
 /**
  * After a commit that added or removed a membership: marks the member's
  * connected `ME` targets with Group events on, so the group's events reach or
- * leave their calendar on the next sync (S13, D15).
+ * leave their calendar on the next sync.
  */
 export const markMemberGroupEventTargetsDirty = async (userId: string): Promise<void> =>
   markTargetsDue(() =>

@@ -775,6 +775,24 @@ describe("group events", () => {
       });
       expect(await loadEvent(id)).toMatchObject({ title: "Standup", repeatUntil: null });
     });
+
+    it("answers 402 when a one-off gains a repeat rule, and still edits it otherwise", async () => {
+      const id = await seedEvent(lapsedGroup);
+      const res = await edit("member", id, {
+        changes: {
+          repeat: { freq: "weekly", interval: 1, weekdays: [3], monthlyMode: null, until: null },
+        },
+      }).expect(402);
+
+      expect(res.body.errors[0].context).toEqual({
+        reason: "PLAN_LIMIT",
+        code: "GROUP_EVENTS_PLAN_REQUIRED",
+      });
+      expect(await loadEvent(id)).toMatchObject({ repeatFreq: null, repeatInterval: null });
+
+      await edit("member", id, { changes: { title: "Renamed" } }).expect(200);
+      expect(await loadEvent(id)).toMatchObject({ title: "Renamed", repeatFreq: null });
+    });
   });
 
   describe("DELETE /api/group-events/:id", () => {

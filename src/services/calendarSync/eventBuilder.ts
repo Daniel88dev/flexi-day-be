@@ -80,7 +80,7 @@ type Desired<P extends calendarProvider, Payload> = {
   contentHash: string;
   /**
    * Graph only: the skipped dates of a recurring group event, cancelled one by
-   * one after the series goes in, since Graph takes no exception dates (S11).
+   * one after the series goes in, since Graph takes no exception dates.
    */
   cancelledDates?: string[];
 };
@@ -322,7 +322,7 @@ export const graphTimeZone = (zone: string): string => zone;
 export type GroupEventBuildInput = {
   record: GroupEventFeedRecord;
   provider: calendarProvider;
-  /** The target's IANA zone, stamped on the event's floating times (D7). */
+  /** The target's IANA zone, stamped on the event's floating times. */
   timeZone: string;
   /** The line naming the group, in the owner's language. */
   groupLine: string;
@@ -364,11 +364,11 @@ const graphRecurrence = (record: GroupEventFeedRecord): GraphRecurrence | undefi
   } else if (rule.freq === "monthly") {
     const nth = Math.ceil(day / 7);
     if (rule.monthlyMode === "weekday" || rule.monthlyMode === "lastWeekday") {
-      // A 5th weekday offers only "last" (D5).
+      // A start on a 5th weekday can only repeat on the last one.
       const index = rule.monthlyMode === "lastWeekday" || nth > 4 ? "last" : GRAPH_INDEX[nth - 1]!;
       pattern = { type: "relativeMonthly", interval, daysOfWeek: [weekday], index };
     } else {
-      // Graph lands a day the month lacks on its last day, as D6 wants.
+      // Graph lands a day the month lacks on its last day, as the app does.
       pattern = { type: "absoluteMonthly", interval, dayOfMonth: day };
     }
   } else {
@@ -389,7 +389,7 @@ const graphRecurrence = (record: GroupEventFeedRecord): GraphRecurrence | undefi
 };
 
 /**
- * A group event on a sync target (D14): a plain `default` event, always free,
+ * A group event on a sync target: a plain `default` event, always free,
  * never Out of office or a working location, on every capability. Timed ones
  * carry the target's zone; recurring ones go out as one series.
  */
@@ -456,13 +456,30 @@ export const buildGroupEventDesired = (input: GroupEventBuildInput): DesiredEven
     transactionId: input.ledgerId,
     ...(recurrence ? { recurrence } : {}),
   };
-  const cancelledDates = recurrence ? [...record.skippedDates].sort() : undefined;
   const { transactionId: _immutable, ...content } = payload;
+  if (!recurrence)
+    return { provider: input.provider, kind, payload, contentHash: hashOf(kind, content) };
+
+  const cancelledDates = [...record.skippedDates].sort();
+  const { start, end, isAllDay } = payload;
+  const shape = hashOf(kind, { start, end, isAllDay, recurrence, cancelledDates });
   return {
     provider: input.provider,
     kind,
     payload,
-    contentHash: hashOf(kind, { ...content, cancelledDates }),
-    ...(cancelledDates ? { cancelledDates } : {}),
+    contentHash: `${shape}${SERIES_SHAPE_SEPARATOR}${hashOf(kind, { ...content, cancelledDates })}`,
+    cancelledDates,
   };
+};
+
+const SERIES_SHAPE_SEPARATOR = ":";
+
+/**
+ * The part of a Graph series' content hash covering its start, end, rule and
+ * skipped dates, or null for any other event. The engine replaces a series
+ * when this part changes and patches it otherwise.
+ */
+export const seriesShapeOf = (contentHash: string | null): string | null => {
+  const at = contentHash?.indexOf(SERIES_SHAPE_SEPARATOR) ?? -1;
+  return at === -1 ? null : contentHash!.slice(0, at);
 };

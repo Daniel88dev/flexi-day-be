@@ -7,11 +7,11 @@ import {
   groupEvents,
 } from "../../db/schema/group-event-schema.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
-import type { GroupEventPlan } from "./editPlan.js";
 import { plusDays, occurrences, type IsoDate, type RepeatRule } from "./occurrences.js";
 import {
   GROUP_EVENT_READ_LIMIT,
   type CreateGroupEventBody,
+  type GroupEventPlan,
   type GroupEventRecord,
   type GroupEventView,
 } from "./types.js";
@@ -59,13 +59,14 @@ export const repeatRuleOf = (row: GroupEventRecord): RepeatRule | null => {
   };
 };
 
-const clock = (value: string | null) => (value === null ? null : value.slice(0, 5));
+/** A `time` column in the API's `HH:MM` form. */
+export const clock = (value: string | null) => (value === null ? null : value.slice(0, 5));
 
-/** S2: a live membership of any kind, or administering the group. */
+/** Who may create: a live membership of any kind, or administering the group. */
 export const canCreateGroupEventIn = (access: { isMember: boolean; canAdmin: boolean }) =>
   access.isMember || access.canAdmin;
 
-/** S2: the creator while still a member, or anyone administering the group. */
+/** Who may edit: the creator while still a member, or anyone administering the group. */
 export const canEditGroupEvent = (
   event: Pick<GroupEventRecord, "createdByUserId">,
   callerId: string,
@@ -129,7 +130,7 @@ export type GroupEventWithCreator = {
 /**
  * Live group events of the groups with at least one occurrence in the window,
  * `endDate` exclusive like `paddedMonthRange`. Reads at most
- * {@link GROUP_EVENT_READ_LIMIT} rows (S6).
+ * {@link GROUP_EVENT_READ_LIMIT} rows.
  */
 export const listGroupEventsInWindow = async (
   groupIds: string[],
@@ -202,7 +203,7 @@ export const lockLinkedOneOffs = (recurringEventId: string, tx: DbTransaction) =
     .for("update");
 
 /**
- * S4: a tombstone keeps `id`, `groupId`, the dates and the one-off link, so the
+ * A tombstone keeps `id`, `groupId`, the dates and the one-off link, so the
  * pull and the sync engine can remove it everywhere; its content goes.
  */
 const TOMBSTONE = {

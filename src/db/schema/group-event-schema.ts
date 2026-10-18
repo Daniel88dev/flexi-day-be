@@ -87,7 +87,8 @@ export const groupEvents = pgTable(
     check("group_events_dates_chk", sql`${table.endDate} >= ${table.startDate}`),
     check(
       "group_events_title_chk",
-      sql`${table.deletedAt} IS NOT NULL OR char_length(${table.title}) BETWEEN 1 AND 100`
+      sql`${table.deletedAt} IS NOT NULL
+        OR (${table.title} IS NOT NULL AND char_length(${table.title}) BETWEEN 1 AND 100)`
     ),
     check(
       "group_events_note_chk",
@@ -102,8 +103,8 @@ export const groupEvents = pgTable(
       "group_events_repeat_chk",
       sql`(${table.repeatFreq} IS NULL AND ${table.repeatInterval} IS NULL AND ${table.repeatWeekdays} IS NULL
           AND ${table.repeatMonthlyMode} IS NULL AND ${table.repeatUntil} IS NULL)
-        OR (${table.repeatFreq} IS NOT NULL AND ${table.repeatInterval} BETWEEN 1 AND 99
-          AND ${table.endDate} = ${table.startDate})`
+        OR (${table.repeatFreq} IS NOT NULL AND ${table.repeatInterval} IS NOT NULL
+          AND ${table.repeatInterval} BETWEEN 1 AND 99 AND ${table.endDate} = ${table.startDate})`
     ),
     check(
       "group_events_repeat_until_chk",

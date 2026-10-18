@@ -54,6 +54,28 @@ describe("Microsoft driver, writes", () => {
     expect(graph.requests[0]?.body).toMatchObject({ subject: "Vacation", showAs: "oof" });
   });
 
+  it("patches a series without its start, end or rule, which keeps its cancelled occurrences", async () => {
+    graph.answer(() => ({ status: 200, body: { id: "AAMk-1" } }));
+    const event = desired(ms);
+    if (event.provider !== ms) throw new Error("unreachable");
+    const series = {
+      ...event,
+      payload: {
+        ...event.payload,
+        recurrence: {
+          pattern: { type: "daily" as const, interval: 1 },
+          range: { type: "noEnd" as const, startDate: "2026-12-21" },
+        },
+      },
+      cancelledDates: ["2026-12-22"],
+    };
+
+    await driver().patch(context(ms), "AAMk-1", series);
+
+    const body = graph.requests[0]?.body as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(["body", "isReminderOn", "showAs", "subject"]);
+  });
+
   it("deletes the event", async () => {
     graph.answer(() => ({ status: 204 }));
 
@@ -215,13 +237,13 @@ describe("Microsoft driver, cancelling one occurrence", () => {
     expect(url.pathname).toBe("/me/events/AAMk%2Fseries/instances");
     expect(url.searchParams.get("startDateTime")).toBe("2026-12-21T00:00:00Z");
     expect(url.searchParams.get("endDateTime")).toBe("2026-12-24T00:00:00Z");
-    expect(read?.headers.prefer).toBe('IdType="ImmutableId"');
+    expect(read?.headers.prefer).toBe('IdType="ImmutableId", outlook.timezone="Europe/Prague"');
     expect(remove?.method).toBe("DELETE");
     expect(remove?.path).toBe("/me/events/occ-22");
     expect(graph.requests).toHaveLength(2);
   });
 
-  it("matches an all-day occurrence that starts the evening before in UTC", async () => {
+  it("converts a timed occurrence Graph still answered in UTC to the zone", async () => {
     graph.answer((request) =>
       request.method === "GET"
         ? { status: 200, body: { value: [instance("occ-22", "2026-12-21T23:00:00")] } }
@@ -231,6 +253,62 @@ describe("Microsoft driver, cancelling one occurrence", () => {
     await driver().cancelOccurrence!(context(ms), "series", "2026-12-22", "Europe/Prague");
 
     expect(graph.requests[1]?.path).toBe("/me/events/occ-22");
+  });
+
+  it("matches an all-day occurrence by its date west of UTC", async () => {
+    const allDay = (id: string, date: string) => ({
+      id,
+      isAllDay: true,
+      start: { dateTime: `${date}T00:00:00.0000000`, timeZone: "UTC" },
+    });
+    graph.answer((request) =>
+      request.method === "GET"
+        ? {
+            status: 200,
+            body: {
+              value: [
+                allDay("occ-21", "2026-12-21"),
+                allDay("occ-22", "2026-12-22"),
+                allDay("occ-23", "2026-12-23"),
+              ],
+            },
+          }
+        : { status: 204 }
+    );
+
+    await driver().cancelOccurrence!(context(ms), "series", "2026-12-22", "America/New_York");
+
+    expect(graph.requests[0]?.headers.prefer).toBe(
+      'IdType="ImmutableId", outlook.timezone="America/New_York"'
+    );
+    expect(graph.requests[1]?.path).toBe("/me/events/occ-22");
+  });
+
+  it("matches a timed occurrence by its local date west of UTC", async () => {
+    const local = (id: string, dateTime: string) => ({
+      id,
+      isAllDay: false,
+      start: { dateTime: `${dateTime}.0000000`, timeZone: "America/New_York" },
+    });
+    graph.answer((request) =>
+      request.method === "GET"
+        ? {
+            status: 200,
+            body: {
+              value: [
+                local("occ-21", "2026-12-21T02:00:00"),
+                local("occ-22", "2026-12-22T02:00:00"),
+                local("occ-23", "2026-12-23T02:00:00"),
+              ],
+            },
+          }
+        : { status: 204 }
+    );
+
+    await driver().cancelOccurrence!(context(ms), "series", "2026-12-22", "America/New_York");
+
+    expect(graph.requests[1]?.path).toBe("/me/events/occ-22");
+    expect(graph.requests).toHaveLength(2);
   });
 
   it("does nothing more when no occurrence falls on that day", async () => {

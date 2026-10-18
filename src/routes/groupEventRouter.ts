@@ -541,8 +541,8 @@ export const groupEventRouter = (): Router => {
    *
    *       `following` and `all` apply the same carry rule to the part they
    *       rewrite. Past occurrences have no lock. Only the new event of a
-   *       `following` split needs a paid plan; every other edit works on a
-   *       lapsed group.
+   *       `following` split and a one-off gaining `repeat` need a paid plan;
+   *       every other edit works on a lapsed group.
    *     operationId: handlePatchGroupEvent
    *     security:
    *       - bearerAuth: []
@@ -581,8 +581,8 @@ export const groupEventRouter = (): Router => {
    *         description: Unauthorized
    *       '402':
    *         description: |
-   *           A `following` split on a group whose organization is not on a
-   *           paid plan. `context` is
+   *           A `following` split, or a one-off gaining a repeat rule, on a
+   *           group whose organization is not on a paid plan. `context` is
    *           `{ reason: "PLAN_LIMIT", code: "GROUP_EVENTS_PLAN_REQUIRED" }`.
    *       '403':
    *         description: Not the creator while a member of the group, and not its admin

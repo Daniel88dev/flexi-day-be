@@ -10,7 +10,7 @@ const icsRepeat = (rule: RepeatRule): IcsRepeat => ({
   until: rule.until,
 });
 
-/** A group event as the `.ics` writer takes it, timed ones stamped with `timeZone` (D7). */
+/** A group event as the `.ics` writer takes it, timed ones stamped with `timeZone`. */
 export const groupEventIcs = (
   record: GroupEventFeedRecord,
   text: { uid: string; summary: string; description?: string },

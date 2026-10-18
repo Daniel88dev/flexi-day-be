@@ -445,6 +445,70 @@ describe("group events in feeds and direct sync", () => {
       expect(await target.ledger()).toEqual([]);
     });
 
+    it("patches a Microsoft series in place when only its title changes, skipped dates kept", async () => {
+      const { owner, alice, engineering } = await seedGroups();
+      const target = await connect(owner.id, calendarProvider.Microsoft);
+      const id = await createEvent(alice.id, engineering);
+      await queue.drain();
+      const [inserted] = await target.calls();
+
+      await request(server.url)
+        .patch(`/api/group-events/${id}`)
+        .set("Cookie", await authCookieFor(alice.id))
+        .send({ scope: "all", changes: { title: "Retro" } })
+        .expect(200);
+      await queue.drain();
+
+      expect((await target.calls()).map((call) => [call.operation, call.providerEventId])).toEqual([
+        ["INSERT", inserted?.providerEventId],
+        ["PATCH", inserted?.providerEventId],
+      ]);
+
+      await deleteEvent(alice.id, id, "scope=this&occurrenceDate=2027-02-09");
+      await queue.drain();
+      const replaced = (await target.calls()).slice(2);
+      expect(replaced.map((call) => call.operation)).toEqual(["DELETE", "INSERT", "CANCEL"]);
+
+      await request(server.url)
+        .patch(`/api/group-events/${id}`)
+        .set("Cookie", await authCookieFor(alice.id))
+        .send({ scope: "all", changes: { title: "Team retro" } })
+        .expect(200);
+      await queue.drain();
+
+      const last = (await target.calls()).slice(5);
+      expect(last.map((call) => [call.operation, call.providerEventId])).toEqual([
+        ["PATCH", replaced[1]?.providerEventId],
+      ]);
+      expect(last[0]?.payload).toMatchObject({ subject: "Team retro" });
+      const [row] = await target.ledger();
+      expect(row?.providerEventId).toBe(replaced[1]?.providerEventId);
+    });
+
+    it("replaces a Microsoft series again on the next sync when its cancels did not all land", async () => {
+      const { owner, alice, engineering } = await seedGroups();
+      const target = await connect(owner.id, calendarProvider.Microsoft);
+      const id = await createEvent(alice.id, engineering);
+      await deleteEvent(alice.id, id, "scope=this&occurrenceDate=2027-02-09");
+      await queue.drain();
+      await syncTarget(target.configId);
+      const settled = (await target.calls()).length;
+
+      // What a failed cancel leaves behind.
+      await db
+        .update(calendarSyncEvents)
+        .set({ contentHash: "cancels-pending:" })
+        .where(eq(calendarSyncEvents.calendarSyncId, target.configId));
+      await syncTarget(target.configId);
+
+      const retried = (await target.calls()).slice(settled);
+      expect(retried.map((call) => [call.operation, call.payload?.date])).toEqual([
+        ["DELETE", undefined],
+        ["INSERT", undefined],
+        ["CANCEL", "2027-02-09"],
+      ]);
+    });
+
     it("cancels the skipped dates of a series already holding some when it first goes to Microsoft", async () => {
       const { owner, engineering } = await seedGroups();
       await insertEvent(engineering, {

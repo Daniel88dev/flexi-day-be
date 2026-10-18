@@ -30,6 +30,7 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { ensureBankHolidays } from "../bankHoliday/bankHolidayServices.js";
 import { birthdayGroupIds } from "../birthday/birthdayVisibility.js";
 import { getScopeEntries } from "../report/reportServices.js";
+import { clock } from "../groupEvent/groupEventServices.js";
 import type { ReportScopeEntry } from "../report/types.js";
 import { encodeSyncCursor, SYNC_OVERLAP_MS } from "./syncCursor.js";
 import { sameHistoryWindow, syncBankHolidayWindow, syncHistoryWindow } from "./syncHistory.js";
@@ -788,8 +789,6 @@ const readVacationsPage = async (
     } satisfies SyncVacationRow,
   }));
 };
-
-const clock = (value: string | null): string | null => (value === null ? null : value.slice(0, 5));
 
 /**
  * Every group event of every group the caller is a live member of, whatever

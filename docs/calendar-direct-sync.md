@@ -71,10 +71,14 @@ false`; Microsoft `showAs: free`, `isReminderOn: false`.
   `absoluteYearly`; the range is `endDate` on the rule's end or `noEnd`.
 - Graph has no exception dates, so after a series goes in the engine cancels each skipped date with
   the driver's `cancelOccurrence`: one `GET /me/events/{id}/instances` over that day, then a
-  `DELETE` of the occurrence whose start falls on it in the target's zone. Any change to a Graph
-  series deletes it and inserts it again before the cancels (S11), so the cancelled dates always
-  equal the skipped dates. A cancel that fails leaves the row's hash unmatched, and the next sync
-  replaces the series again. The call count of a change is 2 plus 1 to 2 per skipped date.
+  `DELETE` of the occurrence that falls on it. The read sends `Prefer: outlook.timezone` with the
+  target's zone and matches on the date part of each start, an all-day occurrence by its date
+  directly, since its midnight read as UTC lands a day early west of UTC.
+- A change to a Graph series' start, end, rule or skipped dates deletes it and inserts it again
+  before the cancels, so the cancelled dates always equal the skipped dates. Any other change, a
+  title or a note, patches the series without its start, end or rule, which keeps its provider id
+  and the user's own reminders. A cancel that fails leaves the row's hash unmatched, and the next
+  sync replaces the series again. A replace costs 2 calls plus 1 to 2 per skipped date.
 - Google events carry `flexiDaySourceKey` and `flexiDayConfigId` in `extendedProperties.private`.
 - The zone Graph gets passes through `graphTimeZone` in `eventBuilder.ts`, which returns the IANA
   name as is. The T-348 probe has not shown yet that Graph takes an IANA zone on a recurring event;
@@ -378,11 +382,11 @@ lifetime cap above but keeps refresh tokens alive.
   on an unstated schedule, Apple as the user sets it. Direct sync is the fast path.
 - Monthly on day 29 or 30 goes into feeds and Google as `BYMONTHDAY=28,29,30;BYSETPOS=-1` (and
   `28,29` for day 29), pending the T-348 probe. If a client mishandles it, `monthlyDayRule` in
-  `utils/ics.ts` switches to the D11 fallback. Graph uses `absoluteMonthly` and needs no such form.
+  `utils/ics.ts` switches to "on day 1 to 28" plus an explicit last day. Graph uses `absoluteMonthly` and needs no such form.
 - A web day chip shows about eight characters of a group event's title; the popover has the rest.
 - A colleague who leaves a group keeps their birthday in the phone store until the next snapshot.
   The read hides it.
-- A feed or target reads at most 500 group events (S6), the earliest first, so a group past that
+- A feed or target reads at most 500 group events, the earliest first, so a group past that
   loses its furthest-ahead events from calendars until older ones age out of the window.
 - No age leaves Flexi Day. A series has one title, so the year a birthday carries stays in the app.
 - A purge that cannot delete an event leaves it. Each failed delete is retried three times, waiting

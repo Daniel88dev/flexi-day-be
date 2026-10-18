@@ -44,7 +44,7 @@ const fromUtc = (ms: number): IsoDate => new Date(ms).toISOString().slice(0, 10)
 export const plusDays = (date: IsoDate, days: number): IsoDate =>
   fromUtc(toUtc(date) + days * DAY_MS);
 
-const daysBetween = (from: IsoDate, to: IsoDate): number =>
+export const daysBetween = (from: IsoDate, to: IsoDate): number =>
   Math.round((toUtc(to) - toUtc(from)) / DAY_MS);
 
 /** 0 = Monday … 6 = Sunday. */
@@ -56,7 +56,7 @@ const daysInMonth = (year: number, month: number): number =>
 const ymd = (year: number, month: number, day: number): IsoDate =>
   fromUtc(Date.UTC(year, month - 1, day));
 
-/** D6: a day the month lacks lands on its last day. */
+/** A day the month lacks lands on its last day. */
 const clampDay = (year: number, month: number, day: number): IsoDate =>
   ymd(year, month, Math.min(day, daysInMonth(year, month)));
 
@@ -150,8 +150,8 @@ const recurringDates = (
 /**
  * The occurrences of a group event that touch the window `from`..`to`, both
  * inclusive, in date order. A one-off answers itself when any of its days is in
- * the window. A recurring group event applies D5, D6, `until` and its skipped
- * dates.
+ * the window. A recurring group event applies its rule, with a day the month
+ * lacks moved to its last day, then `until` and its skipped dates.
  */
 export const occurrences = (source: OccurrenceSource, from: IsoDate, to: IsoDate): Occurrence[] => {
   const span = daysBetween(source.startDate, source.endDate);
@@ -171,22 +171,4 @@ export const occurrences = (source: OccurrenceSource, from: IsoDate, to: IsoDate
   return recurringDates(source.startDate, rule, lower, last)
     .filter((date) => date >= lower && date <= last && !skipped.has(date))
     .map((date) => ({ startDate: date, endDate: plusDays(date, span) }));
-};
-
-/**
- * A birthday's days in the window, with the age reached on each when the year
- * is known. 29 February lands on 28 February in other years (D6, D19).
- */
-export const birthdayOccurrences = (
-  birthday: { month: number; day: number; year: number | null },
-  from: IsoDate,
-  to: IsoDate
-): { date: IsoDate; age: number | null }[] => {
-  const out: { date: IsoDate; age: number | null }[] = [];
-  for (let year = parts(from)[0]; year <= parts(to)[0]; year += 1) {
-    const date = clampDay(year, birthday.month, birthday.day);
-    if (date < from || date > to) continue;
-    out.push({ date, age: birthday.year === null ? null : year - birthday.year });
-  }
-  return out;
 };

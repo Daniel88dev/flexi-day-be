@@ -46,16 +46,42 @@ const shiftDays = (date: string, days: number): string => {
   return at.toISOString().slice(0, 10);
 };
 
-/** The local date of a Graph UTC `dateTime` in `timeZone`. */
-const localDateOf = (utcDateTime: string, timeZone: string): string =>
-  new Intl.DateTimeFormat("en-CA", {
+type GraphInstance = {
+  id?: unknown;
+  isAllDay?: unknown;
+  start?: { dateTime?: unknown; timeZone?: unknown };
+};
+
+const IMMUTABLE_IDS = 'IdType="ImmutableId"';
+
+const seriesBodyOf = ({
+  start: _start,
+  end: _end,
+  isAllDay: _isAllDay,
+  recurrence: _recurrence,
+  ...body
+}: Omit<MicrosoftEventPayload, "transactionId">) => body;
+
+/**
+ * The date an instance falls on in `timeZone`. The instances read asks Graph
+ * for times in that zone, so the date part is already local. An all-day
+ * instance is midnight to midnight, and converting its midnight from UTC
+ * would move it a day back west of UTC. Only a timed instance Graph still
+ * answered in UTC gets converted.
+ */
+const instanceDate = (instance: GraphInstance, timeZone: string): string | null => {
+  const dateTime = instance.start?.dateTime;
+  if (typeof dateTime !== "string") return null;
+  if (instance.isAllDay === true || instance.start?.timeZone !== "UTC") {
+    return dateTime.slice(0, 10);
+  }
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date(`${utcDateTime.slice(0, 19)}Z`));
-
-type GraphInstance = { id?: unknown; start?: { dateTime?: unknown } };
+  }).format(new Date(`${dateTime.slice(0, 19)}Z`));
+};
 
 export const createMicrosoftDriver = (
   options: { baseUrl?: string; timeoutMs?: number } = {}
@@ -66,14 +92,15 @@ export const createMicrosoftDriver = (
     method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     token: string,
-    body?: object
+    body?: object,
+    prefer: string = IMMUTABLE_IDS
   ): Promise<GraphAnswer> => {
     const response = await fetch(`${baseUrl}${path}`, {
       method,
       headers: {
         authorization: `Bearer ${token}`,
-        // Keeps the id stable if the user moves the event to another calendar.
-        prefer: 'IdType="ImmutableId"',
+        // ImmutableId keeps the id stable if the user moves the event to another calendar.
+        prefer,
         ...(body ? { "content-type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -107,7 +134,10 @@ export const createMicrosoftDriver = (
     patch: (context, providerEventId, event) => {
       const payload = payloadOf(event);
       if ("ok" in payload) return Promise.resolve(payload);
-      const { transactionId: _immutable, ...changes } = payload;
+      const { transactionId: _immutable, ...fields } = payload;
+      // The engine patches a series only when its shape is unchanged, and
+      // writing the rule again could bring cancelled occurrences back.
+      const changes = event.cancelledDates ? seriesBodyOf(fields) : fields;
       return withAccessToken(context, async (token) => {
         const answer = await request("PATCH", eventPath(providerEventId), token, changes);
         if (answer.status === 200) return eventId(answer);
@@ -122,21 +152,19 @@ export const createMicrosoftDriver = (
         const query = new URLSearchParams({
           startDateTime: `${shiftDays(date, -1)}T00:00:00Z`,
           endDateTime: `${shiftDays(date, 2)}T00:00:00Z`,
-          $select: "id,start",
+          $select: "id,start,isAllDay",
         });
         const read = await request(
           "GET",
           `${eventPath(seriesId)}/instances?${query.toString()}`,
-          token
+          token,
+          undefined,
+          `${IMMUTABLE_IDS}, outlook.timezone="${timeZone}"`
         );
         if (read.status === 404) return { ok: true };
         if (read.status !== 200) return failure(read);
         const instances = (read.body as { value?: GraphInstance[] } | undefined)?.value ?? [];
-        const match = instances.find(
-          (instance) =>
-            typeof instance.start?.dateTime === "string" &&
-            localDateOf(instance.start.dateTime, timeZone) === date
-        );
+        const match = instances.find((instance) => instanceDate(instance, timeZone) === date);
         if (typeof match?.id !== "string") return { ok: true };
         const removed = await request("DELETE", eventPath(match.id), token);
         if (removed.status === 204 || removed.status === 200 || removed.status === 404) {

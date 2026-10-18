@@ -1,37 +1,24 @@
 import AppError from "../../utils/appError.js";
-import type { groupEvents } from "../../db/schema/group-event-schema.js";
-import { occurrences, plusDays, type IsoDate, type RepeatRule } from "./occurrences.js";
-import { repeatColumns, repeatRuleOf } from "./groupEventServices.js";
+import {
+  daysBetween,
+  occurrences,
+  plusDays,
+  type IsoDate,
+  type RepeatRule,
+} from "./occurrences.js";
+import { clock, repeatColumns, repeatRuleOf } from "./groupEventServices.js";
 import {
   groupEventShapeIssues,
   type GroupEventChanges,
+  type GroupEventColumns as Columns,
   type GroupEventDeleteRequest,
   type GroupEventEditRequest,
+  type GroupEventPlan,
   type GroupEventRecord,
   type GroupEventShape,
 } from "./types.js";
 
-type Columns = Partial<typeof groupEvents.$inferInsert>;
-
-/**
- * The writes one edit or delete makes, computed without touching the database
- * so `PATCH` and its `impact` dry run agree on `droppedOneOffs`.
- */
-export type GroupEventPlan = {
-  droppedOneOffs: number;
-  updates: { id: string; set: Columns }[];
-  inserts: (Columns & { id: string; groupId: string; startDate: IsoDate; endDate: IsoDate })[];
-  tombstones: string[];
-  /** A "following" split writes a new group event, the one write S3 gates on the plan. */
-  splits: boolean;
-};
-
 const unprocessable = (message: string) => new AppError({ code: 422, message });
-
-const clock = (value: string | null) => (value === null ? null : value.slice(0, 5));
-
-const daysBetween = (from: IsoDate, to: IsoDate) =>
-  Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 
 const shapeOf = (row: GroupEventRecord): GroupEventShape => ({
   title: row.title ?? "",
@@ -109,7 +96,7 @@ const occurrenceOf = (event: GroupEventRecord, occurrenceDate: IsoDate | undefin
 /**
  * What happens to the one-off changes (linked one-offs and skipped dates) of
  * the part of a recurring group event an edit rewrites. A rule or start change
- * drops them all (D8); a change of `until` alone drops only those past it.
+ * drops them all; a change of `until` alone drops only those past it.
  */
 const carryOneOffs = (input: {
   base: GroupEventShape;
@@ -132,7 +119,7 @@ const carryOneOffs = (input: {
   const backed = new Set(oneOffs.map((oneOff) => oneOff.originalDate));
   const droppedDeletions = skippedDates.filter((date) => !survives(date) && !backed.has(date));
 
-  // "All events" changing title, note or times overwrites the one-offs' own (D8).
+  // "All events" changing title, note or times overwrites the one-offs' own.
   const overwrite: Columns = {};
   if (next.title !== base.title) overwrite.title = next.title;
   if (next.note !== base.note) overwrite.note = next.note;
@@ -162,7 +149,7 @@ const emptyPlan = (): GroupEventPlan => ({
   updates: [],
   inserts: [],
   tombstones: [],
-  splits: false,
+  needsActivePlan: false,
 });
 
 const planAll = (
@@ -276,12 +263,13 @@ const planFollowing = (
       },
     ],
     tombstones: carried.tombstones,
-    splits: true,
+    needsActivePlan: true,
   };
 };
 
 /**
- * D8 for `PATCH /api/group-events/:id`. `oneOffs` are the live one-offs linked
+ * The writes of `PATCH /api/group-events/:id` for its scope, "this event",
+ * "this and following" or "all events". `oneOffs` are the live one-offs linked
  * to `event`. Throws 422 when the request does not fit the event.
  */
 export const planGroupEventEdit = (
@@ -299,6 +287,7 @@ export const planGroupEventEdit = (
     return {
       ...emptyPlan(),
       updates: [{ id: event.id, set: { ...shapeColumns(next), ...unlink } }],
+      needsActivePlan: next.repeat !== null,
     };
   }
 
@@ -312,7 +301,7 @@ export const planGroupEventEdit = (
   }
 };
 
-/** D8 and D16 for `DELETE /api/group-events/:id`. */
+/** The writes of `DELETE /api/group-events/:id` for its scope. Deletes are hard. */
 export const planGroupEventDelete = (
   event: GroupEventRecord,
   oneOffs: GroupEventRecord[],

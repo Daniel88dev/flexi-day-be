@@ -62,12 +62,30 @@ describe("planGroupEventEdit", () => {
     // The later one-off and the plain deletion on 1 December; the earlier one-off stays.
     expect(plan.droppedOneOffs).toBe(2);
     expect(plan.tombstones).toEqual(["late"]);
-    expect(plan.splits).toBe(true);
+    expect(plan.needsActivePlan).toBe(true);
     expect(plan.inserts[0]).toMatchObject({ id: "split", repeatInterval: 2, skippedDates: [] });
     expect(plan.updates[0]).toEqual({
       id: "weekly",
       set: expect.objectContaining({ repeatUntil: "2026-11-16", skippedDates: ["2026-11-10"] }),
     });
+  });
+
+  it("needs an active plan when a one-off gains a repeat rule, not for its other edits", () => {
+    const single = oneOff("single", "2026-11-12");
+    const repeat = {
+      freq: "weekly" as const,
+      interval: 1,
+      weekdays: [3],
+      monthlyMode: null,
+      until: null,
+    };
+
+    expect(planGroupEventEdit(single, [], { changes: { repeat } }, newId).needsActivePlan).toBe(
+      true
+    );
+    expect(
+      planGroupEventEdit(single, [], { changes: { title: "Renamed" } }, newId).needsActivePlan
+    ).toBe(false);
   });
 
   it("leaves one-offs alone through all events when nothing they carry changed", () => {

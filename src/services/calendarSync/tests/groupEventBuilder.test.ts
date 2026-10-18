@@ -3,7 +3,11 @@ import {
   calendarProvider,
   calendarSyncEventKind,
 } from "../../../db/schema/calendar-connection-schema.js";
-import { buildGroupEventDesired, type GroupEventBuildInput } from "../eventBuilder.js";
+import {
+  buildGroupEventDesired,
+  seriesShapeOf,
+  type GroupEventBuildInput,
+} from "../eventBuilder.js";
 import type { GroupEventFeedRecord } from "../types.js";
 
 const EVENT_ID = "ge-1";
@@ -249,5 +253,23 @@ describe("buildGroupEventDesired, Microsoft", () => {
       buildGroupEventDesired(input({ provider: calendarProvider.Microsoft, ledgerId: "ledger-2" }))
         .contentHash
     ).toBe(base);
+  });
+
+  it("keeps a series' shape through a title or note change, not a skipped date, time or rule", () => {
+    const shape = seriesShapeOf(microsoft().contentHash);
+
+    expect(shape).not.toBeNull();
+    expect(seriesShapeOf(microsoft({ title: "Retro", note: null }).contentHash)).toBe(shape);
+    expect(seriesShapeOf(microsoft({ skippedDates: [] }).contentHash)).not.toBe(shape);
+    expect(seriesShapeOf(microsoft({ startTime: "08:00:00" }).contentHash)).not.toBe(shape);
+    expect(
+      seriesShapeOf(
+        microsoft({
+          repeat: { freq: "weekly", interval: 2, weekdays: [1], monthlyMode: null, until: null },
+        }).contentHash
+      )
+    ).not.toBe(shape);
+    expect(seriesShapeOf(microsoft({ repeat: null, skippedDates: [] }).contentHash)).toBeNull();
+    expect(seriesShapeOf(google().contentHash)).toBeNull();
   });
 });

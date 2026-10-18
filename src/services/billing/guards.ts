@@ -366,9 +366,9 @@ export const GROUP_EVENTS_PLAN_REQUIRED = "GROUP_EVENTS_PLAN_REQUIRED";
 
 /**
  * Throws 402 unless the group's organization resolves to a paid plan, grace
- * included (S3). Guards creating a group event and the create half of a
- * split. Reads, edits that create nothing and deletes never call it, so a
- * lapse hides nothing.
+ * included. Guards creating a group event, the create half of a split, and a
+ * one-off gaining a repeat rule. Reads, edits that add no occurrences and
+ * deletes never call it, so a lapse hides nothing.
  */
 export const assertGroupEventsActive = async (
   groupId: string,

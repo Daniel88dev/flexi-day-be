@@ -56,7 +56,7 @@ const birthdayEvent = (record: BirthdayFeedRecord, label: string, team: boolean)
   },
 });
 
-/** A group event in the feed's own zone (D7), with the line naming its group. */
+/** A group event in the feed's own zone, with the line naming its group. */
 const groupEventEvent = (
   record: GroupEventFeedRecord,
   groupLine: string,

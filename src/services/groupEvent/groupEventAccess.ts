@@ -23,7 +23,7 @@ const ADJACENT_DAYS = 6;
 
 /**
  * Loads the group and the caller's standing in it, or throws: 404 for no such
- * live group, 403 without S2 rights.
+ * live group, 403 unless the caller is a live member or administers it.
  */
 export const loadGroupForGroupEvents = async (
   userId: string,
@@ -85,7 +85,7 @@ export const listGroupEventsForMonth = async (
 
 /**
  * `GET /api/group-events/groups`: every group the caller belongs to or
- * administers, with whether a create would pass S2 and S3 now.
+ * administers, with whether a create would pass the rights and plan checks now.
  */
 export const listGroupEventGroups = async (userId: string): Promise<GroupEventGroup[]> => {
   const memberGroupIds = (await getScopeEntries(userId)).map((entry) => entry.groupId);
@@ -117,7 +117,7 @@ type GroupStanding = { group: GroupType; access: { isMember: boolean; canAdmin: 
 /**
  * Locks a live group event and the one-offs linked to it for an edit or a
  * delete, or throws: 404 for no such live event or group, 403 unless the caller
- * is its creator and still a member, or administers the group (S2).
+ * is its creator and still a member, or administers the group.
  */
 export const loadEditableGroupEvent = async (
   userId: string,

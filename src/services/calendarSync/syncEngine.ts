@@ -28,6 +28,7 @@ import {
   buildDesired,
   buildGroupEventDesired,
   graphTimeZone,
+  seriesShapeOf,
   type DesiredEvent,
 } from "./eventBuilder.js";
 import {
@@ -195,10 +196,13 @@ const learnStatusCapability = async (run: Run, event: DesiredEvent) => {
     );
 };
 
-/** A hash no event has, so the next run replaces a series whose cancels did not all land. */
-const CANCELS_PENDING = "cancels-pending";
+/**
+ * A hash no event has, whose series part matches no series either, so the next
+ * run replaces a series whose cancels did not all land.
+ */
+const CANCELS_PENDING = "cancels-pending:";
 
-/** S11: Graph takes no exception dates, so each skipped date is cancelled after the insert. */
+/** Graph takes no exception dates, so each skipped date is cancelled after the insert. */
 const cancelSkippedDates = async (
   run: Run,
   ledgerId: string,
@@ -281,9 +285,10 @@ const writeEvent = async (
   if (run.provider === calendarProvider.Google && existing.eventType !== eventTypeOf(event)) {
     return (await removeEvent(run, existing)) ?? insertFresh(run, wanted);
   }
-  // A Graph series is replaced on any change, so its cancelled dates are always
-  // the skipped dates (S11); a patch could bring cancelled occurrences back.
-  if (event.cancelledDates) {
+  // A Graph series' skipped dates are cancelled occurrences, which rewriting
+  // its rule or start would bring back. A change to its start, end, rule or
+  // skipped dates, or to or from being a series, replaces it; the rest patches.
+  if (seriesShapeOf(existing.contentHash) !== seriesShapeOf(event.contentHash)) {
     return (await removeEvent(run, existing)) ?? insertFresh(run, wanted);
   }
 

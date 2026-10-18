@@ -24,7 +24,7 @@ export const handlePatchGroupEvent = async (req: Request, res: Response) => {
   const { groupId, ...result } = await db.transaction(async (tx) => {
     const { event, oneOffs, ...standing } = await loadEditableGroupEvent(auth.userId, id, tx);
     const plan = planGroupEventEdit(event, oneOffs, body, generateRandomUUID);
-    if (plan.splits) await assertGroupEventsActive(event.groupId, tx);
+    if (plan.needsActivePlan) await assertGroupEventsActive(event.groupId, tx);
     const rows = await applyGroupEventPlan(plan, tx);
     const written: GroupEventWriteResult & { groupId: string } = {
       groupId: event.groupId,
