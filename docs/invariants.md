@@ -443,7 +443,8 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   notify the owner from it. The detail response carries `canReadPrivateDetails` so a client knows
   whether to offer the comment box.
 - **Every read of another person's row goes through `viewVacationRowAs`.** Today that is
-  `GET /api/vacation/:id`, `GET /api/vacation?groupId=` and `GET /api/vacation/calendar`.
+  `GET /api/vacation/:id`, `GET /api/vacation?groupId=`, `GET /api/vacation/calendar` and
+  `GET /api/sync/pull`.
   `privateDetails.e2e.test.ts` fails if any of them hands a teammate Sick or a private field.
 - **A team calendar feed has no privileged readers.** `vacationRecords` in
   `calendarSyncServices.ts` reads every row through `viewVacationRowAs` with `teammateViewer`, a
@@ -453,6 +454,19 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   holds only those. The feed filters on the stored type, so the config's `SICK` toggle decides
   whether teammates' Away events appear; Away is never a configurable feed type.
   `calendarFeedPrivateDetails.e2e.test.ts` fails if a team feed hands out a teammate's Sick or note.
+- **The sync pull reads as the caller.** `readVacationsPage` in `syncServices.ts` resolves the
+  caller's viewer once per pull, over the groups seen in full and the sources mirrored into them,
+  and reads every row through `viewVacationRowAs`. A teammate's Sick goes out as `AWAY` only to a
+  pull sending `x-client-sync-accepts: away`, and is left out of any other, because an older phone
+  build fails a whole page on a type it does not store. A teammate's rejected or cancelled row is
+  absent from a snapshot and a content-nulled tombstone in a delta. Every exclusion sits in the
+  query's `WHERE`: the page walk reads a short page as the end of the table, so a row filtered out
+  after the read silently ends it. `getVacationActorIds` follows the same view, so no teammate's
+  rejecter or canceller is named. A change to the caller's standing, org admin or a mirrored source
+  group's approvers included, is a sync reset trigger, so the next pull replaces what the phone
+  held. [`sync-pull.md`](sync-pull.md#private-details) has the contract;
+  `syncPullPrivateDetails.e2e.test.ts` fails if a pull hands a teammate Sick, a private field or a
+  declined row.
 - **Reports and the export go through `viewReportRowAs` instead.** It applies the same privileged
   reader rule but leaves a teammate's Sick out rather than showing Away, because Away means nothing
   as a usage line. `getBookingsForScope`, `aggregateUsageByUserMonth` and `aggregateUsageSplit`
