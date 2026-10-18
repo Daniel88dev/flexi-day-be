@@ -11,6 +11,8 @@ import type {
 import { user } from "../../db/schema/auth-schema.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { syncEmploymentForGroup } from "../employment/employmentServices.js";
+import { buildScopePredicate } from "../report/reportScope.js";
+import type { ReportScopeEntry } from "../report/types.js";
 
 export const getGroupUser = async (
   userId: string,
@@ -256,15 +258,23 @@ export const getGroupUsers = async (groupId: string): Promise<GroupUserListItem[
 };
 
 /**
- * Returns the number of distinct users that belong to any of the supplied
- * groups. Used by the dashboard "team size" stat card.
+ * The number of distinct live members the caller's scope lets them see: every
+ * member of a group they see in full, and only themselves in the rest. Used by
+ * the dashboard "team size" stat card.
  */
-export const countDistinctUsersInGroups = async (groupIds: string[]): Promise<number> => {
-  if (groupIds.length === 0) return 0;
+export const countDistinctUsersInScope = async (
+  scope: ReportScopeEntry[],
+  callerId: string
+): Promise<number> => {
+  const visible = buildScopePredicate(scope, callerId, {
+    userId: groupUsers.userId,
+    groupId: groupUsers.groupId,
+  });
+  if (visible === null) return 0;
   const [row] = await db
     .select({ value: countDistinct(groupUsers.userId) })
     .from(groupUsers)
-    .where(and(inArray(groupUsers.groupId, groupIds), isNull(groupUsers.deletedAt)));
+    .where(and(visible, isNull(groupUsers.deletedAt)));
   return Number(row?.value ?? 0);
 };
 

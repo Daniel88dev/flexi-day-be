@@ -38,6 +38,8 @@ import { buildUserSummary, type UserSummary } from "../../utils/userPresentation
 import { EXCUSING_RECORD_TYPES } from "./types.js";
 import { sumDaysWhere } from "./dayWeight.js";
 import type { DateString } from "../../utils/dateFunc.js";
+import { buildScopePredicate } from "../report/reportScope.js";
+import type { ReportScopeEntry } from "../report/types.js";
 
 type VacationRowWithUser = VacationType & {
   userName: string;
@@ -772,18 +774,25 @@ export const sumCountedDaysForQuota = async (
   return { approved: Number(row?.approved ?? 0), pending: Number(row?.pending ?? 0) };
 };
 
+const vacationScopeColumns = { userId: vacation.userId, groupId: vacation.groupId };
+
 /**
- * Counts the distinct users with an approved vacation overlapping `today` in
- * any of the supplied group ids.
+ * Counts the distinct users with an approved vacation on `isoDate` that the
+ * caller's scope lets them see.
  */
-export const countUsersOutOnDay = async (groupIds: string[], isoDate: string): Promise<number> => {
-  if (groupIds.length === 0) return 0;
+export const countUsersOutOnDay = async (
+  scope: ReportScopeEntry[],
+  callerId: string,
+  isoDate: string
+): Promise<number> => {
+  const visible = buildScopePredicate(scope, callerId, vacationScopeColumns);
+  if (visible === null) return 0;
   const [row] = await db
     .select({ value: countDistinct(vacation.userId) })
     .from(vacation)
     .where(
       and(
-        inArray(vacation.groupId, groupIds),
+        visible,
         isNull(vacation.deletedAt),
         isNotNull(vacation.approvedAt),
         eq(vacation.requestedDay, isoDate)
@@ -794,20 +803,23 @@ export const countUsersOutOnDay = async (groupIds: string[], isoDate: string): P
 
 /**
  * Counts approved vacations (excluding bank holidays) overlapping the given
- * inclusive range across the supplied groups. Used to estimate upcoming load.
+ * inclusive range that the caller's scope lets them see. Used to estimate
+ * upcoming load.
  */
 export const countApprovedVacationsInRange = async (
-  groupIds: string[],
+  scope: ReportScopeEntry[],
+  callerId: string,
   fromIsoInclusive: string,
   toIsoInclusive: string
 ): Promise<number> => {
-  if (groupIds.length === 0) return 0;
+  const visible = buildScopePredicate(scope, callerId, vacationScopeColumns);
+  if (visible === null) return 0;
   const [row] = await db
     .select({ value: count() })
     .from(vacation)
     .where(
       and(
-        inArray(vacation.groupId, groupIds),
+        visible,
         isNull(vacation.deletedAt),
         isNotNull(vacation.approvedAt),
         gte(vacation.requestedDay, fromIsoInclusive),
