@@ -1,3 +1,4 @@
+import type { DbTransaction } from "../../db/db.js";
 import AppError from "../../utils/appError.js";
 import { resolveEntitlements, type Entitlements } from "../billing/entitlements.js";
 import { getSubscriptionsForOrganizations } from "../billing/subscriptionServices.js";
@@ -15,10 +16,10 @@ import {
 type GroupPlan = { groupId: string; groupName: string; entitlements: Entitlements };
 
 /** Live groups with their organization's resolved plan, in `getAllGroups` order. */
-const resolveGroupPlans = async (groupIds: string[]): Promise<GroupPlan[]> => {
-  const groups = await getAllGroups(groupIds);
+const resolveGroupPlans = async (groupIds: string[], tx?: DbTransaction): Promise<GroupPlan[]> => {
+  const groups = await getAllGroups(groupIds, tx);
   const organizationIds = [...new Set(groups.map((group) => group.organizationId))];
-  const subscriptions = await getSubscriptionsForOrganizations(organizationIds);
+  const subscriptions = await getSubscriptionsForOrganizations(organizationIds, tx);
   const byOrganization = new Map(subscriptions.map((sub) => [sub.organizationId, sub]));
   const now = new Date();
   return groups.map((group) => ({
@@ -39,14 +40,17 @@ export const liveBirthday = (row: BirthdayRecord | null): Birthday | null => {
   return { ...rest, month: row.month, day: row.day };
 };
 
-const memberGroupPlans = async (userId: string): Promise<GroupPlan[]> => {
-  const memberships = await getScopeEntries(userId);
-  return resolveGroupPlans(memberships.map((entry) => entry.groupId));
+const memberGroupPlans = async (userId: string, tx?: DbTransaction): Promise<GroupPlan[]> => {
+  const memberships = await getScopeEntries(userId, {}, tx);
+  return resolveGroupPlans(
+    memberships.map((entry) => entry.groupId),
+    tx
+  );
 };
 
 /** The share switch may turn on while any of the user's live groups is on a paid plan. */
-export const canShareBirthday = async (userId: string): Promise<boolean> =>
-  (await memberGroupPlans(userId)).some((group) => isPaid(group.entitlements));
+export const canShareBirthday = async (userId: string, tx?: DbTransaction): Promise<boolean> =>
+  (await memberGroupPlans(userId, tx)).some((group) => isPaid(group.entitlements));
 
 /** The groups a shared birthday reaches today: the user's paid and lapsed ones. */
 export const getShareGroups = async (userId: string): Promise<ShareGroup[]> =>
@@ -69,8 +73,8 @@ export const getBirthdaySettings = async (userId: string): Promise<BirthdaySetti
   };
 };
 
-export const assertCanShareBirthday = async (userId: string): Promise<void> => {
-  if (await canShareBirthday(userId)) return;
+export const assertCanShareBirthday = async (userId: string, tx?: DbTransaction): Promise<void> => {
+  if (await canShareBirthday(userId, tx)) return;
   throw new AppError({
     code: 402,
     message: "Sharing a birthday requires a group on a paid plan",

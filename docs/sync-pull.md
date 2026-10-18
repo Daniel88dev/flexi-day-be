@@ -27,8 +27,8 @@ to the limiters, are in [`invariants.md`](invariants.md#sync-pull-transport-srcr
 ```
 
 The nine table keys are always present, in that dependency order, so a client can apply a page top
-to bottom. They are the Drizzle export names, pluralised where the schema's is singular: `users` for
-`user`, `vacations` for `vacation`, and `birthdays` for `userBirthdays`. Rows are raw table rows: camelCase column names, timestamps
+to bottom. They follow the Drizzle export names, pluralised where the schema's is singular (`users` for
+`user`, `vacations` for `vacation`), with one exception: `birthdays` carries `userBirthdays`. Rows are raw table rows: camelCase column names, timestamps
 ISO 8601 UTC, dates `YYYY-MM-DD`, no joined summaries and no per-row verdicts. `note` and
 `rejectionReason` ship, because the web shows them to everyone who can see the row.
 

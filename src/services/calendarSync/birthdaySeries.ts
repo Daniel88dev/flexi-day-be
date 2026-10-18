@@ -1,3 +1,4 @@
+import { isLeapYear } from "../birthday/birthdayOccurrence.js";
 import type { BirthdayFeedRecord } from "./types.js";
 
 /** One Graph series a birthday goes out as; `segment` numbers it when there are several. */
@@ -8,8 +9,6 @@ export type GraphBirthdaySeries = {
   month: number;
   dayOfMonth: number;
 };
-
-const isLeapYear = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 
 /**
  * Four `interval: 4` series, one per year of a leap cycle: 29 February in the

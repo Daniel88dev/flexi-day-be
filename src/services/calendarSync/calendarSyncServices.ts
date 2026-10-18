@@ -16,6 +16,7 @@ import { getBirthday } from "../birthday/birthdayServices.js";
 import { liveBirthday, sharedBirthdaysInGroups } from "../birthday/birthdayVisibility.js";
 import { firstBirthdayOnOrAfter } from "../birthday/birthdayOccurrence.js";
 import type { Birthday } from "../birthday/types.js";
+import { getUsersByIds } from "../user/userServices.js";
 import type {
   BirthdayFeedRecord,
   CalendarFeedRecord,
@@ -394,15 +395,7 @@ const birthdayRecords = async (
       : await sharedBirthdaysInGroups(config.userId, groupIds);
   if (birthdays.length === 0) return [];
 
-  const names = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .where(
-      inArray(
-        user.id,
-        birthdays.map((b) => b.userId)
-      )
-    );
+  const names = await getUsersByIds(birthdays.map((b) => b.userId));
   const nameOf = new Map(names.map((row) => [row.id, row.name]));
   return birthdays
     .map((b) => ({

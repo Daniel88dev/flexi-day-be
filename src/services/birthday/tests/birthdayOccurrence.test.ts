@@ -4,7 +4,7 @@ import { birthdayOccurrence } from "../birthdayOccurrence.js";
 const window = (startDate: string, endDate: string) => ({ startDate, endDate });
 
 describe("birthdayOccurrence", () => {
-  it("lands 29 February 1990 on 28 February 2027, age 37 (spec 6.4 vector)", () => {
+  it("lands 29 February 1990 on 28 February 2027, age 37", () => {
     expect(
       birthdayOccurrence({ month: 2, day: 29, year: 1990 }, window("2027-01-01", "2028-01-01"))
     ).toEqual({ date: "2027-02-28", age: 37 });
