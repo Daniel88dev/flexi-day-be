@@ -15,6 +15,7 @@ import {
   getQuotasForScope,
   getReportScopeEntries,
 } from "../../services/report/reportServices.js";
+import { resolveVacationViewer } from "../../services/vacation/vacationPermissions.js";
 import { getUserById } from "../../services/user/userServices.js";
 
 /**
@@ -31,6 +32,10 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
   const { year } = validateMemberReportQuery.parse(req.query);
 
   const scope = await getReportScopeEntries(auth.userId);
+  const viewer = await resolveVacationViewer(
+    auth.userId,
+    scope.map((entry) => entry.groupId)
+  );
   const isSelf = targetUserId === auth.userId;
 
   // Looking at someone else is only possible through a group the caller can
@@ -54,10 +59,10 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
 
   const [member, monthly, usage, quotas, bookings, changes, policies] = await Promise.all([
     getUserById(targetUserId),
-    aggregateUsageByUserMonth(scope, auth.userId, year, filters),
-    aggregateUsageSplit(scope, auth.userId, year, filters),
+    aggregateUsageByUserMonth(scope, viewer, year, filters),
+    aggregateUsageSplit(scope, viewer, year, filters),
     getQuotasForScope(scope, auth.userId, year, filters),
-    getBookingsForScope(scope, auth.userId, year, filters),
+    getBookingsForScope(scope, viewer, year, filters),
     getMemberChanges(targetUserId, sharedGroupIds, year),
     getGroupAllowancePolicies(sharedGroupIds),
   ]);

@@ -445,6 +445,17 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
 - **Every read of another person's row goes through `viewVacationRowAs`.** Today that is
   `GET /api/vacation/:id`, `GET /api/vacation?groupId=` and `GET /api/vacation/calendar`.
   `privateDetails.e2e.test.ts` fails if any of them hands a teammate Sick or a private field.
+- **Reports and the export go through `viewReportRowAs` instead.** It applies the same privileged
+  reader rule but leaves a teammate's Sick out rather than showing Away, because Away means nothing
+  as a usage line. `getBookingsForScope`, `aggregateUsageByUserMonth` and `aggregateUsageSplit`
+  take a `VacationViewer`, not a caller id, so none of them can skip it. Bookings pass through it
+  before `collapseBookings`, so a teammate's run is built only from days the viewer may see, and
+  the export's `rowCount` counts what is exported. A mixed export is decided per row by
+  the row's own group; the Note column stays and is blank on a teammate's rows.
+  `reportPrivateDetails.e2e.test.ts` fails if the overview, member report or either sheet hands a
+  teammate Sick, a note or a rejected row.
+- **`/api/reports/scope` years are not redacted.** A year holding only a teammate's Sick or
+  rejected row still appears in `years`; it says the year has data, never what.
 
 ## Employment roster (`employments`, `src/services/employment/`)
 

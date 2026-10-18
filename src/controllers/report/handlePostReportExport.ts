@@ -17,6 +17,7 @@ import {
   getScopeMembers,
   recordReportExport,
 } from "../../services/report/reportServices.js";
+import { resolveVacationViewer } from "../../services/vacation/vacationPermissions.js";
 import { getUsersByIds } from "../../services/user/userServices.js";
 
 // Guards against a filter-free export over a large tenant turning into an
@@ -35,6 +36,10 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   const data: ValidatedExportRequest = req.body;
 
   const scope = await getReportScopeEntries(auth.userId);
+  const viewer = await resolveVacationViewer(
+    auth.userId,
+    scope.map((entry) => entry.groupId)
+  );
   // An unfiltered export still narrows to the exportable types, so bank
   // holiday rows never reach the workbook — the validator already rejects
   // them as an explicit filter.
@@ -42,8 +47,8 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   const filters = { groupIds: data.groupIds, userIds: data.userIds, types };
 
   const [bookings, usage, quotas, allMembers, policies] = await Promise.all([
-    getBookingsForScope(scope, auth.userId, data.year, filters, MAX_EXPORT_BOOKINGS + 1),
-    aggregateUsageSplit(scope, auth.userId, data.year, filters),
+    getBookingsForScope(scope, viewer, data.year, filters, MAX_EXPORT_BOOKINGS + 1),
+    aggregateUsageSplit(scope, viewer, data.year, filters),
     getQuotasForScope(scope, auth.userId, data.year, {
       groupIds: data.groupIds,
       userIds: data.userIds,

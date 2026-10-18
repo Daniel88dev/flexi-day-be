@@ -35,8 +35,10 @@ const PRIVATE_FIELDS = [
   "deletedByUser",
 ] as const;
 
-export const isPrivilegedReader = (viewer: VacationViewer, row: RedactableRow): boolean =>
-  row.userId === viewer.userId || viewer.privilegedGroupIds.has(row.groupId);
+export const isPrivilegedReader = (
+  viewer: VacationViewer,
+  row: Pick<RedactableRow, "userId" | "groupId">
+): boolean => row.userId === viewer.userId || viewer.privilegedGroupIds.has(row.groupId);
 
 /**
  * The row as this viewer may see it, or null when it must not reach them at
@@ -59,4 +61,23 @@ export const viewVacationRowAs = <T extends RedactableRow>(
     vacationType:
       row.vacationType === CalendarRecordType.Sick ? AWAY_RECORD_TYPE : row.vacationType,
   };
+};
+
+type ReportRow = {
+  userId: string;
+  groupId: string;
+  vacationType: CalendarRecordType;
+  rejectedAt?: Date | null;
+  note?: string | null;
+};
+
+/**
+ * The report and export form of {@link viewVacationRowAs}. A teammate's Sick
+ * is left out rather than shown as Away, because Away means nothing as a
+ * usage line. Takes per-day rows and grouped usage rows alike.
+ */
+export const viewReportRowAs = <T extends ReportRow>(viewer: VacationViewer, row: T): T | null => {
+  if (isPrivilegedReader(viewer, row)) return row;
+  if (row.vacationType === CalendarRecordType.Sick || row.rejectedAt != null) return null;
+  return "note" in row ? { ...row, note: null } : row;
 };

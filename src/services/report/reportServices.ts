@@ -17,6 +17,7 @@ import {
   getMemberYearAllocation,
   totalAllowance,
 } from "../userYearQuotas/yearAllocation.js";
+import { viewReportRowAs, type VacationViewer } from "../vacation/redaction.js";
 import { buildScopePredicate, widenReportScope } from "./reportScope.js";
 import { collapseBookings, type BookingRow } from "./collapseBookings.js";
 import type {
@@ -221,14 +222,14 @@ const usageWhere = (
   return and(...clauses);
 };
 
-/** Per member, group, month and record type — the series behind the charts and the table. */
+/** Per member, group, month and record type: the series behind the charts and the table. */
 export const aggregateUsageByUserMonth = async (
   scope: ReportScopeEntry[],
-  callerId: string,
+  viewer: VacationViewer,
   year: number,
   filters: UsageFilters = {}
 ): Promise<MonthlyUsageRow[]> => {
-  const where = usageWhere(scope, callerId, year, filters);
+  const where = usageWhere(scope, viewer.userId, year, filters);
   if (!where) return [];
 
   const month = sql<number>`EXTRACT(MONTH FROM ${vacation.requestedDay})::int`;
@@ -246,14 +247,16 @@ export const aggregateUsageByUserMonth = async (
     .where(where)
     .groupBy(vacation.userId, vacation.groupId, month, vacation.vacationType);
 
-  return rows.map((row) => ({
-    userId: row.userId,
-    groupId: row.groupId,
-    month: Number(row.month),
-    vacationType: row.vacationType,
-    used: Number(row.used),
-    pending: Number(row.pending),
-  }));
+  return rows
+    .flatMap((row) => viewReportRowAs(viewer, row) ?? [])
+    .map((row) => ({
+      userId: row.userId,
+      groupId: row.groupId,
+      month: Number(row.month),
+      vacationType: row.vacationType,
+      used: Number(row.used),
+      pending: Number(row.pending),
+    }));
 };
 
 /**
@@ -263,13 +266,13 @@ export const aggregateUsageByUserMonth = async (
  */
 export const aggregateUsageSplit = async (
   scope: ReportScopeEntry[],
-  callerId: string,
+  viewer: VacationViewer,
   year: number,
   filters: UsageFilters = {}
 ): Promise<
   (ReportUsageSplit & { userId: string; groupId: string; vacationType: CalendarRecordType })[]
 > => {
-  const where = usageWhere(scope, callerId, year, filters);
+  const where = usageWhere(scope, viewer.userId, year, filters);
   if (!where) return [];
 
   const rows = await db
@@ -289,14 +292,16 @@ export const aggregateUsageSplit = async (
     .where(where)
     .groupBy(vacation.userId, vacation.groupId, vacation.vacationType);
 
-  return rows.map((row) => ({
-    userId: row.userId,
-    groupId: row.groupId,
-    vacationType: row.vacationType,
-    usedToDate: Number(row.usedToDate),
-    plannedRemaining: Number(row.plannedRemaining),
-    pending: Number(row.pending),
-  }));
+  return rows
+    .flatMap((row) => viewReportRowAs(viewer, row) ?? [])
+    .map((row) => ({
+      userId: row.userId,
+      groupId: row.groupId,
+      vacationType: row.vacationType,
+      usedToDate: Number(row.usedToDate),
+      plannedRemaining: Number(row.plannedRemaining),
+      pending: Number(row.pending),
+    }));
 };
 
 export const getQuotasForScope = async (
@@ -323,15 +328,19 @@ export const getQuotasForScope = async (
   return rows;
 };
 
-/** Collapsed bookings in scope, ordered so `collapseBookings` can run in one pass. */
+/**
+ * Collapsed bookings in scope, ordered so `collapseBookings` can run in one
+ * pass. Rows are passed through `viewReportRowAs` before collapsing, so a
+ * teammate's run is built only from the days the viewer may see.
+ */
 export const getBookingsForScope = async (
   scope: ReportScopeEntry[],
-  callerId: string,
+  viewer: VacationViewer,
   year: number,
   filters: UsageFilters = {},
   limit?: number
 ): Promise<ReportBooking[]> => {
-  const where = usageWhere(scope, callerId, year, filters);
+  const where = usageWhere(scope, viewer.userId, year, filters);
   if (!where) return [];
 
   const query = db
@@ -364,7 +373,7 @@ export const getBookingsForScope = async (
 
   const rows: BookingRow[] = await (limit === undefined ? query : query.limit(limit));
 
-  return collapseBookings(rows);
+  return collapseBookings(rows.flatMap((row) => viewReportRowAs(viewer, row) ?? []));
 };
 
 /**

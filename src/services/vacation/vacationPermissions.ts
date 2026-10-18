@@ -89,7 +89,7 @@ export const resolvePrivilegedGroupIds = async (
   return privileged;
 };
 
-/** The viewer `viewVacationRowAs` takes, for rows from any of `groupIds`. */
+/** The viewer `viewVacationRowAs` and `viewReportRowAs` take, for rows from any of `groupIds`. */
 export const resolveVacationViewer = async (
   userId: string,
   groupIds: string[],
