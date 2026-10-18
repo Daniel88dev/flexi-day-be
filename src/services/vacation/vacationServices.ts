@@ -884,13 +884,14 @@ export const listExcusingAbsencesForUsers = async (
   fromIsoInclusive: DateString,
   toIsoInclusive: DateString,
   tx?: DbTransaction
-): Promise<(ExcusingAbsence & { userId: string })[]> => {
+): Promise<ExcusingAbsence[]> => {
   if (userIds.length === 0 || groupIds.length === 0) return [];
 
   return (tx ?? db)
     .select({
       userId: vacation.userId,
       requestedDay: vacation.requestedDay,
+      groupId: vacation.groupId,
       vacationType: vacation.vacationType,
       halfDay: vacation.halfDay,
     })

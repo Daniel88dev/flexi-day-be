@@ -70,6 +70,7 @@ export const getTeamAttendance = async (
   const exclusionsByUser = await getAttendanceExclusionsForPeople(
     {
       organizationId,
+      viewerUserId,
       people: employments.map((employment) => ({
         userId: employment.userId,
         employment,

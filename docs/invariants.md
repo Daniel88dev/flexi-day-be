@@ -476,6 +476,14 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   the row's own group; the Note column stays and is blank on a teammate's rows.
   `reportPrivateDetails.e2e.test.ts` fails if the overview, member report or either sheet hands a
   teammate Sick, a note or a rejected row.
+- **Team attendance labels absences as the caller.** `getAttendanceExclusionsForPeople` reads a
+  person's approved absences from every group of the organization and resolves the caller's viewer
+  over those absences' own groups, so a group admin who sees the person through one group gets
+  `AWAY` for a `SICK` booked in another. The excluded day itself stays, because the balance
+  depends on it. Only the type leaves, so it goes through `viewRecordTypeAs` rather than
+  `viewVacationRowAs`. The builder takes the caller's id, not a `VacationViewer`, because the
+  groups to resolve are known only once the absences are read. `attendanceSickRedaction.e2e.test.ts` fails if `GET /api/attendance/team` hands
+  an admin of another group the real `SICK`.
 - **`/api/reports/scope` years are not redacted.** A year holding only a teammate's Sick or
   rejected row still appears in `years`; it says the year has data, never what.
 

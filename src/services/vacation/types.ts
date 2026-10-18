@@ -21,7 +21,9 @@ export const EXCUSING_RECORD_TYPES = [
 
 /** One person's excusing absence on one date. */
 export type ExcusingAbsence = {
+  userId: string;
   requestedDay: DateString;
+  groupId: string;
   vacationType: CalendarRecordType;
   halfDay: boolean;
 };

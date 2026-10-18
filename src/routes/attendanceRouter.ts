@@ -329,6 +329,11 @@ export const attendanceRouter = (): Router => {
    *           and `changedAfterDay` whether one on it was changed by its own
    *           user after the day and not yet corrected or checked by an admin.
    *           The session behind it comes from `/api/attendance/day`.
+   *           An `ABSENCE` exclusion's `label` is `AWAY` in place of `SICK`
+   *           when the caller is neither an approver nor a group admin of the
+   *           absence's own group, which may be a group other than the one the
+   *           caller sees the person through. The day stays excluded either
+   *           way, and every other type is labelled as itself.
    *           An entry of `inNow` is `{ employmentId, userId, sessionId,
    *           businessDate, startedAt, onBreak, breakStartedAt }`.
    *       '403':
