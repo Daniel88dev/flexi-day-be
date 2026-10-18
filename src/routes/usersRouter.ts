@@ -137,6 +137,17 @@ export const usersRouter = (): Router => {
    *       without that access they count only the caller.
    *     security:
    *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: today
+   *         required: false
+   *         schema:
+   *           type: string
+   *           format: date
+   *         description: |
+   *           The caller's own calendar day. Out today, working today and the
+   *           14-day upcoming window count from it. Defaults to the server's
+   *           UTC date.
    *     responses:
    *       '200':
    *         description: Stat-card counts
@@ -160,6 +171,8 @@ export const usersRouter = (): Router => {
    *                 teamSize:
    *                   type: integer
    *                   description: Distinct live members counted.
+   *       '400':
+   *         description: "`today` is not a real YYYY-MM-DD date"
    *       '401':
    *         description: Not authenticated
    */

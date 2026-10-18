@@ -22,13 +22,19 @@ describe("Dashboard summary counts follow the caller's View access", () => {
   let viewer: { id: string };
   let member: { id: string };
 
-  const summaryFor = async (userId: string) =>
+  const summaryFor = async (userId: string, query: Record<string, string> = {}) =>
     (
       await request(server.url)
         .get("/api/users/me/dashboard-summary")
+        .query(query)
         .set("Cookie", await authCookieFor(userId))
         .expect(200)
-    ).body as { outTodayCount: number; upcomingNext14DaysCount: number; teamSize: number };
+    ).body as {
+      outTodayCount: number;
+      workingTodayCount: number;
+      upcomingNext14DaysCount: number;
+      teamSize: number;
+    };
 
   beforeAll(async () => {
     await resetReportData();
@@ -46,6 +52,11 @@ describe("Dashboard summary counts follow the caller's View access", () => {
     await addLeave(groupId, teammate.id, isoDay(0));
     await addLeave(groupId, teammate.id, isoDay(3));
     await addLeave(groupId, member.id, isoDay(5));
+
+    await addLeave(groupId, teammate.id, "2030-03-14");
+    await addLeave(groupId, member.id, "2030-03-14");
+    await addLeave(groupId, teammate.id, "2030-03-27");
+    await addLeave(groupId, teammate.id, "2030-03-28");
   });
 
   afterAll(async () => {
@@ -68,4 +79,24 @@ describe("Dashboard summary counts follow the caller's View access", () => {
       teamSize: 1,
     });
   });
+
+  it("counts out today and the next 14 days from the caller's day", async () => {
+    expect(await summaryFor(viewer.id, { today: "2030-03-14" })).toMatchObject({
+      outTodayCount: 2,
+      workingTodayCount: 1,
+      upcomingNext14DaysCount: 3,
+      teamSize: 3,
+    });
+  });
+
+  it.each(["2030-02-30", "14.03.2030", "2030-3-14", ""])(
+    "refuses %j as the caller's day with a 400",
+    async (today) => {
+      await request(server.url)
+        .get("/api/users/me/dashboard-summary")
+        .query({ today })
+        .set("Cookie", await authCookieFor(viewer.id))
+        .expect(400);
+    }
+  );
 });
