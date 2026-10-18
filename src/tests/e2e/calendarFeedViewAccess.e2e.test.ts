@@ -123,7 +123,7 @@ describe("Team feeds honour the owner's View access", () => {
   it("carries the group's records while the owner's View is on", async () => {
     const body = await fetchFeed(teamFeedToken);
     expect(body).toContain(`UID:${teammateVacationId}@flexiday`);
-    expect(body).toContain(PRIVATE_NOTE);
+    expect(body).not.toContain(PRIVATE_NOTE);
     expect(body).toContain(`UID:bd-${teammate.id}@flexiday`);
     expect(body).toContain(`UID:${ownerVacationId}@flexiday`);
     expect(body).toContain(`UID:ge-${groupEventId}@flexiday`);

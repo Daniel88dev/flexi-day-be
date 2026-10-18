@@ -24,6 +24,7 @@ import { GROUP_EVENT_READ_LIMIT } from "../groupEvent/types.js";
 import { getScopeEntries } from "../report/reportServices.js";
 import { buildScopePredicate } from "../report/reportScope.js";
 import type { ReportScopeEntry } from "../report/types.js";
+import { teammateViewer, viewVacationRowAs } from "../vacation/redaction.js";
 import type {
   BirthdayFeedRecord,
   CalendarFeedRecord,
@@ -349,7 +350,9 @@ const feedWindowStart = (): string => {
 /**
  * The approved, non-deleted time-off records in the feed's window, of the
  * owner on a personal feed. On a team feed, every member's in the groups the
- * owner sees in full, and only the owner's own in the rest.
+ * owner sees in full, and only the owner's own in the rest. Everyone else's
+ * rows get the teammate view whoever owns the feed, so a Sick toggle carries
+ * them as Away and no note of theirs leaves.
  */
 const vacationRecords = async (
   config: CalendarSyncFull,
@@ -388,13 +391,21 @@ const vacationRecords = async (
       startTime: vacation.startTime,
       endTime: vacation.endTime,
       note: vacation.note,
+      rejectedAt: vacation.rejectedAt,
+      deletedAt: vacation.deletedAt,
     })
     .from(vacation)
     .innerJoin(user, eq(vacation.userId, user.id))
     .where(and(...filters))
     .orderBy(vacation.requestedDay);
 
-  return rows.map((row) => ({ kind: "vacation", ...row }));
+  const viewer = teammateViewer(config.userId);
+  return rows.flatMap((row) => {
+    const seen = viewVacationRowAs(viewer, row);
+    if (seen === null) return [];
+    const { rejectedAt: _rejectedAt, deletedAt: _deletedAt, ...record } = seen;
+    return [{ kind: "vacation" as const, ...record }];
+  });
 };
 
 /**
