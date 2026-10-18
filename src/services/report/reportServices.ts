@@ -93,14 +93,18 @@ export const getScopeEntries = async (
  * administered group in full. Gates the report and every read of a whole group
  * by id: the list, the calendar, birthdays and the dashboard default.
  */
-export const getReportScopeEntries = async (userId: string): Promise<ReportScopeEntry[]> => {
+export const getReportScopeEntries = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<ReportScopeEntry[]> => {
   const [memberships, administrableGroupIds] = await Promise.all([
-    getScopeEntries(userId),
-    getAdministrableGroupIds(userId),
+    getScopeEntries(userId, {}, tx),
+    getAdministrableGroupIds(userId, undefined, tx),
   ]);
-  const liveGroups = await getAllGroups([
-    ...new Set([...memberships.map((entry) => entry.groupId), ...administrableGroupIds]),
-  ]);
+  const liveGroups = await getAllGroups(
+    [...new Set([...memberships.map((entry) => entry.groupId), ...administrableGroupIds])],
+    tx
+  );
   return widenReportScope(memberships, administrableGroupIds, liveGroups);
 };
 

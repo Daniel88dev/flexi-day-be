@@ -5,11 +5,15 @@ const {
   mockGetGroupUser,
   mockResolveGroupAdmin,
   mockMayDecideOwn,
+  mockGetProjectingMirrorTargetGroupIds,
+  mockGetReportScopeEntries,
 } = vi.hoisted(() => ({
   mockGetGroupsWhereUserCanApprove: vi.fn(),
   mockGetGroupUser: vi.fn(),
   mockResolveGroupAdmin: vi.fn(),
   mockMayDecideOwn: vi.fn(),
+  mockGetProjectingMirrorTargetGroupIds: vi.fn(),
+  mockGetReportScopeEntries: vi.fn(),
 }));
 
 vi.mock("../../group/groupServices.js", () => ({
@@ -26,6 +30,14 @@ vi.mock("../../groupUser/groupAccess.js", () => ({
 
 vi.mock("../decisionGuards.js", () => ({
   mayDecideOwn: mockMayDecideOwn,
+}));
+
+vi.mock("../../groupMirror/groupMirrorServices.js", () => ({
+  getProjectingMirrorTargetGroupIds: mockGetProjectingMirrorTargetGroupIds,
+}));
+
+vi.mock("../../report/reportServices.js", () => ({
+  getReportScopeEntries: mockGetReportScopeEntries,
 }));
 
 import {
@@ -57,6 +69,8 @@ describe("vacationPermissions", () => {
     mockGetGroupUser.mockResolvedValue(null);
     mockResolveGroupAdmin.mockResolvedValue({ canAdmin: false, viaOrgAdmin: false });
     mockMayDecideOwn.mockResolvedValue(false);
+    mockGetProjectingMirrorTargetGroupIds.mockResolvedValue([]);
+    mockGetReportScopeEntries.mockResolvedValue([]);
   });
 
   describe("resolveVacationPermissions", () => {
@@ -80,6 +94,63 @@ describe("vacationPermissions", () => {
       const permissions = await resolveVacationPermissions("someone_else", stampless);
 
       expect(permissions.canEdit).toBe(true);
+    });
+  });
+
+  describe("a row mirrored into another group", () => {
+    const targetGroupId = "550e8400-e29b-41d4-a716-446655440010";
+    const scopeEntry = (access: "all" | "self") => ({
+      groupId: targetGroupId,
+      groupName: "Target",
+      access,
+      canEditQuotas: false,
+    });
+
+    it("may be seen, and nothing more, by someone who sees the target group in full", async () => {
+      mockGetProjectingMirrorTargetGroupIds.mockResolvedValue([targetGroupId]);
+      mockGetReportScopeEntries.mockResolvedValue([scopeEntry("all")]);
+
+      const permissions = await resolveVacationPermissions("someone_else", liveRow);
+
+      expect(mockGetProjectingMirrorTargetGroupIds).toHaveBeenCalledWith(
+        userId,
+        groupId,
+        undefined
+      );
+      expect(permissions).toEqual({
+        canView: true,
+        canApprove: false,
+        canCancel: false,
+        canEdit: false,
+        canReadPrivateDetails: false,
+        canViewAttachments: false,
+        canAttach: false,
+        canDeleteAnyAttachment: false,
+      });
+    });
+
+    it("stays hidden from someone who sees only their own rows in the target group", async () => {
+      mockGetProjectingMirrorTargetGroupIds.mockResolvedValue([targetGroupId]);
+      mockGetReportScopeEntries.mockResolvedValue([scopeEntry("self")]);
+
+      const permissions = await resolveVacationPermissions("someone_else", liveRow);
+
+      expect(permissions.canView).toBe(false);
+    });
+
+    it("skips the scope lookup when no mirror projects the row", async () => {
+      const permissions = await resolveVacationPermissions("someone_else", liveRow);
+
+      expect(permissions.canView).toBe(false);
+      expect(mockGetReportScopeEntries).not.toHaveBeenCalled();
+    });
+
+    it("skips the mirror lookup for a caller with standing in the row's own group", async () => {
+      mockGetGroupUser.mockResolvedValue({ viewAccess: true, adminAccess: false });
+
+      await resolveVacationPermissions("someone_else", liveRow);
+
+      expect(mockGetProjectingMirrorTargetGroupIds).not.toHaveBeenCalled();
     });
   });
 
