@@ -22,8 +22,9 @@ with invite, and is not this flow.
 
 The password is checked with better-auth's own hasher against the stored credential hash. A
 password user always needs the password, however new the session. 24 hours is better-auth's default
-fresh-session age, which this config does not change. A refused attempt is a signed-in request,
-so `apiLimiter` bounds it (see the Rate limiting section of [`invariants.md`](invariants.md)).
+fresh-session age, which this config does not change. Every refused attempt spends
+`credentialsLimiter`'s failures-only budget, the one sign-in uses, and a 204 never does (see the
+Rate limiting section of [`invariants.md`](invariants.md)).
 There is no email step and no second factor beyond what sign-in already asked for.
 
 ## Blockers

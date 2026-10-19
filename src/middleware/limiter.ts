@@ -142,12 +142,13 @@ export const otpSendLimiter = rateLimit({
 });
 
 /**
- * The auth endpoints where a wrong guess is the point, shared with
- * `server.ts` and pinned by a guard test: every path here fails with 4xx on a
- * bad guess, so the failures-only `credentialsLimiter` covers it. The
- * two-factor prefix is deliberate breadth — verify-* are a 6-digit guessing
- * surface, and enable/disable/get-totp-uri/generate-backup-codes are password
- * oracles a stolen session cookie must not get to brute-force.
+ * The auth endpoints where a wrong guess is the point, plus our own routes
+ * that check a password, shared with `server.ts` and pinned by a guard test:
+ * every path here fails with 4xx on a bad guess, so the failures-only
+ * `credentialsLimiter` covers it. The two-factor prefix is deliberate
+ * breadth — verify-* are a 6-digit guessing surface, and
+ * enable/disable/get-totp-uri/generate-backup-codes are password oracles a
+ * stolen session cookie must not get to brute-force.
  */
 export const CREDENTIAL_GUESSING_PATHS = [
   "/api/auth/sign-in",
@@ -161,6 +162,8 @@ export const CREDENTIAL_GUESSING_PATHS = [
   // The invite link endpoints are public or near enough, and an unknown
   // secret answers 404, so a prober burns this budget like a password guesser.
   "/api/auth/invite",
+  // Prefix matching is per segment, so `GET /api/users/me/deletion` stays outside.
+  "/api/users/me/delete",
 ];
 
 /**
