@@ -612,6 +612,7 @@ export const getVacationById = async (
 
 export type PendingApprovalRow = {
   vacationId: string;
+  requestId: string;
   userId: string;
   userName: string;
   groupId: string;
@@ -625,9 +626,9 @@ export type PendingApprovalRow = {
 /**
  * Returns pending (not yet approved, not rejected, not deleted) vacation rows
  * for groups where the caller may approve — as manager / main approver / temp
- * approver, or through the `approverAccess` membership flag. Rows are ordered
- * by user/group/day so the caller can collapse contiguous ranges into single
- * approval entries. The caller's own requests appear only where the decision
+ * approver, or through the `approverAccess` membership flag. The row order
+ * sets the order of the items `collapsePendingApprovals` builds from them; it
+ * does not decide which rows share an item. The caller's own requests appear only where the decision
  * endpoints would accept them (see `mayDecideOwn`).
  */
 export const getPendingApprovalsForApprover = async (
@@ -651,6 +652,7 @@ export const getPendingApprovalsForApprover = async (
   return db
     .select({
       vacationId: vacation.id,
+      requestId: vacation.requestId,
       userId: vacation.userId,
       userName: user.name,
       groupId: vacation.groupId,
@@ -701,14 +703,15 @@ export type OwnPendingRow = PendingApprovalRow &
   Pick<VacationType, "deletedAt" | "approvedAt" | "rejectedAt">;
 
 /**
- * The requester's own pending rows in live groups, ordered as
- * `collapsePendingApprovals` requires. Includes rows the requester may decide
+ * The requester's own pending rows in live groups. The row order sets the order
+ * of the items `collapsePendingApprovals` builds from them. Includes rows the requester may decide
  * themselves; the caller filters those out.
  */
 export const getPendingRequestsForRequester = async (userId: string): Promise<OwnPendingRow[]> =>
   db
     .select({
       vacationId: vacation.id,
+      requestId: vacation.requestId,
       userId: vacation.userId,
       userName: user.name,
       groupId: vacation.groupId,

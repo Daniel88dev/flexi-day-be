@@ -29,36 +29,11 @@ export const formatDay = (isoDay: DateString): string =>
 // cannot disagree about the year on a server that is not on UTC.
 export const currentYear = (): number => new Date().getUTCFullYear();
 
-// Returns true when the supplied UTC date is a working day (Mon-Fri).
-export const isBusinessDay = (date: Date): boolean => {
-  const day = date.getUTCDay();
-  return day !== 0 && day !== 6;
-};
-
 // True when the ISO date is one of `workingDays` (JS `Date.getUTCDay()` numbers, 0=Sun … 6=Sat).
 export const isWorkingDay = (iso: DateString, workingDays: number[]): boolean => {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return false;
   return workingDays.includes(date.getUTCDay());
-};
-
-/**
- * Counts the number of business days (Mon-Fri) between two inclusive ISO
- * dates. Returns 0 when end < start.
- */
-export const countBusinessDaysInclusive = (from: DateString, to: DateString): number => {
-  const start = new Date(`${from}T00:00:00Z`);
-  const end = new Date(`${to}T00:00:00Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
-  if (end.getTime() < start.getTime()) return 0;
-
-  let count = 0;
-  const cursor = new Date(start.getTime());
-  while (cursor.getTime() <= end.getTime()) {
-    if (isBusinessDay(cursor)) count++;
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-  return count;
 };
 
 /**
