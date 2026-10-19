@@ -224,6 +224,62 @@ describe("Vacation decision routes E2E", () => {
       }
     });
 
+    it("stores the approver's note on every approval event of the batch", async () => {
+      await request(server.url)
+        .post("/api/vacation/approve")
+        .set("Cookie", approverCookie)
+        .send({ ids, reason: "enjoy the break" })
+        .expect(200);
+
+      for (const id of ids) {
+        const events = await eventsFor(id);
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+          eventType: vacationEventType.Approved,
+          reason: "enjoy the break",
+        });
+      }
+
+      const detail = await request(server.url)
+        .get(`/api/vacation/${ids[0] ?? ""}`)
+        .set("Cookie", approverCookie)
+        .expect(200);
+      const { history } = detail.body as {
+        history: { eventType: string; reason: string | null }[];
+      };
+      expect(history).toContainEqual(
+        expect.objectContaining({
+          eventType: vacationEventType.Approved,
+          reason: "enjoy the break",
+        })
+      );
+    });
+
+    it("records a null reason when the note is empty", async () => {
+      await request(server.url)
+        .post("/api/vacation/approve")
+        .set("Cookie", approverCookie)
+        .send({ ids, reason: "" })
+        .expect(200);
+
+      for (const id of ids) {
+        const events = await eventsFor(id);
+        expect(events[0]).toMatchObject({ eventType: vacationEventType.Approved, reason: null });
+      }
+    });
+
+    it("returns 422 for a note longer than 1000 characters", async () => {
+      await request(server.url)
+        .post("/api/vacation/approve")
+        .set("Cookie", approverCookie)
+        .send({ ids, reason: "x".repeat(1001) })
+        .expect(422);
+
+      for (const id of ids) {
+        expect((await rowFor(id))?.approvedAt).toBeNull();
+      }
+    });
+
     it("approves a batch carrying exactly one id", async () => {
       const id = ids[0] ?? "";
 

@@ -272,8 +272,9 @@ export const approveRequest = async (params: {
 export const approveRequestBatch = async (params: {
   auth: AuthSession;
   vacationIds: string[];
+  reason: string | null;
 }): Promise<VacationType[]> => {
-  const { auth } = params;
+  const { auth, reason } = params;
   const vacationIds = Array.from(new Set(params.vacationIds));
 
   const { changed } = await runTransition({
@@ -284,7 +285,7 @@ export const approveRequestBatch = async (params: {
     assertWithinQuota: assertApprovalWithinQuota,
     mutate: (tx) => approveVacationsBulk(vacationIds, auth.userId, tx),
     lostRace: someAlreadyDecided(auth, vacationIds),
-    appendEvents: appendEventsInOneInsert(auth, vacationEventType.Approved, null),
+    appendEvents: appendEventsInOneInsert(auth, vacationEventType.Approved, reason),
     notify: notifyDecision(auth, "approved", null),
   });
 
