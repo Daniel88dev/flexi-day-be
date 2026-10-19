@@ -641,9 +641,9 @@ export const usersRouter = (): Router => {
    *       with the refresh token read before the transaction; a link without
    *       one, or a revoke Apple refuses, is logged and does not fail the
    *       request either. Every session ends, web and Native, so the old
-   *       cookie answers 401 afterwards. A wrong password counts toward the
-   *       API's failure rate limit. The full policy is in
-   *       `docs/account-deletion.md`.
+   *       cookie answers 401 afterwards. Every refusal, a wrong password
+   *       included, spends the same failures-only rate limit as sign-in. The
+   *       full policy is in `docs/account-deletion.md`.
    *
    *       Blockers are checked again inside the deleting transaction, under
    *       the same organization locks a join takes, so someone joining in
@@ -723,6 +723,8 @@ export const usersRouter = (): Router => {
    *                               $ref: '#/components/schemas/DeletionBlocker'
    *       '422':
    *         description: The body failed validation (a `password` that is not a string)
+   *       '429':
+   *         description: Too many failed attempts from this address
    */
   app.post(
     "/me/delete",

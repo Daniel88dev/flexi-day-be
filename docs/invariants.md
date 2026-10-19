@@ -280,16 +280,16 @@ read-only) to debug customer reports.
 Several limiters, not one, because a single per-IP bucket both throttles real users and
 under-protects the endpoints that matter:
 
-| Limiter                | Mounted on                                                    | Key                            | Budget                   |
-| ---------------------- | ------------------------------------------------------------- | ------------------------------ | ------------------------ |
-| `floodLimiter`         | everything                                                    | IP                             | 5000 / 5 min             |
-| `apiFailureLimiter`    | `/api` (before session validation), unvalidated requests only | IP                             | 100 **failures** / 5 min |
-| `apiLimiter`           | `/api` (after the auth and dev routes)                        | validated user id, IP fallback | 1000 / 5 min             |
-| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link | IP                             | 20 **failures** / 15 min |
-| `passwordResetLimiter` | `request-password-reset`                                      | IP                             | 5 / 15 min               |
-| `otpSendLimiter`       | `two-factor/send-otp`                                         | challenge cookie, IP fallback  | 10 / 15 min              |
-| `calendarFeedLimiter`  | `/calendars/:token.ics`                                       | feed token                     | 120 / hour               |
-| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed`          | IP                             | 5000 / 5 min             |
+| Limiter                | Mounted on                                                                       | Key                            | Budget                   |
+| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------ | ------------------------ |
+| `floodLimiter`         | everything                                                                       | IP                             | 5000 / 5 min             |
+| `apiFailureLimiter`    | `/api` (before session validation), unvalidated requests only                    | IP                             | 100 **failures** / 5 min |
+| `apiLimiter`           | `/api` (after the auth and dev routes)                                           | validated user id, IP fallback | 1000 / 5 min             |
+| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link / account deletion | IP                             | 20 **failures** / 15 min |
+| `passwordResetLimiter` | `request-password-reset`                                                         | IP                             | 5 / 15 min               |
+| `otpSendLimiter`       | `two-factor/send-otp`                                                            | challenge cookie, IP fallback  | 10 / 15 min              |
+| `calendarFeedLimiter`  | `/calendars/:token.ics`                                                          | feed token                     | 120 / hour               |
+| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed`                             | IP                             | 5000 / 5 min             |
 
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs
@@ -311,6 +311,12 @@ under-protects the endpoints that matter:
   never pools — and the phone needs nothing of its own for that, because the expo client forwards
   its cookie jar as a `Cookie` header exactly as a browser does
   (`src/tests/e2e/nativeSession.e2e.test.ts`, "keys a native request on the cookie it carries").
+- **`credentialsLimiter` covers `POST /api/users/me/delete`.** It checks the current password
+  behind a session, the same kind of oracle as `/two-factor/disable`, and lives in our own users
+  router, where neither better-auth's limiter nor a per-IP failure budget sees a signed-in request.
+  Without this entry the only bound would be `apiLimiter`'s 1000 requests per user. Every 4xx it
+  answers counts, as on the invite endpoints; a 204 does not. Prefix matching is per segment, so
+  `GET /api/users/me/deletion` stays outside.
 - **`passwordResetLimiter` exists because `credentialsLimiter` cannot cover that route.** Asking
   for a reset answers 200 for every input on purpose (it must reveal nothing about which addresses
   exist), and `credentialsLimiter` counts only failures — so nothing would ever increment. What
