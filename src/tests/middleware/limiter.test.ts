@@ -157,6 +157,57 @@ describe("apiFailureLimiter", () => {
     expect(statuses.slice(0, 100).every((s) => s === 401)).toBe(true);
     expect(statuses.at(-1)).toBe(429);
   });
+
+  const failureApp = (userId: string) =>
+    appWith((a) => {
+      a.use("/api", apiFailureLimiter, fakeAuthSession("session=real", userId));
+      a.get("/api/forbidden", (_, res) => res.status(403).json({ error: "Forbidden" }));
+      a.get("/api/missing", (_, res) => res.status(404).json({ error: "Not found" }));
+      a.get("/api/conflict", (_, res) => res.status(409).json({ error: "Conflict" }));
+      a.get("/api/broken", (_, res) => res.status(500).json({ error: "Broken" }));
+      a.get("/api/limited", (_, res) => res.status(429).json({ error: "Too many requests" }));
+    });
+
+  it("never spends the budget on refusals to a validated session", async () => {
+    const url = await failureApp("user-frank");
+    const paths = [
+      "/api/forbidden",
+      "/api/missing",
+      "/api/conflict",
+      "/api/broken",
+      "/api/limited",
+    ];
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 120; i++) {
+      const res = await request(url)
+        .get(paths[i % paths.length]!)
+        .set("X-Forwarded-For", "203.0.113.22")
+        .set("Cookie", "session=real");
+      statuses.push(res.status);
+    }
+
+    expect(statuses.filter((s) => s === 429)).toHaveLength(120 / paths.length);
+  });
+
+  it("counts a rejected session but not a validated session's 4xx", async () => {
+    const url = await failureApp("user-grace");
+    const remaining = async (path: string, cookie: string) => {
+      const res = await request(url)
+        .get(path)
+        .set("X-Forwarded-For", "203.0.113.23")
+        .set("Cookie", cookie);
+      return Number(res.headers["ratelimit-remaining"]);
+    };
+
+    const first = await remaining("/api/missing", "session=real");
+    const afterValidated = await remaining("/api/forbidden", "session=real");
+    expect(afterValidated).toBe(first);
+
+    await remaining("/api/missing", "session=forged");
+    const afterRejected = await remaining("/api/missing", "session=real");
+    expect(afterRejected).toBe(first - 1);
+  });
 });
 
 describe("credentialsLimiter", () => {

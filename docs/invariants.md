@@ -283,7 +283,7 @@ under-protects the endpoints that matter:
 | Limiter                | Mounted on                                                    | Key                            | Budget                   |
 | ---------------------- | ------------------------------------------------------------- | ------------------------------ | ------------------------ |
 | `floodLimiter`         | everything                                                    | IP                             | 5000 / 5 min             |
-| `apiFailureLimiter`    | `/api` (before session validation)                            | IP                             | 100 **failures** / 5 min |
+| `apiFailureLimiter`    | `/api` (before session validation), unvalidated requests only | IP                             | 100 **failures** / 5 min |
 | `apiLimiter`           | `/api` (after the auth and dev routes)                        | validated user id, IP fallback | 1000 / 5 min             |
 | `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link | IP                             | 20 **failures** / 15 min |
 | `passwordResetLimiter` | `request-password-reset`                                      | IP                             | 5 / 15 min               |
@@ -294,6 +294,13 @@ under-protects the endpoints that matter:
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs
   through `ipKeyGenerator` — a bare `req.ip` lets one IPv6 /64 rotate addresses freely.
+- **`apiFailureLimiter` counts only failures from requests without a validated session.** Its
+  success rule treats any request that carries `req.auth` as a success, whatever its status, so
+  the routine 403, 404 and 409 answers a signed-in user gets never pool an office IP into a
+  lockout. Signed-in traffic is bounded by `apiLimiter` alone. What still counts: no cookie, an
+  invented cookie, an expired or device-mismatched session, and a session lookup that errors. The
+  rule reads `req.auth` when the response finishes, so the limiter can stay mounted before
+  `authSession`.
 - **`credentialsLimiter` covers the whole `/api/auth/two-factor` surface, not just the verify
   endpoints.** A 6-digit code is far cheaper to guess than a password, and enable / disable /
   get-totp-uri / generate-backup-codes are password oracles — without the failures-only budget, a
