@@ -227,8 +227,12 @@ it started, not rewrite it. No cap on Employments per plan.
 | Group admin | the Employments of that group's members |
 | Org admin   | every Employment in the organization    |
 
-A manager's own attendance is visible only to Org admins. An Employment in no group is visible only
-to Org admins. Edit rights follow the same lines.
+A group's manager never counts as one of that group's members, even though creating a group gives
+them a membership row in it, so no admin of the group they manage reaches their Employment. Their
+own attendance is visible to Org admins, and to the admins of another group only where the manager
+is a plain member of it. An Employment in no group is visible only to Org admins. Edit rights
+follow the same lines, so a manager who is not an Org admin corrects their own attendance inside
+the self-service window like any employee.
 
 An excluded day's absence label on the team dashboard follows the Private details rule in
 [`invariants.md`](invariants.md#private-details-and-away-srcservicesvacationredactionts), keyed on

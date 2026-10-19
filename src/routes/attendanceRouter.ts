@@ -68,8 +68,10 @@ export const attendanceRouter = (): Router => {
    *           businessDate, openSession, openBreak, sessions,
    *           autoClosedSession }`. `administersOwnAttendance` is true when the
    *           caller is an organization admin, or a group admin of a group they
-   *           belong to: their own corrections are then an admin's, outside the
-   *           window and never flagged `changedAfterDay`. `selfService` is the
+   *           belong to without managing it: their own corrections are then an
+   *           admin's, outside the window and never flagged `changedAfterDay`.
+   *           Managing a group gives no standing over the manager's own
+   *           attendance. `selfService` is the
    *           organization's self-service window, `{ enabled, days }`: `days`
    *           is how many days before today the employee may still correct
    *           their own attendance, null for no limit, and means nothing
@@ -266,12 +268,15 @@ export const attendanceRouter = (): Router => {
    *       scope is the visibility table's in `docs/attendance.md`: an
    *       organization admin sees every active Employment, a group admin the
    *       union of their groups' current members, and anyone else is refused.
-   *       A manager holds no membership row, so their own Employment — and
-   *       anyone else's in no group — appears only for organization admins.
+   *       A group's manager never counts as one of that group's members here,
+   *       whatever membership row they hold, so a group admin sees the manager
+   *       only through another group the manager is a plain member of. An
+   *       Employment in no group appears only for organization admins.
    *
    *       `groupId` narrows the answer to that group's current members. An
-   *       organization admin may name any live group of the organization; a
-   *       group admin only one they administer.
+   *       organization admin may name any live group of the organization, and
+   *       sees its manager among them when the manager holds a row; a group
+   *       admin only one they administer, without its manager.
    *
    *       Each day carries the same figures and flags as `/api/attendance/month`,
    *       worked out by the same computation, minus the sessions themselves.
