@@ -15,8 +15,7 @@ const validateMonth = vacationQueryMonth.prefault(() => new Date().getMonth() + 
 
 const validateGroupId = vacationQueryGroupId;
 
-// Opt-in: the calendar and dashboard keep their live-rows-only view.
-const validateIncludeCancelled = z
+const validateFlag = z
   .enum(["true", "false"])
   .optional()
   .transform((value) => value === "true");
@@ -27,13 +26,15 @@ export const handleGetVacations = async (req: Request, res: Response) => {
   const year = validateYear.parse(req.query.year);
   const month = validateMonth.parse(req.query.month);
   const groupId = validateGroupId.parse(req.query.groupId);
-  const includeCancelled = validateIncludeCancelled.parse(req.query.includeCancelled);
+  // Both opt-in, so the dashboard and calendar keep their month-only, live-rows view.
+  const includeCancelled = validateFlag.parse(req.query.includeCancelled);
+  const wholeRequests = validateFlag.parse(req.query.wholeRequests);
 
   const rows = await listVacationsInScope(
     auth.userId,
     groupId,
     formatStartAndEndDate(year, month),
-    { includeCancelled }
+    { includeCancelled, wholeRequests }
   );
 
   return res.status(200).json(rows);

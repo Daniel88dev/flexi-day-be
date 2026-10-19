@@ -19,6 +19,7 @@ import {
   notInArray,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import type {
   ExcusingAbsence,
@@ -79,6 +80,31 @@ const baseVacationSelection = {
   userName: user.name,
 };
 
+export type VacationListOptions = {
+  includeCancelled?: boolean;
+  /** Also return the rows outside the range of every Request with a row inside it. */
+  wholeRequests?: boolean;
+};
+
+/**
+ * Runs `select` for the range, then, with `wholeRequests`, once more for the
+ * Requests found, so the extra rows pass exactly the same scope filters.
+ */
+const selectWholeRequests = async <T extends { requestId: string }>(
+  select: (days: SQL | undefined) => Promise<T[]>,
+  startDate: string,
+  endDate: string,
+  options: VacationListOptions | undefined
+): Promise<T[]> => {
+  const inRange = await select(
+    and(gte(vacation.requestedDay, startDate), lt(vacation.requestedDay, endDate))
+  );
+  if (!options?.wholeRequests || inRange.length === 0) return inRange;
+
+  const requestIds = Array.from(new Set(inRange.map((row) => row.requestId)));
+  return select(inArray(vacation.requestId, requestIds));
+};
+
 /**
  * Retrieves a list of vacations for a specific group within a given date range,
  * enriched with the requesting user's display summary. Optionally filters by user.
@@ -95,46 +121,49 @@ export const getVacationsForGroup = async (
   startDate: string,
   endDate: string,
   userId: string | null = null,
-  options?: { includeCancelled?: boolean }
+  options?: VacationListOptions
 ): Promise<GroupVacationListItem[]> => {
   const inThisGroup = eq(vacation.groupId, groupId);
   const mirroredIntoThisGroup = isNotNull(groupMirrors.id);
 
-  const base = [
-    options?.includeCancelled ? undefined : isNull(vacation.deletedAt),
-    gte(vacation.requestedDay, startDate),
-    lt(vacation.requestedDay, endDate),
-    or(inThisGroup, mirroredIntoThisGroup),
-  ] as const;
-  const where = userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
+  const select = async (days: SQL | undefined) => {
+    const base = [
+      options?.includeCancelled ? undefined : isNull(vacation.deletedAt),
+      days,
+      or(inThisGroup, mirroredIntoThisGroup),
+    ] as const;
+    const where = userId !== null ? and(...base, eq(vacation.userId, userId)) : and(...base);
 
-  const rows = await db
-    .select({ ...baseVacationSelection, sourceGroupName: groups.groupName })
-    .from(vacation)
-    .innerJoin(user, eq(vacation.userId, user.id))
-    .innerJoin(groups, eq(vacation.groupId, groups.id))
-    // At most one row can match: `group_mirrors_user_source_target_uniq` makes
-    // (user, source, target) unique among active mirrors, so this cannot fan out.
-    .leftJoin(
-      groupMirrors,
-      and(
-        eq(groupMirrors.userId, vacation.userId),
-        eq(groupMirrors.sourceGroupId, vacation.groupId),
-        eq(groupMirrors.targetGroupId, groupId),
-        liveMirror()
+    const rows = await db
+      .select({ ...baseVacationSelection, sourceGroupName: groups.groupName })
+      .from(vacation)
+      .innerJoin(user, eq(vacation.userId, user.id))
+      .innerJoin(groups, eq(vacation.groupId, groups.id))
+      // At most one row can match: `group_mirrors_user_source_target_uniq` makes
+      // (user, source, target) unique among active mirrors, so this cannot fan out.
+      .leftJoin(
+        groupMirrors,
+        and(
+          eq(groupMirrors.userId, vacation.userId),
+          eq(groupMirrors.sourceGroupId, vacation.groupId),
+          eq(groupMirrors.targetGroupId, groupId),
+          liveMirror()
+        )
       )
-    )
-    .where(where)
-    .orderBy(asc(vacation.requestedDay));
+      .where(where)
+      .orderBy(asc(vacation.requestedDay));
 
-  return rows.map(({ sourceGroupName, ...row }) => {
-    const mirrored = row.groupId !== groupId;
-    return {
-      ...toListItem(row),
-      mirroredFromGroupId: mirrored ? row.groupId : null,
-      mirroredFromGroupName: mirrored ? sourceGroupName : null,
-    };
-  });
+    return rows.map(({ sourceGroupName, ...row }) => {
+      const mirrored = row.groupId !== groupId;
+      return {
+        ...toListItem(row),
+        mirroredFromGroupId: mirrored ? row.groupId : null,
+        mirroredFromGroupName: mirrored ? sourceGroupName : null,
+      };
+    });
+  };
+
+  return selectWholeRequests(select, startDate, endDate, options);
 };
 
 /**
@@ -145,23 +174,26 @@ export const getVacationsForUser = async (
   userId: string,
   startDate: string,
   endDate: string,
-  options?: { includeCancelled?: boolean }
+  options?: VacationListOptions
 ): Promise<VacationListItem[]> => {
-  const where = and(
-    eq(vacation.userId, userId),
-    options?.includeCancelled ? undefined : isNull(vacation.deletedAt),
-    gte(vacation.requestedDay, startDate),
-    lt(vacation.requestedDay, endDate)
-  );
+  const select = async (days: SQL | undefined) => {
+    const rows = await db
+      .select(baseVacationSelection)
+      .from(vacation)
+      .innerJoin(user, eq(vacation.userId, user.id))
+      .where(
+        and(
+          eq(vacation.userId, userId),
+          options?.includeCancelled ? undefined : isNull(vacation.deletedAt),
+          days
+        )
+      )
+      .orderBy(asc(vacation.requestedDay));
 
-  const rows = await db
-    .select(baseVacationSelection)
-    .from(vacation)
-    .innerJoin(user, eq(vacation.userId, user.id))
-    .where(where)
-    .orderBy(asc(vacation.requestedDay));
+    return rows.map(toListItem);
+  };
 
-  return rows.map(toListItem);
+  return selectWholeRequests(select, startDate, endDate, options);
 };
 
 /**
