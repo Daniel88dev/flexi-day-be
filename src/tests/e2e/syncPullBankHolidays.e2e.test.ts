@@ -7,6 +7,7 @@ import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
 import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
 import { encodeSyncCursor } from "../../services/sync/syncCursor.js";
+import { computePublicHolidays } from "../../services/bankHoliday/holidayDataset.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import {
   addMember,
@@ -102,8 +103,6 @@ describe("Sync pull bank holidays E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       const cookie = await authCookieFor(manager.id);
 
-      // Seeded after the first pull: a stored row of a year makes the fill
-      // skip it, and the fill is what the window is asserted against.
       await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
       const lastDay = await insertHoliday({ date: `${NEXT_YEAR}-12-31`, country: "CZ" });
       const dayAfter = await insertHoliday({ date: `${NEXT_YEAR + 1}-01-01`, country: "CZ" });
@@ -157,8 +156,6 @@ describe("Sync pull bank holidays E2E", () => {
       await addMember(groupId, manager.id, { adminAccess: true });
       const cookie = await authCookieFor(manager.id);
 
-      // The fill skips a country already stored, so the regional row goes in
-      // after the pull that filled CZ rather than before it.
       await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
       const regional = await insertHoliday({
         date: `${THIS_YEAR}-03-03`,
@@ -214,6 +211,31 @@ describe("Sync pull bank holidays E2E", () => {
       expect((res.body.bankHolidays as BankHolidayRow[]).map((row) => row.id)).toEqual([
         renamed!.id,
       ]);
+    });
+
+    it("carries in a delta the days a fill adds to a country-year already stored", async () => {
+      const manager = await makeUser("Manager");
+      const groupId = await makeGroup("Seoul", manager.id, { holidayCountry: "KR" });
+      await addMember(groupId, manager.id, { adminAccess: true });
+      const cookie = await authCookieFor(manager.id);
+
+      await request(server.url).get("/api/sync/pull").set("Cookie", cookie).expect(200);
+      const [dropped] = computePublicHolidays("KR", THIS_YEAR).slice(-1);
+      await db
+        .delete(bankHolidays)
+        .where(and(eq(bankHolidays.country, "KR"), eq(bankHolidays.date, dropped!.date)));
+      await ageEverything();
+
+      const res = await request(server.url)
+        .get("/api/sync/pull")
+        .query({ cursor: encodeSyncCursor(ago(10 * MINUTE)) })
+        .set("Cookie", cookie)
+        .expect(200);
+
+      expect(res.body.reset).toBe(false);
+      const rows = res.body.bankHolidays as BankHolidayRow[];
+      expect(rows.map((row) => row.date)).toEqual([dropped!.date]);
+      expect(rows[0]).toMatchObject({ country: "KR", name: dropped!.name, region: null });
     });
   });
 });
