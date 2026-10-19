@@ -36,7 +36,8 @@ export const vacationRouter = (): Router => {
    *       - Vacations
    *     summary: Retrieve vacations for the authenticated user or one of their groups
    *     description: |
-   *       Returns vacation records for a given year and month. Without `groupId`
+   *       Returns vacation records for a given year and month, or with
+   *       `wholeRequests` every row of each Request that touches it. Without `groupId`
    *       the caller's own records are returned. With `groupId` the whole
    *       group's records are returned instead — including records mirrored into
    *       it from another group, which carry a non-null `mirroredFromGroupId`.
@@ -92,6 +93,20 @@ export const vacationRouter = (): Router => {
    *           requests view can show them with their `deletedAt` /
    *           `deletedByUserId` stamps. Defaults to `false`, keeping the
    *           calendar and dashboard on live rows only.
+   *         schema:
+   *           type: string
+   *           enum: ["true", "false"]
+   *       - name: wholeRequests
+   *         in: query
+   *         required: false
+   *         description: |
+   *           When `true`, the response also holds every row outside the month
+   *           of each Request (the rows sharing a `requestId`) that has a row
+   *           in it, so the requests view can show and act on a Request that
+   *           crosses a month edge. Those extra rows pass the same scope,
+   *           mirroring, teammate view, `includeCancelled` and `canApprove`
+   *           rules as the rows inside the month. Defaults to `false`, keeping
+   *           the calendar and dashboard on the month alone.
    *         schema:
    *           type: string
    *           enum: ["true", "false"]
