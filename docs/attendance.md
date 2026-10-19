@@ -65,6 +65,13 @@ required time is reported beside it, so the figure the month is heading for is s
 A business date later than today is reported with its required time, so the full month's figure is
 still there, but it is kept out of the balance and carries none of its own.
 
+**Rules are read when a day is shown, not when it was worked.** Required time, the break allowance
+and threshold, balance mode, working days, holiday country and the Employment's own override are
+read as they stand now, for every date a view asks about. A change therefore moves past balances
+too; the log of settings changes is audit only and does not hold them back. Only two things are
+fixed at clock-in: a session's `businessDate` and the timezone it was clocked in. A timezone change
+applies from the next clock-in and moves no session to another day.
+
 ## Excluded days
 
 No attendance is owed on a business date that is:
