@@ -587,6 +587,10 @@ export const calendarSyncRouter = (): Router => {
    *                 default: false
    *               teamIds:
    *                 type: array
+   *                 description: |
+   *                   Groups the caller belongs to, plus any already stored on this
+   *                   config. A stored group the caller has since left stays stored
+   *                   and returns to the feed if they re-join.
    *                 items:
    *                   type: string
    *                   format: uuid
@@ -646,7 +650,9 @@ export const calendarSyncRouter = (): Router => {
    *       '401':
    *         description: Unauthorized
    *       '403':
-   *         description: A requested team is not one the caller belongs to
+   *         description: |
+   *           A requested team is neither one the caller belongs to nor already
+   *           stored on this config
    *       '404':
    *         description: Calendar not found
    *       '422':
