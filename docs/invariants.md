@@ -632,11 +632,14 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   other group the feed carries only the owner's own, as the web reads do. Birthdays come only from
   groups seen in full, and group events from every selected group, as on the web. The stored rows
   stay as they are, so a re-join or View switched back on restores the group without editing the
-  feed. Read the stored ids directly and someone removed from a group keeps a subscription link
-  that shows that group's days off for as long as the link lives; drop the View depth and a member
-  without View reads every colleague's leave and notes through the link.
-  `src/tests/e2e/calendarFeedLiveMembership.e2e.test.ts` and
-  `src/tests/e2e/calendarFeedViewAccess.e2e.test.ts` fail if the rule gives.
+  feed. Updating the feed keeps them too: `PUT /api/calendar-sync/:id` accepts a group already
+  stored on that feed after the owner has left it, and checks only newly added groups against
+  current membership. Read the stored ids directly and someone removed from a group keeps a
+  subscription link that shows that group's days off for as long as the link lives; drop the View
+  depth and a member without View reads every colleague's leave and notes through the link.
+  `src/tests/e2e/calendarFeedLiveMembership.e2e.test.ts`,
+  `src/tests/e2e/calendarFeedViewAccess.e2e.test.ts` and
+  `src/tests/e2e/calendarFeedStaleTeamEdit.e2e.test.ts` fail if the rule gives.
 
 ## Billing config is opt-in (`src/config.ts`)
 
