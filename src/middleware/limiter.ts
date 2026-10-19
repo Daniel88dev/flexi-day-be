@@ -36,16 +36,22 @@ export const floodLimiter = rateLimit({
 });
 
 /**
- * Rejected `/api` traffic, counted per IP ahead of session validation. Only
- * failures count, so a whole office's real requests never touch it — but
- * unauthenticated probing, and anyone rotating forged session cookies to mint
- * fresh `apiLimiter` buckets, is cut off long before the flood ceiling.
+ * Rejected `/api` traffic from callers without a validated session, counted
+ * per IP ahead of session validation. A request that passed `authSession`
+ * never counts, whatever it ends with, so a whole office's real requests never
+ * touch it; signed-in traffic is bounded by `apiLimiter` alone. Unauthenticated
+ * probing, and anyone rotating forged session cookies to mint fresh
+ * `apiLimiter` buckets, is cut off long before the flood ceiling.
+ *
+ * The success rule runs when the response finishes, after `authSession` has
+ * set `req.auth`, which is why it can see the session from in front of it.
  */
 export const apiFailureLimiter = rateLimit({
   ...shared,
   windowMs: FIVE_MINUTES,
   limit: 100,
   skipSuccessfulRequests: true,
+  requestWasSuccessful: (req, res) => req.auth !== undefined || res.statusCode < 400,
   keyGenerator: ipKey,
   skip: (req) => req.method === "OPTIONS",
 });
