@@ -45,6 +45,7 @@ const firstMondayOfDecember = () => {
 };
 const MONDAY_OF_WEEK = firstMondayOfDecember();
 const MON = isoDay(MONDAY_OF_WEEK);
+const TUE = isoDay(shift(MONDAY_OF_WEEK, 1));
 const WED = isoDay(shift(MONDAY_OF_WEEK, 2));
 const FRI = isoDay(shift(MONDAY_OF_WEEK, 4));
 const SAT = isoDay(shift(MONDAY_OF_WEEK, 5));
@@ -736,6 +737,121 @@ describe("Vacation API E2E Tests", () => {
       expect(first.body[0].requestId).toMatch(UUID);
       expect(second.body[0].requestId).toMatch(UUID);
       expect(second.body[0].requestId).not.toBe(first.body[0].requestId);
+    });
+  });
+
+  describe("GET /api/vacation/:id — the range is the Request", () => {
+    type BookedRow = { id: string; requestedDay: string };
+
+    const bookRange = async (cookie: string, from: string, to: string) => {
+      const response = await request(server.url)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from, to })
+        .expect(201);
+      return [...(response.body as BookedRow[])].sort((a, b) =>
+        a.requestedDay.localeCompare(b.requestedDay)
+      );
+    };
+
+    const detailOf = async (cookie: string, vacationId: string) => {
+      const response = await request(server.url)
+        .get(`/api/vacation/${vacationId}`)
+        .set("Cookie", cookie)
+        .expect(200);
+      return response.body as { rangeStart: string; rangeEnd: string; vacationIds: string[] };
+    };
+
+    const idsOf = (rows: BookedRow[]) => rows.map((row) => row.id);
+    const expectSameIds = (actual: string[], expected: (string | undefined)[]) =>
+      expect([...actual].sort()).toEqual([...expected].sort());
+
+    beforeEach(async () => {
+      await addToGroup(context.user1.id, context.group.id);
+    });
+
+    it("covers a Request across a weekend and cancels every day of it", async () => {
+      const cookie = await authCookieFor(context.user1.id);
+      const rows = await bookRange(cookie, FRI, NEXT_MON);
+      expect(rows.map((row) => row.requestedDay)).toEqual([FRI, NEXT_MON]);
+
+      const detail = await detailOf(cookie, rows[0]?.id ?? "");
+      expect(detail.rangeStart).toBe(FRI);
+      expect(detail.rangeEnd).toBe(NEXT_MON);
+      expectSameIds(detail.vacationIds, idsOf(rows));
+
+      await request(server.url)
+        .post("/api/vacation/cancel")
+        .set("Cookie", cookie)
+        .send({ ids: detail.vacationIds })
+        .expect(200);
+
+      const after = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
+      expect(after).toHaveLength(2);
+      for (const row of after) expect(row.deletedAt).not.toBeNull();
+    });
+
+    it("covers a Request whose middle day is a public holiday", async () => {
+      const holiday = midweekCzechHoliday();
+      const dayBefore = isoDay(shift(holiday, -1));
+      const dayAfter = isoDay(shift(holiday, 1));
+      await db.update(groups).set({ holidayCountry: "CZ" }).where(eq(groups.id, context.group.id));
+      try {
+        const cookie = await authCookieFor(context.user1.id);
+        const rows = await bookRange(cookie, dayBefore, dayAfter);
+        expect(rows.map((row) => row.requestedDay)).toEqual([dayBefore, dayAfter]);
+
+        const detail = await detailOf(cookie, rows[0]?.id ?? "");
+        expect(detail.rangeStart).toBe(dayBefore);
+        expect(detail.rangeEnd).toBe(dayAfter);
+        expectSameIds(detail.vacationIds, idsOf(rows));
+      } finally {
+        await db
+          .update(groups)
+          .set({ holidayCountry: null })
+          .where(eq(groups.id, context.group.id));
+      }
+    });
+
+    it("leaves out another Request on an adjacent day", async () => {
+      const cookie = await authCookieFor(context.user1.id);
+      const first = await bookRange(cookie, MON, MON);
+      await bookRange(cookie, TUE, WED);
+
+      const detail = await detailOf(cookie, first[0]?.id ?? "");
+      expect(detail.vacationIds).toEqual(idsOf(first));
+      expect(detail.rangeStart).toBe(MON);
+      expect(detail.rangeEnd).toBe(MON);
+    });
+
+    it("lists only the rows in the opened row's state, so Approve on a partly decided Request succeeds", async () => {
+      const cookie = await authCookieFor(context.user1.id);
+      const approverCookie = await authCookieFor(context.approverUser.id);
+      const [mon, tue, wed] = await bookRange(cookie, MON, WED);
+
+      await request(server.url)
+        .post(`/api/vacation/approve/${mon?.id ?? ""}`)
+        .set("Cookie", approverCookie)
+        .expect(200);
+
+      const approvedDetail = await detailOf(approverCookie, mon?.id ?? "");
+      expect(approvedDetail.vacationIds).toEqual([mon?.id]);
+      expect(approvedDetail.rangeStart).toBe(MON);
+      expect(approvedDetail.rangeEnd).toBe(MON);
+
+      const pendingDetail = await detailOf(approverCookie, tue?.id ?? "");
+      expectSameIds(pendingDetail.vacationIds, [tue?.id, wed?.id]);
+      expect(pendingDetail.rangeStart).toBe(TUE);
+      expect(pendingDetail.rangeEnd).toBe(WED);
+
+      await request(server.url)
+        .post("/api/vacation/approve")
+        .set("Cookie", approverCookie)
+        .send({ ids: pendingDetail.vacationIds })
+        .expect(200);
+
+      const after = await db.select().from(vacation).where(eq(vacation.userId, context.user1.id));
+      for (const row of after) expect(row.approvedAt).not.toBeNull();
     });
   });
 

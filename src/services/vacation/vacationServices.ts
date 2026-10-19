@@ -477,39 +477,13 @@ export const updateVacationRows = async (
     .returning();
 };
 
-// Given all sibling rows, returns the consecutive-day run containing `targetDay` ([] if absent).
-export const contiguousRunContaining = <T extends { requestedDay: string }>(
-  rows: T[],
-  targetDay: string
-): T[] => {
-  const sorted = [...rows].sort((a, b) =>
-    a.requestedDay < b.requestedDay ? -1 : a.requestedDay > b.requestedDay ? 1 : 0
-  );
-  const targetIdx = sorted.findIndex((r) => r.requestedDay === targetDay);
-  if (targetIdx === -1) return [];
-
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  const dayMs = (iso: string): number => new Date(`${iso}T00:00:00Z`).getTime();
-  const adjacent = (earlier: T | undefined, later: T | undefined): boolean =>
-    earlier !== undefined &&
-    later !== undefined &&
-    dayMs(later.requestedDay) - dayMs(earlier.requestedDay) === ONE_DAY_MS;
-
-  let start = targetIdx;
-  while (start > 0 && adjacent(sorted.at(start - 1), sorted.at(start))) start--;
-  let end = targetIdx;
-  while (end < sorted.length - 1 && adjacent(sorted.at(end), sorted.at(end + 1))) end++;
-
-  return sorted.slice(start, end + 1);
-};
-
 /**
  * Loads a single vacation with everything the detail view shows: the
  * requester, the group name, and the decision makers. Unlike
  * {@link getVacationById} this deliberately includes cancelled (soft-deleted)
  * rows — the whole point of the detail view is to explain what happened to a
- * request, which includes its cancellation. Also resolves the contiguous
- * same-type run this row belongs to (`rangeStart` / `rangeEnd` / `vacationIds`).
+ * request, which includes its cancellation. Also resolves the rows of this
+ * row's Request in the same state (`rangeStart` / `rangeEnd` / `vacationIds`).
  */
 export const getVacationDetailById = async (
   vacationId: string,
@@ -550,27 +524,43 @@ export const getVacationDetailById = async (
     ...vacationRow
   } = row;
 
-  // Match the row's deletedAt/rejectedAt state so a re-booked day can't merge
-  // into the cancelled or rejected run it replaced — both can sit on the same
-  // day as the live row now that uniqueness only covers live rows.
-  const siblings = await (tx ?? db)
+  // Same state only: a partly decided Request must not hand Approve a row it already decided.
+  const sameState = vacationRow.deletedAt
+    ? isNotNull(vacation.deletedAt)
+    : and(
+        isNull(vacation.deletedAt),
+        vacationRow.rejectedAt
+          ? isNotNull(vacation.rejectedAt)
+          : and(
+              isNull(vacation.rejectedAt),
+              vacationRow.approvedAt ? isNotNull(vacation.approvedAt) : isNull(vacation.approvedAt)
+            )
+      );
+  const requestRows = await (tx ?? db)
     .select({ id: vacation.id, requestedDay: vacation.requestedDay })
     .from(vacation)
     .where(
       and(
+        eq(vacation.requestId, vacationRow.requestId),
         eq(vacation.userId, vacationRow.userId),
         eq(vacation.groupId, vacationRow.groupId),
-        eq(vacation.vacationType, vacationRow.vacationType),
-        vacationRow.deletedAt ? isNotNull(vacation.deletedAt) : isNull(vacation.deletedAt),
-        vacationRow.rejectedAt ? isNotNull(vacation.rejectedAt) : isNull(vacation.rejectedAt)
+        sameState
       )
-    );
-  const run = contiguousRunContaining(siblings, vacationRow.requestedDay);
-  const resolvedRun =
-    run.length > 0 ? run : [{ id: vacationRow.id, requestedDay: vacationRow.requestedDay }];
-  const rangeStart = resolvedRun[0]?.requestedDay ?? vacationRow.requestedDay;
-  const rangeEnd = resolvedRun[resolvedRun.length - 1]?.requestedDay ?? vacationRow.requestedDay;
-  const vacationIds = resolvedRun.map((r) => r.id);
+    )
+    .orderBy(asc(vacation.requestedDay));
+  const first = requestRows[0];
+  const last = requestRows.at(-1);
+  if (!first || !last) {
+    throw new AppError({
+      code: 500,
+      message: "Vacation detail found no rows for its own Request",
+      logging: true,
+      context: { vacationId },
+    });
+  }
+  const rangeStart = first.requestedDay;
+  const rangeEnd = last.requestedDay;
+  const vacationIds = requestRows.map((r) => r.id);
 
   return {
     ...toListItem(vacationRow),
