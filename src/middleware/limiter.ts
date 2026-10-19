@@ -36,16 +36,22 @@ export const floodLimiter = rateLimit({
 });
 
 /**
- * Rejected `/api` traffic, counted per IP ahead of session validation. Only
- * failures count, so a whole office's real requests never touch it — but
- * unauthenticated probing, and anyone rotating forged session cookies to mint
- * fresh `apiLimiter` buckets, is cut off long before the flood ceiling.
+ * Rejected `/api` traffic from callers without a validated session, counted
+ * per IP ahead of session validation. A request that passed `authSession`
+ * never counts, whatever it ends with, so a whole office's real requests never
+ * touch it; signed-in traffic is bounded by `apiLimiter` alone. Unauthenticated
+ * probing, and anyone rotating forged session cookies to mint fresh
+ * `apiLimiter` buckets, is cut off long before the flood ceiling.
+ *
+ * The success rule runs when the response finishes, after `authSession` has
+ * set `req.auth`, which is why it can see the session from in front of it.
  */
 export const apiFailureLimiter = rateLimit({
   ...shared,
   windowMs: FIVE_MINUTES,
   limit: 100,
   skipSuccessfulRequests: true,
+  requestWasSuccessful: (req, res) => req.auth !== undefined || res.statusCode < 400,
   keyGenerator: ipKey,
   skip: (req) => req.method === "OPTIONS",
 });
@@ -136,12 +142,13 @@ export const otpSendLimiter = rateLimit({
 });
 
 /**
- * The auth endpoints where a wrong guess is the point, shared with
- * `server.ts` and pinned by a guard test: every path here fails with 4xx on a
- * bad guess, so the failures-only `credentialsLimiter` covers it. The
- * two-factor prefix is deliberate breadth — verify-* are a 6-digit guessing
- * surface, and enable/disable/get-totp-uri/generate-backup-codes are password
- * oracles a stolen session cookie must not get to brute-force.
+ * The auth endpoints where a wrong guess is the point, plus our own routes
+ * that check a password, shared with `server.ts` and pinned by a guard test:
+ * every path here fails with 4xx on a bad guess, so the failures-only
+ * `credentialsLimiter` covers it. The two-factor prefix is deliberate
+ * breadth — verify-* are a 6-digit guessing surface, and
+ * enable/disable/get-totp-uri/generate-backup-codes are password oracles a
+ * stolen session cookie must not get to brute-force.
  */
 export const CREDENTIAL_GUESSING_PATHS = [
   "/api/auth/sign-in",
@@ -155,6 +162,8 @@ export const CREDENTIAL_GUESSING_PATHS = [
   // The invite link endpoints are public or near enough, and an unknown
   // secret answers 404, so a prober burns this budget like a password guesser.
   "/api/auth/invite",
+  // Prefix matching is per segment, so `GET /api/users/me/deletion` stays outside.
+  "/api/users/me/delete",
 ];
 
 /**

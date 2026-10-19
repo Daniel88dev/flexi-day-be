@@ -36,7 +36,13 @@ export const usersRouter = (): Router => {
    *       - bearerAuth: []
    *     responses:
    *       '200':
-   *         description: Array of pending approvals with contiguous days collapsed
+   *         description: Array of pending approvals, one item per request
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/PendingRange'
    */
   app.get("/me/approvals", tryCatch(handleGetMyApprovals));
 
@@ -49,9 +55,8 @@ export const usersRouter = (): Router => {
    *     summary: List the caller's own requests still waiting on an approver
    *     description: |
    *       The caller's own pending rows (not approved, rejected or cancelled)
-   *       in every live group, with contiguous days of the same group and
-   *       record type collapsed into one range exactly as
-   *       `/api/users/me/approvals` collapses them. Read-only: the caller
+   *       in every live group, with the pending days of each request collapsed
+   *       into one range exactly as `/api/users/me/approvals` collapses them. Read-only: the caller
    *       cannot decide these.
    *
    *       A row the caller may decide themselves (they have approver access
@@ -89,7 +94,7 @@ export const usersRouter = (): Router => {
    *       properties:
    *         vacationIds:
    *           type: array
-   *           description: Every vacation row in the range, oldest day first.
+   *           description: Every still-pending vacation row of the request, oldest day first.
    *           items:
    *             type: string
    *             format: uuid
@@ -109,10 +114,12 @@ export const usersRouter = (): Router => {
    *         to:
    *           type: string
    *           format: date
-   *           description: Inclusive.
+   *           description: The request's last pending day, inclusive.
    *         businessDays:
    *           type: integer
-   *           description: Monday to Friday days from `from` to `to`, inclusive.
+   *           description: |
+   *             Days the range books, one per row. Weekends and holidays the
+   *             request skipped between `from` and `to` are not counted.
    *         note:
    *           type: string
    *           nullable: true
@@ -137,6 +144,17 @@ export const usersRouter = (): Router => {
    *       without that access they count only the caller.
    *     security:
    *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: today
+   *         required: false
+   *         schema:
+   *           type: string
+   *           format: date
+   *         description: |
+   *           The caller's own calendar day. Out today, working today and the
+   *           14-day upcoming window count from it. Defaults to the server's
+   *           UTC date.
    *     responses:
    *       '200':
    *         description: Stat-card counts
@@ -160,6 +178,8 @@ export const usersRouter = (): Router => {
    *                 teamSize:
    *                   type: integer
    *                   description: Distinct live members counted.
+   *       '400':
+   *         description: "`today` is not a real YYYY-MM-DD date"
    *       '401':
    *         description: Not authenticated
    */
@@ -621,9 +641,9 @@ export const usersRouter = (): Router => {
    *       with the refresh token read before the transaction; a link without
    *       one, or a revoke Apple refuses, is logged and does not fail the
    *       request either. Every session ends, web and Native, so the old
-   *       cookie answers 401 afterwards. A wrong password counts toward the
-   *       API's failure rate limit. The full policy is in
-   *       `docs/account-deletion.md`.
+   *       cookie answers 401 afterwards. Every refusal, a wrong password
+   *       included, spends the same failures-only rate limit as sign-in. The
+   *       full policy is in `docs/account-deletion.md`.
    *
    *       Blockers are checked again inside the deleting transaction, under
    *       the same organization locks a join takes, so someone joining in
@@ -703,6 +723,8 @@ export const usersRouter = (): Router => {
    *                               $ref: '#/components/schemas/DeletionBlocker'
    *       '422':
    *         description: The body failed validation (a `password` that is not a string)
+   *       '429':
+   *         description: Too many failed attempts from this address
    */
   app.post(
     "/me/delete",

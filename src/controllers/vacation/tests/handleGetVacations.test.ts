@@ -95,6 +95,18 @@ describe("handleGetVacations", () => {
     vi.restoreAllMocks();
   });
 
+  it("passes wholeRequests=true through so the requests view gets each Request whole", async () => {
+    const { req, res } = makeReqRes({ year: "2024", month: "3", wholeRequests: "true" });
+    mockGetVacationsForUser.mockResolvedValue([]);
+
+    await handleGetVacations(req, res);
+
+    expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31", {
+      includeCancelled: false,
+      wholeRequests: true,
+    });
+  });
+
   it("passes includeCancelled=true through so the requests view can show cancelled rows", async () => {
     const { req, res } = makeReqRes({ year: "2024", month: "3", includeCancelled: "true" });
     mockGetVacationsForUser.mockResolvedValue([]);
@@ -103,6 +115,7 @@ describe("handleGetVacations", () => {
 
     expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31", {
       includeCancelled: true,
+      wholeRequests: false,
     });
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -131,6 +144,7 @@ describe("handleGetVacations", () => {
     expect(formatStartAndEndDate).toHaveBeenCalledWith(2024, 3);
     expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31", {
       includeCancelled: false,
+      wholeRequests: false,
     });
     expect(res.status).toHaveBeenCalledWith(200);
     // Own records carry the same mirror fields as group ones so the calendar
@@ -199,6 +213,7 @@ describe("handleGetVacations", () => {
 
     expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-01-01", "2024-01-31", {
       includeCancelled: false,
+      wholeRequests: false,
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith([]);
@@ -266,7 +281,7 @@ describe("handleGetVacations", () => {
       "different_user_456",
       "2024-01-01",
       "2024-01-31",
-      { includeCancelled: false }
+      { includeCancelled: false, wholeRequests: false }
     );
   });
 
@@ -311,6 +326,7 @@ describe("handleGetVacations", () => {
         null,
         {
           includeCancelled: false,
+          wholeRequests: false,
         }
       );
       expect(mockGetVacationsForUser).not.toHaveBeenCalled();
@@ -391,6 +407,7 @@ describe("handleGetVacations", () => {
 
     expect(mockGetVacationsForUser).toHaveBeenCalledWith("user_123", "2024-07-01", "2024-07-31", {
       includeCancelled: false,
+      wholeRequests: false,
     });
   });
 });

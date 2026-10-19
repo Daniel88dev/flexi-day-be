@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
+import { z } from "zod";
 import { getAuth } from "../../middleware/authSession.js";
+import AppError from "../../utils/appError.js";
 import { formatDateToISOString } from "../../utils/dateFunc.js";
 import { collapsePendingApprovals } from "../../services/vacation/collapsePendingApprovals.js";
 import { countDistinctUsersInScope } from "../../services/groupUser/groupUserServices.js";
@@ -10,22 +12,25 @@ import {
   getPendingApprovalsForApprover,
 } from "../../services/vacation/vacationServices.js";
 
+// Installed phone builds send no day, so they keep the UTC date.
+const queryParams = z.object({ today: z.iso.date().optional() });
+
 export const handleGetMyDashboardSummary = async (req: Request, res: Response) => {
   const auth = getAuth(req);
 
+  const { data: query, error: queryError } = queryParams.safeParse(req.query);
+  if (queryError) {
+    throw new AppError({ message: "Invalid today, expected YYYY-MM-DD", code: 400 });
+  }
+
   const scope = await getScopeEntries(auth.userId);
 
-  const today = new Date();
-  const todayIso = formatDateToISOString(
-    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
-  );
+  const todayIso = query.today ?? formatDateToISOString(new Date());
 
   // 14-day window starting today: today + the next 13 days. The underlying
   // query uses inclusive bounds on both ends, so +14 here would yield a
   // 15-date range.
-  const upcomingEnd = new Date(
-    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-  );
+  const upcomingEnd = new Date(`${todayIso}T00:00:00Z`);
   upcomingEnd.setUTCDate(upcomingEnd.getUTCDate() + 13);
   const upcomingEndIso = formatDateToISOString(upcomingEnd);
 

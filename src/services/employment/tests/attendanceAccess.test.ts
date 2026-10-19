@@ -4,12 +4,14 @@ const {
   mockIsOrganizationAdmin,
   mockGetAdministrableGroupIds,
   mockAdministersGroupOfMember,
+  mockGetAdministeredMemberIds,
   mockGetActiveMemberIdsForGroups,
   mockGetGroup,
 } = vi.hoisted(() => ({
   mockIsOrganizationAdmin: vi.fn(),
   mockGetAdministrableGroupIds: vi.fn(),
   mockAdministersGroupOfMember: vi.fn(),
+  mockGetAdministeredMemberIds: vi.fn(),
   mockGetActiveMemberIdsForGroups: vi.fn(),
   mockGetGroup: vi.fn(),
 }));
@@ -21,6 +23,7 @@ vi.mock("../../organization/organizationServices.js", () => ({
 vi.mock("../../groupUser/groupAccess.js", () => ({
   getAdministrableGroupIds: mockGetAdministrableGroupIds,
   administersGroupOfMember: mockAdministersGroupOfMember,
+  getMemberIdsExcludingManagers: mockGetAdministeredMemberIds,
 }));
 
 vi.mock("../../groupUser/groupUserServices.js", () => ({
@@ -93,7 +96,7 @@ describe("the roster a viewer may list", () => {
     vi.resetAllMocks();
     mockIsOrganizationAdmin.mockResolvedValue(false);
     mockGetAdministrableGroupIds.mockResolvedValue([]);
-    mockGetActiveMemberIdsForGroups.mockResolvedValue([]);
+    mockGetAdministeredMemberIds.mockResolvedValue([]);
   });
 
   it("gives an org admin the whole organization", async () => {
@@ -104,19 +107,22 @@ describe("the roster a viewer may list", () => {
 
   it("gives a group admin their groups' members", async () => {
     mockGetAdministrableGroupIds.mockResolvedValue(["engineering"]);
-    mockGetActiveMemberIdsForGroups.mockResolvedValue(["dana", "dex"]);
+    mockGetAdministeredMemberIds.mockResolvedValue(["dana", "dex"]);
 
     const audience = await resolveRosterAudience("mark", ORGANIZATION);
 
     expect(audience.everyone).toBe(false);
     expect(audience.everyone === false && audience.userIds.sort()).toEqual(["dana", "dex"]);
+    expect(mockGetAdministeredMemberIds).toHaveBeenCalledWith(["engineering"], undefined);
+    expect(mockGetActiveMemberIdsForGroups).not.toHaveBeenCalled();
   });
 
-  // A manager belongs to no group, so the roster they administer does not
-  // contain them. `GET /api/employment` is where they read their own.
+  // The member set leaves a group's manager out of that group, so the roster a
+  // manager administers does not contain them. `GET /api/employment` is where
+  // they read their own.
   it("does not add the viewer to a roster their membership does not put them in", async () => {
     mockGetAdministrableGroupIds.mockResolvedValue(["engineering"]);
-    mockGetActiveMemberIdsForGroups.mockResolvedValue(["dana"]);
+    mockGetAdministeredMemberIds.mockResolvedValue(["dana"]);
 
     const audience = await resolveRosterAudience("mark", ORGANIZATION);
 
@@ -136,6 +142,7 @@ describe("the team a viewer may open on the dashboard", () => {
     mockIsOrganizationAdmin.mockResolvedValue(false);
     mockGetAdministrableGroupIds.mockResolvedValue([]);
     mockGetActiveMemberIdsForGroups.mockResolvedValue([]);
+    mockGetAdministeredMemberIds.mockResolvedValue([]);
     mockGetGroup.mockResolvedValue(undefined);
   });
 
@@ -167,7 +174,7 @@ describe("the team a viewer may open on the dashboard", () => {
 
   it("gives a group admin the union of their groups' members", async () => {
     mockGetAdministrableGroupIds.mockResolvedValue(["engineering", "support"]);
-    mockGetActiveMemberIdsForGroups.mockResolvedValue(["dana", "dex"]);
+    mockGetAdministeredMemberIds.mockResolvedValue(["dana", "dex"]);
 
     expect(await resolveTeamAudience("mark", ORGANIZATION)).toEqual({
       everyone: false,
@@ -180,7 +187,7 @@ describe("the team a viewer may open on the dashboard", () => {
   it("lets a group admin narrow to one of their own groups", async () => {
     mockGetAdministrableGroupIds.mockResolvedValue(["engineering", "support"]);
     mockGetGroup.mockResolvedValue(engineering);
-    mockGetActiveMemberIdsForGroups.mockResolvedValue(["dana"]);
+    mockGetAdministeredMemberIds.mockResolvedValue(["dana"]);
 
     expect(await resolveTeamAudience("mark", ORGANIZATION, "engineering")).toEqual({
       everyone: false,
@@ -188,6 +195,8 @@ describe("the team a viewer may open on the dashboard", () => {
       groupIds: ["engineering", "support"],
       group: { id: "engineering", groupName: "Engineering" },
     });
+    expect(mockGetAdministeredMemberIds).toHaveBeenLastCalledWith(["engineering"], undefined);
+    expect(mockGetActiveMemberIdsForGroups).not.toHaveBeenCalled();
   });
 
   it("refuses a group admin a group they do not administer, before reading its members", async () => {
@@ -197,7 +206,7 @@ describe("the team a viewer may open on the dashboard", () => {
     await expect(resolveTeamAudience("mark", ORGANIZATION, "engineering")).rejects.toMatchObject({
       code: 403,
     });
-    expect(mockGetActiveMemberIdsForGroups).not.toHaveBeenCalledWith(["engineering"], undefined);
+    expect(mockGetAdministeredMemberIds).not.toHaveBeenCalledWith(["engineering"], undefined);
   });
 
   it("answers 404 for a group that is gone or belongs to another organization", async () => {

@@ -196,6 +196,8 @@ export type LeaveOptions = {
   approvedBy?: string;
   rejectedBy?: string;
   createdByUserId?: string;
+  /** Shared by the rows of one submission; each row is its own Request when omitted. */
+  requestId?: string;
 };
 
 /** Books one day. `approved` defaults to true so usage lands in "used". */
@@ -210,7 +212,7 @@ export async function addLeave(
     id,
     userId,
     groupId,
-    requestId: uuidv4(),
+    requestId: options.requestId ?? uuidv4(),
     requestedDay,
     vacationType: options.type ?? CalendarRecordType.Vacation,
     halfDay: options.halfDay ?? false,

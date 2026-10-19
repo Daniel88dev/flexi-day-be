@@ -36,7 +36,8 @@ export const vacationRouter = (): Router => {
    *       - Vacations
    *     summary: Retrieve vacations for the authenticated user or one of their groups
    *     description: |
-   *       Returns vacation records for a given year and month. Without `groupId`
+   *       Returns vacation records for a given year and month, or with
+   *       `wholeRequests` every row of each Request that touches it. Without `groupId`
    *       the caller's own records are returned. With `groupId` the whole
    *       group's records are returned instead — including records mirrored into
    *       it from another group, which carry a non-null `mirroredFromGroupId`.
@@ -92,6 +93,20 @@ export const vacationRouter = (): Router => {
    *           requests view can show them with their `deletedAt` /
    *           `deletedByUserId` stamps. Defaults to `false`, keeping the
    *           calendar and dashboard on live rows only.
+   *         schema:
+   *           type: string
+   *           enum: ["true", "false"]
+   *       - name: wholeRequests
+   *         in: query
+   *         required: false
+   *         description: |
+   *           When `true`, the response also holds every row outside the month
+   *           of each Request (the rows sharing a `requestId`) that has a row
+   *           in it, so the requests view can show and act on a Request that
+   *           crosses a month edge. Those extra rows pass the same scope,
+   *           mirroring, teammate view, `includeCancelled` and `canApprove`
+   *           rules as the rows inside the month. Defaults to `false`, keeping
+   *           the calendar and dashboard on the month alone.
    *         schema:
    *           type: string
    *           enum: ["true", "false"]
@@ -265,6 +280,13 @@ export const vacationRouter = (): Router => {
    *       `canReadPrivateDetails: false`. Another person's rejected or
    *       cancelled request answers them with the same 403 as a request they
    *       may not view.
+   *
+   *       A request mirrored into a group opens for anyone who may list that
+   *       group in full (`GET /api/vacation?groupId=`), under the same rule the
+   *       list applies: a live mirror whose owner still belongs to the group.
+   *       Unless they also have standing in the request's own group, they get
+   *       the teammate view, with `canApprove`, `canCancel` and `canEdit`
+   *       false, and may not comment on it.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -306,13 +328,21 @@ export const vacationRouter = (): Router => {
    *                     rangeStart:
    *                       type: string
    *                       format: date
-   *                       description: First day of the contiguous same-type run this row belongs to.
+   *                       description: |
+   *                         First day of the Request this row belongs to, counting only
+   *                         its rows in the same state (pending, approved, rejected or
+   *                         cancelled) as this one. Days the Request skips, such as a
+   *                         weekend or public holiday, do not split it.
    *                     rangeEnd:
    *                       type: string
    *                       format: date
+   *                       description: Last day of those same rows.
    *                     vacationIds:
    *                       type: array
-   *                       description: Every day row of that run, this one included.
+   *                       description: |
+   *                         Every row of this row's Request in the same state, this one
+   *                         included. The decide, cancel and edit endpoints take this list
+   *                         to act on the whole Request.
    *                       items:
    *                         type: string
    *                         format: uuid
@@ -574,11 +604,11 @@ export const vacationRouter = (): Router => {
    *       - Vacations
    *     summary: Atomically approve many vacation rows in one transaction
    *     description: |
-   *       Used together with `/api/users/me/approvals`, which returns
-   *       contiguous day rows collapsed into a single approval entry whose
-   *       `vacationIds` array names every row in the range. Sending that
-   *       array here guarantees the whole range is approved together or not
-   *       at all.
+   *       Used together with `/api/users/me/approvals`, which returns the
+   *       pending days of each request collapsed into a single approval entry
+   *       whose `vacationIds` array names every still-pending row of the
+   *       request. Sending that array here guarantees those rows are approved
+   *       together or not at all.
    *
    *       An optional `reason` is stored on every approval event and shown in
    *       the request history. The approval notification does not carry it.
@@ -830,7 +860,7 @@ export const vacationRouter = (): Router => {
    *       `vacationType` and `note`. Requires group admin access, being the
    *       group's manager, or admin of the group's organization. All ids must
    *       belong to the same member and
-   *       group; the detail view passes a whole contiguous run so it is edited
+   *       group; the detail view passes its whole Request so it is edited
    *       atomically. Dates are deliberately not editable — moving a record to
    *       another day is a cancel + re-create, both audited.
    *

@@ -47,10 +47,16 @@ const fakeAuthSession =
   };
 
 /** Drive one key up to (and past) its allowance without waiting for the window. */
-async function hammer(url: string, path: string, times: number, headers: Record<string, string>) {
+async function hammer(
+  url: string,
+  path: string,
+  times: number,
+  headers: Record<string, string>,
+  method: "get" | "post" = "get"
+) {
   const statuses: number[] = [];
   for (let i = 0; i < times; i++) {
-    const res = await request(url).get(path).set(headers);
+    const res = await request(url)[method](path).set(headers);
     statuses.push(res.status);
   }
   return statuses;
@@ -157,6 +163,57 @@ describe("apiFailureLimiter", () => {
     expect(statuses.slice(0, 100).every((s) => s === 401)).toBe(true);
     expect(statuses.at(-1)).toBe(429);
   });
+
+  const failureApp = (userId: string) =>
+    appWith((a) => {
+      a.use("/api", apiFailureLimiter, fakeAuthSession("session=real", userId));
+      a.get("/api/forbidden", (_, res) => res.status(403).json({ error: "Forbidden" }));
+      a.get("/api/missing", (_, res) => res.status(404).json({ error: "Not found" }));
+      a.get("/api/conflict", (_, res) => res.status(409).json({ error: "Conflict" }));
+      a.get("/api/broken", (_, res) => res.status(500).json({ error: "Broken" }));
+      a.get("/api/limited", (_, res) => res.status(429).json({ error: "Too many requests" }));
+    });
+
+  it("never spends the budget on refusals to a validated session", async () => {
+    const url = await failureApp("user-frank");
+    const paths = [
+      "/api/forbidden",
+      "/api/missing",
+      "/api/conflict",
+      "/api/broken",
+      "/api/limited",
+    ];
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 120; i++) {
+      const res = await request(url)
+        .get(paths[i % paths.length]!)
+        .set("X-Forwarded-For", "203.0.113.22")
+        .set("Cookie", "session=real");
+      statuses.push(res.status);
+    }
+
+    expect(statuses.filter((s) => s === 429)).toHaveLength(120 / paths.length);
+  });
+
+  it("counts a rejected session but not a validated session's 4xx", async () => {
+    const url = await failureApp("user-grace");
+    const remaining = async (path: string, cookie: string) => {
+      const res = await request(url)
+        .get(path)
+        .set("X-Forwarded-For", "203.0.113.23")
+        .set("Cookie", cookie);
+      return Number(res.headers["ratelimit-remaining"]);
+    };
+
+    const first = await remaining("/api/missing", "session=real");
+    const afterValidated = await remaining("/api/forbidden", "session=real");
+    expect(afterValidated).toBe(first);
+
+    await remaining("/api/missing", "session=forged");
+    const afterRejected = await remaining("/api/missing", "session=real");
+    expect(afterRejected).toBe(first - 1);
+  });
 });
 
 describe("credentialsLimiter", () => {
@@ -200,6 +257,60 @@ describe("credentialsLimiter", () => {
 
     expect(blocked.status).toBe(429);
     expect(blocked.body.error).toBe("Too many requests");
+  });
+});
+
+describe("account deletion behind the credential budget", () => {
+  // Layered like `server.ts`, so the signed-in limiters in front of the route
+  // cannot stand in for the credential budget.
+  const deletionApp = (userId: string) =>
+    appWith((a) => {
+      a.use(CREDENTIAL_GUESSING_PATHS, credentialsLimiter);
+      a.use("/api", apiFailureLimiter, fakeAuthSession("session=real", userId), apiLimiter);
+      a.post("/api/users/me/delete", (req, res) => {
+        if (req.headers["x-password"] === "right") return res.status(204).end();
+        res.status(403).json({ errors: [{ context: { reason: "PASSWORD_INVALID" } }] });
+      });
+      a.get("/api/users/me/deletion", (_, res) => res.status(403).json({ error: "Forbidden" }));
+      a.get("/api/users/me/settings", (_, res) => res.status(403).json({ error: "Forbidden" }));
+    });
+
+  const deleteTimes = (url: string, times: number, ip: string, password: string) =>
+    hammer(
+      url,
+      "/api/users/me/delete",
+      times,
+      { "X-Forwarded-For": ip, Cookie: "session=real", "X-Password": password },
+      "post"
+    );
+
+  it("cuts off a signed-in caller's wrong passwords after 20 failures from one IP", async () => {
+    const url = await deletionApp("user-ivan");
+
+    const statuses = await deleteTimes(url, 22, "203.0.113.30", "wrong");
+
+    expect(statuses.slice(0, 20).every((s) => s === 403)).toBe(true);
+    expect(statuses.slice(20)).toEqual([429, 429]);
+  });
+
+  it("does not spend the budget on a successful deletion", async () => {
+    const url = await deletionApp("user-judy");
+
+    const statuses = await deleteTimes(url, 25, "203.0.113.31", "right");
+
+    expect(statuses.every((s) => s === 204)).toBe(true);
+  });
+
+  it("leaves the deletion status and the other users routes outside the budget", async () => {
+    const url = await deletionApp("user-karl");
+
+    const headers = { "X-Forwarded-For": "203.0.113.32", Cookie: "session=real" };
+    const statuses = [
+      ...(await hammer(url, "/api/users/me/deletion", 25, headers)),
+      ...(await hammer(url, "/api/users/me/settings", 25, headers)),
+    ];
+
+    expect(statuses.every((s) => s === 403)).toBe(true);
   });
 });
 
@@ -249,6 +360,10 @@ describe("CREDENTIAL_GUESSING_PATHS", () => {
 
   it("keeps the invite link endpoints behind the same budget as sign-in", () => {
     expect(CREDENTIAL_GUESSING_PATHS).toContain("/api/auth/invite");
+  });
+
+  it("keeps the account-deletion password check behind the same budget as sign-in", () => {
+    expect(CREDENTIAL_GUESSING_PATHS).toContain("/api/users/me/delete");
   });
 
   it("keeps the original credential endpoints covered", () => {

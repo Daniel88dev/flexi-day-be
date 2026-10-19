@@ -7,7 +7,10 @@ import { authCookieFor } from "./helpers/authHelper.js";
 import { db } from "../../db/db.js";
 import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { computePublicHolidays } from "../../services/bankHoliday/holidayDataset.js";
+import { listBankHolidays } from "../../services/bankHoliday/bankHolidayServices.js";
 import { eq } from "drizzle-orm";
+import { v4 as uuidv4 } from "uuid";
 
 const YEAR = new Date().getFullYear();
 
@@ -85,6 +88,37 @@ describe("Bank holidays E2E", () => {
       const after = await db.select().from(bankHolidays).where(eq(bankHolidays.country, "CZ"));
       expect(after).toHaveLength(filled.length);
       expect(new Set(after.map((r) => r.date)).size).toBe(after.length);
+    });
+
+    it("adds the missing days of multi-day holidays to a country-year cached without them", async () => {
+      const laterDays = ["2027-02-08", "2027-09-15", "2027-09-16"];
+      const firstDaysOnly = computePublicHolidays("KR", 2027)
+        .filter((row) => !laterDays.includes(row.date))
+        .map((row) => ({ ...row, id: uuidv4() }));
+      await db.insert(bankHolidays).values(firstDaysOnly);
+      const storedKr2027 = () => listBankHolidays(2027, "KR");
+
+      const response = await request(server.url)
+        .get("/api/bank-holidays?country=KR&year=2027")
+        .set("Cookie", cookie)
+        .expect(200);
+
+      const dates = (response.body as { date: string }[]).map((row) => row.date);
+      expect(dates).toEqual(expect.arrayContaining(laterDays));
+      expect(new Set(dates).size).toBe(dates.length);
+
+      const stored = await storedKr2027();
+      const idByDate = new Map(stored.map((row) => [row.date, row.id]));
+      for (const row of firstDaysOnly) {
+        expect(idByDate.get(row.date)).toBe(row.id);
+      }
+      expect(stored).toHaveLength(firstDaysOnly.length + laterDays.length);
+
+      await request(server.url)
+        .get("/api/bank-holidays?country=KR&year=2027")
+        .set("Cookie", cookie)
+        .expect(200);
+      expect(await storedKr2027()).toHaveLength(stored.length);
     });
 
     it("returns an empty array for an unsupported country", async () => {

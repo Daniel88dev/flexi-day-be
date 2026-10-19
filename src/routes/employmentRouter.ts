@@ -64,9 +64,10 @@ export const employmentRouter = (): Router => {
    *     description: |
    *       The roster, scoped to what the caller may read: every Employment for
    *       an organization admin, the members of the groups they administer for
-   *       a group admin. A group's manager holds no membership row, so their
-   *       own Employment — and anyone else's who belongs to no group — appears
-   *       only for organization admins, as do ended ones, which carry
+   *       a group admin. A group's manager never counts as a member of the
+   *       group they manage, whatever membership row they hold, so the admins
+   *       of that group do not see them. Anyone who belongs to no group
+   *       appears only for organization admins, as do ended ones, which carry
    *       `ended: true`. A group admin's slice is their groups' current
    *       members — their own row is not in it, and is on `GET
    *       /api/employment`. Callers who administer nothing get 403.

@@ -97,7 +97,7 @@ export type VacationDetail = VacationListItem & {
   rejectedByUser: UserSummary | null;
   createdByUser: UserSummary | null;
   deletedByUser: UserSummary | null;
-  // The contiguous same-type run this row belongs to: inclusive span + every day-row id in it.
+  // The rows of this row's Request in the same state: first and last day + every row id.
   rangeStart: DateString;
   rangeEnd: DateString;
   vacationIds: string[];

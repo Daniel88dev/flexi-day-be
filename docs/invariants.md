@@ -280,20 +280,27 @@ read-only) to debug customer reports.
 Several limiters, not one, because a single per-IP bucket both throttles real users and
 under-protects the endpoints that matter:
 
-| Limiter                | Mounted on                                                    | Key                            | Budget                   |
-| ---------------------- | ------------------------------------------------------------- | ------------------------------ | ------------------------ |
-| `floodLimiter`         | everything                                                    | IP                             | 5000 / 5 min             |
-| `apiFailureLimiter`    | `/api` (before session validation)                            | IP                             | 100 **failures** / 5 min |
-| `apiLimiter`           | `/api` (after the auth and dev routes)                        | validated user id, IP fallback | 1000 / 5 min             |
-| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link | IP                             | 20 **failures** / 15 min |
-| `passwordResetLimiter` | `request-password-reset`                                      | IP                             | 5 / 15 min               |
-| `otpSendLimiter`       | `two-factor/send-otp`                                         | challenge cookie, IP fallback  | 10 / 15 min              |
-| `calendarFeedLimiter`  | `/calendars/:token.ics`                                       | feed token                     | 120 / hour               |
-| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed`          | IP                             | 5000 / 5 min             |
+| Limiter                | Mounted on                                                                       | Key                            | Budget                   |
+| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------ | ------------------------ |
+| `floodLimiter`         | everything                                                                       | IP                             | 5000 / 5 min             |
+| `apiFailureLimiter`    | `/api` (before session validation), unvalidated requests only                    | IP                             | 100 **failures** / 5 min |
+| `apiLimiter`           | `/api` (after the auth and dev routes)                                           | validated user id, IP fallback | 1000 / 5 min             |
+| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link / account deletion | IP                             | 20 **failures** / 15 min |
+| `passwordResetLimiter` | `request-password-reset`                                                         | IP                             | 5 / 15 min               |
+| `otpSendLimiter`       | `two-factor/send-otp`                                                            | challenge cookie, IP fallback  | 10 / 15 min              |
+| `calendarFeedLimiter`  | `/calendars/:token.ics`                                                          | feed token                     | 120 / hour               |
+| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed`                             | IP                             | 5000 / 5 min             |
 
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs
   through `ipKeyGenerator` — a bare `req.ip` lets one IPv6 /64 rotate addresses freely.
+- **`apiFailureLimiter` counts only failures from requests without a validated session.** Its
+  success rule treats any request that carries `req.auth` as a success, whatever its status, so
+  the routine 403, 404 and 409 answers a signed-in user gets never pool an office IP into a
+  lockout. Signed-in traffic is bounded by `apiLimiter` alone. What still counts: no cookie, an
+  invented cookie, an expired or device-mismatched session, and a session lookup that errors. The
+  rule reads `req.auth` when the response finishes, so the limiter can stay mounted before
+  `authSession`.
 - **`credentialsLimiter` covers the whole `/api/auth/two-factor` surface, not just the verify
   endpoints.** A 6-digit code is far cheaper to guess than a password, and enable / disable /
   get-totp-uri / generate-backup-codes are password oracles — without the failures-only budget, a
@@ -304,6 +311,12 @@ under-protects the endpoints that matter:
   never pools — and the phone needs nothing of its own for that, because the expo client forwards
   its cookie jar as a `Cookie` header exactly as a browser does
   (`src/tests/e2e/nativeSession.e2e.test.ts`, "keys a native request on the cookie it carries").
+- **`credentialsLimiter` covers `POST /api/users/me/delete`.** It checks the current password
+  behind a session, the same kind of oracle as `/two-factor/disable`, and lives in our own users
+  router, where neither better-auth's limiter nor a per-IP failure budget sees a signed-in request.
+  Without this entry the only bound would be `apiLimiter`'s 1000 requests per user. Every 4xx it
+  answers counts, as on the invite endpoints; a 204 does not. Prefix matching is per segment, so
+  `GET /api/users/me/deletion` stays outside.
 - **`passwordResetLimiter` exists because `credentialsLimiter` cannot cover that route.** Asking
   for a reset answers 200 for every input on purpose (it must reveal nothing about which addresses
   exist), and `credentialsLimiter` counts only failures — so nothing would ever increment. What
@@ -433,6 +446,15 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
 - **The record's own group, never the mirror.** Standing is read against `row.groupId`. A row
   mirrored into a group keeps its source group's `groupId`, so the target group's approvers and
   admins get the teammate view of it. Keying on the group being listed would hand them the full row.
+- **The detail endpoint's visibility follows the list's, mirrors included.** `canView` in
+  `resolveVacationPermissions` also holds when a live mirror projects the row into a group the
+  caller sees in full: `getProjectingMirrorTargetGroupIds` uses the `liveMirror` predicate
+  `getVacationsForGroup` and the sync pull use, and the scope check is the
+  `getReportScopeEntries` + `canViewWholeGroup` pair `listVacationsInScope` uses. Only sight
+  widens; every other flag stays keyed on `row.groupId`, so such a caller gets the teammate view
+  with no actions. A separate rule for either side would let the list show a record whose detail
+  answers 403, or the detail open one the list hides. `mirroredDetail.e2e.test.ts` fails if they
+  disagree or if a mirror reader gets a private field.
 - **`AWAY` is wire-only.** It lives in the response types (`WireRecordType`) and the `@openapi`
   response enums. It is not in the `vacation_type` PG enum, `CalendarRecordType`,
   `requestableRecordTypeEnum` or any write validator, so no write can store it. Accepting it on a
@@ -507,8 +529,15 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   boundary.
 - **Reading an Employment is wider than belonging to one.** `attendanceAccess.ts` is the only
   statement of who may read and correct one, and it deliberately leaves the Employment of anybody
-  who belongs to no group — a manager whose own group holds no membership row for them, say — to
-  org admins alone, because a group admin's scope reaches only people who hold a `group_users` row.
+  who belongs to no group to org admins alone, because a group admin's scope reaches only people
+  who hold a `group_users` row.
+- **A group's manager is not one of its members for attendance.** Creating a group gives the
+  manager a full `group_users` row, so `administersGroupOfMember` and `getMemberIdsExcludingManagers`
+  skip a row whose user manages that row's group, as the visibility table in
+  [`attendance.md`](attendance.md#visibility) requires. The rule is per group: a manager who is a plain
+  member of another group stays in that group's scope. Vacation credits the manager's own row on
+  purpose and does not go through these helpers. `attendanceManagerScope.e2e.test.ts` fails if a
+  group admin sees or corrects their own group's manager.
 
 ## Quota allocation (`src/services/userYearQuotas/yearAllocation.ts`)
 
@@ -603,11 +632,14 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
   other group the feed carries only the owner's own, as the web reads do. Birthdays come only from
   groups seen in full, and group events from every selected group, as on the web. The stored rows
   stay as they are, so a re-join or View switched back on restores the group without editing the
-  feed. Read the stored ids directly and someone removed from a group keeps a subscription link
-  that shows that group's days off for as long as the link lives; drop the View depth and a member
-  without View reads every colleague's leave and notes through the link.
-  `src/tests/e2e/calendarFeedLiveMembership.e2e.test.ts` and
-  `src/tests/e2e/calendarFeedViewAccess.e2e.test.ts` fail if the rule gives.
+  feed. Updating the feed keeps them too: `PUT /api/calendar-sync/:id` accepts a group already
+  stored on that feed after the owner has left it, and checks only newly added groups against
+  current membership. Read the stored ids directly and someone removed from a group keeps a
+  subscription link that shows that group's days off for as long as the link lives; drop the View
+  depth and a member without View reads every colleague's leave and notes through the link.
+  `src/tests/e2e/calendarFeedLiveMembership.e2e.test.ts`,
+  `src/tests/e2e/calendarFeedViewAccess.e2e.test.ts` and
+  `src/tests/e2e/calendarFeedStaleTeamEdit.e2e.test.ts` fail if the rule gives.
 
 ## Billing config is opt-in (`src/config.ts`)
 

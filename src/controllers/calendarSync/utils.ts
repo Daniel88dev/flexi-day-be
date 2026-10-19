@@ -109,15 +109,18 @@ export const serializeOwnedConfig = async (req: Request, id: string, userId: str
  * Validates that every requested team belongs to the user. Returns the list of
  * team ids to persist. Membership is validated regardless of scope so that
  * teams selected for a `TEAM` feed are preserved (and restorable on edit) even
- * while the feed is temporarily switched to `ME` scope. Any team the user is
- * not a member of is rejected by returning null.
+ * while the feed is temporarily switched to `ME` scope. A team already in
+ * `storedTeamIds` may stay after the user left it, because feed reads intersect
+ * stored teams with live membership. Any other non-member team returns null.
  */
 export const resolveTeamIds = (
   data: Pick<ValidatedCreateCalendarSync, "teamIds">,
-  userGroupIds: Set<string>
+  userGroupIds: Set<string>,
+  storedTeamIds: readonly string[] = []
 ): string[] | null => {
+  const stored = new Set(storedTeamIds);
   for (const id of data.teamIds) {
-    if (!userGroupIds.has(id)) return null;
+    if (!userGroupIds.has(id) && !stored.has(id)) return null;
   }
   return [...new Set(data.teamIds)];
 };
