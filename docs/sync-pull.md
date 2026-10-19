@@ -123,8 +123,9 @@ Detail the table cannot hold:
   groups. A group they have left, a soft-deleted one and a mirror's source group each add none: they
   are carried to label a row, not as a calendar the phone marks. Before any row is read, a fresh
   pull runs the lazy fill for every country and year of the window, so a first pull for a new
-  country is never empty. The rows it writes are stamped after the pull's position was minted, so
-  the next delta carries them once more.
+  country is never empty. The fill also inserts any day the dataset holds and the table lacks, and
+  never deletes or rewrites a stored row, since bank holidays have no tombstones. The rows it writes are
+  stamped after the pull's position was minted, so the next delta carries them once more.
 
 ## Private details
 

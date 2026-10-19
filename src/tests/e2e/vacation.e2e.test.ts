@@ -75,6 +75,19 @@ const midweekCzechHoliday = () => {
   return holiday;
 };
 
+// Next year's KR holidays, inside the booking window whenever the suite runs. Chuseok and
+// Seollal cover three days each; a cache holding only their first days would book the rest.
+const koreanHolidays = () => {
+  const rows = computePublicHolidays("KR", new Date().getUTCFullYear() + 1);
+  const daysOf = (name: string) => rows.filter((row) => row.name === name).map((row) => row.date);
+  const chuseok = daysOf("추석");
+  const seollal = daysOf("설날");
+  if (chuseok.length !== 3 || seollal.length !== 3) throw new Error("Expected 3-day KR holidays");
+  return { all: new Set(rows.map((row) => row.date)), chuseok, seollal };
+};
+
+const isWeekday = (date: string) => ![0, 6].includes(new Date(`${date}T00:00:00Z`).getUTCDay());
+
 describe("Vacation API E2E Tests", () => {
   let context: TestContext;
   let server: LoopbackServer;
@@ -367,6 +380,58 @@ describe("Vacation API E2E Tests", () => {
         .post("/api/vacation/create-vacation")
         .set("Cookie", cookie)
         .send({ groupId: context.group.id, from: isoDay(HOLIDAY), to: isoDay(HOLIDAY) })
+        .expect(422);
+
+      expect(JSON.stringify(response.body)).toContain("Selected day is a public holiday");
+      expect(await db.select().from(vacation)).toHaveLength(0);
+    });
+  });
+
+  describe("POST /api/vacation/create-vacation — multi-day public holidays", () => {
+    const KR = koreanHolidays();
+
+    beforeEach(async () => {
+      await db.update(groups).set({ holidayCountry: "KR" }).where(eq(groups.id, context.group.id));
+      await addToGroup(context.user1.id, context.group.id);
+    });
+
+    afterEach(async () => {
+      await db.update(groups).set({ holidayCountry: null }).where(eq(groups.id, context.group.id));
+    });
+
+    it("charges none of the days Chuseok covers in a Monday-to-Friday range", async () => {
+      const first = new Date(`${KR.chuseok[0]!}T00:00:00Z`);
+      const last = new Date(`${KR.chuseok[2]!}T00:00:00Z`);
+      const from = isoDay(shift(first, -((first.getUTCDay() + 6) % 7)));
+      const to = isoDay(shift(last, (5 - last.getUTCDay() + 7) % 7));
+      const expected: string[] = [];
+      for (let day = new Date(`${from}T00:00:00Z`); isoDay(day) <= to; day = shift(day, 1)) {
+        if (isWeekday(isoDay(day)) && !KR.all.has(isoDay(day))) expected.push(isoDay(day));
+      }
+      const cookie = await authCookieFor(context.user1.id);
+
+      const response = await request(server.url)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from, to })
+        .expect(201);
+
+      const days = (response.body as { requestedDay: string }[])
+        .map((row) => row.requestedDay)
+        .sort();
+      expect(days).toEqual(expected);
+      for (const day of KR.chuseok) expect(days).not.toContain(day);
+    });
+
+    it("refuses a single day that is a later day of a multi-day holiday", async () => {
+      const day = [...KR.seollal.slice(1), ...KR.chuseok.slice(1)].find(isWeekday);
+      if (!day) throw new Error("No weekday among the later KR holiday days");
+      const cookie = await authCookieFor(context.user1.id);
+
+      const response = await request(server.url)
+        .post("/api/vacation/create-vacation")
+        .set("Cookie", cookie)
+        .send({ groupId: context.group.id, from: day, to: day })
         .expect(422);
 
       expect(JSON.stringify(response.body)).toContain("Selected day is a public holiday");

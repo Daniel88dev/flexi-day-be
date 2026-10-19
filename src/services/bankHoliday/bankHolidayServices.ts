@@ -52,8 +52,12 @@ export const insertBankHolidays = async (
  * time either is asked for. The table starts empty and fills per pair;
  * unsupported countries simply stay empty.
  *
- * A region-filtered miss never refills. The dataset rows carry no region, so a
- * refill there would duplicate an already-cached country rather than satisfy
+ * Every read also inserts any computed day the stored set lacks. It never
+ * deletes or rewrites a row: the sync pull has no tombstones for bank
+ * holidays, and a stored row's id must stay stable.
+ *
+ * A region-filtered read never fills. The dataset rows carry no region, so a
+ * fill there would duplicate an already-cached country rather than satisfy
  * the query.
  */
 export const ensureBankHolidays = async (
@@ -63,11 +67,12 @@ export const ensureBankHolidays = async (
   tx?: DbTransaction
 ): Promise<BankHolidayType[]> => {
   const stored = await listBankHolidays(year, country, region, tx);
-  if (stored.length > 0 || region || !isSupportedCountry(country)) return stored;
+  if (region || !isSupportedCountry(country)) return stored;
 
-  const computed = computePublicHolidays(country, year);
-  if (computed.length === 0) return stored;
+  const storedDates = new Set(stored.filter((row) => row.region === null).map((row) => row.date));
+  const missing = computePublicHolidays(country, year).filter((row) => !storedDates.has(row.date));
+  if (missing.length === 0) return stored;
 
-  await insertBankHolidays(computed, tx);
+  await insertBankHolidays(missing, tx);
   return listBankHolidays(year, country, region, tx);
 };
