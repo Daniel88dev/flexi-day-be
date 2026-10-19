@@ -66,8 +66,8 @@ const summarize = (rows: VacationRow[]): RowSummary | null => {
   };
 };
 
-const groupByUser = (rows: VacationRow[]): Map<string, VacationRow[]> => {
-  const byUser = new Map<string, VacationRow[]>();
+const groupByUser = <Row extends VacationRow>(rows: Row[]): Map<string, Row[]> => {
+  const byUser = new Map<string, Row[]>();
   for (const row of rows) {
     const existing = byUser.get(row.userId);
     if (existing) existing.push(row);
@@ -395,118 +395,98 @@ export const notifyVacationComment = async (
   }
 };
 
+type CancelledRow = VacationRow & { approvedAt: Date | null; rejectedAt: Date | null };
+
 /**
- * Notifies about a cancelled request that had already been approved. Pending
- * requests are dropped silently — nobody was counting on them yet.
- *
- * When someone else cancels, the employee hears about it; when the employee
- * cancels their own approved days, the approvers do.
+ * The rows must be the ones loaded before the cancel, which clears the
+ * approval stamp this reads. Declined rows can be cancelled too; the member
+ * already heard about the decline, so they stay silent.
  */
-export const notifyVacationCancelled = async (
-  row: VacationRow & { approvedAt: Date | null },
-  actor: { id: string; name: string },
-  reason: string | null
-): Promise<void> => {
-  try {
-    if (!row.approvedAt) return;
-
-    const summary = summarize([row]);
-    if (!summary) return;
-
-    const group = await getApprovalUsers(row.groupId);
-    if (!group) return;
-
-    const employee = await getUserById(row.userId);
-    if (!employee) return;
-
-    const recipients: UserContact[] =
-      actor.id === row.userId
-        ? await approverRecipients(group, { requesterId: row.userId, actorId: actor.id })
-        : [employee];
-
-    await deliver(
-      recipients.map((recipient) => ({
-        userId: recipient.id,
-        email: {
-          to: recipient.email,
-          template: "vacation-cancelled",
-          data: {
-            recipientName: recipient.name,
-            employeeName: employee.name,
-            cancelledByName: actor.name,
-            teamName: group.groupName,
-            leaveType: summary.calendarRecordTypeLabel,
-            dateRange: summary.dateRange,
-            dayCount: summary.dayCount,
-            reason: reason?.trim() ? reason.trim() : OR_DASH,
-            requestUrl: summary.requestUrl,
-          },
-        },
-        notification: {
-          type: notificationType.ApprovalDecided,
-          title: "Approved time off cancelled",
-          body: `${employee.name} · ${summary.calendarRecordTypeLabel} · ${summary.dateRange}`,
-          href: summary.requestUrl,
-        },
-      }))
-    );
-  } catch (error) {
-    logger.error("notifyVacationCancelled failed", { error, vacationId: row.id });
-  }
-};
-
-// Bulk variant of notifyVacationCancelled: one mail per requester, approved days only.
 export const notifyVacationsCancelled = async (
-  rows: (VacationRow & { approvedAt: Date | null })[],
+  rows: CancelledRow[],
   actor: { id: string; name: string },
   reason: string | null
 ): Promise<void> => {
   try {
-    const approvedRows = rows.filter((r) => r.approvedAt);
-    if (approvedRows.length === 0) return;
+    const notDeclined = rows.filter((r) => !r.rejectedAt);
+    if (notDeclined.length === 0) return;
 
-    const byUser = groupByUser(approvedRows);
+    const byUser = groupByUser(notDeclined);
     const employees = await getUsersByIds([...byUser.keys()]);
     const contacts = new Map(employees.map((e) => [e.id, e]));
 
+    const trimmedReason = reason?.trim() ? reason.trim() : null;
     const deliveries: Delivery[] = [];
 
     for (const [userId, userRows] of byUser) {
       const employee = contacts.get(userId);
-      const summary = summarize(userRows);
-      if (!employee || !summary) continue;
+      if (!employee) continue;
+
+      const ownCancel = actor.id === userId;
+      const approved = summarize(userRows.filter((r) => r.approvedAt));
+      const pending = ownCancel ? null : summarize(userRows.filter((r) => !r.approvedAt));
+      if (!approved && !pending) continue;
 
       const group = await getApprovalUsers(userRows[0]?.groupId ?? "");
       if (!group) continue;
 
-      const recipients: UserContact[] =
-        actor.id === userId
+      const memberBody = (summary: RowSummary) =>
+        `${summary.calendarRecordTypeLabel} · ${summary.dateRange} (${summary.dayCount})` +
+        (trimmedReason ? ` · Reason: ${trimmedReason}` : "");
+      const mailData = (summary: RowSummary) => ({
+        employeeName: employee.name,
+        cancelledByName: actor.name,
+        teamName: group.groupName,
+        leaveType: summary.calendarRecordTypeLabel,
+        dateRange: summary.dateRange,
+        dayCount: summary.dayCount,
+        reason: trimmedReason ?? OR_DASH,
+        requestUrl: summary.requestUrl,
+      });
+
+      if (approved) {
+        const recipients: UserContact[] = ownCancel
           ? await approverRecipients(group, { requesterId: userId, actorId: actor.id })
           : [employee];
 
-      for (const recipient of recipients) {
-        deliveries.push({
-          userId: recipient.id,
-          email: {
-            to: recipient.email,
-            template: "vacation-cancelled",
-            data: {
-              recipientName: recipient.name,
-              employeeName: employee.name,
-              cancelledByName: actor.name,
-              teamName: group.groupName,
-              leaveType: summary.calendarRecordTypeLabel,
-              dateRange: summary.dateRange,
-              dayCount: summary.dayCount,
-              reason: reason?.trim() ? reason.trim() : OR_DASH,
-              requestUrl: summary.requestUrl,
+        for (const recipient of recipients) {
+          deliveries.push({
+            userId: recipient.id,
+            email: {
+              to: recipient.email,
+              template: "vacation-cancelled",
+              data: { ...mailData(approved), recipientName: recipient.name },
             },
+            notification: ownCancel
+              ? {
+                  type: notificationType.ApprovalDecided,
+                  title: "Approved time off cancelled",
+                  body: `${employee.name} · ${approved.calendarRecordTypeLabel} · ${approved.dateRange}`,
+                  href: approved.requestUrl,
+                }
+              : {
+                  type: notificationType.ApprovalDecided,
+                  title: `${actor.name} cancelled your approved time off`,
+                  body: memberBody(approved),
+                  href: approved.requestUrl,
+                },
+          });
+        }
+      }
+
+      if (pending) {
+        deliveries.push({
+          userId,
+          email: {
+            to: employee.email,
+            template: "vacation-request-cancelled",
+            data: mailData(pending),
           },
           notification: {
             type: notificationType.ApprovalDecided,
-            title: "Approved time off cancelled",
-            body: `${employee.name} · ${summary.calendarRecordTypeLabel} · ${summary.dateRange}`,
-            href: summary.requestUrl,
+            title: `${actor.name} cancelled your time-off request`,
+            body: memberBody(pending),
+            href: pending.requestUrl,
           },
         });
       }
@@ -517,3 +497,10 @@ export const notifyVacationsCancelled = async (
     logger.error("notifyVacationsCancelled failed", { error, actorId: actor.id });
   }
 };
+
+/** Single-row form of {@link notifyVacationsCancelled}. */
+export const notifyVacationCancelled = (
+  row: CancelledRow,
+  actor: { id: string; name: string },
+  reason: string | null
+): Promise<void> => notifyVacationsCancelled([row], actor, reason);

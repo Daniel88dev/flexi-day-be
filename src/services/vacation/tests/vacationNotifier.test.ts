@@ -308,18 +308,11 @@ describe("vacation notifier", () => {
     expect(mockCreateNotification).toHaveBeenCalledTimes(1);
   });
 
-  it("stays silent when a pending (never approved) request is cancelled", async () => {
-    await notifyVacationCancelled({ ...row(), approvedAt: null }, { id: "x", name: "X" }, null);
-
-    expect(mockSendTemplated).not.toHaveBeenCalled();
-    expect(mockCreateNotification).not.toHaveBeenCalled();
-  });
-
   it("tells the employee when someone else cancels their approved time off", async () => {
-    mockGetUserById.mockResolvedValue(employee);
+    mockGetUsersByIds.mockResolvedValue([employee]);
 
     await notifyVacationCancelled(
-      { ...row(), approvedAt: new Date("2026-08-01T00:00:00Z") },
+      { ...row(), approvedAt: new Date("2026-08-01T00:00:00Z"), rejectedAt: null },
       { id: "approver-1", name: "Ada Lovelace" },
       null
     );
@@ -338,10 +331,10 @@ describe("vacation notifier", () => {
   });
 
   it("tells the approver when the employee cancels their own approved time off", async () => {
-    mockGetUserById.mockResolvedValue(employee);
+    mockGetUsersByIds.mockResolvedValue([employee]);
 
     await notifyVacationCancelled(
-      { ...row(), approvedAt: new Date("2026-08-01T00:00:00Z") },
+      { ...row(), approvedAt: new Date("2026-08-01T00:00:00Z"), rejectedAt: null },
       { id: "employee-1", name: "Dana Holt" },
       "Plans changed"
     );
@@ -369,8 +362,8 @@ describe("vacation notifier", () => {
 
     await notifyVacationsCancelled(
       [
-        { ...row(), approvedAt },
-        { ...row({ id: "vac-2", requestedDay: "2026-08-13" }), approvedAt },
+        { ...row(), approvedAt, rejectedAt: null },
+        { ...row({ id: "vac-2", requestedDay: "2026-08-13" }), approvedAt, rejectedAt: null },
       ],
       { id: "employee-1", name: "Dana Holt" },
       null
@@ -378,5 +371,194 @@ describe("vacation notifier", () => {
 
     expect(sentTo()).toEqual(["ada@example.com", "grace@example.com", "mia@example.com"]);
     expect(notifiedUserIds()).toEqual(["approver-1", "approver-2", "manager-1"]);
+  });
+});
+
+describe("cancellation notices to the member", () => {
+  const approvedAt = new Date("2026-08-01T00:00:00Z");
+  const manager = { id: "manager-1", name: "Mia Novak" };
+  const otherMember = { id: "employee-2", name: "Eli Park", email: "eli@example.com" };
+  const contacts = [employee, otherMember];
+
+  const pending = (overrides: Partial<Record<string, unknown>> = {}) => ({
+    ...row(overrides),
+    approvedAt: null,
+    rejectedAt: null,
+  });
+  const approved = (overrides: Partial<Record<string, unknown>> = {}) => ({
+    ...pending(overrides),
+    approvedAt,
+  });
+
+  const notices = () =>
+    mockCreateNotification.mock.calls.map(
+      ([n]) => n as { userId: string; title: string; body: string }
+    );
+  const mails = () =>
+    mockSendTemplated.mock.calls.map(
+      ([m]) => m as { to: string; template: string; data: Record<string, string> }
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetApprovalUsers.mockResolvedValue(group);
+    mockGetGroupUsers.mockResolvedValue([]);
+    mockFilterUsersAcceptingEmail.mockImplementation((ids: string[]) => new Set(ids));
+    mockGetUserById.mockImplementation(async (id: string) => contacts.find((c) => c.id === id));
+    mockGetUsersByIds.mockImplementation(async (ids: string[]) =>
+      contacts.filter((c) => ids.includes(c.id))
+    );
+  });
+
+  it("tells the member who cancelled their pending request and why", async () => {
+    await notifyVacationCancelled(pending(), manager, " Team offsite that week ");
+
+    expect(notices()).toEqual([
+      expect.objectContaining({
+        userId: "employee-1",
+        title: "Mia Novak cancelled your time-off request",
+        body: "Vacation · 12 Aug 2026 (1 day) · Reason: Team offsite that week",
+      }),
+    ]);
+    expect(mails()).toEqual([
+      {
+        to: "dana@example.com",
+        template: "vacation-request-cancelled",
+        data: {
+          employeeName: "Dana Holt",
+          cancelledByName: "Mia Novak",
+          teamName: "Platform",
+          leaveType: "Vacation",
+          dateRange: "12 Aug 2026",
+          dayCount: "1 day",
+          reason: "Team offsite that week",
+          requestUrl: expect.stringContaining("vacationId=vac-1"),
+        },
+      },
+    ]);
+  });
+
+  it("puts a dash in the mail and leaves the reason out of the notice when none was given", async () => {
+    await notifyVacationCancelled(pending(), manager, null);
+
+    expect(notices()[0]?.body).toBe("Vacation · 12 Aug 2026 (1 day)");
+    expect(mails()[0]?.data.reason).toBe("—");
+  });
+
+  it("tells each member of a bulk cancel about their own pending days", async () => {
+    await notifyVacationsCancelled(
+      [
+        pending(),
+        pending({ id: "vac-2", requestedDay: "2026-08-13" }),
+        pending({ id: "vac-3", userId: "employee-2", requestedDay: "2026-08-20" }),
+      ],
+      manager,
+      "Team offsite"
+    );
+
+    expect(notifiedUserIds()).toEqual(["employee-1", "employee-2"]);
+    expect(mails().map((m) => [m.to, m.template, m.data.dateRange])).toEqual([
+      ["dana@example.com", "vacation-request-cancelled", "12 Aug 2026 – 13 Aug 2026"],
+      ["eli@example.com", "vacation-request-cancelled", "20 Aug 2026"],
+    ]);
+  });
+
+  it("names the canceller to the member, not the member, when their approved time off is cancelled", async () => {
+    await notifyVacationCancelled(approved(), manager, "Coverage gap");
+
+    expect(notices()).toEqual([
+      expect.objectContaining({
+        userId: "employee-1",
+        title: "Mia Novak cancelled your approved time off",
+        body: "Vacation · 12 Aug 2026 (1 day) · Reason: Coverage gap",
+      }),
+    ]);
+    expect(notices()[0]?.body).not.toContain("Dana Holt");
+    expect(mails()).toEqual([
+      expect.objectContaining({
+        to: "dana@example.com",
+        template: "vacation-cancelled",
+        data: expect.objectContaining({ cancelledByName: "Mia Novak", reason: "Coverage gap" }),
+      }),
+    ]);
+  });
+
+  it("stays silent when the member cancels their own pending request", async () => {
+    await notifyVacationCancelled(pending(), { id: "employee-1", name: "Dana Holt" }, null);
+    await notifyVacationsCancelled([pending()], { id: "employee-1", name: "Dana Holt" }, null);
+
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+    expect(mockSendTemplated).not.toHaveBeenCalled();
+  });
+
+  it("keeps the approver wording when the member cancels their own approved days", async () => {
+    await notifyVacationsCancelled([approved()], { id: "employee-1", name: "Dana Holt" }, null);
+
+    expect(notices()).toEqual([
+      expect.objectContaining({
+        userId: "approver-1",
+        title: "Approved time off cancelled",
+        body: "Dana Holt · Vacation · 12 Aug 2026",
+      }),
+    ]);
+    expect(mails()).toEqual([
+      expect.objectContaining({ to: "ada@example.com", template: "vacation-cancelled" }),
+    ]);
+  });
+
+  it("notifies only the other member when the actor's own rows share the batch", async () => {
+    await notifyVacationsCancelled(
+      [pending(), pending({ id: "vac-3", userId: "employee-2" })],
+      { id: "employee-1", name: "Dana Holt" },
+      null
+    );
+
+    expect(notifiedUserIds()).toEqual(["employee-2"]);
+    expect(sentTo()).toEqual(["eli@example.com"]);
+    expect(notices()[0]?.title).toBe("Dana Holt cancelled your time-off request");
+  });
+
+  it("tells a member about both their pending and their approved days in one batch", async () => {
+    await notifyVacationsCancelled(
+      [approved(), pending({ id: "vac-2", requestedDay: "2026-08-14" })],
+      manager,
+      null
+    );
+
+    expect(notices().map((n) => [n.userId, n.title, n.body])).toEqual([
+      [
+        "employee-1",
+        "Mia Novak cancelled your approved time off",
+        "Vacation · 12 Aug 2026 (1 day)",
+      ],
+      ["employee-1", "Mia Novak cancelled your time-off request", "Vacation · 14 Aug 2026 (1 day)"],
+    ]);
+    expect(mails().map((m) => m.template)).toEqual([
+      "vacation-cancelled",
+      "vacation-request-cancelled",
+    ]);
+  });
+
+  it("records the notice but sends no mail to a member who opted out of e-mail", async () => {
+    mockFilterUsersAcceptingEmail.mockResolvedValue(new Set<string>());
+
+    await notifyVacationCancelled(pending(), manager, null);
+
+    expect(notifiedUserIds()).toEqual(["employee-1"]);
+    expect(mockSendTemplated).not.toHaveBeenCalled();
+  });
+
+  it("says nothing about days that had already been declined", async () => {
+    await notifyVacationsCancelled([{ ...pending(), rejectedAt: approvedAt }], manager, null);
+
+    expect(mockCreateNotification).not.toHaveBeenCalled();
+    expect(mockSendTemplated).not.toHaveBeenCalled();
+  });
+
+  it("swallows a delivery failure so the cancellation still succeeds", async () => {
+    mockCreateNotification.mockRejectedValue(new Error("db down"));
+
+    await expect(notifyVacationCancelled(pending(), manager, null)).resolves.toBeUndefined();
+    await expect(notifyVacationsCancelled([pending()], manager, null)).resolves.toBeUndefined();
   });
 });

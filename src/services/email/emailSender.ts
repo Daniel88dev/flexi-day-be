@@ -85,6 +85,12 @@ export interface VacationCancelledData {
 }
 
 /**
+ * `vacation-request-cancelled`: sent to the requester when someone else
+ * cancels their pending request.
+ */
+export type VacationRequestCancelledData = Omit<VacationCancelledData, "recipientName">;
+
+/**
  * `vacation-comment`: sent to the other party when someone comments on a
  * request — to the requester when an approver comments, or to the approvers
  * when the requester comments.
@@ -158,6 +164,11 @@ export type TemplatedEmail =
   | { to: string; template: "vacation-approved"; data: VacationApprovedData }
   | { to: string; template: "vacation-rejected"; data: VacationRejectedData }
   | { to: string; template: "vacation-cancelled"; data: VacationCancelledData }
+  | {
+      to: string;
+      template: "vacation-request-cancelled";
+      data: VacationRequestCancelledData;
+    }
   | { to: string; template: "vacation-comment"; data: VacationCommentData }
   | { to: string; template: "group-invite"; data: GroupInviteData }
   | { to: string; template: "subscription-grace"; data: SubscriptionGraceData }
