@@ -30,6 +30,7 @@ import { userBirthdays } from "../../db/schema/user-birthday-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { CalendarRecordType, vacation } from "../../db/schema/vacation-schema.js";
 import { ensureBankHolidays } from "../bankHoliday/bankHolidayServices.js";
+import { liveMirror, mirrorOwnerStillInTarget } from "../groupMirror/groupMirrorServices.js";
 import { birthdayGroupIds } from "../birthday/birthdayVisibility.js";
 import { getScopeEntries } from "../report/reportServices.js";
 import { clock } from "../groupEvent/groupEventServices.js";
@@ -120,36 +121,12 @@ const inQuotaScope = (scope: SyncScope, callerId: string): SQL | undefined =>
   });
 
 /**
- * A mirror the pull may carry anything from: its owner still belongs to the
- * target group. `getVacationsForGroup` re-checks the same thing before
- * projecting, so somebody who left keeps leaking neither time off nor the
- * mirror row that would label it.
- */
-const mirrorOwnerStillInTarget = (): SQL =>
-  exists(
-    db
-      .select({ one: sql`1` })
-      .from(groupUsers)
-      .where(
-        and(
-          eq(groupUsers.userId, groupMirrors.userId),
-          eq(groupUsers.groupId, groupMirrors.targetGroupId),
-          isNull(groupUsers.deletedAt)
-        )
-      )
-  );
-
-/**
  * A mirror projecting into a group the caller sees in full. Callers guard on
  * an empty `fullGroupIds` themselves: `inArray` on an empty list is `false`,
  * which is right here but hides the cheaper "read nothing at all".
  */
 const liveMirrorIntoScope = (scope: SyncScope): SQL | undefined =>
-  and(
-    inArray(groupMirrors.targetGroupId, scope.fullGroupIds),
-    isNull(groupMirrors.deletedAt),
-    mirrorOwnerStillInTarget()
-  );
+  and(inArray(groupMirrors.targetGroupId, scope.fullGroupIds), liveMirror());
 
 /** A vacation row a live mirror projects into a group the caller sees in full. */
 const mirroredIntoScope = (scope: SyncScope): SQL =>
@@ -418,7 +395,7 @@ const readMirrorsPage = async (
       and(
         inArray(groupMirrors.targetGroupId, context.scope.fullGroupIds),
         context.liveOnly
-          ? and(isNull(groupMirrors.deletedAt), mirrorOwnerStillInTarget())
+          ? liveMirror()
           : or(isNotNull(groupMirrors.deletedAt), mirrorOwnerStillInTarget()),
         inWindow(groupMirrors.updatedAt, context.window),
         afterKeyset(groupMirrors.updatedAt, groupMirrors.id, after)

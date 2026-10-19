@@ -433,6 +433,15 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
 - **The record's own group, never the mirror.** Standing is read against `row.groupId`. A row
   mirrored into a group keeps its source group's `groupId`, so the target group's approvers and
   admins get the teammate view of it. Keying on the group being listed would hand them the full row.
+- **The detail endpoint's visibility follows the list's, mirrors included.** `canView` in
+  `resolveVacationPermissions` also holds when a live mirror projects the row into a group the
+  caller sees in full: `getProjectingMirrorTargetGroupIds` uses the `liveMirror` predicate
+  `getVacationsForGroup` and the sync pull use, and the scope check is the
+  `getReportScopeEntries` + `canViewWholeGroup` pair `listVacationsInScope` uses. Only sight
+  widens; every other flag stays keyed on `row.groupId`, so such a caller gets the teammate view
+  with no actions. A separate rule for either side would let the list show a record whose detail
+  answers 403, or the detail open one the list hides. `mirroredDetail.e2e.test.ts` fails if they
+  disagree or if a mirror reader gets a private field.
 - **`AWAY` is wire-only.** It lives in the response types (`WireRecordType`) and the `@openapi`
   response enums. It is not in the `vacation_type` PG enum, `CalendarRecordType`,
   `requestableRecordTypeEnum` or any write validator, so no write can store it. Accepting it on a

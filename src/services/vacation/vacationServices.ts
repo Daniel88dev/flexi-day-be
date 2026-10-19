@@ -33,6 +33,7 @@ import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
+import { liveMirror } from "../groupMirror/groupMirrorServices.js";
 import { alias } from "drizzle-orm/pg-core";
 import { buildUserSummary, type UserSummary } from "../../utils/userPresentation.js";
 import { EXCUSING_RECORD_TYPES } from "./types.js";
@@ -96,23 +97,8 @@ export const getVacationsForGroup = async (
   userId: string | null = null,
   options?: { includeCancelled?: boolean }
 ): Promise<GroupVacationListItem[]> => {
-  // A mirror only projects records of someone who still belongs to the target
-  // group; without this a member who left would keep leaking time off into it.
-  const stillAMember = exists(
-    db
-      .select({ one: sql`1` })
-      .from(groupUsers)
-      .where(
-        and(
-          eq(groupUsers.userId, vacation.userId),
-          eq(groupUsers.groupId, groupId),
-          isNull(groupUsers.deletedAt)
-        )
-      )
-  );
-
   const inThisGroup = eq(vacation.groupId, groupId);
-  const mirroredIntoThisGroup = and(isNotNull(groupMirrors.id), stillAMember);
+  const mirroredIntoThisGroup = isNotNull(groupMirrors.id);
 
   const base = [
     options?.includeCancelled ? undefined : isNull(vacation.deletedAt),
@@ -135,7 +121,7 @@ export const getVacationsForGroup = async (
         eq(groupMirrors.userId, vacation.userId),
         eq(groupMirrors.sourceGroupId, vacation.groupId),
         eq(groupMirrors.targetGroupId, groupId),
-        isNull(groupMirrors.deletedAt)
+        liveMirror()
       )
     )
     .where(where)

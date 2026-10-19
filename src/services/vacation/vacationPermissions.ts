@@ -5,6 +5,9 @@ import { mayDecideOwn } from "./decisionGuards.js";
 import { resolveGroupAdmin } from "../groupUser/groupAccess.js";
 import { getGroupsWhereUserCanApprove } from "../group/groupServices.js";
 import { getGroupUser } from "../groupUser/groupUserServices.js";
+import { getProjectingMirrorTargetGroupIds } from "../groupMirror/groupMirrorServices.js";
+import { getReportScopeEntries } from "../report/reportServices.js";
+import { canViewWholeGroup } from "../report/reportScope.js";
 
 export type VacationPermissions = {
   /** May see the request at all. */
@@ -23,6 +26,28 @@ export type VacationPermissions = {
   canAttach: boolean;
   /** May delete any of the Request's attachments, not only their own — group and organization admins. An uploader may always delete what they uploaded. */
   canDeleteAnyAttachment: boolean;
+};
+
+/**
+ * Whether the row reaches the caller through a mirror: the same live mirror
+ * and the same group scope under which `listVacationsInScope` returns it for
+ * that group. Grants sight only; every other permission stays keyed on the
+ * row's own group.
+ */
+const isVisibleThroughMirror = async (
+  userId: string,
+  vacationRow: Pick<VacationType, "userId" | "groupId">,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const targetGroupIds = await getProjectingMirrorTargetGroupIds(
+    vacationRow.userId,
+    vacationRow.groupId,
+    tx
+  );
+  if (targetGroupIds.length === 0) return false;
+
+  const scope = await getReportScopeEntries(userId, tx);
+  return targetGroupIds.some((groupId) => canViewWholeGroup(scope, groupId));
 };
 
 /**
@@ -56,8 +81,15 @@ export const resolveVacationPermissions = async (
   const canEdit = canAdmin && !isCancelled && vacationRow.rejectedAt === null;
   const canReadPrivateDetails = isOwner || isApprover || canAdmin;
 
+  const canView =
+    isOwner ||
+    isApprover ||
+    canAdmin ||
+    (membership?.viewAccess ?? false) ||
+    (await isVisibleThroughMirror(userId, vacationRow, tx));
+
   return {
-    canView: isOwner || isApprover || canAdmin || (membership?.viewAccess ?? false),
+    canView,
     canApprove: isApprover && isDecidable && (!isOwner || ownAllowed),
     canCancel: !isCancelled && (isOwner || canAdmin || isApprover),
     canEdit,

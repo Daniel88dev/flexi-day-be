@@ -265,6 +265,13 @@ export const vacationRouter = (): Router => {
    *       `canReadPrivateDetails: false`. Another person's rejected or
    *       cancelled request answers them with the same 403 as a request they
    *       may not view.
+   *
+   *       A request mirrored into a group opens for anyone who may list that
+   *       group in full (`GET /api/vacation?groupId=`), under the same rule the
+   *       list applies: a live mirror whose owner still belongs to the group.
+   *       Unless they also have standing in the request's own group, they get
+   *       the teammate view, with `canApprove`, `canCancel` and `canEdit`
+   *       false, and may not comment on it.
    *     security:
    *       - bearerAuth: []
    *     parameters:

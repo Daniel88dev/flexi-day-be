@@ -1,9 +1,54 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, exists, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import type { GroupMirror, GroupMirrorListItem } from "./types.js";
+
+/**
+ * The mirror's owner still belongs to its target group. A live mirror projects
+ * records only while this holds; without it a member who left would keep
+ * leaking time off into the group. Correlated on `group_mirrors`, so it reads
+ * whichever mirror row the enclosing query is on.
+ */
+export const mirrorOwnerStillInTarget = (): SQL =>
+  exists(
+    db
+      .select({ one: sql`1` })
+      .from(groupUsers)
+      .where(
+        and(
+          eq(groupUsers.userId, groupMirrors.userId),
+          eq(groupUsers.groupId, groupMirrors.targetGroupId),
+          isNull(groupUsers.deletedAt)
+        )
+      )
+  );
+
+/** A mirror that projects its owner's records into its target group right now. */
+export const liveMirror = (): SQL =>
+  and(isNull(groupMirrors.deletedAt), mirrorOwnerStillInTarget()) as SQL;
+
+/** The groups the user's records of `sourceGroupId` are projected into right now. */
+export const getProjectingMirrorTargetGroupIds = async (
+  userId: string,
+  sourceGroupId: string,
+  tx?: DbTransaction
+): Promise<string[]> => {
+  const rows = await (tx ?? db)
+    .select({ targetGroupId: groupMirrors.targetGroupId })
+    .from(groupMirrors)
+    .where(
+      and(
+        eq(groupMirrors.userId, userId),
+        eq(groupMirrors.sourceGroupId, sourceGroupId),
+        liveMirror()
+      )
+    );
+
+  return rows.map((row) => row.targetGroupId);
+};
 
 /** The caller's active mirrors into one group, with the source group's name. */
 export const getMirrorsIntoGroupForUser = async (
