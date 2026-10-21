@@ -107,6 +107,28 @@ export const vacationQueryYear = z.coerce.number().int().min(2023).max(2050);
 export const vacationQueryMonth = z.coerce.number().int().min(1).max(12);
 export const vacationQueryGroupId = z.string().min(1).optional();
 
+export const VACATION_LIST_MAX_MONTHS = 36;
+
+const monthsAfter = (day: DateString, months: number): DateString => {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  // 29 Feb rolls into March in a year without one; the cap is the last day of February.
+  if (date.getUTCDate() !== Number(day.slice(8))) date.setUTCDate(0);
+  return date.toISOString().slice(0, 10);
+};
+
+/** The `from`/`to` range of GET /api/vacation, half-open: `to` is the first day left out. */
+export const validateVacationListRange = z
+  .object({
+    from: z.iso.date({ error: "must be a date in YYYY-MM-DD" }),
+    to: z.iso.date({ error: "must be a date in YYYY-MM-DD" }),
+  })
+  .refine((range) => range.from < range.to, { message: "must be after from", path: ["to"] })
+  .refine((range) => range.to <= monthsAfter(range.from, VACATION_LIST_MAX_MONTHS), {
+    message: `may be at most ${VACATION_LIST_MAX_MONTHS.toString()} months after from`,
+    path: ["to"],
+  });
+
 /** Query of GET /api/vacation/calendar: one month, own records or one group's. */
 export const validateVacationCalendarQuery = z.object({
   year: vacationQueryYear,
