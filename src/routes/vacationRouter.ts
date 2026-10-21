@@ -36,8 +36,9 @@ export const vacationRouter = (): Router => {
    *       - Vacations
    *     summary: Retrieve vacations for the authenticated user or one of their groups
    *     description: |
-   *       Returns vacation records for a given year and month, or with
-   *       `wholeRequests` every row of each Request that touches it. Without `groupId`
+   *       Returns vacation records for a given year and month, or for a
+   *       `from`/`to` date range, or with `wholeRequests` every row of each
+   *       Request that touches it. Without `groupId`
    *       the caller's own records are returned. With `groupId` the whole
    *       group's records are returned instead — including records mirrored into
    *       it from another group, which carry a non-null `mirroredFromGroupId`.
@@ -67,6 +68,7 @@ export const vacationRouter = (): Router => {
    *       - name: year
    *         in: query
    *         required: false
+   *         description: Defaults to the current year. Not allowed with `from`/`to`.
    *         schema:
    *           type: integer
    *           minimum: 2023
@@ -74,10 +76,32 @@ export const vacationRouter = (): Router => {
    *       - name: month
    *         in: query
    *         required: false
+   *         description: Defaults to the current month. Not allowed with `from`/`to`.
    *         schema:
    *           type: integer
    *           minimum: 1
    *           maximum: 12
+   *       - name: from
+   *         in: query
+   *         required: false
+   *         description: |
+   *           First day of the range, included. Given only together with `to`,
+   *           and in place of `year`/`month`.
+   *         schema:
+   *           type: string
+   *           format: date
+   *           example: "2026-11-01"
+   *       - name: to
+   *         in: query
+   *         required: false
+   *         description: |
+   *           First day after the range, excluded, so `from=2026-11-01&to=2027-02-01`
+   *           covers November to January. Must be after `from` and at most 36
+   *           months past it. Given only together with `from`.
+   *         schema:
+   *           type: string
+   *           format: date
+   *           example: "2027-02-01"
    *       - name: groupId
    *         in: query
    *         required: false
@@ -101,12 +125,12 @@ export const vacationRouter = (): Router => {
    *         required: false
    *         description: |
    *           When `true`, the response also holds every row outside the month
-   *           of each Request (the rows sharing a `requestId`) that has a row
-   *           in it, so the requests view can show and act on a Request that
-   *           crosses a month edge. Those extra rows pass the same scope,
-   *           mirroring, teammate view, `includeCancelled` and `canApprove`
-   *           rules as the rows inside the month. Defaults to `false`, keeping
-   *           the calendar and dashboard on the month alone.
+   *           or range of each Request (the rows sharing a `requestId`) that
+   *           has a row in it, so the requests view can show and act on a
+   *           Request that crosses its edge. Those extra rows pass the same
+   *           scope, mirroring, teammate view, `includeCancelled` and
+   *           `canApprove` rules as the rows inside. Defaults to `false`,
+   *           keeping the calendar and dashboard on the month alone.
    *         schema:
    *           type: string
    *           enum: ["true", "false"]
@@ -119,6 +143,13 @@ export const vacationRouter = (): Router => {
    *               type: array
    *               items:
    *                 $ref: '#/components/schemas/VacationListItem'
+   *       '400':
+   *         description: |
+   *           Bad range: only one of `from`/`to`, `from`/`to` combined with
+   *           `year` or `month`, a date not in `YYYY-MM-DD` or not a calendar
+   *           day, `from` not before `to`, or a span over 36 months
+   *       '422':
+   *         description: A `year`, `month`, `groupId` or flag value that fails validation
    *       '401':
    *         description: Unauthorized
    *       '403':
