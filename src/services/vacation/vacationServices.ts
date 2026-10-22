@@ -586,6 +586,7 @@ export const getVacationDetailById = async (
     rangeStart,
     rangeEnd,
     vacationIds,
+    workingDays: vacationIds.length,
     approvedByUser:
       vacationRow.approvedBy && approvedByName
         ? buildUserSummary({ id: vacationRow.approvedBy, name: approvedByName })
