@@ -377,6 +377,16 @@ export const vacationRouter = (): Router => {
    *                       items:
    *                         type: string
    *                         format: uuid
+   *                     workingDays:
+   *                       type: integer
+   *                       minimum: 1
+   *                       description: |
+   *                         How many days those same rows book: one per row, a half day
+   *                         included, so it always equals the length of `vacationIds`. The
+   *                         allowance still charges a half day as 0.5. Rows exist only on the
+   *                         group's working days, so weekends, non-working days and public
+   *                         holidays inside the range are not counted. Counts the same way as
+   *                         `businessDays` on the approvals endpoints.
    *                     canCancel:
    *                       type: boolean
    *                     canEdit:

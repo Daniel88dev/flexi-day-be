@@ -97,10 +97,11 @@ export type VacationDetail = VacationListItem & {
   rejectedByUser: UserSummary | null;
   createdByUser: UserSummary | null;
   deletedByUser: UserSummary | null;
-  // The rows of this row's Request in the same state: first and last day + every row id.
+  // The rows of this row's Request in the same state: first and last day, every row id, their count.
   rangeStart: DateString;
   rangeEnd: DateString;
   vacationIds: string[];
+  workingDays: number;
 };
 
 export const vacationQueryYear = z.coerce.number().int().min(2023).max(2050);

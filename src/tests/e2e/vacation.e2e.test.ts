@@ -824,7 +824,12 @@ describe("Vacation API E2E Tests", () => {
         .get(`/api/vacation/${vacationId}`)
         .set("Cookie", cookie)
         .expect(200);
-      return response.body as { rangeStart: string; rangeEnd: string; vacationIds: string[] };
+      return response.body as {
+        rangeStart: string;
+        rangeEnd: string;
+        vacationIds: string[];
+        workingDays: number;
+      };
     };
 
     const idsOf = (rows: BookedRow[]) => rows.map((row) => row.id);
@@ -844,6 +849,7 @@ describe("Vacation API E2E Tests", () => {
       expect(detail.rangeStart).toBe(FRI);
       expect(detail.rangeEnd).toBe(NEXT_MON);
       expectSameIds(detail.vacationIds, idsOf(rows));
+      expect(detail.workingDays).toBe(2);
 
       await request(server.url)
         .post("/api/vacation/cancel")
@@ -870,12 +876,62 @@ describe("Vacation API E2E Tests", () => {
         expect(detail.rangeStart).toBe(dayBefore);
         expect(detail.rangeEnd).toBe(dayAfter);
         expectSameIds(detail.vacationIds, idsOf(rows));
+        expect(detail.workingDays).toBe(2);
       } finally {
         await db
           .update(groups)
           .set({ holidayCountry: null })
           .where(eq(groups.id, context.group.id));
       }
+    });
+
+    it("counts every day of a full-day Request as one working day", async () => {
+      const cookie = await authCookieFor(context.user1.id);
+      const rows = await bookRange(cookie, MON, FRI);
+
+      const detail = await detailOf(cookie, rows[2]?.id ?? "");
+      expect(detail.workingDays).toBe(5);
+    });
+
+    it("counts a half day as one working day", async () => {
+      // The booking form allows a half day only on a single day, so the three rows go in directly.
+      const requestId = uuidv4();
+      const ids = [uuidv4(), uuidv4(), uuidv4()];
+      await db.insert(vacation).values(
+        [MON, TUE, WED].map((requestedDay, index) => ({
+          id: ids[index] ?? "",
+          userId: context.user1.id,
+          groupId: context.group.id,
+          requestId,
+          requestedDay,
+          halfDay: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }))
+      );
+      const cookie = await authCookieFor(context.user1.id);
+
+      const detail = await detailOf(cookie, ids[0] ?? "");
+      expect(detail.workingDays).toBe(3);
+    });
+
+    it("counts the live rows from a live row and the cancelled rows from a cancelled row", async () => {
+      const cookie = await authCookieFor(context.user1.id);
+      const [mon, tue, wed] = await bookRange(cookie, MON, WED);
+
+      await request(server.url)
+        .post("/api/vacation/cancel")
+        .set("Cookie", cookie)
+        .send({ ids: [tue?.id] })
+        .expect(200);
+
+      const liveDetail = await detailOf(cookie, mon?.id ?? "");
+      expectSameIds(liveDetail.vacationIds, [mon?.id, wed?.id]);
+      expect(liveDetail.workingDays).toBe(2);
+
+      const cancelledDetail = await detailOf(cookie, tue?.id ?? "");
+      expect(cancelledDetail.vacationIds).toEqual([tue?.id]);
+      expect(cancelledDetail.workingDays).toBe(1);
     });
 
     it("leaves out another Request on an adjacent day", async () => {
