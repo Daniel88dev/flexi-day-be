@@ -18,10 +18,20 @@ import {
   lockOrganization,
   removeOrganizationAdmin,
 } from "../../services/organization/organizationServices.js";
-import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
+import {
+  markCalendarTargetsDirty,
+  markMemberGroupEventTargetsDirty,
+} from "../../services/calendarSync/markCalendarTargetsDirty.js";
+import { organizationTimeZone } from "../../services/organization/attendanceSettingsServices.js";
+import {
+  cancelBookingsOnDeparture,
+  REMOVED_FROM_GROUP_REASON,
+} from "../../services/vacation/departureCancellation.js";
+import { businessDateInZone } from "../../utils/dateFunc.js";
 
 /**
- * Removes a member from a group (soft delete). This is also how a downgraded
+ * Removes a member from a group (soft delete), cancelling their pending
+ * requests and bookings after today in it. This is also how a downgraded
  * owner gets back under their plan's member limit, so it must never be gated
  * on the group being writable.
  */
@@ -63,7 +73,7 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
     });
   }
 
-  const removed = await db.transaction(async (tx) => {
+  const { removed, cancelled } = await db.transaction(async (tx) => {
     // Organization first, then group — the order every other path takes (see
     // `handlePostGroupInvite`). Reversing it deadlocks against any FK-checked
     // write to `group_users`, which holds the organization lock and then needs
@@ -118,8 +128,24 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
       await removeOrganizationAdmin(locked.organizationId, userId, tx);
     }
 
-    return row;
+    const today = businessDateInZone(
+      new Date(),
+      await organizationTimeZone(locked.organizationId, tx)
+    );
+    const cancelled = await cancelBookingsOnDeparture(
+      {
+        userId,
+        groupIds: [groupId],
+        today,
+        actorUserId: auth.userId,
+        reason: REMOVED_FROM_GROUP_REASON,
+      },
+      tx
+    );
+
+    return { removed: row, cancelled };
   });
+  await markCalendarTargetsDirty(cancelled);
   await markMemberGroupEventTargetsDirty(userId);
 
   return res.status(200).json(removed);

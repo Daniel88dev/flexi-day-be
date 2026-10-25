@@ -105,12 +105,23 @@ What the organization then sees:
 - The yearly quota rollover opens no new year for a membership whose Employment in that organization
   has `account_deleted_at`. Quotas already open stay readable.
 - Nobody can book for the person: `POST /api/vacation/create-vacation` answers 403. A Deleted account
-  is never an org admin candidate, and a grant to one answers 422.
+  is never an org admin candidate, and a grant to one answers 422. Giving it view, admin or approver
+  access in a group, or naming it as a group's approver, answers 422 `ACCOUNT_DELETED`.
 - No notification row is written for a Deleted account and no workflow mail goes to one.
 
 The person keeps their seat in each group and counts in the billing headcount until an admin removes
-them from the group or ends the Employment. Removing them from their last group ends the Employment
-as it does for anyone.
+them from the group or ends the Employment. Removing them from a group cancels their pending
+requests and bookings after today there, as it does for anyone, and removing them from their last
+group ends the Employment.
+
+**End employment** (`POST /api/employment/{employmentId}/end`, the People card on `/organization`)
+is how the owner or an org admin closes a Deleted account's Employment on any plan. It takes a date,
+today or earlier in the organization's zone and not before the spell started, and in one transaction
+removes the person from every group of the organization, clears their approver slots, revokes a
+delegated admin grant, cancels pending requests and approved bookings after today with the reason
+`employment ended`, and sets `ended_at` on that date. It refuses while the person manages a group.
+It refuses a live account for now, because the Employment is one row per organization and re-adding
+an ended person would reopen it and overwrite the spell.
 
 What goes with the user's own organizations and groups:
 

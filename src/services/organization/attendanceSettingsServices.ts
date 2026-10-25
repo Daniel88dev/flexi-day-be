@@ -23,6 +23,12 @@ export const getAttendanceSettings = async (
   return row;
 };
 
+/** The organization's time zone, UTC while attendance was never set up, as attendance reads do. */
+export const organizationTimeZone = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<string> => (await getAttendanceSettings(organizationId, tx))?.timezone ?? "UTC";
+
 /**
  * The self-service window a save writes. Unlike the other rules, a field the
  * body leaves out keeps what is stored, falling back to the defaults on a first

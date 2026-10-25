@@ -10,6 +10,7 @@ import {
   getGroupUsers,
   updateGroupUserPermissions,
 } from "../../services/groupUser/groupUserServices.js";
+import { isDeletedAccount } from "../../services/user/userServices.js";
 
 export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -75,6 +76,17 @@ export const handleUpdateGroupUsers = async (req: Request, res: Response) => {
 
   await db.transaction(async (tx) => {
     for (const userRecord of data.data) {
+      const grants = userRecord.viewAccess || userRecord.adminAccess || userRecord.approverAccess;
+      if (grants && (await isDeletedAccount(userRecord.userId, tx))) {
+        throw new AppError({
+          message: "That person deleted their account, so they cannot be given access",
+          logging: true,
+          code: 422,
+          context: { url: req.url, user: auth.userId, groupId: data.groupId },
+          publicContext: { code: "ACCOUNT_DELETED" },
+        });
+      }
+
       const updatedUser = await updateGroupUserPermissions(
         userRecord.userId,
         data.groupId,

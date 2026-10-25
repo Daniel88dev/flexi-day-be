@@ -11,6 +11,7 @@ import { db } from "../../db/db.js";
 import { postChanges } from "../../services/changes/changesServices.js";
 import { getGroup, updateGroupApprovalUsers } from "../../services/group/groupServices.js";
 import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
+import { isDeletedAccount } from "../../services/user/userServices.js";
 
 export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -73,6 +74,18 @@ export const handlePutGroupApprovers = async (req: Request, res: Response) => {
   }
 
   const updated = await db.transaction(async (tx) => {
+    for (const candidate of candidates) {
+      if (await isDeletedAccount(candidate, tx)) {
+        throw new AppError({
+          message: "That person deleted their account, so they cannot approve",
+          logging: true,
+          code: 422,
+          context: { url: req.url, user: auth.userId, groupId, candidate },
+          publicContext: { code: "ACCOUNT_DELETED" },
+        });
+      }
+    }
+
     const row = await updateGroupApprovalUsers(
       groupId,
       data.mainApprovalUser,

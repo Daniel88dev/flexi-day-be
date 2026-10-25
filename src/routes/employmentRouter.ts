@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
-import { validatePatchEmployment } from "../services/employment/types.js";
+import { validateEndEmployment, validatePatchEmployment } from "../services/employment/types.js";
 import { handleGetEmployment } from "../controllers/employment/handleGetEmployment.js";
 import { handleGetEmployments } from "../controllers/employment/handleGetEmployments.js";
 import { handlePatchEmployment } from "../controllers/employment/handlePatchEmployment.js";
+import { handlePostEndEmployment } from "../controllers/employment/handlePostEndEmployment.js";
 
 export const employmentRouter = (): Router => {
   const app = Router();
@@ -156,6 +157,80 @@ export const employmentRouter = (): Router => {
     "/:employmentId",
     bodyValidationMiddleware(validatePatchEmployment),
     tryCatch(handlePatchEmployment)
+  );
+
+  /**
+   * @openapi
+   * /api/employment/{employmentId}/end:
+   *   post:
+   *     tags:
+   *       - Employment
+   *     summary: End employment
+   *     description: |
+   *       Ends the person's Employment in its organization on `endedOn`, today
+   *       or earlier in the organization's time zone (UTC while attendance was
+   *       never set up). In one transaction it removes the person from every
+   *       group of the organization, clears them from the groups' approver
+   *       slots, drops their delegated org-admin row, and cancels their
+   *       pending requests and their approved bookings after today. Past
+   *       bookings and today's stay. Each cancelled day gets a CANCELLED event
+   *       with the caller as actor and the reason "employment ended". Nobody
+   *       is notified.
+   *
+   *       The owner and org admins only, never plan-gated, attendance on or
+   *       off. For now only a Deleted account's Employment can be ended: the
+   *       Employment is one row per organization, so ending a live person and
+   *       adding them back would overwrite the spell. The account itself, and
+   *       the person's records in other organizations, are untouched.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - endedOn
+   *             properties:
+   *               endedOn:
+   *                 type: string
+   *                 format: date
+   *                 description: The last day of the spell.
+   *     responses:
+   *       '200':
+   *         description: |
+   *           `{ id, organizationId, userId, startedAt, endedAt, ended,
+   *           requiredMinutesPerDay, cancelledBookings }`. `endedAt` is now
+   *           when `endedOn` is today, otherwise the last instant of that day
+   *           in the organization's zone. `cancelledBookings` counts the
+   *           cancelled days.
+   *       '403':
+   *         description: The caller is not the owner or an org admin of the organization
+   *       '404':
+   *         description: No such Employment
+   *       '409':
+   *         description: |
+   *           `context.code` is `EMPLOYMENT_ENDED` when it already ended, or
+   *           `MANAGES_GROUP` while the person manages one of the
+   *           organization's groups.
+   *       '422':
+   *         description: |
+   *           A malformed id or date, or `context.code` is
+   *           `END_DATE_IN_FUTURE`, `END_DATE_BEFORE_START` (before the spell
+   *           started) or `ACCOUNT_NOT_DELETED`.
+   */
+  app.post(
+    "/:employmentId/end",
+    bodyValidationMiddleware(validateEndEmployment),
+    tryCatch(handlePostEndEmployment)
   );
 
   return app;

@@ -262,7 +262,13 @@ export const groupUsersRouter = (): Router => {
    *       group's manager cannot be removed; there is no manager-transfer route
    *       yet, so a manager can only leave by deleting the group. If the
    *       removed member was the main approver, approvals fall back to the
-   *       manager; a temp approver slot is cleared. Deliberately available on
+   *       manager; a temp approver slot is cleared. The member's pending
+   *       requests in the group, and their approved bookings there after
+   *       today (in the organization's time zone, UTC while attendance was
+   *       never set up), are cancelled with a CANCELLED event naming the
+   *       caller and the reason "removed from group"; past bookings and
+   *       today's stay, and nobody is notified. Losing the last link to the
+   *       organization ends the Employment. Deliberately available on
    *       read-only (over plan limit) groups, since removing members is how an
    *       owner gets back under their plan's limits.
    *     security:
@@ -360,6 +366,11 @@ export const groupUsersRouter = (): Router => {
    *           their own permissions; or a caller acting on organization
    *           authority tried to grant `approverAccess` — that role is only
    *           ever granted from inside the group.
+   *       '422':
+   *         description: |
+   *           `context.code` is `ACCOUNT_DELETED`: a record sets `viewAccess`,
+   *           `adminAccess` or `approverAccess` for a Deleted account. Its
+   *           `controlledUser` flag can still change.
    */
   app.put(
     "/",
