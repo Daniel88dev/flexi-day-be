@@ -9,6 +9,7 @@ import { handlePutMySettings } from "../controllers/users/handlePutMySettings.js
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import { validatePutUserSettings } from "../services/userSettings/types.js";
 import { handleGetMyDeletion } from "../controllers/users/handleGetMyDeletion.js";
+import { handleGetMyAccountExport } from "../controllers/users/handleGetMyAccountExport.js";
 import { handlePostDeleteMe } from "../controllers/users/handlePostDeleteMe.js";
 import { validatePostDeleteMe } from "../services/accountDeletion/types.js";
 import { handlePostAppleAuthorization } from "../controllers/users/handlePostAppleAuthorization.js";
@@ -615,6 +616,297 @@ export const usersRouter = (): Router => {
    *         propertyName: kind
    */
   app.get("/me/deletion", tryCatch(handleGetMyDeletion));
+
+  /**
+   * @openapi
+   * /api/users/me/export:
+   *   get:
+   *     tags:
+   *       - Users
+   *     summary: Download the caller's Account export
+   *     description: |
+   *       The account data Flexi Day holds about the caller as controller, as
+   *       one JSON file built in this request: the account itself, its sign-in
+   *       methods, sessions and devices, push registrations, settings,
+   *       Birthday, notifications, calendar connections and calendar feeds.
+   *
+   *       It never holds a token, a password hash, a two-factor secret or
+   *       backup code, a calendar feed link, or an APNs device token: sign-in
+   *       methods, calendar connections and push registrations carry dates
+   *       instead. Organization data (bookings, attendance, Employments) is not
+   *       in it; the organization exports that.
+   *
+   *       Works on every plan, with a web cookie or a Native session. Sent
+   *       with `Content-Disposition: attachment` and `Cache-Control: no-store`.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: The Account export
+   *         headers:
+   *           Content-Disposition:
+   *             description: '`attachment; filename="flexi-day-account-YYYY-MM-DD.json"`, dated in UTC'
+   *             schema:
+   *               type: string
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AccountExport'
+   *       '401':
+   *         description: Not signed in
+   * components:
+   *   schemas:
+   *     AccountExport:
+   *       type: object
+   *       required:
+   *         - format
+   *         - version
+   *         - exportedAt
+   *         - account
+   *         - signInMethods
+   *         - sessions
+   *         - pushRegistrations
+   *         - settings
+   *         - birthday
+   *         - notifications
+   *         - calendarConnections
+   *         - calendarFeeds
+   *       properties:
+   *         format:
+   *           type: string
+   *           enum: [flexi-day-account-export]
+   *         version:
+   *           type: integer
+   *           enum: [1]
+   *         exportedAt:
+   *           type: string
+   *           format: date-time
+   *         account:
+   *           type: object
+   *           required: [id, name, email, emailVerified, image, twoFactorEnabled, createdAt, updatedAt]
+   *           properties:
+   *             id:
+   *               type: string
+   *             name:
+   *               type: string
+   *             email:
+   *               type: string
+   *               format: email
+   *             emailVerified:
+   *               type: boolean
+   *             image:
+   *               type: string
+   *               nullable: true
+   *               description: The Account picture's URL.
+   *             twoFactorEnabled:
+   *               type: boolean
+   *             createdAt:
+   *               type: string
+   *               format: date-time
+   *             updatedAt:
+   *               type: string
+   *               format: date-time
+   *         signInMethods:
+   *           type: array
+   *           description: One entry per Account link, the password included as `credential`.
+   *           items:
+   *             type: object
+   *             required: [providerId, accountId, createdAt, updatedAt]
+   *             properties:
+   *               providerId:
+   *                 type: string
+   *                 example: google
+   *               accountId:
+   *                 type: string
+   *                 description: The caller's id at the provider.
+   *               createdAt:
+   *                 type: string
+   *                 format: date-time
+   *               updatedAt:
+   *                 type: string
+   *                 format: date-time
+   *         sessions:
+   *           type: array
+   *           items:
+   *             type: object
+   *             required: [current, createdAt, updatedAt, expiresAt, ipAddress, userAgent, deviceId, platform, appVersion]
+   *             properties:
+   *               current:
+   *                 type: boolean
+   *                 description: True for the session that asked for this export.
+   *               createdAt:
+   *                 type: string
+   *                 format: date-time
+   *               updatedAt:
+   *                 type: string
+   *                 format: date-time
+   *               expiresAt:
+   *                 type: string
+   *                 format: date-time
+   *               ipAddress:
+   *                 type: string
+   *                 nullable: true
+   *               userAgent:
+   *                 type: string
+   *                 nullable: true
+   *               deviceId:
+   *                 type: string
+   *                 nullable: true
+   *                 description: The Device id of a Native session, null on the web.
+   *               platform:
+   *                 type: string
+   *                 nullable: true
+   *               appVersion:
+   *                 type: string
+   *                 nullable: true
+   *         pushRegistrations:
+   *           type: array
+   *           items:
+   *             type: object
+   *             required: [environment, deviceId, platform, createdAt, updatedAt]
+   *             properties:
+   *               environment:
+   *                 type: string
+   *                 enum: [sandbox, production]
+   *               deviceId:
+   *                 type: string
+   *                 nullable: true
+   *               platform:
+   *                 type: string
+   *                 nullable: true
+   *               createdAt:
+   *                 type: string
+   *                 format: date-time
+   *               updatedAt:
+   *                 type: string
+   *                 format: date-time
+   *         settings:
+   *           $ref: '#/components/schemas/UserSettings'
+   *         birthday:
+   *           type: object
+   *           nullable: true
+   *           description: Null when never set. A removed Birthday keeps its dates with month, day and year null.
+   *           required: [month, day, year, shared, createdAt, updatedAt, deletedAt]
+   *           properties:
+   *             month:
+   *               type: integer
+   *               nullable: true
+   *             day:
+   *               type: integer
+   *               nullable: true
+   *             year:
+   *               type: integer
+   *               nullable: true
+   *             shared:
+   *               type: boolean
+   *             createdAt:
+   *               type: string
+   *               format: date-time
+   *             updatedAt:
+   *               type: string
+   *               format: date-time
+   *             deletedAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *         notifications:
+   *           type: array
+   *           description: Every Notification, read and unread, oldest first.
+   *           items:
+   *             type: object
+   *             required: [type, title, body, href, readAt, createdAt]
+   *             properties:
+   *               type:
+   *                 type: string
+   *               title:
+   *                 type: string
+   *               body:
+   *                 type: string
+   *               href:
+   *                 type: string
+   *                 nullable: true
+   *               readAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *               createdAt:
+   *                 type: string
+   *                 format: date-time
+   *         calendarConnections:
+   *           type: array
+   *           description: Every Calendar connection, revoked ones included.
+   *           items:
+   *             type: object
+   *             required: [provider, status, capability, grantedScopes, lastErrorAt, revokedAt, createdAt, updatedAt]
+   *             properties:
+   *               provider:
+   *                 type: string
+   *                 enum: [GOOGLE, MICROSOFT]
+   *               status:
+   *                 type: string
+   *                 enum: [ACTIVE, NEEDS_RECONNECT]
+   *               capability:
+   *                 type: string
+   *                 enum: [UNKNOWN, STATUS, PLAIN]
+   *               grantedScopes:
+   *                 type: string
+   *               lastErrorAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *               revokedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *               createdAt:
+   *                 type: string
+   *                 format: date-time
+   *               updatedAt:
+   *                 type: string
+   *                 format: date-time
+   *         calendarFeeds:
+   *           type: array
+   *           description: Every calendar feed and Sync target, deleted ones included, without the feed link.
+   *           items:
+   *             type: object
+   *             required: [name, scope, timeZone, includeGroupEvents, includeBirthdays, syncsTo, lastFetchedAt, lastSyncedAt, deletedAt, createdAt, updatedAt]
+   *             properties:
+   *               name:
+   *                 type: string
+   *               scope:
+   *                 type: string
+   *                 enum: [ME, TEAM]
+   *               timeZone:
+   *                 type: string
+   *               includeGroupEvents:
+   *                 type: boolean
+   *               includeBirthdays:
+   *                 type: boolean
+   *               syncsTo:
+   *                 type: string
+   *                 enum: [GOOGLE, MICROSOFT]
+   *                 nullable: true
+   *                 description: The provider a Sync target writes to, null for a plain feed.
+   *               lastFetchedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *               lastSyncedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *               deletedAt:
+   *                 type: string
+   *                 format: date-time
+   *                 nullable: true
+   *               createdAt:
+   *                 type: string
+   *                 format: date-time
+   *               updatedAt:
+   *                 type: string
+   *                 format: date-time
+   */
+  app.get("/me/export", tryCatch(handleGetMyAccountExport));
 
   /**
    * @openapi
