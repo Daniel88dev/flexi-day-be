@@ -117,6 +117,7 @@ describe("organization admin over the API", () => {
         canAdmin: true,
         viaOrgAdmin: true,
         isMember: false,
+        canChangeManager: true,
       });
       expect(res.body.organization).toMatchObject({ id: organizationId, plan: "FREE" });
     });

@@ -36,12 +36,12 @@ There is no email step and no second factor beyond what sign-in already asked fo
 Any blocker makes the delete answer 409 with `reason: DELETION_BLOCKED` and the full `blockers`
 list in `errors[0].context`, the same list the status route returns.
 
-| `kind`                     | When                                                                                                 |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GROUP_HAS_MEMBERS`        | The user manages a live group in which another user has a live membership                            |
-| `ORGANIZATION_HAS_MEMBERS` | The user owns an organization in which another user, not a Deleted account, has an open Employment   |
-| `SUBSCRIPTION_RENEWING`    | An organization the user owns has a Paddle subscription that is not `canceled` and has no `cancelAt` |
-| `SUPPORT_ADMIN`            | The user is in `SUPPORT_ADMIN_USER_IDS`, or was and still has `support_access` rows                  |
+| `kind`                     | When                                                                                                                        |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `GROUP_HAS_MEMBERS`        | The user manages a live group in an organization they own, where another user, not a Deleted account, has a live membership |
+| `ORGANIZATION_HAS_MEMBERS` | The user owns an organization in which another user, not a Deleted account, has an open Employment                          |
+| `SUBSCRIPTION_RENEWING`    | An organization the user owns has a Paddle subscription that is not `canceled` and has no `cancelAt`                        |
+| `SUPPORT_ADMIN`            | The user is in `SUPPORT_ADMIN_USER_IDS`, or was and still has `support_access` rows                                         |
 
 The way out of a renewing subscription is the Paddle customer portal: the owner schedules the
 cancellation, the webhook records `cancelAt`, and the owner gives up the rest of the paid period.
@@ -51,8 +51,9 @@ the deletion resolves no organization, so it is acknowledged and ignored.
 Support admins cannot delete themselves, so the `support_access` trail survives. A former support
 admin, removed from the allowlist, still has that trail, and the rows alone keep the blocker on.
 
-Transferring a group or an organization to someone else does not exist yet, so a blocked manager or
-owner has to remove the other people first.
+A group in someone else's organization never blocks: it passes to that organization's owner (see
+"A deleted group manager" below). Transferring an organization to someone else does not exist yet,
+so a blocked owner has to remove the other people first.
 
 ## What goes and what stays
 
@@ -123,10 +124,21 @@ delegated admin grant, cancels pending requests and approved bookings after toda
 It refuses a live account for now, because the Employment is one row per organization and re-adding
 an ended person would reopen it and overwrite the spell.
 
+### A deleted group manager
+
+Every live group the user manages in someone else's organization passes to that organization's
+owner through `updateGroupManager`, inside the deletion's transaction. The owner gets no membership
+row, so no quota and no seat. The deleted manager's membership stays, with its flags cleared like
+any other. `updateGroupManager` runs with `syncOutgoing: false`, so the deleted manager's Employment
+stays open even when managing the group was their only link. Their bookings in the group stay.
+`deleteAccountRows` returns the handed-over groups as `handedOverGroups`.
+
+An org admin of that organization can then name any live member as manager with
+`PUT /api/group/{groupId}/manager` (Change manager on the group page). A soft-deleted group the user
+managed keeps their id as its manager.
+
 What goes with the user's own organizations and groups:
 
-- Every group the user manages, live or soft-deleted, with its data. `GROUP_HAS_MEMBERS` means
-  such a group has nobody else in it.
 - Every organization the user owns, with all of its groups, its subscription row, attendance
   settings and whatever cascades from it, including former members' ended Employments, Employments of
   Deleted accounts and their attendance.

@@ -558,8 +558,11 @@ export const usersRouter = (): Router => {
    *     DeletionBlocker:
    *       description: |
    *         One reason the account cannot be deleted yet, told apart by `kind`.
-   *         `GROUP_HAS_MEMBERS`: the caller manages a live group in which
-   *         another user has a live membership. `ORGANIZATION_HAS_MEMBERS`:
+   *         `GROUP_HAS_MEMBERS`: the caller manages a live group in an
+   *         organization they own, in which another user, not a Deleted
+   *         account, has a live membership. A group in someone else's
+   *         organization never blocks; it passes to that organization's
+   *         owner. `ORGANIZATION_HAS_MEMBERS`:
    *         the caller owns an organization in which another user has an open
    *         Employment, not counting Deleted accounts. `SUBSCRIPTION_RENEWING`: an organization the caller
    *         owns has a Paddle subscription that is not `canceled` and has no
@@ -580,7 +583,7 @@ export const usersRouter = (): Router => {
    *               type: string
    *             otherMembers:
    *               type: integer
-   *               description: Live members other than the caller.
+   *               description: Live members other than the caller, not counting Deleted accounts.
    *         - type: object
    *           required: [kind, organizationId, organizationName, otherMembers]
    *           properties:
@@ -942,10 +945,12 @@ export const usersRouter = (): Router => {
    *       notified. A running attendance session is closed at the moment of
    *       deletion as the sweep would close it, so the day is flagged.
    *
-   *       The groups the caller manages and the organizations they own go,
-   *       with their subscription rows (both only possible once nobody else
-   *       is in them; a deleted account left in an owned organization does
-   *       not count). Stored attachment objects of an owned organization are
+   *       Each live group the caller manages in someone else's organization
+   *       passes to that organization's owner, who gets no membership, quota
+   *       or seat from it; the caller's membership there stays with its flags
+   *       cleared. The organizations the caller owns go, with their groups and
+   *       subscription rows (only possible once nobody else is in them; a
+   *       deleted account left in an owned organization does not count). Stored attachment objects of an owned organization are
    *       removed after the commit; a failure there is logged and does not
    *       fail the request. Each Apple account link is then revoked at Apple
    *       with the refresh token read before the transaction; a link without

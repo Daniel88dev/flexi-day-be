@@ -368,9 +368,13 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for what an org admin _is_. The boundarie
   `handleUpdateGroupUsers` refuses to let any caller raise their **own** permissions (checking
   every record for them, not just the first — the array may repeat a user), and
   `handlePutGroupApprovers` refuses a caller acting `viaOrgAdmin` who names themselves. Without
-  both, a delegate could invite themselves in and self-promote to approver. The group's manager
-  sits outside this boundary on purpose: they administer their group in their own right
-  (`viaOrgAdmin: false`) and `getGroupsWhereUserCanApprove` already accepts them, so a manager
+  both, a delegate could invite themselves in and self-promote to approver. Change manager
+  (`handlePutGroupManager`) is open to org admins only, and a manager approves, so it refuses a
+  caller who names themselves (403 `CANNOT_NAME_SELF`). Naming another live member is allowed on
+  purpose: it is how an organization hands on a group whose manager left, and the change log
+  records who did it. "refuses an org admin who names themselves" in
+  `deletedManager.e2e.test.ts` fails if the refusal goes. The group's manager sits outside this
+  boundary on purpose: they administer their group in their own right (`viaOrgAdmin: false`) and `getGroupsWhereUserCanApprove` already accepts them, so a manager
   naming themselves approver is allowed — creation even defaults them to main approver. The
   membership requirement still applies: a manager without a `group_users` row hits the same
   "approver must be a member" 422 as anyone else.

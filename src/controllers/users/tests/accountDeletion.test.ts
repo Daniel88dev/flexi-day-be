@@ -111,7 +111,13 @@ describe("account deletion handlers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getAuth).mockReturnValue(mockAuthData);
-    mockDeleteAccount.mockResolvedValue({ groups: 0, organizations: 0, attachments: [] });
+    mockDeleteAccount.mockResolvedValue({
+      groups: 0,
+      handedOverGroups: [],
+      organizations: 0,
+      cancelledRequests: 0,
+      attachments: [],
+    });
     mockCollectApple.mockResolvedValue(APPLE_REVOCATIONS);
     mockGetBlockers.mockResolvedValue([]);
     mockDisconnectCalendars.mockResolvedValue(1);
