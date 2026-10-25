@@ -397,7 +397,7 @@ export const syncRouter = (): Router => {
    *                 users:
    *                   type: array
    *                   description: |
-   *                     The people named on this page's rows, four columns
+   *                     The people named on this page's rows, five columns
    *                     only. Never tombstoned
    *                   items:
    *                     type: object
@@ -406,9 +406,18 @@ export const syncRouter = (): Router => {
    *                         type: string
    *                       name:
    *                         type: string
+   *                         description: |
+   *                           The account's name. For a Deleted account, the
+   *                           frozen copy on the most recently updated
+   *                           Employment in an organization the caller shares
+   *                           with them, or "Deleted account" when none is left
    *                       image:
    *                         type: string
    *                         nullable: true
+   *                         description: Always null for a Deleted account
+   *                       accountDeleted:
+   *                         type: boolean
+   *                         description: Whether the person deleted their account
    *                       updatedAt:
    *                         type: string
    *                         format: date-time

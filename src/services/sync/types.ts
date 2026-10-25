@@ -159,6 +159,7 @@ export type SyncUserRow = {
   id: string;
   name: string;
   image: string | null;
+  accountDeleted: boolean;
   updatedAt: string;
 };
 

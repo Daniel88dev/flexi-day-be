@@ -66,8 +66,8 @@ membership row lives.
 
 Detail the table cannot hold:
 
-- **`users`** carries `id`, `name`, `image` and `updatedAt` and nothing else: no email, no account
-  state. An actor is anyone a returned booking names, meaning `userId`, `approvedBy`, `rejectedBy`,
+- **`users`** carries `id`, `name`, `image`, `accountDeleted` and `updatedAt` and nothing else: no
+  email. An actor is anyone a returned booking names, meaning `userId`, `approvedBy`, `rejectedBy`,
   `createdByUserId` and `deletedByUserId`, as the booking ships: a column the teammate view nulls
   names nobody. The actors on the bookings a pull carries, and the people
   on the membership rows it carries, arrive whatever their own `updatedAt` says, so no row ever
@@ -76,6 +76,13 @@ Detail the table cannot hold:
   a membership row. Everybody else in the set arrives only when their own
   row changed in the window, which is how an approver renamed long after a booking settled reaches
   the client.
+- **A Deleted account** arrives with `accountDeleted: true`, `image: null` and the frozen name its
+  Employment keeps. The caller may share several organizations with the person, and each holds its
+  own copy, so the copy on the most recently updated Employment among the organizations of the
+  groups the pull covers wins; with none left the name reads "Deleted account". The deletion bumps
+  `user.updatedAt`, which is how the stripped row reaches a client already holding the old one. An
+  edit to an Employment's copy stamps no user row, so it reaches the phone only on the person's next
+  `user` change or a sync reset.
 - **A removed member** stays visible in a group seen in full. Their bookings and quota rows are
   still rows of that group, and the web keeps showing them: the group calendar filters only mirrored
   bookings by membership, and the report gives a leaver a summary line. So removal drops their
