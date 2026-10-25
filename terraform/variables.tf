@@ -315,6 +315,13 @@ variable "attachments_bucket_name" {
   default     = ""
 }
 
+# Organization data (organization-data.tf)
+variable "organization_data_bucket_name" {
+  description = "S3 bucket for organization data (Profile photos, exports). Bucket names are global, so override on a collision; empty means flexi-day-prod-organization-data in production, flexi-day-<environment>-organization-data elsewhere."
+  type        = string
+  default     = ""
+}
+
 variable "github_actions_role_name" {
   description = "Name of the IAM role the backend's CD workflow assumes through GitHub OIDC (the role behind the AWS_ROLE_ARN repository variable). Created outside Terraform; this only attaches the policy that lets CD update the attachment-processor's code. Empty attaches nothing."
   type        = string

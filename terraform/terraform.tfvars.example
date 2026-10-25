@@ -138,6 +138,11 @@ paddle_prices = {
 # <project_name>-<environment>-attachments and override only on a collision.
 attachments_bucket_name = ""
 
+# Organization data: Profile photos and exports, encrypted under its own KMS
+# key (docs/terraform.md). Leave empty for flexi-day-prod-organization-data and
+# override only on a collision.
+organization_data_bucket_name = ""
+
 # The IAM role behind the AWS_ROLE_ARN repository variable in GitHub
 # (`gh variable get AWS_ROLE_ARN -R Daniel88dev/flexi-day-be`, name after
 # "role/"). It was created by hand before Terraform existed; this attaches the

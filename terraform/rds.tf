@@ -85,6 +85,15 @@ resource "aws_db_parameter_group" "main" {
     apply_method = "immediate"
   }
 
+  # Slow-query lines keep the statement but no bound values, which may be
+  # Profile fields. Errors already log none (log_parameter_max_length_on_error
+  # defaults to 0).
+  parameter {
+    name         = "log_parameter_max_length"
+    value        = "0"
+    apply_method = "immediate"
+  }
+
   # Reject non-TLS connections; the app connects with SSL verification on.
   parameter {
     name         = "rds.force_ssl"

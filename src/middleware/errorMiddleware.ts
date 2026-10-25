@@ -4,6 +4,7 @@ import { CustomError } from "../utils/appError.js";
 import { logger } from "./logger.js";
 import { routeOf } from "../utils/routeTemplate.js";
 import { redactObject } from "../utils/redact.js";
+import { scrubQueryError } from "../utils/queryError.js";
 
 export const errorMiddleware = (err: Error, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {
@@ -64,6 +65,6 @@ export const errorMiddleware = (err: Error, req: Request, res: Response, next: N
     return res.status(422).json({ errors: clientErrors });
   }
 
-  logger.error("Unhandled Error", { err, ...requestMeta });
+  logger.error("Unhandled Error", { err: scrubQueryError(err), ...requestMeta });
   return res.status(500).json({ errors: [{ message: "Internal Server Error" }] });
 };
