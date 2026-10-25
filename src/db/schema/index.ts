@@ -30,6 +30,8 @@ import { attendanceBreaks, attendanceEvents, attendanceSessions } from "./attend
 import { attendanceSettingsChanges } from "./attendance-settings-change-schema.js";
 import { pushRegistrations } from "./push-registration-schema.js";
 import { authSecretFingerprint } from "./auth-secret-schema.js";
+import { personExports } from "./person-export-schema.js";
+import { readLog } from "./read-log-schema.js";
 
 export const schema = {
   account,
@@ -70,4 +72,6 @@ export const schema = {
   attendanceSettingsChanges,
   pushRegistrations,
   authSecretFingerprint,
+  personExports,
+  readLog,
 };

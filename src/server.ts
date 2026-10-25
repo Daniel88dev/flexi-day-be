@@ -44,6 +44,8 @@ import { attachmentRouter } from "./routes/attachmentRouter.js";
 import { localAttachmentRouter } from "./routes/localAttachmentRouter.js";
 import { attachmentCallbackRouter } from "./routes/attachmentCallbackRouter.js";
 import { isDiskAttachmentStore } from "./services/attachment/attachmentStore.js";
+import { isDiskOrganizationDataStore } from "./services/organizationData/organizationDataStore.js";
+import { localOrganizationDataRouter, personExportRouter } from "./routes/personExportRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -115,6 +117,9 @@ export const createServer = () => {
   if (isDiskAttachmentStore) {
     app.use("/api/attachments/local", localAttachmentRouter());
   }
+  if (isDiskOrganizationDataStore) {
+    app.use("/api/organization-data/local", localOrganizationDataRouter());
+  }
 
   // Everything below is the authenticated API; `/api/auth` and `/api/dev` are
   // already handled above, so this never double-counts them. The order is the
@@ -137,6 +142,7 @@ export const createServer = () => {
   app.use("/api/employment", employmentRouter());
   app.use("/api/attendance", attendanceRouter());
   app.use("/api/attachments", attachmentRouter());
+  app.use("/api/person-exports", personExportRouter());
   app.use("/api/sync", syncRouter());
   app.use("/api/birthdays", birthdayRouter());
   app.use("/api/group-events", groupEventRouter());

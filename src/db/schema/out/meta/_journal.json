@@ -239,6 +239,13 @@
       "when": 1792953684892,
       "tag": "0033_deleted_account",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792959212588,
+      "tag": "0034_person_export",
+      "breakpoints": true
     }
   ]
 }

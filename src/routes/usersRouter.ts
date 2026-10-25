@@ -10,6 +10,9 @@ import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js"
 import { validatePutUserSettings } from "../services/userSettings/types.js";
 import { handleGetMyDeletion } from "../controllers/users/handleGetMyDeletion.js";
 import { handleGetMyAccountExport } from "../controllers/users/handleGetMyAccountExport.js";
+import { handleGetOwnPersonExports } from "../controllers/personExport/handleGetOwnPersonExports.js";
+import { handlePostOwnPersonExport } from "../controllers/personExport/handlePostOwnPersonExport.js";
+import { validateOwnPersonExportRequest } from "../services/personExport/types.js";
 import { handlePostDeleteMe } from "../controllers/users/handlePostDeleteMe.js";
 import { validatePostDeleteMe } from "../services/accountDeletion/types.js";
 import { handlePostAppleAuthorization } from "../controllers/users/handlePostAppleAuthorization.js";
@@ -910,6 +913,100 @@ export const usersRouter = (): Router => {
    *                 format: date-time
    */
   app.get("/me/export", tryCatch(handleGetMyAccountExport));
+
+  /**
+   * @openapi
+   * /api/users/me/person-exports:
+   *   get:
+   *     tags:
+   *       - Person export
+   *     summary: The organizations the caller can export their own data from
+   *     description: |
+   *       Every organization where the caller's account is bound to an
+   *       Employment, open or ended, with the newest Person export the caller
+   *       requested of themselves there. Settings lists these in the Your data
+   *       card. An export past its 7 days reads as none.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: By organization name
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [organizations]
+   *               properties:
+   *                 organizations:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     required: [organizationId, organizationName, employmentId, startedAt, endedAt, export]
+   *                     properties:
+   *                       organizationId:
+   *                         type: string
+   *                       organizationName:
+   *                         type: string
+   *                       employmentId:
+   *                         type: string
+   *                         format: uuid
+   *                       startedAt:
+   *                         type: string
+   *                         format: date-time
+   *                       endedAt:
+   *                         type: string
+   *                         format: date-time
+   *                         nullable: true
+   *                       export:
+   *                         nullable: true
+   *                         allOf:
+   *                           - $ref: '#/components/schemas/PersonExport'
+   *       '401':
+   *         description: Not signed in
+   *   post:
+   *     tags:
+   *       - Person export
+   *     summary: Request a Person export of the caller's own data
+   *     description: |
+   *       The same Person export an admin can request, of the caller's own
+   *       data in one organization. Only where the caller's account is bound
+   *       to an Employment there, open or ended. Writes one `export` row to the
+   *       Read log, and returns a still-`PENDING` earlier request instead of
+   *       starting a second.
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [organizationId]
+   *             properties:
+   *               organizationId:
+   *                 type: string
+   *     responses:
+   *       '202':
+   *         description: The export, `PENDING`
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/PersonExport'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`context.code` is `NOT_EMPLOYED`: no Employment of the caller's in that organization"
+   *       '422':
+   *         description: Missing organizationId
+   *       '503':
+   *         description: "`context.code` is `EXPORT_UNAVAILABLE`: no organization-data store is configured"
+   */
+  app.get("/me/person-exports", tryCatch(handleGetOwnPersonExports));
+  app.post(
+    "/me/person-exports",
+    bodyValidationMiddleware(validateOwnPersonExportRequest),
+    tryCatch(handlePostOwnPersonExport)
+  );
 
   /**
    * @openapi

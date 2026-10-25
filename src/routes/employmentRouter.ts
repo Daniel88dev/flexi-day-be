@@ -6,6 +6,8 @@ import { handleGetEmployment } from "../controllers/employment/handleGetEmployme
 import { handleGetEmployments } from "../controllers/employment/handleGetEmployments.js";
 import { handlePatchEmployment } from "../controllers/employment/handlePatchEmployment.js";
 import { handlePostEndEmployment } from "../controllers/employment/handlePostEndEmployment.js";
+import { handlePostEmploymentExport } from "../controllers/personExport/handlePostEmploymentExport.js";
+import { handleGetRequestedExports } from "../controllers/personExport/handleGetRequestedExports.js";
 
 export const employmentRouter = (): Router => {
   const app = Router();
@@ -232,6 +234,93 @@ export const employmentRouter = (): Router => {
     bodyValidationMiddleware(validateEndEmployment),
     tryCatch(handlePostEndEmployment)
   );
+
+  /**
+   * @openapi
+   * /api/employment/{employmentId}/export:
+   *   post:
+   *     tags:
+   *       - Person export
+   *     summary: Request a Person export
+   *     description: |
+   *       Starts a Person export: everything the organization holds about the
+   *       Employment's person across every spell, as a ZIP of `person.json`,
+   *       four CSVs (bookings, attendance sessions, quotas, changes) and the
+   *       attachments. Account data stays out. The ZIP is built in the
+   *       background; the answer is the export row in `PENDING`, and the
+   *       caller gets an `export_ready` notification once it is `READY`.
+   *
+   *       The owner and org admins only, on every plan, for any Employment:
+   *       open or ended, account bound or deleted. Group managers and members
+   *       get 403. Each new request writes one `export` row to the Read log.
+   *       While an earlier request by the same caller for the same person is
+   *       still `PENDING`, that one is returned and nothing new is written.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '202':
+   *         description: The export, `PENDING`
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/PersonExport'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: The caller is not the owner or an org admin of the organization
+   *       '404':
+   *         description: No such Employment
+   *       '422':
+   *         description: Malformed employment id
+   *       '503':
+   *         description: "`context.code` is `EXPORT_UNAVAILABLE`: no organization-data store is configured"
+   */
+  app.post("/:employmentId/export", tryCatch(handlePostEmploymentExport));
+
+  /**
+   * @openapi
+   * /api/employment/exports:
+   *   get:
+   *     tags:
+   *       - Person export
+   *     summary: The Person exports the caller requested in an organization
+   *     description: |
+   *       The newest export per person that the caller requested in the
+   *       organization, so the People card can show Preparing or Download on
+   *       each row. Exports past their 7 days are left out. The owner and org
+   *       admins only.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: Newest first
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/PersonExport'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: The caller is not the owner or an org admin of the organization
+   *       '422':
+   *         description: Missing organizationId
+   */
+  app.get("/exports", tryCatch(handleGetRequestedExports));
 
   return app;
 };

@@ -23,3 +23,12 @@ behind a disk-backed store, so nothing here needs AWS to develop against.
 Attachments growing into a general document feature with server-side rendering or search, where
 the API needs the bytes anyway. At that point stream through the API and delete the Lambda; the
 `attachments` table and its statuses stay as they are.
+
+## Note: the Person export reads bytes inside App Runner
+
+Since the Person export (`docs/person-export.md`), one path does pass file bytes through App Runner.
+The background build reads each held attachment from the attachments bucket, writes the ZIP to the
+instance's temporary disk and puts it in the organization-data bucket. The download itself still
+goes straight from S3 under a signed link. Uploads are unchanged: they still go to S3 and through
+the Lambda. The build holds one attachment in memory at a time, so its cost is temporary disk the
+size of the ZIP and the bucket reads.

@@ -34,6 +34,10 @@ vi.mock("../jobs/calendarSyncQueueJob.js", () => ({
   startCalendarSyncQueue: vi.fn(() => Promise.resolve()),
   stopCalendarSyncQueue: vi.fn(),
 }));
+vi.mock("../jobs/personExportQueueJob.js", () => ({
+  startPersonExportQueue: vi.fn(() => Promise.resolve()),
+  stopPersonExportQueue: vi.fn(),
+}));
 vi.mock("../jobs/authSecretCheckJob.js", () => ({ runAuthSecretCheck: checkMock }));
 
 describe("boot", () => {
