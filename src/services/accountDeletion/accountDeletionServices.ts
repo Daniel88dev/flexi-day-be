@@ -191,6 +191,8 @@ export type DeletedAccountRows = {
   /** Live groups the person managed in other people's organizations, now managed by the owner. */
   handedOverGroups: HandedOverGroup[];
   organizations: number;
+  /** The deleted organizations; hand them to `removeOrganizationExports` after the commit. */
+  organizationIds: string[];
   /** Pending days cancelled with the reason {@link ACCOUNT_DELETED_REASON}. */
   cancelledRequests: number;
   /** Collected before their rows went; hand them to `removeAttachmentObjects` after the commit. */
@@ -463,6 +465,7 @@ export const deleteAccountRows = async (
     groups: deletedGroups,
     handedOverGroups,
     organizations: ownedIds.length,
+    organizationIds: ownedIds,
     cancelledRequests,
     attachments: removedAttachments,
   };

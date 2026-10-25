@@ -4,7 +4,9 @@ import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   NoSuchKey,
   PutObjectCommand,
   S3Client,
@@ -20,6 +22,8 @@ export interface OrganizationDataStore {
   putFile: (key: string, filePath: string, contentType: string) => Promise<void>;
   getObject: (key: string) => Promise<Buffer | undefined>;
   deleteObject: (key: string) => Promise<void>;
+  /** Deletes every object whose key starts with `prefix`, which must end in `/`. */
+  deletePrefix: (prefix: string) => Promise<void>;
   createDownloadUrl: (input: {
     key: string;
     fileName: string;
@@ -62,6 +66,11 @@ const keyToPath = (root: string, key: string): string => {
   return resolved;
 };
 
+const assertPrefix = (prefix: string): string => {
+  if (!/^[^/]+\/.*\/$/.test(prefix)) throw new Error(`Not a folder prefix: ${prefix}`);
+  return prefix;
+};
+
 /** The development stand-in: files on disk, downloaded through the API's own signed route. */
 export const createDiskOrganizationDataStore = (root: string): OrganizationDataStore => ({
   putFile: async (key, filePath) => {
@@ -79,6 +88,9 @@ export const createDiskOrganizationDataStore = (root: string): OrganizationDataS
   },
   deleteObject: async (key) => {
     await rm(keyToPath(root, key), { force: true });
+  },
+  deletePrefix: async (prefix) => {
+    await rm(keyToPath(root, assertPrefix(prefix)), { recursive: true, force: true });
   },
   createDownloadUrl: ({ key, fileName, contentType, ttlMs }) => {
     const signed = { key, fileName, contentType, expires: Date.now() + ttlMs };
@@ -127,6 +139,32 @@ export const createS3OrganizationDataStore = (options: {
     },
     deleteObject: async (key) => {
       await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    },
+    // Versioning keeps the old versions behind a delete marker until the
+    // bucket's 7-day noncurrent rule removes them.
+    deletePrefix: async (prefix) => {
+      let continuationToken: string | undefined;
+      do {
+        const page = await client.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: assertPrefix(prefix),
+            ContinuationToken: continuationToken,
+          })
+        );
+        const keys = (page.Contents ?? []).flatMap((object) =>
+          object.Key ? [{ Key: object.Key }] : []
+        );
+        if (keys.length > 0) {
+          const result = await client.send(
+            new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys, Quiet: true } })
+          );
+          if (result.Errors?.length) {
+            throw new Error(`Could not delete ${result.Errors.length.toString()} objects`);
+          }
+        }
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (continuationToken);
     },
     createDownloadUrl: async ({ key, fileName, contentType, ttlMs }) => {
       const url = await getSignedUrl(

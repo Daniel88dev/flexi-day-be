@@ -14,8 +14,12 @@ const {
   mockDisconnectCalendars,
   mockPlanNotices,
   mockSendNotices,
+  mockOwnedOrganizations,
+  mockRemoveExports,
   APPLE_CLIENT,
 } = vi.hoisted(() => ({
+  mockOwnedOrganizations: vi.fn(),
+  mockRemoveExports: vi.fn(),
   mockGetBlockers: vi.fn(),
   mockGetConfirmation: vi.fn(),
   mockGetHash: vi.fn(),
@@ -45,6 +49,14 @@ vi.mock("../../../services/accountDeletion/accountDeletionServices.js", () => ({
 vi.mock("../../../services/accountDeletion/accountDeletedNotice.js", () => ({
   planAccountDeletedNotices: mockPlanNotices,
   sendAccountDeletedNotices: mockSendNotices,
+}));
+
+vi.mock("../../../services/accountDeletion/ownedOrganizations.js", () => ({
+  getOwnedOrganizationsGoing: mockOwnedOrganizations,
+}));
+
+vi.mock("../../../services/personExport/organizationExportServices.js", () => ({
+  removeOrganizationExports: mockRemoveExports,
 }));
 
 vi.mock("../../../services/appleAuthorization/appleAuthorizationServices.js", () => ({
@@ -123,7 +135,8 @@ describe("account deletion handlers", () => {
     mockDeleteAccount.mockResolvedValue({
       groups: 0,
       handedOverGroups: [],
-      organizations: 0,
+      organizations: 1,
+      organizationIds: ["owned-organization"],
       cancelledRequests: 0,
       attachments: [],
     });
@@ -137,6 +150,14 @@ describe("account deletion handlers", () => {
     const blockers = [{ kind: "SUPPORT_ADMIN" }];
     mockGetBlockers.mockResolvedValue(blockers);
     mockGetConfirmation.mockResolvedValue("recent-sign-in");
+    const ownedOrganizations = [
+      {
+        organizationId: "owned-organization",
+        organizationName: "Acme",
+        deletedAccounts: [{ userId: "deleted-user", name: "Alice Leaver" }],
+      },
+    ];
+    mockOwnedOrganizations.mockResolvedValue(ownedOrganizations);
     const { req, res } = makeReqRes();
 
     await handleGetMyDeletion(req, res);
@@ -146,6 +167,7 @@ describe("account deletion handlers", () => {
       canDelete: false,
       blockers,
       confirmation: "recent-sign-in",
+      ownedOrganizations,
     });
   });
 
@@ -192,6 +214,8 @@ describe("account deletion handlers", () => {
 
       expect(mockDeleteAccount).toHaveBeenCalledWith(mockAuthData.userId, TX);
       expect(mockRemoveObjects).toHaveBeenCalledWith(mockAuthData.userId, []);
+      expect(mockRemoveExports).toHaveBeenCalledWith(["owned-organization"]);
+      expect(firstCall(mockRemoveExports)).toBeGreaterThan(firstCall(mockDeleteAccount));
       expect(res.status).toHaveBeenCalledWith(204);
       const cleared = (res as unknown as { clearCookie: ReturnType<typeof vi.fn> }).clearCookie.mock
         .calls;

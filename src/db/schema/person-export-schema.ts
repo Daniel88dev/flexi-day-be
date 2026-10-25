@@ -1,4 +1,13 @@
-import { bigint, index, integer, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  check,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
 import { organizations } from "./organization-schema.js";
@@ -15,11 +24,20 @@ export const personExportStatusEnum = pgEnum(
   enumToPgEnum(personExportStatus)
 );
 
+/** A Person export covers one person; an Organization export covers everyone in it. */
+export enum personExportScope {
+  Person = "PERSON",
+  Organization = "ORGANIZATION",
+}
+
+export const personExportScopeEnum = pgEnum("person_export_scope", enumToPgEnum(personExportScope));
+
 /**
- * One request for a Person export (`docs/person-export.md`). The row is what
+ * One request for a Person export or an Organization export (`docs/person-export.md`). The row is what
  * survives a restart: a `PENDING` row is built again by whichever instance
  * picks it up. A build in progress holds a session advisory lock on the id,
- * not a status, so a process that dies mid-build frees it.
+ * not a status, so a process that dies mid-build frees it. An Organization
+ * export has no subject.
  */
 export const personExports = pgTable(
   "person_exports",
@@ -28,9 +46,8 @@ export const personExports = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    subjectUserId: text("subject_user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    scope: personExportScopeEnum("scope").notNull().default(personExportScope.Person),
+    subjectUserId: text("subject_user_id").references(() => user.id, { onDelete: "cascade" }),
     requestedByUserId: text("requested_by_user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -56,5 +73,9 @@ export const personExports = pgTable(
     index("idx_person_exports_pending")
       .on(table.createdAt)
       .where(sql`${table.status} = 'PENDING'`),
+    check(
+      "person_exports_subject_chk",
+      sql`(${table.scope} = 'PERSON') = (${table.subjectUserId} IS NOT NULL)`
+    ),
   ]
 );

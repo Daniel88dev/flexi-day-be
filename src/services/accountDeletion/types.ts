@@ -13,10 +13,17 @@ export type DeletionBlocker =
 
 export type DeletionConfirmation = "password" | "recent-sign-in";
 
+export type OwnedOrganizationGoing = {
+  organizationId: string;
+  organizationName: string;
+  deletedAccounts: { userId: string; name: string }[];
+};
+
 export type DeletionStatus = {
   canDelete: boolean;
   blockers: DeletionBlocker[];
   confirmation: DeletionConfirmation;
+  ownedOrganizations: OwnedOrganizationGoing[];
 };
 
 export enum DeletionRefusal {

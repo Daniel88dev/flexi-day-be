@@ -43,7 +43,7 @@ const bookingStatus = (row: {
 const fix = (latitude: number | null, longitude: number | null, accuracy: number | null) =>
   latitude === null || longitude === null ? null : { latitude, longitude, accuracy };
 
-const safeFileName = (name: string): string =>
+export const safeFileName = (name: string): string =>
   // eslint-disable-next-line no-control-regex
   name.replace(/[/\\\x00-\x1f]/g, "_").slice(0, 120) || "file";
 

@@ -4,6 +4,7 @@ import {
   getDeletionBlockers,
   getDeletionConfirmation,
 } from "../../services/accountDeletion/accountDeletionServices.js";
+import { getOwnedOrganizationsGoing } from "../../services/accountDeletion/ownedOrganizations.js";
 import type { DeletionStatus } from "../../services/accountDeletion/types.js";
 
 export const handleGetMyDeletion = async (req: Request, res: Response) => {
@@ -11,7 +12,13 @@ export const handleGetMyDeletion = async (req: Request, res: Response) => {
 
   const blockers = await getDeletionBlockers(auth.userId);
   const confirmation = await getDeletionConfirmation(auth.userId);
+  const ownedOrganizations = await getOwnedOrganizationsGoing(auth.userId);
 
-  const status: DeletionStatus = { canDelete: blockers.length === 0, blockers, confirmation };
+  const status: DeletionStatus = {
+    canDelete: blockers.length === 0,
+    blockers,
+    confirmation,
+    ownedOrganizations,
+  };
   return res.status(200).json(status);
 };

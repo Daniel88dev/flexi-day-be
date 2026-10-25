@@ -163,6 +163,11 @@ What goes with the user's own organizations and groups:
 - Every organization the user owns, with all of its groups, its subscription row, attendance
   settings and whatever cascades from it, including former members' ended Employments, Employments of
   Deleted accounts and their attendance.
+- Every export file of an owned organization, under `exports/{organizationId}/` in the
+  organization-data store, removed after the commit. See
+  [`person-export.md`](person-export.md#deleting-the-organization). The delete dialog lists the
+  Deleted accounts that go with each owned organization (`ownedOrganizations` on
+  `GET /api/users/me/deletion`) and links to the Organization export first.
 - Every attachment row held by an owned organization. Their stored objects are collected inside the
   transaction and removed after the commit through `deleteStoredBytes`, with the incoming and
   processed keys of an upload that never settled. A store failure is logged and the request still

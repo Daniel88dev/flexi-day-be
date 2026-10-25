@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
+import { personExportScope } from "../../db/schema/person-export-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { logger } from "../../middleware/logger.js";
 import { errorName } from "../../utils/errorName.js";
@@ -12,17 +13,22 @@ import type { PersonExportRow } from "./types.js";
 
 /** In-app and pushed, never emailed. Swallows its own failure: the export is already ready. */
 export const notifyExportReady = async (
-  row: Pick<PersonExportRow, "id" | "organizationId" | "subjectUserId" | "requestedByUserId">
+  row: Pick<
+    PersonExportRow,
+    "id" | "organizationId" | "scope" | "subjectUserId" | "requestedByUserId"
+  >
 ): Promise<void> => {
   try {
     const [organization] = await db
       .select({ name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, row.organizationId));
+    const whole = row.scope === personExportScope.Organization;
     const own = row.subjectUserId === row.requestedByUserId;
-    const subject = own
-      ? undefined
-      : await getPersonContact(row.subjectUserId, { organizationId: row.organizationId });
+    const subject =
+      own || !row.subjectUserId
+        ? undefined
+        : await getPersonContact(row.subjectUserId, { organizationId: row.organizationId });
     const organizationName = organization?.name ?? "your organization";
 
     const notice = await createNotification({
@@ -30,9 +36,11 @@ export const notifyExportReady = async (
       userId: row.requestedByUserId,
       type: notificationType.ExportReady,
       title: "Your export is ready",
-      body: own
-        ? `Your data from ${organizationName} is ready to download for 7 days.`
-        : `The export of ${subject?.name ?? "the person"}'s data from ${organizationName} is ready to download for 7 days.`,
+      body: whole
+        ? `The export of ${organizationName} is ready to download for 7 days.`
+        : own
+          ? `Your data from ${organizationName} is ready to download for 7 days.`
+          : `The export of ${subject?.name ?? "the person"}'s data from ${organizationName} is ready to download for 7 days.`,
       href: own ? "/settings/" : "/organization/",
     });
     if (notice) await pushNotifications([notice]);
