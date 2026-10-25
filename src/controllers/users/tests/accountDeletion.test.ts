@@ -12,6 +12,8 @@ const {
   mockCollectApple,
   mockRevokeApple,
   mockDisconnectCalendars,
+  mockPlanNotices,
+  mockSendNotices,
   APPLE_CLIENT,
 } = vi.hoisted(() => ({
   mockGetBlockers: vi.fn(),
@@ -24,6 +26,8 @@ const {
   mockCollectApple: vi.fn(),
   mockRevokeApple: vi.fn(),
   mockDisconnectCalendars: vi.fn(),
+  mockPlanNotices: vi.fn(),
+  mockSendNotices: vi.fn(),
   APPLE_CLIENT: { stand: "in for the Apple client" },
 }));
 
@@ -36,6 +40,11 @@ vi.mock("../../../services/accountDeletion/accountDeletionServices.js", () => ({
   getSessionCreatedAt: mockGetSessionCreatedAt,
   deleteAccountRows: mockDeleteAccount,
   removeAttachmentObjects: mockRemoveObjects,
+}));
+
+vi.mock("../../../services/accountDeletion/accountDeletedNotice.js", () => ({
+  planAccountDeletedNotices: mockPlanNotices,
+  sendAccountDeletedNotices: mockSendNotices,
 }));
 
 vi.mock("../../../services/appleAuthorization/appleAuthorizationServices.js", () => ({
@@ -121,6 +130,7 @@ describe("account deletion handlers", () => {
     mockCollectApple.mockResolvedValue(APPLE_REVOCATIONS);
     mockGetBlockers.mockResolvedValue([]);
     mockDisconnectCalendars.mockResolvedValue(1);
+    mockPlanNotices.mockResolvedValue([]);
   });
 
   it("reports the blockers and the confirmation the caller needs", async () => {
@@ -220,6 +230,31 @@ describe("account deletion handlers", () => {
       );
       expect(firstCall(mockCollectApple)).toBeLessThan(firstCall(mockDeleteAccount));
       expect(firstCall(mockDeleteAccount)).toBeLessThan(firstCall(mockRevokeApple));
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it("plans the account_deleted notices inside the transaction and sends them after it", async () => {
+      mockVerify.mockResolvedValue(true);
+      const handedOverGroups = [
+        { groupId: "g-1", groupName: "Support", organizationId: "o-1", ownerUserId: "u-owner" },
+      ];
+      mockDeleteAccount.mockResolvedValue({
+        groups: 0,
+        handedOverGroups,
+        organizations: 0,
+        cancelledRequests: 0,
+        attachments: [],
+      });
+      const notices = [{ userId: "u-owner", title: "t", body: "b", href: "/organization/" }];
+      mockPlanNotices.mockResolvedValue(notices);
+      const { req, res } = deleteRequest({ password: "right" });
+
+      await handlePostDeleteMe(req, res);
+
+      expect(mockPlanNotices).toHaveBeenCalledWith(mockAuthData.userId, handedOverGroups, TX);
+      expect(mockSendNotices).toHaveBeenCalledWith(mockAuthData.userId, notices);
+      expect(firstCall(mockDeleteAccount)).toBeLessThan(firstCall(mockPlanNotices));
+      expect(firstCall(mockPlanNotices)).toBeLessThan(firstCall(mockSendNotices));
       expect(res.status).toHaveBeenCalledWith(204);
     });
 

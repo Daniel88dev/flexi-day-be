@@ -15,6 +15,10 @@ import { disconnectAllProviders } from "../../services/calendarConnection/calend
 import { collectAppleRevocations } from "../../services/appleAuthorization/appleAuthorizationServices.js";
 import { revokeAtApple } from "../../services/appleAuthorization/appleRevocation.js";
 import {
+  planAccountDeletedNotices,
+  sendAccountDeletedNotices,
+} from "../../services/accountDeletion/accountDeletedNotice.js";
+import {
   DeletionRefusal,
   FRESH_SIGN_IN_MS,
   type PostDeleteMeBody,
@@ -85,7 +89,12 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
       ? await disconnectAllProviders(session.userId)
       : 0;
   const appleRevocations = await collectAppleRevocations(session.userId);
-  const deleted = await db.transaction((tx) => deleteAccountRows(session.userId, tx));
+  const deleted = await db.transaction(async (tx) => {
+    const rows = await deleteAccountRows(session.userId, tx);
+    const notices = await planAccountDeletedNotices(session.userId, rows.handedOverGroups, tx);
+    return { ...rows, notices };
+  });
+  await sendAccountDeletedNotices(session.userId, deleted.notices);
   await removeAttachmentObjects(session.userId, deleted.attachments);
   await revokeAtApple(appleClient, session.userId, appleRevocations);
   logger.info("account deleted", {
@@ -94,6 +103,7 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
     handedOverGroups: deleted.handedOverGroups.length,
     organizations: deleted.organizations,
     cancelledRequests: deleted.cancelledRequests,
+    notices: deleted.notices.length,
     attachments: deleted.attachments.length,
     appleLinks: appleRevocations.length,
     calendarConnections,

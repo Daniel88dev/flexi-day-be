@@ -110,6 +110,27 @@ What the organization then sees:
   access in a group, or naming it as a group's approver, answers 422 `ACCOUNT_DELETED`.
 - No notification row is written for a Deleted account and no workflow mail goes to one.
 
+### Who hears about it
+
+Right after the commit, `sendAccountDeletedNotices`
+(`src/services/accountDeletion/accountDeletedNotice.ts`) writes one `account_deleted` Notification
+per recipient and pushes it. No email goes out, nothing reminds, and no sweep runs later. The
+audience is read inside the deletion's transaction (`planAccountDeletedNotices`), so it matches what
+the deletion left:
+
+- In each organization where the person still has an open Employment: the owner, every live org
+  admin, and the manager of each live group the person is in. The deleted person never gets one.
+- One notice per recipient, however many organizations or groups they share with the person. The
+  text names every shared organization: "Jana Nováková deleted their account. Their employment in
+  Acme is still open."
+- An owner who took over a group the person managed reads "You now manage Support." as well.
+- The link: an owner or org admin opens the People card row
+  (`/organization/?organizationId=…&employmentId=…`), a manager who is neither opens the group's
+  member list (`/groups/detail/?groupId=…&tab=members`). The phone opens the member list itself and
+  hands the People card to the web.
+- Title and body are written in each recipient's stored language (English or Czech), since the
+  push carries them as they are.
+
 The person keeps their seat in each group and counts in the billing headcount until an admin removes
 them from the group or ends the Employment. Removing them from a group cancels their pending
 requests and bookings after today there, as it does for anyone, and removing them from their last
