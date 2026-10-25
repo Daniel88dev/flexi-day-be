@@ -73,32 +73,31 @@ export const resolveAdministeredOrganization = async (
   return { organization, isOwner: organization.ownerUserId === auth.userId };
 };
 
-/** Throws 403 unless the caller owns the organization — billing-adjacent writes are owner-only. */
-export const assertOrganizationOwner = (organization: OrganizationType, userId: string): void => {
+/**
+ * Throws 403 unless the caller owns the organization: billing-adjacent writes
+ * and the Organization export are owner-only. `publicCode` rides
+ * `context.code` for a client that explains the refusal.
+ */
+export const assertOrganizationOwner = (
+  organization: OrganizationType,
+  userId: string,
+  refusal: { message?: string; publicCode?: string } = {}
+): void => {
   if (organization.ownerUserId !== userId) {
     throw new AppError({
-      message: "Only the organization owner can perform this action",
+      message: refusal.message ?? "Only the organization owner can perform this action",
       logging: true,
       code: 403,
       context: { userId, organizationId: organization.id },
+      ...(refusal.publicCode ? { publicContext: { code: refusal.publicCode } } : {}),
     });
   }
 };
 
-/** The Organization export is the owner's alone; `context.code` tells a delegated admin why. */
-export const assertOrganizationExportOwner = (
-  organization: OrganizationType,
-  userId: string
-): void => {
-  if (organization.ownerUserId !== userId) {
-    throw new AppError({
-      message: "Only the organization owner can export the organization",
-      logging: true,
-      code: 403,
-      context: { userId, organizationId: organization.id },
-      publicContext: { code: "OWNER_ONLY" },
-    });
-  }
+/** The refusal a delegated admin gets from the Organization export. */
+export const ORGANIZATION_EXPORT_OWNER_ONLY = {
+  message: "Only the organization owner can export the organization",
+  publicCode: "OWNER_ONLY",
 };
 
 /**

@@ -1,3 +1,4 @@
+import AppError from "../../utils/appError.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
@@ -85,6 +86,27 @@ export const isDeletedAccount = async (userId: string, tx?: DbTransaction): Prom
     .limit(1);
   const [row] = await (tx ? query.for("key share") : query);
   return Boolean(row?.deletedAt);
+};
+
+/**
+ * Refuses a write that names a Deleted account. 422 with `context.code`
+ * `ACCOUNT_DELETED` unless the route answers otherwise; `publicCode: null`
+ * sends no code.
+ */
+export const assertNotDeletedAccount = async (
+  userId: string,
+  tx: DbTransaction,
+  refusal: { message: string; context: object; status?: number; publicCode?: string | null }
+): Promise<void> => {
+  if (!(await isDeletedAccount(userId, tx))) return;
+  const publicCode = refusal.publicCode === undefined ? "ACCOUNT_DELETED" : refusal.publicCode;
+  throw new AppError({
+    message: refusal.message,
+    logging: true,
+    code: refusal.status ?? 422,
+    context: refusal.context,
+    ...(publicCode ? { publicContext: { code: publicCode } } : {}),
+  });
 };
 
 /** The ids among `userIds` that are Deleted accounts. */

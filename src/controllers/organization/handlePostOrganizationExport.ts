@@ -7,12 +7,16 @@ import {
   presentPersonExport,
 } from "../../services/personExport/personExportServices.js";
 import { enqueuePersonExport } from "../../services/personExport/personExportQueue.js";
-import { assertOrganizationExportOwner, resolveAdministeredOrganization } from "./utils.js";
+import {
+  assertOrganizationOwner,
+  ORGANIZATION_EXPORT_OWNER_ONLY,
+  resolveAdministeredOrganization,
+} from "./utils.js";
 
 export const handlePostOrganizationExport = async (req: Request, res: Response) => {
   const auth = getAuth(req);
   const { organization } = await resolveAdministeredOrganization(req);
-  assertOrganizationExportOwner(organization, auth.userId);
+  assertOrganizationOwner(organization, auth.userId, ORGANIZATION_EXPORT_OWNER_ONLY);
   assertExportStoreConfigured();
 
   const { row, created } = await db.transaction((tx) =>

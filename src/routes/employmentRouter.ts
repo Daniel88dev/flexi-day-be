@@ -91,8 +91,9 @@ export const employmentRouter = (): Router => {
    *       '200':
    *         description: |
    *           Array of `{ id, userId, email, startedAt, endedAt, ended,
-   *           requiredMinutesPerDay, accountDeletedAt, accountDeleted, user }`,
-   *           by name. `requiredMinutesPerDay` is this person's own required
+   *           requiredMinutesPerDay, accountDeletedAt, accountDeleted, user }`:
+   *           open Employments by name, then ended ones by `endedAt`, most
+   *           recent first. `requiredMinutesPerDay` is this person's own required
    *           time, null while the organization's rule stands.
    *           `accountDeletedAt` is when the person deleted their account, and
    *           `accountDeleted` says whether they did: the row then names them
@@ -213,12 +214,49 @@ export const employmentRouter = (): Router => {
    *                 description: The last day of the spell.
    *     responses:
    *       '200':
-   *         description: |
-   *           `{ id, organizationId, userId, startedAt, endedAt, ended,
-   *           requiredMinutesPerDay, cancelledBookings }`. `endedAt` is now
-   *           when `endedOn` is today, otherwise the last instant of that day
-   *           in the organization's zone. `cancelledBookings` counts the
-   *           cancelled days.
+   *         description: The ended Employment
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required:
+   *                 - id
+   *                 - organizationId
+   *                 - userId
+   *                 - startedAt
+   *                 - endedAt
+   *                 - ended
+   *                 - requiredMinutesPerDay
+   *                 - cancelledBookings
+   *               properties:
+   *                 id:
+   *                   type: string
+   *                   format: uuid
+   *                 organizationId:
+   *                   type: string
+   *                 userId:
+   *                   type: string
+   *                 startedAt:
+   *                   type: string
+   *                   format: date-time
+   *                 endedAt:
+   *                   type: string
+   *                   format: date-time
+   *                   description: |
+   *                     Now when `endedOn` is today, otherwise the last instant
+   *                     of that day in the organization's zone.
+   *                 ended:
+   *                   type: boolean
+   *                   enum: [true]
+   *                 requiredMinutesPerDay:
+   *                   type: integer
+   *                   nullable: true
+   *                 cancelledBookings:
+   *                   type: integer
+   *                   minimum: 0
+   *                   description: How many booked days were cancelled.
+   *       '401':
+   *         description: Not signed in
    *       '403':
    *         description: The caller is not the owner or an org admin of the organization
    *       '404':

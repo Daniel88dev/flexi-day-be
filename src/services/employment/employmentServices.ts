@@ -198,7 +198,8 @@ export const setEmploymentRequiredMinutes = async (
 };
 
 /**
- * The organization's roster, by name. `userIds` narrows it to the people a
+ * The organization's roster: open Employments by name, then ended ones by end
+ * date, most recent first. `userIds` narrows it to the people a
  * group admin may see; an empty array means nobody, never everybody. `active`
  * drops the ended spells, which the team dashboard has no column for.
  */
@@ -229,7 +230,10 @@ export const listEmployments = async (
         options?.active ? isNull(employments.endedAt) : undefined
       )
     )
-    .orderBy(asc(personName(user, { organizationId })));
+    .orderBy(
+      sql`${employments.endedAt} desc nulls first`,
+      asc(personName(user, { organizationId }))
+    );
 
   return rows.map(({ userName, ...row }) => ({
     ...row,

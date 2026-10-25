@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
+import { contentDisposition } from "../../services/attachment/contentDisposition.js";
 import {
   accountExportFilename,
   buildAccountExport,
@@ -13,7 +14,10 @@ export const handleGetMyAccountExport = async (req: Request, res: Response) => {
   const body = JSON.stringify(accountExport, null, 2);
 
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${accountExportFilename(now)}"`);
+  res.setHeader(
+    "Content-Disposition",
+    contentDisposition("attachment", accountExportFilename(now))
+  );
   res.setHeader("Cache-Control", "no-store");
 
   return res.status(200).send(body);

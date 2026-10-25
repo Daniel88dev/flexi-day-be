@@ -26,6 +26,7 @@ export const handlePostEraseEmployment = async (req: Request, res: Response) => 
     employments: erased.employmentIds.length,
     attachments: erased.attachments.length,
     exports: erased.exportKeys.length,
+    notices: erased.notices,
   });
 
   return res.status(204).end();

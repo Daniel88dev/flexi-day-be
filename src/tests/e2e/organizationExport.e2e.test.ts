@@ -12,6 +12,7 @@ import { attachments, AttachmentStatus } from "../../db/schema/attachment-schema
 import { groupEvents } from "../../db/schema/group-event-schema.js";
 import { notifications, notificationType } from "../../db/schema/notification-schema.js";
 import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
+import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { personExports, personExportStatus } from "../../db/schema/person-export-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
@@ -369,6 +370,24 @@ describe("Organization export", () => {
         .get(`/api/employment/exports?organizationId=${world.organizationId}`)
         .set("Cookie", await authCookieFor(world.owner.id));
       expect(people.body).toEqual([]);
+    });
+
+    it("refuses to sign once the requester no longer owns the organization", async () => {
+      const world = await setUp();
+      const queue = buildNow();
+      const res = await requestExport(world.owner.id, world.organizationId);
+      await queue.drain();
+
+      await db
+        .update(organizations)
+        .set({ ownerUserId: world.delegate.id })
+        .where(eq(organizations.id, world.organizationId));
+
+      const refused = await request(server.url)
+        .post(`/api/person-exports/${res.body.id}/download`)
+        .set("Cookie", await authCookieFor(world.owner.id));
+      expect(refused.status).toBe(403);
+      expect(refused.body.errors[0].context.code).toBe("FORBIDDEN");
     });
   });
 

@@ -309,6 +309,38 @@ describe("ending an Employment", () => {
       expect(res.body.ended).toBe(true);
     });
   });
+  describe("the roster", () => {
+    it("lists open Employments by name, then ended ones by end date, most recent first", async () => {
+      const world = await setUp({ deleteMember: true });
+      const endAt = async (userId: string, daysAgo: number) =>
+        db
+          .update(employments)
+          .set({ endedAt: new Date(Date.now() - daysAgo * 86_400_000) })
+          .where(
+            and(
+              eq(employments.organizationId, world.organizationId),
+              eq(employments.userId, userId)
+            )
+          );
+      await endAt(world.plainMember.id, 10);
+      await endAt(world.member.id, 2);
+
+      const res = await request(server.url)
+        .get("/api/employment/list")
+        .query({ organizationId: world.organizationId })
+        .set("Cookie", await authCookieFor(world.owner.id))
+        .expect(200);
+
+      expect((res.body as { userId: string }[]).map((row) => row.userId)).toEqual([
+        world.delegate.id,
+        world.groupManager.id,
+        world.owner.id,
+        world.member.id,
+        world.plainMember.id,
+      ]);
+    });
+  });
+
   describe("removing a person from a group", () => {
     const removeFrom = async (callerId: string, groupId: string, userId: string) =>
       request(server.url)

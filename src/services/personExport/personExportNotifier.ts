@@ -11,6 +11,10 @@ import { getPersonContact } from "../person/personName.js";
 import { pushNotifications } from "../push/pushServices.js";
 import type { PersonExportRow } from "./types.js";
 
+/** How an `export_ready` notice about another person's Person export begins. */
+export const personExportNoticeOpening = (personName: string, organizationName: string): string =>
+  `The export of ${personName}'s data from ${organizationName} `;
+
 /** In-app and pushed, never emailed. Swallows its own failure: the export is already ready. */
 export const notifyExportReady = async (
   row: Pick<
@@ -40,7 +44,7 @@ export const notifyExportReady = async (
         ? `The export of ${organizationName} is ready to download for 7 days.`
         : own
           ? `Your data from ${organizationName} is ready to download for 7 days.`
-          : `The export of ${subject?.name ?? "the person"}'s data from ${organizationName} is ready to download for 7 days.`,
+          : `${personExportNoticeOpening(subject?.name ?? "the person", organizationName)}is ready to download for 7 days.`,
       href: own ? "/settings/" : "/organization/",
     });
     if (notice) await pushNotifications([notice]);

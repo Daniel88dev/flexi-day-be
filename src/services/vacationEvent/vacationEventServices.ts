@@ -9,7 +9,7 @@ import type {
   VacationEventListItem,
   VacationEventRecord,
 } from "./types.js";
-import { optionalPersonName } from "../person/personName.js";
+import { personName } from "../person/personName.js";
 
 /**
  * Appends one timeline entry. Callers pass the same transaction that performs
@@ -49,7 +49,7 @@ export const getVacationEvents = async (
       vacationId: vacationEvents.vacationId,
       eventType: vacationEvents.eventType,
       actorUserId: vacationEvents.actorUserId,
-      actorName: optionalPersonName(user, {
+      actorName: personName(user, {
         groupId: sql`(select ${vacation.groupId} from ${vacation} where ${vacation.id} = ${vacationEvents.vacationId})`,
       }),
       reason: vacationEvents.reason,

@@ -158,7 +158,7 @@ describe("account export", () => {
 
     it("is served as a JSON attachment", () => {
       expect(disposition).toMatch(
-        /^attachment; filename="flexi-day-account-\d{4}-\d{2}-\d{2}\.json"$/
+        /^attachment; filename="flexi-day-account-\d{4}-\d{2}-\d{2}\.json"; filename\*=UTF-8''flexi-day-account-\d{4}-\d{2}-\d{2}\.json$/
       );
     });
 

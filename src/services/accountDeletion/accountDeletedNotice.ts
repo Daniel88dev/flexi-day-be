@@ -48,6 +48,10 @@ const COPY = {
   },
 };
 
+/** Every title an `account_deleted` notice about `name` can carry, one per language. */
+export const accountDeletedTitles = (name: string): string[] =>
+  Object.values(COPY).map((copy) => copy.title(name));
+
 const peopleCardHref = (employment: OpenEmployment) =>
   `/organization/?organizationId=${encodeURIComponent(employment.organizationId)}&employmentId=${encodeURIComponent(employment.employmentId)}`;
 

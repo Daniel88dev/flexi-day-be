@@ -4,7 +4,7 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
-import AppError from "../../utils/appError.js";
+import { refuse } from "../../utils/appError.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { isOrganizationAdmin, lockOrganization } from "../organization/organizationServices.js";
@@ -15,8 +15,38 @@ import {
 import type { VacationType } from "../vacation/types.js";
 import type { EmploymentType } from "./types.js";
 
-const refuse = (code: number, publicCode: string, message: string, context: object) =>
-  new AppError({ code, message, logging: true, context, publicContext: { code: publicCode } });
+/**
+ * The shared opening of End employment and Erase: 404 for no such row, 403
+ * unless the actor administers its organization, then the organization lock
+ * and the row `FOR UPDATE`. Every path that adds someone to the organization
+ * takes the same lock, so no membership lands between the caller's reads and
+ * its writes.
+ */
+export const lockEmploymentForAdmin = async (
+  input: { employmentId: string; actorUserId: string },
+  tx: DbTransaction
+): Promise<typeof employments.$inferSelect> => {
+  const context = { userId: input.actorUserId, employmentId: input.employmentId };
+
+  const [found] = await tx
+    .select({ organizationId: employments.organizationId })
+    .from(employments)
+    .where(eq(employments.id, input.employmentId));
+  if (!found) throw refuse(404, "NOT_FOUND", "Employment not found", context);
+
+  if (!(await isOrganizationAdmin(input.actorUserId, found.organizationId, tx))) {
+    throw refuse(403, "FORBIDDEN", "No permission for related organization", context);
+  }
+
+  await lockOrganization(found.organizationId, tx);
+  const [employment] = await tx
+    .select()
+    .from(employments)
+    .where(eq(employments.id, input.employmentId))
+    .for("update");
+  if (!employment) throw refuse(404, "NOT_FOUND", "Employment not found", context);
+  return employment;
+};
 
 /**
  * End employment: the person leaves every group of the organization, loses a
@@ -36,27 +66,8 @@ export const endEmployment = async (
   tx: DbTransaction
 ): Promise<{ employment: EmploymentType; cancelled: VacationType[] }> => {
   const context = { userId: input.actorUserId, employmentId: input.employmentId };
-
-  const [found] = await tx
-    .select({ organizationId: employments.organizationId })
-    .from(employments)
-    .where(eq(employments.id, input.employmentId));
-  if (!found) throw refuse(404, "NOT_FOUND", "Employment not found", context);
-
-  const { organizationId } = found;
-  if (!(await isOrganizationAdmin(input.actorUserId, organizationId, tx))) {
-    throw refuse(403, "FORBIDDEN", "No permission for related organization", context);
-  }
-
-  // Every path that adds someone to the organization takes this lock, so no
-  // membership can land between the reads below and the end.
-  await lockOrganization(organizationId, tx);
-  const [employment] = await tx
-    .select()
-    .from(employments)
-    .where(eq(employments.id, input.employmentId))
-    .for("update");
-  if (!employment) throw refuse(404, "NOT_FOUND", "Employment not found", context);
+  const employment = await lockEmploymentForAdmin(input, tx);
+  const { organizationId } = employment;
 
   if (employment.endedAt !== null) {
     throw refuse(409, "EMPLOYMENT_ENDED", "This employment has already ended", context);

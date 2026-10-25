@@ -12,7 +12,7 @@ import {
   isOrganizationAdmin,
   lockOrganization,
 } from "../../services/organization/organizationServices.js";
-import { isDeletedAccount } from "../../services/user/userServices.js";
+import { assertNotDeletedAccount } from "../../services/user/userServices.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 
@@ -22,8 +22,7 @@ const groupNotFound = (context: Record<string, unknown>) =>
 export const handlePutGroupManager = async (req: Request, res: Response) => {
   const auth = getAuth(req);
   const groupId = z.uuid().parse(req.params.groupId);
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const { managerUserId }: ValidatedPutGroupManagerType = req.body;
+  const { managerUserId } = req.body as ValidatedPutGroupManagerType;
   const context = { url: req.url, user: auth.userId, groupId, managerUserId };
 
   const group = await getGroup(groupId);
@@ -68,15 +67,10 @@ export const handlePutGroupManager = async (req: Request, res: Response) => {
         publicContext: { code: "NOT_A_MEMBER" },
       });
     }
-    if (await isDeletedAccount(managerUserId, tx)) {
-      throw new AppError({
-        message: "That person deleted their account",
-        logging: true,
-        code: 422,
-        context,
-        publicContext: { code: "ACCOUNT_DELETED" },
-      });
-    }
+    await assertNotDeletedAccount(managerUserId, tx, {
+      message: "That person deleted their account",
+      context,
+    });
 
     const row = await updateGroupManager(groupId, managerUserId, tx);
     if (!row) throw groupNotFound(context);

@@ -142,8 +142,9 @@ export const organizationRouter = (): Router => {
    *     summary: People who may be promoted to organization admin
    *     description: |
    *       Active members of the organization's live groups, minus its existing
-   *       administrators and anyone who deleted their account. Owner-only. Deliberately not a lookup by email —
-   *       that would let an owner probe whether an address has an account.
+   *       administrators and anyone who deleted their account. Owner-only.
+   *       Deliberately not a lookup by email, which would let an owner probe
+   *       whether an address has an account.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -274,6 +275,8 @@ export const organizationRouter = (): Router => {
    *           application/json:
    *             schema:
    *               $ref: '#/components/schemas/PersonExport'
+   *       '400':
+   *         description: No `organizationId` while the caller administers several organizations
    *       '401':
    *         description: Not signed in
    *       '403':
@@ -282,6 +285,8 @@ export const organizationRouter = (): Router => {
    *           `context.code` is `OWNER_ONLY`.
    *       '404':
    *         description: No such organization
+   *       '422':
+   *         description: An empty `organizationId`
    *       '503':
    *         description: "`context.code` is `EXPORT_UNAVAILABLE`: no organization-data store is configured"
    *   get:
@@ -312,12 +317,16 @@ export const organizationRouter = (): Router => {
    *                   nullable: true
    *                   allOf:
    *                     - $ref: '#/components/schemas/PersonExport'
+   *       '400':
+   *         description: No `organizationId` while the caller administers several organizations
    *       '401':
    *         description: Not signed in
    *       '403':
    *         description: "Not the owner; `context.code` is `OWNER_ONLY` for a delegated admin"
    *       '404':
    *         description: No such organization
+   *       '422':
+   *         description: An empty `organizationId`
    */
   app.post("/export", tryCatch(handlePostOrganizationExport));
   app.get("/export", tryCatch(handleGetOrganizationExport));

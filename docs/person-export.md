@@ -52,6 +52,9 @@ gets a leading `'`. Employment type and the profile sections join the file when 
   rows and ZIPs (see [`account-deletion.md`](account-deletion.md#erase)).
 - `POST /api/person-exports/{exportId}/download` signs a link for one hour, for the requester only.
   It signs again as often as asked until `expiresAt`, then answers 410 `EXPORT_EXPIRED`.
+  Every signing re-checks the standing the export was requested with: the owner for an
+  Organization export, an org admin of the organization for someone else's Person export. An
+  admin whose grant was revoked gets 403 `FORBIDDEN`, even for a file that is still ready.
 
 ## Organization export
 

@@ -9,6 +9,7 @@ import {
 import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import { logger } from "../../middleware/logger.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { lockOrganization } from "../organization/organizationServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
 import { organizationExportsPrefix } from "./personExportBuild.js";
 import type { PersonExportRow } from "./types.js";
@@ -42,6 +43,8 @@ export const requestOrganizationExport = async (
   input: { organizationId: string; requestedByUserId: string },
   tx: DbTransaction
 ): Promise<{ row: PersonExportRow; created: boolean }> => {
+  // Erase holds this lock, so a request racing one waits and then reads the people without them.
+  await lockOrganization(input.organizationId, tx);
   const [pending] = await tx
     .select()
     .from(personExports)

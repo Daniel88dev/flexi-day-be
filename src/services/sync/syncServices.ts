@@ -23,7 +23,7 @@ import { groupEvents } from "../../db/schema/group-event-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import { isDeletedAccount, personNameAcross } from "../person/personName.js";
+import { deletedAccountColumn, personNameAcross } from "../person/personName.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptions } from "../../db/schema/subscription-schema.js";
@@ -608,7 +608,7 @@ const readUsersPage = async (
       id: user.id,
       name: personNameAcross(user, organizationIds),
       image: user.image,
-      accountDeleted: isDeletedAccount(user),
+      accountDeleted: deletedAccountColumn(user),
       updatedAt: user.updatedAt,
     })
     .from(user)
