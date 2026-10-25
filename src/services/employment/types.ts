@@ -60,3 +60,10 @@ export const validateEndEmployment = z.object({
 });
 
 export type ValidatedEndEmploymentType = z.infer<typeof validateEndEmployment>;
+
+/** Erase: the person's name as the People card shows it, typed by the admin to confirm. */
+export const validateEraseEmployment = z.object({
+  confirmName: z.string().trim().min(1).max(200),
+});
+
+export type ValidatedEraseEmploymentType = z.infer<typeof validateEraseEmployment>;

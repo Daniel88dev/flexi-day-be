@@ -48,6 +48,8 @@ gets a leading `'`. Employment type and the profile sections join the file when 
   `ORGANIZATION_DATA_BUCKET` the request routes answer 503 `EXPORT_UNAVAILABLE`.
 - `READY` sets `expiresAt` 7 days on, matching the bucket's `exports/` lifecycle rule. The
   requester gets one `export_ready` Notification, in-app and pushed, never emailed.
+- Erasing the person deletes their Person exports and the organization's Organization exports,
+  rows and ZIPs (see [`account-deletion.md`](account-deletion.md#erase)).
 - `POST /api/person-exports/{exportId}/download` signs a link for one hour, for the requester only.
   It signs again as often as asked until `expiresAt`, then answers 410 `EXPORT_EXPIRED`.
 
@@ -80,6 +82,6 @@ deletes its own file.
 ## The Read log
 
 `read_log` is append-only. No route updates or deletes a row, and a trigger refuses every UPDATE.
-Rows go only with their organization. Each row names the reader, the person, the spells
+Rows go only with their organization, and an Erase leaves them in place. Each row names the reader, the person, the spells
 (`employmentIds`, no foreign key, so a row outlives an erasure) and the audience the reader acted
 under. Sensitive-section reads will land in the same table with a kind of their own.
