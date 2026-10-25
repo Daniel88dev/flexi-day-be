@@ -7,12 +7,11 @@ import { formatDay } from "../../utils/dateFunc.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
 import type { VacationType } from "./types.js";
 import { dayWeightOf } from "./dayWeight.js";
-import type { UserContact } from "../user/userServices.js";
+import { getPersonContact, getPersonContacts, type PersonContact } from "../person/personName.js";
 import { getApprovalUsers } from "../group/groupServices.js";
 import { getGroupUsers } from "../groupUser/groupUserServices.js";
 import { createNotification } from "../notification/notificationServices.js";
 import { pushNotifications } from "../push/pushServices.js";
-import { getUserById, getUsersByIds } from "../user/userServices.js";
 import { filterUsersAcceptingEmail } from "../userSettings/userSettingsServices.js";
 import { ENGLISH_RECORD_TYPE_LABELS } from "../recordType/recordTypeLabels.js";
 
@@ -76,6 +75,22 @@ const groupByUser = <Row extends VacationRow>(rows: Row[]): Map<string, Row[]> =
   return byUser;
 };
 
+/** The requester of each user's rows, named in the group those rows belong to. */
+const requestersOf = async <Row extends VacationRow>(
+  byUser: Map<string, Row[]>
+): Promise<Map<string, PersonContact>> => {
+  const byGroup = new Map<string, string[]>();
+  for (const [userId, rows] of byUser) {
+    const groupId = rows[0]?.groupId;
+    if (!groupId) continue;
+    byGroup.set(groupId, [...(byGroup.get(groupId) ?? []), userId]);
+  }
+  const found = await Promise.all(
+    [...byGroup].map(([groupId, userIds]) => getPersonContacts(userIds, { groupId }))
+  );
+  return new Map(found.flat().map((contact) => [contact.id, contact]));
+};
+
 /**
  * Sends the workflow mails that the recipients still want, and records the
  * matching in-app notifications (which are not opt-out).
@@ -130,7 +145,7 @@ const deliver = async (deliveries: Delivery[]): Promise<void> => {
 const approverRecipients = async (
   group: NonNullable<Awaited<ReturnType<typeof getApprovalUsers>>>,
   exclude: { requesterId: string; actorId: string }
-): Promise<UserContact[]> => {
+): Promise<PersonContact[]> => {
   const members = await getGroupUsers(group.groupId);
 
   const candidates = [
@@ -149,7 +164,7 @@ const approverRecipients = async (
       .filter((member) => member.approverAccess)
       .map((member) => ({ id: member.userId, name: member.user.name, email: member.email })),
   ].filter(
-    (a): a is UserContact =>
+    (a): a is PersonContact =>
       Boolean(a.id) &&
       Boolean(a.name) &&
       Boolean(a.email) &&
@@ -289,8 +304,7 @@ export const notifyVacationDecision = async (
 
     const byUser = groupByUser(rows);
     const group = await getApprovalUsers(rows[0]?.groupId ?? "");
-    const employees = await getUsersByIds([...byUser.keys()]);
-    const contacts = new Map(employees.map((e) => [e.id, e]));
+    const contacts = await requestersOf(byUser);
 
     const deliveries: Delivery[] = [];
 
@@ -355,10 +369,10 @@ export const notifyVacationComment = async (
     const group = await getApprovalUsers(row.groupId);
     if (!group) return;
 
-    const employee = await getUserById(row.userId);
+    const employee = await getPersonContact(row.userId, { groupId: row.groupId });
     if (!employee) return;
 
-    const recipients: UserContact[] =
+    const recipients: PersonContact[] =
       actor.id === row.userId
         ? await approverRecipients(group, { requesterId: row.userId, actorId: actor.id })
         : [employee].filter((e) => e.id !== actor.id);
@@ -412,8 +426,7 @@ export const notifyVacationsCancelled = async (
     if (notDeclined.length === 0) return;
 
     const byUser = groupByUser(notDeclined);
-    const employees = await getUsersByIds([...byUser.keys()]);
-    const contacts = new Map(employees.map((e) => [e.id, e]));
+    const contacts = await requestersOf(byUser);
 
     const trimmedReason = reason?.trim() ? reason.trim() : null;
     const deliveries: Delivery[] = [];
@@ -445,7 +458,7 @@ export const notifyVacationsCancelled = async (
       });
 
       if (approved) {
-        const recipients: UserContact[] = ownCancel
+        const recipients: PersonContact[] = ownCancel
           ? await approverRecipients(group, { requesterId: userId, actorId: actor.id })
           : [employee];
 

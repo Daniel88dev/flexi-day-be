@@ -5,8 +5,8 @@ const {
   mockFilterUsersAcceptingEmail,
   mockCreateNotification,
   mockGetApprovalUsers,
-  mockGetUsersByIds,
-  mockGetUserById,
+  mockGetPersonContacts,
+  mockGetPersonContact,
   mockGetGroupUsers,
   mockPushNotifications,
 } = vi.hoisted(() => ({
@@ -14,8 +14,8 @@ const {
   mockFilterUsersAcceptingEmail: vi.fn(),
   mockCreateNotification: vi.fn(),
   mockGetApprovalUsers: vi.fn(),
-  mockGetUsersByIds: vi.fn(),
-  mockGetUserById: vi.fn(),
+  mockGetPersonContacts: vi.fn(),
+  mockGetPersonContact: vi.fn(),
   mockGetGroupUsers: vi.fn(),
   mockPushNotifications: vi.fn(),
 }));
@@ -38,9 +38,9 @@ vi.mock("../../notification/notificationServices.js", () => ({
   createNotification: mockCreateNotification,
 }));
 
-vi.mock("../../user/userServices.js", () => ({
-  getUsersByIds: mockGetUsersByIds,
-  getUserById: mockGetUserById,
+vi.mock("../../person/personName.js", () => ({
+  getPersonContacts: mockGetPersonContacts,
+  getPersonContact: mockGetPersonContact,
 }));
 
 vi.mock("../../userSettings/userSettingsServices.js", () => ({
@@ -253,7 +253,7 @@ describe("vacation notifier", () => {
   });
 
   it("emails each requester of a bulk decision", async () => {
-    mockGetUsersByIds.mockResolvedValue([
+    mockGetPersonContacts.mockResolvedValue([
       employee,
       { id: "employee-2", name: "Sam Reed", email: "sam@example.com" },
     ]);
@@ -270,7 +270,7 @@ describe("vacation notifier", () => {
   });
 
   it("counts a half-day booking as half a day in the approval email", async () => {
-    mockGetUsersByIds.mockResolvedValue([employee]);
+    mockGetPersonContacts.mockResolvedValue([employee]);
 
     await notifyVacationDecision([row({ halfDay: true })], "approved", {
       id: "approver-1",
@@ -286,7 +286,7 @@ describe("vacation notifier", () => {
   });
 
   it("shows a half-day booking as half a day in the in-app notification", async () => {
-    mockGetUsersByIds.mockResolvedValue([employee]);
+    mockGetPersonContacts.mockResolvedValue([employee]);
 
     await notifyVacationDecision([row({ halfDay: true })], "approved", {
       id: "approver-1",
@@ -299,7 +299,7 @@ describe("vacation notifier", () => {
   });
 
   it("skips the email but still records the in-app notification when the user opted out", async () => {
-    mockGetUsersByIds.mockResolvedValue([employee]);
+    mockGetPersonContacts.mockResolvedValue([employee]);
     mockFilterUsersAcceptingEmail.mockResolvedValue(new Set<string>());
 
     await notifyVacationDecision([row()], "rejected", { id: "approver-1", name: "Ada Lovelace" });
@@ -309,7 +309,7 @@ describe("vacation notifier", () => {
   });
 
   it("tells the employee when someone else cancels their approved time off", async () => {
-    mockGetUsersByIds.mockResolvedValue([employee]);
+    mockGetPersonContacts.mockResolvedValue([employee]);
 
     await notifyVacationCancelled(
       { ...row(), approvedAt: new Date("2026-08-01T00:00:00Z"), rejectedAt: null },
@@ -331,7 +331,7 @@ describe("vacation notifier", () => {
   });
 
   it("tells the approver when the employee cancels their own approved time off", async () => {
-    mockGetUsersByIds.mockResolvedValue([employee]);
+    mockGetPersonContacts.mockResolvedValue([employee]);
 
     await notifyVacationCancelled(
       { ...row(), approvedAt: new Date("2026-08-01T00:00:00Z"), rejectedAt: null },
@@ -348,7 +348,7 @@ describe("vacation notifier", () => {
   });
 
   it("tells every approver, the manager included, when an employee bulk-cancels approved days", async () => {
-    mockGetUsersByIds.mockResolvedValue([employee]);
+    mockGetPersonContacts.mockResolvedValue([employee]);
     mockGetApprovalUsers.mockResolvedValue({ ...group, ...manager });
     mockGetGroupUsers.mockResolvedValue([
       {
@@ -404,8 +404,10 @@ describe("cancellation notices to the member", () => {
     mockGetApprovalUsers.mockResolvedValue(group);
     mockGetGroupUsers.mockResolvedValue([]);
     mockFilterUsersAcceptingEmail.mockImplementation((ids: string[]) => new Set(ids));
-    mockGetUserById.mockImplementation(async (id: string) => contacts.find((c) => c.id === id));
-    mockGetUsersByIds.mockImplementation(async (ids: string[]) =>
+    mockGetPersonContact.mockImplementation(async (id: string) =>
+      contacts.find((c) => c.id === id)
+    );
+    mockGetPersonContacts.mockImplementation(async (ids: string[]) =>
       contacts.filter((c) => ids.includes(c.id))
     );
   });

@@ -17,7 +17,7 @@ import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { getGroup } from "../../services/group/groupServices.js";
 import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
-import { getUserById } from "../../services/user/userServices.js";
+import { getPersonContact } from "../../services/person/personName.js";
 import { postVacationBulk } from "../../services/vacation/vacationServices.js";
 import { markCalendarTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 import { createVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
@@ -254,7 +254,9 @@ export const handlePostVacation = async (req: Request, res: Response) => {
     // Approvers must see the member as the requester — the leave is theirs;
     // the admin who filed it is attributed on the timeline and in the member's
     // own notice, and must not displace the member in the approver mail.
-    const member = await getUserById(targetUserId).catch(() => undefined);
+    const member = await getPersonContact(targetUserId, { groupId: data.groupId }).catch(
+      () => undefined
+    );
     if (member) {
       await notifyVacationRequested(
         created,

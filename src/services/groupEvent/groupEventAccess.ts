@@ -154,7 +154,7 @@ export const groupEventViewsFor = async (
   rows: GroupEventRecord[],
   tx?: DbTransaction
 ): Promise<GroupEventView[]> => {
-  const creators = await creatorsOf(rows, tx);
+  const creators = await creatorsOf(rows, standing.group.id, tx);
   return rows.map((row) =>
     toGroupEventView(row, {
       groupName: standing.group.groupName,

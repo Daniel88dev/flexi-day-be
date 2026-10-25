@@ -55,6 +55,7 @@ import {
   spanRefusal,
   spanRefused,
 } from "./sessionSpan.js";
+import { optionalPersonName } from "../person/personName.js";
 
 /** A start and an end, which is all the shape rules below actually read. */
 type Span = { startedAt: Date; endedAt: Date | null };
@@ -828,7 +829,7 @@ export const listAttendanceSessionEvents = async (
       after: attendanceEvents.after,
       createdAt: attendanceEvents.createdAt,
       userId: user.id,
-      userName: user.name,
+      userName: optionalPersonName(user, { organizationId: employment.organizationId }),
     })
     .from(attendanceEvents)
     .leftJoin(user, eq(attendanceEvents.changedByUserId, user.id))

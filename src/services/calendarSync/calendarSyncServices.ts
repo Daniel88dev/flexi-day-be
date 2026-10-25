@@ -36,6 +36,7 @@ import type {
   GroupEventFeedRecord,
   VacationFeedRecord,
 } from "./types.js";
+import { personName } from "../person/personName.js";
 
 /**
  * Generates a new secret feed token. Format mirrors the front-end mock:
@@ -384,7 +385,7 @@ const vacationRecords = async (
     .select({
       id: vacation.id,
       userId: vacation.userId,
-      userName: user.name,
+      userName: personName(user, { groupId: vacation.groupId }),
       groupId: vacation.groupId,
       vacationType: vacation.vacationType,
       requestedDay: vacation.requestedDay,

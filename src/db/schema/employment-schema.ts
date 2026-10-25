@@ -16,6 +16,14 @@ import { user } from "./auth-schema.js";
  *
  * `requiredMinutesPerDay` overrides the organization's rule for this one
  * person. Nothing reads it until the month view.
+ *
+ * `name` and `email` are the organization's own copy of who the person is.
+ * While the row is open the account wins: `syncEmployment` writes the copy on
+ * open, and the `employments_follow_user` trigger (migration 0032) rewrites it
+ * on every open row whenever `user.name` or `user.email` changes, inside that
+ * UPDATE's transaction. An ended row keeps the copy it had when it ended.
+ * `name` is nullable only so a deploy's old code can still insert while 0032
+ * runs; every write since sets it.
  */
 export const employments = pgTable(
   "employments",
@@ -29,6 +37,8 @@ export const employments = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    name: text("name"),
+    email: text("email"),
     requiredMinutesPerDay: integer("required_minutes_per_day"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })

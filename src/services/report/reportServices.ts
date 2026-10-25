@@ -31,6 +31,7 @@ import type {
   ReportScopeMember,
   ReportUsageSplit,
 } from "./types.js";
+import { personName, optionalPersonName } from "../person/personName.js";
 
 const yearBounds = (year: number) => ({
   start: `${year.toString().padStart(4, "0")}-01-01`,
@@ -126,7 +127,7 @@ export const getScopeMembers = async (
     .select({
       groupId: groupUsers.groupId,
       userId: groupUsers.userId,
-      userName: user.name,
+      userName: personName(user, { groupId: groupUsers.groupId }),
     })
     .from(groupUsers)
     .innerJoin(user, eq(groupUsers.userId, user.id))
@@ -141,7 +142,7 @@ export const getScopeMembers = async (
         )
       )
     )
-    .orderBy(asc(user.name));
+    .orderBy(asc(personName(user, { groupId: groupUsers.groupId })));
 
   return rows.map((row) => ({
     groupId: row.groupId,
@@ -350,7 +351,7 @@ export const getBookingsForScope = async (
   const query = db
     .select({
       userId: vacation.userId,
-      userName: user.name,
+      userName: personName(user, { groupId: vacation.groupId }),
       groupId: vacation.groupId,
       groupName: groups.groupName,
       vacationType: vacation.vacationType,
@@ -424,7 +425,7 @@ export const getMemberChanges = async (
       changeDetail: changesSchema.changeDetail,
       createdAt: changesSchema.createdAt,
       actorId: actor.id,
-      actorName: actor.name,
+      actorName: optionalPersonName(actor, { groupId: changesSchema.groupId }),
       actorDeleted: changesSchema.changingUserDeleted,
     })
     .from(changesSchema)

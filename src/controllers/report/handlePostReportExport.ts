@@ -18,7 +18,7 @@ import {
   recordReportExport,
 } from "../../services/report/reportServices.js";
 import { resolveVacationViewer } from "../../services/vacation/vacationPermissions.js";
-import { getUsersByIds } from "../../services/user/userServices.js";
+import { getPersonContacts } from "../../services/person/personName.js";
 
 // Guards against a filter-free export over a large tenant turning into an
 // out-of-memory workbook build. Well above any realistic single-year team.
@@ -86,8 +86,18 @@ export const handlePostReportExport = async (req: Request, res: Response) => {
   // Quota and usage rows outlive a membership, so someone who has left the
   // group still earns a summary line — and is not in `members`. Resolve those
   // names directly rather than printing a raw id in the Name column.
-  const unnamed = [...new Set(entries.map((e) => e.userId))].filter((id) => !nameByUserId.has(id));
-  for (const row of await getUsersByIds(unnamed)) {
+  const unnamedByGroup = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    if (nameByUserId.has(entry.userId)) continue;
+    unnamedByGroup.set(
+      entry.groupId,
+      (unnamedByGroup.get(entry.groupId) ?? new Set()).add(entry.userId)
+    );
+  }
+  const unnamed = await Promise.all(
+    [...unnamedByGroup].map(([groupId, userIds]) => getPersonContacts([...userIds], { groupId }))
+  );
+  for (const row of unnamed.flat()) {
     nameByUserId.set(row.id, row.name);
   }
 

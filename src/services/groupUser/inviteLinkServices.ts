@@ -11,6 +11,7 @@ import type {
 import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { optionalPersonName } from "../person/personName.js";
 
 // Every column but `linkSecretHash`, which no reader outside the link lookup
 // has any use for and no response may carry.
@@ -58,7 +59,10 @@ export const getOpenInvitesForGroup = async (groupId: string): Promise<InviteLin
   const inviter = alias(user, "invitedByUser");
 
   const rows = await db
-    .select({ ...inviteColumns, invitedByName: inviter.name })
+    .select({
+      ...inviteColumns,
+      invitedByName: optionalPersonName(inviter, { groupId: inviteLink.groupId }),
+    })
     .from(inviteLink)
     .leftJoin(inviter, eq(inviteLink.invitedByUserId, inviter.id))
     .where(
@@ -154,7 +158,7 @@ export const getInvitePreviewBySecretHash = async (
     .select({
       groupId: inviteLink.groupId,
       groupName: groups.groupName,
-      inviterName: inviter.name,
+      inviterName: optionalPersonName(inviter, { groupId: inviteLink.groupId }),
       invitedEmail: inviteLink.email,
       usedAt: inviteLink.usedAt,
       revokedAt: inviteLink.revokedAt,

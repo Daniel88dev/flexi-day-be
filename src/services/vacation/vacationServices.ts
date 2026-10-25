@@ -42,6 +42,7 @@ import { sumDaysWhere } from "./dayWeight.js";
 import type { DateString } from "../../utils/dateFunc.js";
 import { buildScopePredicate } from "../report/reportScope.js";
 import type { ReportScopeEntry } from "../report/types.js";
+import { personName, optionalPersonName } from "../person/personName.js";
 
 type VacationRowWithUser = VacationType & {
   userName: string;
@@ -77,7 +78,7 @@ const baseVacationSelection = {
   createdByUserId: vacation.createdByUserId,
   createdAt: vacation.createdAt,
   updatedAt: vacation.updatedAt,
-  userName: user.name,
+  userName: personName(user, { groupId: vacation.groupId }),
 };
 
 export type VacationListOptions = {
@@ -516,10 +517,10 @@ export const getVacationDetailById = async (
     .select({
       ...baseVacationSelection,
       groupName: groups.groupName,
-      approvedByName: approver.name,
-      rejectedByName: rejecter.name,
-      createdByName: creator.name,
-      deletedByName: canceller.name,
+      approvedByName: optionalPersonName(approver, { groupId: vacation.groupId }),
+      rejectedByName: optionalPersonName(rejecter, { groupId: vacation.groupId }),
+      createdByName: optionalPersonName(creator, { groupId: vacation.groupId }),
+      deletedByName: optionalPersonName(canceller, { groupId: vacation.groupId }),
     })
     .from(vacation)
     .innerJoin(user, eq(vacation.userId, user.id))
@@ -663,7 +664,7 @@ export const getPendingApprovalsForApprover = async (
       vacationId: vacation.id,
       requestId: vacation.requestId,
       userId: vacation.userId,
-      userName: user.name,
+      userName: personName(user, { groupId: vacation.groupId }),
       groupId: vacation.groupId,
       groupName: groups.groupName,
       vacationType: vacation.vacationType,
@@ -722,7 +723,7 @@ export const getPendingRequestsForRequester = async (userId: string): Promise<Ow
       vacationId: vacation.id,
       requestId: vacation.requestId,
       userId: vacation.userId,
-      userName: user.name,
+      userName: personName(user, { groupId: vacation.groupId }),
       groupId: vacation.groupId,
       groupName: groups.groupName,
       vacationType: vacation.vacationType,
