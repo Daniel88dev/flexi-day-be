@@ -233,9 +233,17 @@ export const auth = betterAuth({
         // Fires twice on a two-factor sign-in — the throwaway pre-challenge
         // session and the real one — and stamps both. A web sign-in falls
         // through to better-auth's own seven days.
-        before: (_session, context) => {
+        //
+        // A Deleted account never gets one, whatever let the sign-in this far.
+        before: async (session, context) => {
+          const [owner] = await db
+            .select({ deletedAt: userTable.deletedAt })
+            .from(userTable)
+            .where(eq(userTable.id, session.userId))
+            .limit(1);
+          if (owner?.deletedAt) return false;
           const stamp = nativeSessionStamp(context);
-          return Promise.resolve(stamp ? { data: stamp } : undefined);
+          return stamp ? { data: stamp } : undefined;
         },
       },
     },

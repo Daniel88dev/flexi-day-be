@@ -1,25 +1,29 @@
-import {
-  and,
-  asc,
-  count,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  ne,
-  or,
-  sql,
-  type Column,
-} from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
-import { account, session, user } from "../../db/schema/auth-schema.js";
+import { account, session, twoFactor, user, verification } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { subscriptions, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { supportAccess } from "../../db/schema/support-access-schema.js";
-import { changesSchema } from "../../db/schema/changes-schema.js";
+import { organizationUsers } from "../../db/schema/organization-users-schema.js";
+import { vacation } from "../../db/schema/vacation-schema.js";
+import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
+import {
+  attendanceBreaks,
+  attendanceClosedBy,
+  attendanceEventType,
+  attendanceSessions,
+} from "../../db/schema/attendance-schema.js";
+import { userSettings } from "../../db/schema/user-settings-schema.js";
+import { notifications } from "../../db/schema/notification-schema.js";
+import { calendarConnection } from "../../db/schema/calendar-connection-schema.js";
+import { calendarSync } from "../../db/schema/calendar-sync-schema.js";
+import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { appendAttendanceEvent, lockEmployment } from "../attendance/attendanceServices.js";
+import { removeBirthday } from "../birthday/birthdayServices.js";
+import { createVacationEvents } from "../vacationEvent/vacationEventServices.js";
 import { attachments } from "../../db/schema/attachment-schema.js";
 import { config } from "../../config.js";
 import { logger } from "../../middleware/logger.js";
@@ -68,6 +72,7 @@ const organizationsWithOtherMembers = async (
       and(
         eq(employments.organizationId, organizations.id),
         isNull(employments.endedAt),
+        isNull(employments.accountDeletedAt),
         ne(employments.userId, userId)
       )
     )
@@ -169,13 +174,115 @@ type StoredAttachment = Pick<AttachmentType, "id" | "storageKey" | "status">;
 export type DeletedAccountRows = {
   groups: number;
   organizations: number;
+  /** Pending days cancelled with the reason {@link ACCOUNT_DELETED_REASON}. */
+  cancelledRequests: number;
   /** Collected before their rows went; hand them to `removeAttachmentObjects` after the commit. */
   attachments: StoredAttachment[];
 };
 
+export const ACCOUNT_DELETED_REASON = "account deleted";
+
+/** The email a stripped user row keeps: unique, and undeliverable by its reserved domain. */
+export const deletedAccountEmail = (userId: string) => `${userId}@deleted.invalid`;
+
 /**
- * Deletes the account and everything that goes with it inside `tx`, or throws
- * 409 `DELETION_BLOCKED` having changed nothing.
+ * Closes the person's running clocks at `at`, as the sweep would: closed by
+ * the sweep, so the day is flagged for an admin to look at.
+ */
+const closeOpenSessions = async (userId: string, at: Date, tx: DbTransaction) => {
+  const open = await tx
+    .select({ id: attendanceSessions.id, employmentId: attendanceSessions.employmentId })
+    .from(attendanceSessions)
+    .innerJoin(employments, eq(employments.id, attendanceSessions.employmentId))
+    .where(
+      and(
+        eq(employments.userId, userId),
+        isNull(attendanceSessions.endedAt),
+        isNull(attendanceSessions.deletedAt)
+      )
+    );
+
+  for (const session of open) {
+    await lockEmployment(session.employmentId, tx);
+    const closedBreaks = await tx
+      .update(attendanceBreaks)
+      .set({ endedAt: sql`greatest(${attendanceBreaks.startedAt}, ${at})` })
+      .where(and(eq(attendanceBreaks.sessionId, session.id), isNull(attendanceBreaks.endedAt)))
+      .returning({ id: attendanceBreaks.id });
+    await tx
+      .update(attendanceSessions)
+      .set({
+        endedAt: sql`greatest(${attendanceSessions.startedAt}, ${at})`,
+        closedBy: attendanceClosedBy.Sweep,
+      })
+      .where(eq(attendanceSessions.id, session.id));
+    await appendAttendanceEvent(
+      {
+        sessionId: session.id,
+        eventType: attendanceEventType.ClockOut,
+        changedByUserId: null,
+        before: { endedAt: null, closedBy: null },
+        after: {
+          endedAt: at,
+          closedBy: attendanceClosedBy.Sweep,
+          closedOpenBreakId: closedBreaks[0]?.id ?? null,
+          reason: ACCOUNT_DELETED_REASON,
+        },
+      },
+      tx
+    );
+  }
+};
+
+/** Pending days get a cancelled event with no actor, and nobody is told. */
+const cancelPendingRequests = async (userId: string, at: Date, tx: DbTransaction) => {
+  const cancelled = await tx
+    .update(vacation)
+    .set({ deletedAt: at, deletedByUserId: null })
+    .where(
+      and(
+        eq(vacation.userId, userId),
+        isNull(vacation.approvedAt),
+        isNull(vacation.rejectedAt),
+        isNull(vacation.deletedAt)
+      )
+    )
+    .returning({ id: vacation.id });
+
+  await createVacationEvents(
+    cancelled.map((row) => ({
+      id: generateRandomUUID(),
+      vacationId: row.id,
+      eventType: vacationEventType.Cancelled,
+      actorUserId: null,
+      reason: ACCOUNT_DELETED_REASON,
+    })),
+    tx
+  );
+  return cancelled.length;
+};
+
+/** Account data: everything Flexi Day holds for the person themselves. */
+const deleteAccountData = async (userId: string, tx: DbTransaction) => {
+  // Push registrations cascade with their sessions.
+  await tx.delete(session).where(eq(session.userId, userId));
+  await tx.delete(account).where(eq(account.userId, userId));
+  await tx.delete(twoFactor).where(eq(twoFactor.userId, userId));
+  await tx.delete(verification).where(eq(verification.value, userId));
+  await tx.delete(userSettings).where(eq(userSettings.userId, userId));
+  await tx.delete(notifications).where(eq(notifications.userId, userId));
+  await tx.delete(calendarConnection).where(eq(calendarConnection.userId, userId));
+  await tx.delete(calendarSync).where(eq(calendarSync.userId, userId));
+  // A tombstone rather than a delete, so the phones that synced it drop it.
+  await removeBirthday(userId, tx);
+};
+
+/**
+ * Deletes the account inside `tx`, or throws 409 `DELETION_BLOCKED` having
+ * changed nothing. Account data goes and the user row is stripped to its id.
+ * Organization data in other people's organizations stays: every Employment
+ * stays open with `accountDeletedAt`, memberships lose their flags, and
+ * bookings, quotas and the change log keep pointing at the id.
  */
 export const deleteAccountRows = async (
   userId: string,
@@ -205,13 +312,12 @@ export const deleteAccountRows = async (
     await lockOrganization(organizationId, tx);
   }
 
-  // An insert that references the user (a new organization, an approver slot)
-  // now waits on this row and then fails, rather than committing a reference
-  // the deletes below never saw.
+  // A write that references the user (a new organization, an approver slot, a
+  // booking on their behalf) now waits on this row and then sees it stripped.
   const [self] = await tx
     .select({ id: user.id })
     .from(user)
-    .where(eq(user.id, userId))
+    .where(and(eq(user.id, userId), isNull(user.deletedAt)))
     .for("update");
   if (!self) {
     throw new AppError({ message: "Unauthorized", code: 401, logging: true, context: { userId } });
@@ -219,10 +325,6 @@ export const deleteAccountRows = async (
 
   // Read again under the user lock: an organization created before it is ours to delete too.
   const ownedIds = await ownedBy();
-  const userOrOwned = (userColumn: Column, organizationColumn: Column) =>
-    ownedIds.length > 0
-      ? or(eq(userColumn, userId), inArray(organizationColumn, ownedIds))
-      : eq(userColumn, userId);
 
   const blockers = await getDeletionBlockers(userId, tx);
   if (blockers.length > 0) {
@@ -234,14 +336,19 @@ export const deleteAccountRows = async (
     });
   }
 
-  const removedAttachments = await tx
-    .select({
-      id: attachments.id,
-      storageKey: attachments.storageKey,
-      status: attachments.status,
-    })
-    .from(attachments)
-    .where(userOrOwned(attachments.ownerUserId, attachments.organizationId));
+  const removedAttachments =
+    ownedIds.length === 0
+      ? []
+      : await tx
+          .select({
+            id: attachments.id,
+            storageKey: attachments.storageKey,
+            status: attachments.status,
+          })
+          .from(attachments)
+          .where(inArray(attachments.organizationId, ownedIds));
+
+  const now = new Date();
 
   await tx
     .update(groups)
@@ -253,13 +360,33 @@ export const deleteAccountRows = async (
     .where(eq(groups.tempApprovalUser, userId));
 
   await tx
-    .update(changesSchema)
-    .set({ changingUserId: null, changingUserDeleted: true })
-    .where(eq(changesSchema.changingUserId, userId));
+    .update(groupUsers)
+    .set({ viewAccess: false, adminAccess: false, approverAccess: false })
+    .where(and(eq(groupUsers.userId, userId), isNull(groupUsers.deletedAt)));
+
+  // No `syncEmployment`: the Employment stays open even when this was its only link.
+  await tx
+    .update(organizationUsers)
+    .set({ deletedAt: now })
+    .where(and(eq(organizationUsers.userId, userId), isNull(organizationUsers.deletedAt)));
+
+  const cancelledRequests = await cancelPendingRequests(userId, now, tx);
+  await closeOpenSessions(userId, now, tx);
+
+  // Before the strip: the `employments_follow_user` trigger skips stamped rows,
+  // so the copy keeps the name the organization knew.
+  await tx
+    .update(employments)
+    .set({ accountDeletedAt: now })
+    .where(and(eq(employments.userId, userId), isNull(employments.accountDeletedAt)));
 
   const deletedGroups = await tx
     .delete(groups)
-    .where(userOrOwned(groups.managerUserId, groups.organizationId))
+    .where(
+      ownedIds.length > 0
+        ? or(eq(groups.managerUserId, userId), inArray(groups.organizationId, ownedIds))
+        : eq(groups.managerUserId, userId)
+    )
     .returning({ id: groups.id });
 
   if (ownedIds.length > 0) {
@@ -267,11 +394,25 @@ export const deleteAccountRows = async (
     await tx.delete(organizations).where(inArray(organizations.id, ownedIds));
   }
 
-  await tx.delete(user).where(eq(user.id, userId));
+  await deleteAccountData(userId, tx);
+
+  await tx
+    .update(user)
+    .set({
+      name: "",
+      email: deletedAccountEmail(userId),
+      emailVerified: false,
+      twoFactorEnabled: false,
+      image: null,
+      deletedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(user.id, userId));
 
   return {
     groups: deletedGroups.length,
     organizations: ownedIds.length,
+    cancelledRequests,
     attachments: removedAttachments,
   };
 };

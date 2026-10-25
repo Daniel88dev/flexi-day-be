@@ -140,7 +140,7 @@ export const organizationRouter = (): Router => {
    *     summary: People who may be promoted to organization admin
    *     description: |
    *       Active members of the organization's live groups, minus its existing
-   *       administrators. Owner-only. Deliberately not a lookup by email —
+   *       administrators and anyone who deleted their account. Owner-only. Deliberately not a lookup by email —
    *       that would let an owner probe whether an address has an account.
    *     security:
    *       - bearerAuth: []
@@ -197,7 +197,9 @@ export const organizationRouter = (): Router => {
    *       '403':
    *         description: Caller is not the organization owner
    *       '422':
-   *         description: The target belongs to no group in this organization
+   *         description: |
+   *           The target belongs to no group in this organization, or deleted
+   *           their account
    */
   app.post(
     "/admins",

@@ -210,6 +210,11 @@ describe("account deletion", () => {
   const deleteWith = async (cookie: string, body: Record<string, unknown> = {}) =>
     request(server.url).post("/api/users/me/delete").set("Cookie", cookie).send(body);
 
+  const isStripped = async (userId: string) => {
+    const [row] = await db.select().from(user).where(eq(user.id, userId));
+    return row?.deletedAt != null && row.name === "" && row.email.endsWith("@deleted.invalid");
+  };
+
   const userExists = async (userId: string) =>
     (await db.select({ id: user.id }).from(user).where(eq(user.id, userId))).length === 1;
 
@@ -260,7 +265,7 @@ describe("account deletion", () => {
         entry.startsWith("better-auth.session_token=;")
       );
       expect(cleared).toMatch(/expires=Thu, 01 Jan 1970/i);
-      expect(await userExists(id)).toBe(false);
+      expect(await isStripped(id)).toBe(true);
       expect(await sessionsOf(id)).toHaveLength(0);
 
       await request(server.url).get("/api/users/me/settings").set("Cookie", webCookie).expect(401);
@@ -318,7 +323,7 @@ describe("account deletion", () => {
       const res = await deleteWith(createAuthCookie(token));
 
       expect(res.status).toBe(204);
-      expect(await userExists(id)).toBe(false);
+      expect(await isStripped(id)).toBe(true);
     });
   });
 
@@ -592,14 +597,14 @@ describe("account deletion", () => {
       const before = await countRows();
       expect(Object.values(before).every((n) => n > 0)).toBe(true);
 
-      // The user row is the last delete, so failing it proves everything
-      // before it rolls back.
+      // Stripping the user row is the last write, so failing it proves
+      // everything before it rolls back.
       await db.execute(sql`
         CREATE OR REPLACE FUNCTION account_deletion_e2e_fail() RETURNS trigger AS $$
         BEGIN RAISE EXCEPTION 'forced failure'; END $$ LANGUAGE plpgsql`);
       await db.execute(
-        sql.raw(`CREATE TRIGGER account_deletion_e2e_fail BEFORE DELETE ON "user"
-          FOR EACH ROW WHEN (OLD.id = '${id}') EXECUTE FUNCTION account_deletion_e2e_fail()`)
+        sql.raw(`CREATE TRIGGER account_deletion_e2e_fail BEFORE UPDATE ON "user"
+          FOR EACH ROW WHEN (OLD.id = '${id}' AND NEW.deleted_at IS NOT NULL) EXECUTE FUNCTION account_deletion_e2e_fail()`)
       );
       const cookie = await authCookieFor(id);
       try {
@@ -623,7 +628,7 @@ describe("account deletion", () => {
       const deleted = await deleteWith(cookie, { password: WEB_TEST_PASSWORD });
 
       expect(deleted.status).toBe(204);
-      expect(await userExists(id)).toBe(false);
+      expect(await isStripped(id)).toBe(true);
       expect(await countRows()).toEqual({
         organizations: 0,
         groups: 0,
@@ -671,7 +676,7 @@ describe("account deletion", () => {
       });
     });
 
-    it("keeps the quota changes the user made, marked as made by a deleted user", async () => {
+    it("keeps the quota changes the user made, still pointing at them", async () => {
       const { id } = await createWebUser("Departing Admin");
       const manager = await createWebUser("Report Manager");
       const member = await createWebUser("Report Member");
@@ -706,7 +711,7 @@ describe("account deletion", () => {
       expect(res.status).toBe(204);
 
       const [kept] = await db.select().from(changesSchema).where(eq(changesSchema.id, byAdmin));
-      expect(kept).toMatchObject({ changingUserId: null, changingUserDeleted: true });
+      expect(kept).toMatchObject({ changingUserId: id, changingUserDeleted: false });
 
       const report = await request(server.url)
         .get(`/api/reports/members/${member.id}`)
@@ -718,9 +723,10 @@ describe("account deletion", () => {
         actor: unknown;
         actorDeleted: boolean;
       }[];
+      // No Employment of theirs in this organization, so no frozen name to show.
       expect(entries.find((entry) => entry.id === byAdmin)).toMatchObject({
-        actor: null,
-        actorDeleted: true,
+        actor: { id, name: "Deleted account" },
+        actorDeleted: false,
       });
       expect(entries.find((entry) => entry.id === byRollover)).toMatchObject({
         actor: null,
@@ -728,7 +734,7 @@ describe("account deletion", () => {
       });
     });
 
-    it("removes the stored objects of every attachment the deletion takes, after the commit", async () => {
+    it("removes the stored objects of the owned organization's attachments after the commit, and keeps the user's own elsewhere", async () => {
       const { id } = await createWebUser("Attachment Owner");
       const employee = await createWebUser("Former Uploader");
       const outsider = await createWebUser("Outside Owner");
@@ -757,28 +763,28 @@ describe("account deletion", () => {
       );
       const unrelated = attachment(outsider.id, outsideOrganizationId);
       await db.insert(attachments).values([own, inOwnedOrganization, unrelated]);
-      const userGoneAtEachCall: boolean[] = [];
+      const strippedAtEachCall: boolean[] = [];
       const deleteObject = vi
         .spyOn(attachmentStore, "deleteObject")
         .mockImplementation(async () => {
-          userGoneAtEachCall.push(!(await userExists(id)));
+          strippedAtEachCall.push(await isStripped(id));
         });
 
       const res = await deleteWith(await authCookieFor(id), { password: WEB_TEST_PASSWORD });
 
       expect(res.status).toBe(204);
       const keys = deleteObject.mock.calls.map(([key]) => key);
-      expect(keys).toContain(own.storageKey);
+      expect(keys).not.toContain(own.storageKey);
       expect(keys).toContain(inOwnedOrganization.storageKey);
       expect(keys).toContain(incomingKey(inOwnedOrganization.id));
       expect(keys).not.toContain(unrelated.storageKey);
-      expect(userGoneAtEachCall.length).toBeGreaterThan(0);
-      expect(userGoneAtEachCall.every(Boolean)).toBe(true);
+      expect(strippedAtEachCall.length).toBeGreaterThan(0);
+      expect(strippedAtEachCall.every(Boolean)).toBe(true);
       const left = await db
         .select({ id: attachments.id })
         .from(attachments)
         .where(inArray(attachments.id, [own.id, inOwnedOrganization.id, unrelated.id]));
-      expect(left).toEqual([{ id: unrelated.id }]);
+      expect(left.map((row) => row.id).sort()).toEqual([own.id, unrelated.id].sort());
     });
 
     it("answers 204 when the object store refuses, and logs it", async () => {
@@ -801,7 +807,7 @@ describe("account deletion", () => {
       const res = await deleteWith(await authCookieFor(id), { password: WEB_TEST_PASSWORD });
 
       expect(res.status).toBe(204);
-      expect(await userExists(id)).toBe(false);
+      expect(await isStripped(id)).toBe(true);
       expect(logError).toHaveBeenCalledWith(
         "Account deletion could not remove an attachment object",
         expect.objectContaining({ userId: id, error: "store down" })
@@ -914,7 +920,7 @@ describe("account deletion", () => {
       const res = await deleteWith(await authCookieFor(id), { password: WEB_TEST_PASSWORD });
 
       expect(res.status).toBe(204);
-      expect(await userExists(id)).toBe(false);
+      expect(await isStripped(id)).toBe(true);
       expect(deletedAtProvider().sort()).toEqual([...providerEventIds].sort());
       expect(providerCalls.revoked).toEqual([REFRESH_TOKEN]);
       expect(
@@ -931,7 +937,7 @@ describe("account deletion", () => {
       const res = await deleteWith(await authCookieFor(id), { password: WEB_TEST_PASSWORD });
 
       expect(res.status).toBe(204);
-      expect(await userExists(id)).toBe(false);
+      expect(await isStripped(id)).toBe(true);
       expect(logWarn).toHaveBeenCalledWith(
         "calendar_connection.revoke_failed",
         expect.objectContaining({ connectionId, provider: calendarProvider.Google })

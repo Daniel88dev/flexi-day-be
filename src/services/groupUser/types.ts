@@ -36,6 +36,8 @@ export type GroupUserPermissions = Pick<
 export type GroupUserListItem = GroupUser & {
   user: UserSummary;
   email: string;
+  /** The member deleted their account: the list shows the "Account deleted" label. */
+  accountDeleted: boolean;
 };
 
 export type InviteLink = {

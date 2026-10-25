@@ -83,9 +83,13 @@ export const employmentRouter = (): Router => {
    *       '200':
    *         description: |
    *           Array of `{ id, userId, email, startedAt, endedAt, ended,
-   *           requiredMinutesPerDay, user }`, by name.
-   *           `requiredMinutesPerDay` is this person's own required time, null
-   *           while the organization's rule stands.
+   *           requiredMinutesPerDay, accountDeletedAt, accountDeleted, user }`,
+   *           by name. `requiredMinutesPerDay` is this person's own required
+   *           time, null while the organization's rule stands.
+   *           `accountDeletedAt` is when the person deleted their account, and
+   *           `accountDeleted` says whether they did: the row then names them
+   *           by the copy the organization kept and carries the "Account
+   *           deleted" label.
    *       '422':
    *         description: Missing or malformed organizationId
    *       '403':

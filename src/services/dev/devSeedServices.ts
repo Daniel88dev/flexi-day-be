@@ -6,6 +6,7 @@ import { db } from "../../db/db.js";
 import { account, user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
+import { employments } from "../../db/schema/employment-schema.js";
 import { subscriptions } from "../../db/schema/subscription-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { supportAccess } from "../../db/schema/support-access-schema.js";
@@ -367,7 +368,24 @@ export const resetDevData = async (): Promise<ResetSummary> => {
 
   if (devUsers.length === 0) return { users: 0, groups: 0 };
 
-  const ids = devUsers.map((row) => row.id);
+  // A seeded account that was deleted lost its address, so it is found through
+  // its Employment in a seeded organization instead.
+  const strippedUsers = await db
+    .selectDistinct({ id: employments.userId })
+    .from(employments)
+    .innerJoin(organizations, eq(organizations.id, employments.organizationId))
+    .innerJoin(user, eq(user.id, employments.userId))
+    .where(
+      and(
+        isNotNull(user.deletedAt),
+        inArray(
+          organizations.ownerUserId,
+          devUsers.map((row) => row.id)
+        )
+      )
+    );
+
+  const ids = [...new Set([...devUsers, ...strippedUsers].map((row) => row.id))];
 
   return db.transaction(async (tx) => {
     await tx.delete(changesSchema).where(inArray(changesSchema.changingUserId, ids));

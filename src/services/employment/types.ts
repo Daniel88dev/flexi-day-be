@@ -22,6 +22,9 @@ export type EmploymentListItem = {
   ended: boolean;
   /** This person's own required time, null while the organization's rule stands. */
   requiredMinutesPerDay: number | null;
+  /** When the person deleted their account; the row then carries the "Account deleted" label. */
+  accountDeletedAt: Date | null;
+  accountDeleted: boolean;
   user: UserSummary;
 };
 

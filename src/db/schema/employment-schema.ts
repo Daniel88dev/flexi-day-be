@@ -24,6 +24,9 @@ import { user } from "./auth-schema.js";
  * UPDATE's transaction. An ended row keeps the copy it had when it ended.
  * `name` is nullable only so a deploy's old code can still insert while 0032
  * runs; every write since sets it.
+ *
+ * `accountDeletedAt` is when the person deleted their account. The row stays
+ * open and its copy stays frozen: the trigger skips it (migration 0033).
  */
 export const employments = pgTable(
   "employments",
@@ -40,6 +43,7 @@ export const employments = pgTable(
     name: text("name"),
     email: text("email"),
     requiredMinutesPerDay: integer("required_minutes_per_day"),
+    accountDeletedAt: timestamp("account_deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()

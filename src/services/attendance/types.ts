@@ -250,6 +250,8 @@ export type AttendanceTeamPerson = {
   employmentId: string;
   userId: string;
   user: UserSummary;
+  /** The person deleted their account: the row shows the "Account deleted" label. */
+  accountDeleted: boolean;
   /** The organization's live groups this person belongs to, by name. A manager's may be empty. */
   groups: AttendanceTeamGroup[];
   /** What their days were measured against: the override where there is one. */

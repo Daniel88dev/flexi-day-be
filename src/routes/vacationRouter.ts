@@ -500,7 +500,9 @@ export const vacationRouter = (): Router => {
    *           lapsed. `errors[].context` carries
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
    *       '403':
-   *         description: No access for related group
+   *         description: |
+   *           No access for related group, or the person being booked for
+   *           deleted their account; nobody can book for a Deleted account.
    *       '409':
    *         description: |
    *           One or more requested days are already booked (a day held only

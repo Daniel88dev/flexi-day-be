@@ -156,6 +156,15 @@ export const groupUsersRouter = (): Router => {
    *                     format: date-time
    *                   email:
    *                     type: string
+   *                     description: |
+   *                       For a Deleted account, the placeholder
+   *                       `<id>@deleted.invalid`, which reaches nobody.
+   *                   accountDeleted:
+   *                     type: boolean
+   *                     description: |
+   *                       The member deleted their account. `user.name` is
+   *                       then the name the organization kept, and the list
+   *                       shows the "Account deleted" label.
    *                   user:
    *                     $ref: '#/components/schemas/UserSummary'
    *       '400':

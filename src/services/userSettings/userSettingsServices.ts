@@ -1,6 +1,7 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { type appLanguage, userSettings } from "../../db/schema/user-settings-schema.js";
 import { eq, inArray } from "drizzle-orm";
+import { deletedAccountIds } from "../user/userServices.js";
 import { DEFAULT_USER_SETTINGS, type UserSettingsPatch, type UserSettingsRecord } from "./types.js";
 
 export const getUserSettings = async (
@@ -70,6 +71,7 @@ export const filterUsersAcceptingEmail = async (userIds: string[]): Promise<Set<
   for (const row of rows) {
     if (!row.emailNotifications) accepting.delete(row.userId);
   }
+  for (const id of await deletedAccountIds(userIds)) accepting.delete(id);
 
   return accepting;
 };

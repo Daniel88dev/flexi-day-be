@@ -26,10 +26,10 @@ export const changesSchema = pgTable(
     changeType: changesEnum("change_type").notNull(),
     changeDetail: text("change_detail").notNull(),
     // A NULL actor with `changingUserDeleted` false means the scheduled quota
-    // rollover wrote this row. Account deletion clears the actor and sets the
-    // flag in one statement, so NULL alone never relabels a person's edit as
-    // the rollover's. The FK keeps no ON DELETE: any other path that deletes
-    // an actor fails rather than leaving a bare NULL behind.
+    // rollover wrote this row. The flag marks rows whose actor was cleared by
+    // an account deletion from before Deleted accounts kept their user row;
+    // deletion now leaves the actor in place. The FK keeps no ON DELETE: any
+    // path that deletes an actor fails rather than leaving a bare NULL behind.
     changingUserId: text("changing_user_id").references(() => user.id),
     changingUserDeleted: boolean("changing_user_deleted").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -4,6 +4,10 @@ The rules behind the **Account deletion** row in [`GLOSSARY.md`](../GLOSSARY.md)
 deletes their own account through two routes in `src/routes/usersRouter.ts`, with the work in
 `src/services/accountDeletion/`. Both accept a web cookie or a Native session.
 
+Flexi Day controls account data and processes organization data on the employer's behalf, so the
+deletion takes the first and leaves the second with the organization. Why the user row stays behind
+is in [`adr/0007`](adr/0007-organization-data-hangs-on-the-employment.md).
+
 - `GET /api/users/me/deletion` answers `{ canDelete, blockers, confirmation }`, so a client can show
   the blockers and the right prompt before asking for anything.
 - `POST /api/users/me/delete` with `{ password? }` deletes the account and answers 204, or refuses
@@ -35,7 +39,7 @@ list in `errors[0].context`, the same list the status route returns.
 | `kind`                     | When                                                                                                 |
 | -------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `GROUP_HAS_MEMBERS`        | The user manages a live group in which another user has a live membership                            |
-| `ORGANIZATION_HAS_MEMBERS` | The user owns an organization in which another user has an open Employment                           |
+| `ORGANIZATION_HAS_MEMBERS` | The user owns an organization in which another user, not a Deleted account, has an open Employment   |
 | `SUBSCRIPTION_RENEWING`    | An organization the user owns has a Paddle subscription that is not `canceled` and has no `cancelAt` |
 | `SUPPORT_ADMIN`            | The user is in `SUPPORT_ADMIN_USER_IDS`, or was and still has `support_access` rows                  |
 
@@ -57,48 +61,82 @@ id order, then the user row, and checks the blockers again under those locks. Ev
 redemption and admin grant takes the same organization lock, so somebody who joins between the
 status check and the delete still blocks it.
 
-Goes:
+Account data goes:
 
-- The user and everything that cascades from them: vacation rows and their events, quotas,
-  `changes` rows about them, group memberships and mirrors, delegated org-admin grants, every
-  Employment with its attendance sessions, breaks and events, notifications, calendar sync links,
-  report exports, settings, every session (web and Native), provider accounts and two-factor. A
-  hard delete, so the team loses that person's leave and attendance from its calendars, balances
-  and reports.
-- Every group the user manages, live or soft-deleted, with its data.
+- Every session, web and Native, with the push registrations bound to them.
+- Provider accounts (the password included), two-factor, pending verification tokens for the user,
+  settings, notifications, calendar connections and calendar feeds.
+- The Birthday, as a tombstone with no date, so the phones that synced it drop it.
+
+The user row stays as a **Deleted account**: the id, an empty name, the email
+`<id>@deleted.invalid`, no picture, `email_verified` false and `deleted_at` set. Both columns stay
+NOT NULL and the email stays unique, which is why they hold placeholders rather than nulls.
+Stripping bumps `updated_at`. A `.invalid` address never reaches SES (see "Undeliverable
+recipients" in the glossary), and better-auth's session-create hook refuses any session for a row
+with `deleted_at`, so nothing can sign in as it, even with a credential planted by hand.
+
+Organization data in other people's organizations stays, keyed to the id:
+
+- Every Employment stays open, stamped with `account_deleted_at`. The deletion runs no
+  `syncEmployment`, so an Employment whose only link was the admin grant stays open too. Its name
+  and email copy freezes: the stamp is written before the user row is stripped, and the
+  `employments_follow_user` trigger skips stamped rows.
+- Group memberships stay, with view, admin and approver access cleared. `controlled_user` stays,
+  so quotas and reports still see the person. Main and temp approver slots are cleared. A delegated
+  org-admin grant is revoked (`deleted_at` set).
+- Past and approved bookings, quotas, the change log and every actor column (approver, creator,
+  canceller, event actor, inviter, granter, attendance changer) keep the id. `changes` rows the user
+  wrote keep `changing_user_id`; `changing_user_deleted` marks only rows from deletions made before
+  the user row stayed behind.
+- Pending requests are cancelled: `deleted_at` set with no `deleted_by_user_id`, and a `CANCELLED`
+  event with no actor and the reason `account deleted`. Nobody is notified.
+- A running attendance session closes at the moment of deletion with `closed_by` `SWEEP` and a
+  `CLOCK_OUT` event with no changer, so its day is flagged. An open break closes with it.
+- Attachments stay with their Requests.
+
+What the organization then sees:
+
+- Every reader names the person through `personName`: the Employment's frozen copy in the record's
+  own organization, or "Deleted account" once that organization holds no Employment for them.
+  Calendars, reports and the export show the name only. Group member lists and Team attendance add
+  `accountDeleted: true`, which the web shows as the "Account deleted" label.
+- From the business date after `account_deleted_at`, in the organization's zone, every date is a
+  `NOT_EMPLOYED` exclusion, so no time is owed and nothing is flagged.
+- The yearly quota rollover opens no new year for a membership whose Employment in that organization
+  has `account_deleted_at`. Quotas already open stay readable.
+- Nobody can book for the person: `POST /api/vacation/create-vacation` answers 403. A Deleted account
+  is never an org admin candidate, and a grant to one answers 422.
+- No notification row is written for a Deleted account and no workflow mail goes to one.
+
+The person keeps their seat in each group and counts in the billing headcount until an admin removes
+them from the group or ends the Employment. Removing them from their last group ends the Employment
+as it does for anyone.
+
+What goes with the user's own organizations and groups:
+
+- Every group the user manages, live or soft-deleted, with its data. `GROUP_HAS_MEMBERS` means
+  such a group has nobody else in it.
 - Every organization the user owns, with all of its groups, its subscription row, attendance
-  settings and whatever cascades from it, including former members' ended Employments and their
-  attendance.
-- Every attachment row owned by the user or held by an owned organization. Their stored objects are
-  collected inside the transaction and removed after the commit through `deleteStoredBytes`, with
-  the incoming and processed keys of an upload that never settled. A store failure is logged and the
-  request still answers 204, because the account is already gone.
+  settings and whatever cascades from it, including former members' ended Employments, Employments of
+  Deleted accounts and their attendance.
+- Every attachment row held by an owned organization. Their stored objects are collected inside the
+  transaction and removed after the commit through `deleteStoredBytes`, with the incoming and
+  processed keys of an upload that never settled. A store failure is logged and the request still
+  answers 204.
 - Every Apple account link, revoked at Apple as well, so the user's Apple settings stop listing the
   app. See "Apple links" below.
 - Every calendar connection, after the events it wrote are deleted from the user's calendar and
   its grant is revoked at Google. See "Calendar connections" below.
 
-Stays:
-
-- Main and temp approver slots the user held in someone else's group are cleared. The manager and
-  members with approver access still approve, and nothing else about that group changes.
-- `changes` rows the user wrote as the acting admin. The actor id is cleared and
-  `changing_user_deleted` set in the same statement, so a NULL actor alone still means the quota
-  rollover. The member changes report returns such an entry as `actor: null, actorDeleted: true`.
-- Actor columns that already set NULL on delete: vacation approver, rejecter, canceller and creator,
-  vacation event actor, attachment uploader and deleter, invite inviter, org-admin granter,
-  attendance event changer and attendance settings changer. A NULL attendance event changer can mean
-  the auto-close sweep or a deleted account; that ambiguity is accepted in the schema.
-
-The response expires the session cookies, and every session row is gone with the user, so the old
-web cookie and the old Native session both answer 401. Logs name the deleted account by id, never
-by email. There is no grace period, no undo and no email afterwards. RDS backups keep the data for
-their 7-day retention.
+The response expires the session cookies, and every session row is gone, so the old web cookie and
+the old Native session both answer 401. Logs name the deleted account by id, never by email. There
+is no grace period, no undo and no email afterwards. RDS backups keep the data for their 7-day
+retention.
 
 ## Apple links
 
 Apple asks an app that offers Sign in with Apple to revoke the user's tokens when the account goes.
-The `account` rows cascade with the user, so the revocation reads them first and calls Apple last:
+The transaction deletes the `account` rows, so the revocation reads them first and calls Apple last:
 
 1. Before the transaction, `collectAppleRevocations` reads each Apple link's refresh token,
    decrypted, and the client it was issued to: the `aud` of the stored id token, decoded but not
@@ -134,7 +172,7 @@ Google and Microsoft sign-in links are not revoked.
 
 ## Calendar connections
 
-A calendar connection's tokens and its sync ledger cascade with the user, and the ledger is the
+The transaction deletes a calendar connection's tokens and its sync ledger, and the ledger is the
 only record of which events the app wrote. So this step runs before the transaction, not after the
 commit like the Apple one:
 
@@ -160,7 +198,7 @@ The step is best effort and never refuses a deletion or changes its answer:
   `calendar_connection.revoke_failed` with the connection id.
 - A failure to read the connections is logged as `calendar_connection.collect_failed` and skips
   the step. A disconnect that throws is logged as `calendar_connection.disconnect_failed` and the
-  next connection still runs. The rows cascade with the user either way.
+  next connection still runs. The transaction deletes the rows either way.
 - With a provider's switch off on the server, its events stay in the calendar and its token stays
   live at Google until it lapses, as with a disconnect.
 - The purge and the revoke run inline, so a calendar with many written events delays the deletion
