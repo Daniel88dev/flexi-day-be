@@ -435,7 +435,10 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for what an org admin _is_. The boundarie
   `reportAdministeredScope.e2e.test.ts` fail if either side moves.
 - **The grant is scoped to membership.** `handleDeleteGroupUser` revokes it when the user leaves
   the organization's last group, under a `lockOrganization` — the count spans the org, so a group
-  lock alone lets two concurrent removals each see the other's membership as live.
+  lock alone lets two concurrent removals each see the other's membership as live. A Directory
+  organization is the exception: the person stays employed in no group and keeps the grant until
+  End employment drops it ("removing the last group ... keeps the admin grant" in
+  `directoryEnding.e2e.test.ts`).
 - **Every path that grants or revokes a grant takes `lockOrganization`.** `grantOrganizationAdmin`
   and `handleDeleteGroupUser` always did; `handleDeleteOrganizationAdmin` now does too. Revoking
   and losing the last membership are the two removals that can end an Employment, and
@@ -550,7 +553,8 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   new join path therefore keeps the roster in step without knowing the roster exists, which is the
   whole risk the ADR names. End employment (`employment/endEmploymentServices.ts`) is the one act
   that ends a row directly: it removes every link itself and then stamps the chosen date, which a
-  `syncEmployment` would overwrite with `now()`.
+  `syncEmployment` would overwrite with `now()`. In a Directory organization `syncEmployment` only
+  opens, whatever the plan, so End employment is the only way a spell ends there.
 - **It recomputes, never applies a delta.** `syncEmployment` asks `hasOrganizationLink` what is
   left and writes the answer, so two link removals in one request end the Employment exactly once
   whichever order they land in — `handleDeleteGroupUser` drops the last membership and revokes the

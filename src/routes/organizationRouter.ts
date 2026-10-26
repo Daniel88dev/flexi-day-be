@@ -222,7 +222,11 @@ export const organizationRouter = (): Router => {
    *     tags:
    *       - Organization
    *     summary: Revoke organization admin
-   *     description: Owner-only. The owner's own rights are not stored and cannot be revoked.
+   *     description: |
+   *       Owner-only. The owner's own rights are not stored and cannot be
+   *       revoked. The person's Employment ends if the grant was their last
+   *       link, except in a Directory organization, where only End employment
+   *       ends one.
    *     security:
    *       - bearerAuth: []
    *     parameters:

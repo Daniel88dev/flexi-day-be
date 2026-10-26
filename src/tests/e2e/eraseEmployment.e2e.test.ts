@@ -509,14 +509,20 @@ describe("erasing a person's organization data", () => {
         .from(directoryProfiles)
         .where(eq(directoryProfiles.employmentId, colleagueEmployment.id));
       expect(colleagueProfile).toMatchObject({ jobTitle: "Agent", reportsToEmploymentId: null });
+      // Ending the open spell first clears Reports to and records it.
+      const colleagueHistory = await db
+        .select()
+        .from(directoryProfileHistory)
+        .where(eq(directoryProfileHistory.employmentId, colleagueEmployment.id));
       expect(
-        await countWhere(
-          db
-            .select()
-            .from(directoryProfileHistory)
-            .where(eq(directoryProfileHistory.employmentId, colleagueEmployment.id))
-        )
-      ).toBe(1);
+        colleagueHistory.map(({ section, fields, audience }) => ({ section, fields, audience }))
+      ).toEqual(
+        expect.arrayContaining([
+          { section: "CARD", fields: ["jobTitle"], audience: "ORGANIZATION_ADMIN" },
+          { section: "CARD", fields: ["reportsTo"], audience: "OWNER" },
+        ])
+      );
+      expect(colleagueHistory).toHaveLength(2);
     });
 
     it("leaves another organization's records, the user row and the Read log alone", async () => {

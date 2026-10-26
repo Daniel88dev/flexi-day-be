@@ -20,7 +20,11 @@ import { organizationDataStore } from "../organizationData/organizationDataStore
 import { employmentPhotosPrefix, removePhotoObjects } from "../directory/directoryPhotoServices.js";
 import { getPersonContact } from "../person/personName.js";
 import { exportLockKey, exportStorageKey } from "../personExport/personExportBuild.js";
-import { endEmployment, lockEmploymentForAdmin } from "./endEmploymentServices.js";
+import {
+  adminAudience,
+  endLockedEmployment,
+  lockEmploymentForAdmin,
+} from "./endEmploymentServices.js";
 import { removeNoticesAboutErasedPerson } from "./erasedNotices.js";
 
 /** Case, accents' composition and runs of spaces don't make a typed name wrong. */
@@ -76,8 +80,13 @@ export const eraseEmployment = async (
 
   if (employment.endedAt === null) {
     const today = businessDateInZone(new Date(), await organizationTimeZone(organizationId, tx));
-    await endEmployment(
-      { employmentId: employment.id, endedOn: today, actorUserId: input.actorUserId },
+    await endLockedEmployment(
+      employment,
+      {
+        endedOn: today,
+        actorUserId: input.actorUserId,
+        audience: await adminAudience(input.actorUserId, organizationId, tx),
+      },
       tx
     );
   }

@@ -20,6 +20,11 @@ import { buildUserSummary } from "../../utils/userPresentation.js";
 import { getPersonContacts, personName, type PersonColumns } from "../person/personName.js";
 import { countryView, phoneCountryDefault, phoneView } from "./contactFormat.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
+import {
+  administersOrganization,
+  groupedUserIds,
+  profileActions,
+} from "./directoryEndingServices.js";
 import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
 import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
@@ -166,12 +171,22 @@ export const listDirectoryPeople = async (
     .where(and(eq(employments.organizationId, viewer.organizationId), isNull(employments.endedAt)))
     .orderBy(asc(sql`lower(${name})`), asc(employments.id));
 
+  const noGroupFilter = administersOrganization(viewer);
+  const grouped = noGroupFilter ? await groupedUserIds(viewer.organizationId, tx) : null;
   const people: DirectoryPerson[] = [];
   for (const row of rows) {
     const access = accessFor(viewer, row);
-    if (access.inReach) people.push(toPerson(row, access, await photoOf(viewer, row, access)));
+    if (!access.inReach) continue;
+    const person = toPerson(row, access, await photoOf(viewer, row, access));
+    if (grouped) person.noGroup = row.userId === null || !grouped.has(row.userId);
+    people.push(person);
   }
-  return { people, formerList: viewer.formerList, settings: canReadPermissionTable(viewer) };
+  return {
+    people,
+    formerList: viewer.formerList,
+    settings: canReadPermissionTable(viewer),
+    noGroupFilter,
+  };
 };
 
 /** One row per ended spell, latest end first. Owner, org admins and HR only. */
@@ -317,6 +332,7 @@ export const getDirectoryProfile = async (
     ended: row.endedAt !== null,
     sections: sectionsOf(viewer, row, access, photo),
     canReadHistory: canReadHistory(viewer),
+    actions: profileActions(viewer, row, access),
   };
   if (access.accountFacts) {
     profile.account = {

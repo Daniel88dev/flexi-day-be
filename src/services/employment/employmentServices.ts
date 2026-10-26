@@ -14,6 +14,7 @@ import { assertNoAccountlessClash, lockEmploymentEmail } from "./accountlessClas
 import { personName } from "../person/personName.js";
 import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
+import { isDirectoryOrganization } from "../directory/directorySettingsServices.js";
 
 /**
  * Whether the person is still reachable from the organization by any of the
@@ -90,6 +91,10 @@ const hasOrganizationLink = async (
  * reopened. It is refused with a 409 when an open account-less Employment in
  * the organization holds the account's email.
  *
+ * In a Directory organization it opens and never ends: only End employment
+ * does, whatever the plan, so losing the last link leaves the person in no
+ * group.
+ *
  * Runs in the caller's transaction: the row that decides the answer is usually
  * one the caller just wrote and has not committed.
  */
@@ -124,6 +129,8 @@ export const syncEmployment = async (
     });
     return;
   }
+
+  if (await isDirectoryOrganization(organizationId, tx)) return;
 
   const ended = await client
     .update(employments)

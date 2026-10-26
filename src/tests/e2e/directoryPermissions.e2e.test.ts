@@ -16,7 +16,7 @@ import { syncEmployment } from "../../services/employment/employmentServices.js"
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { authCookieFor } from "./helpers/authHelper.js";
-import { addMember, makeGroup, makeUser, removeMember } from "./helpers/reportFixtures.js";
+import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 
 type Cell = { row: string; audience: string; value: string; fixed: boolean; options: string[] };
@@ -470,8 +470,13 @@ describe("The Permission table editor, Directory roles and Permission history", 
       const owner = await as(users.owner.id);
       await owner.put(rolesPath(organizationId, employment.hana), { roles: ["HR", "LEADERSHIP"] });
 
-      await removeMember(support, users.hana.id);
-      await syncEmployment(organizationId, users.hana.id);
+      // In a Directory organization only End employment ends a spell.
+      const today = new Date().toISOString().slice(0, 10);
+      const ending = await request(server.url)
+        .post(`/api/employment/${employment.hana}/end`)
+        .set("Cookie", await authCookieFor(users.owner.id))
+        .send({ endedOn: today });
+      expect(ending.status).toBe(200);
 
       const history = await owner.get(`/api/directory/${organizationId}/permissions/history`);
       const ended = history.body.filter(
@@ -484,7 +489,7 @@ describe("The Permission table editor, Directory roles and Permission history", 
         personName: "Hana Human",
         before: true,
         after: false,
-        actorName: null,
+        actorName: "Olga Owner",
       });
 
       await addMember(support, users.hana.id);

@@ -15,6 +15,7 @@ import { handleGetPermissionHistory } from "../controllers/directory/handleGetPe
 import { handleGetPermissionTable } from "../controllers/directory/handleGetPermissionTable.js";
 import { handlePatchPermissionCell } from "../controllers/directory/handlePatchPermissionCell.js";
 import { handlePutDirectoryRoles } from "../controllers/directory/handlePutDirectoryRoles.js";
+import { handleGetEndPreview } from "../controllers/directory/handleGetEndPreview.js";
 import { handleGetProfileHistory } from "../controllers/directory/handleGetProfileHistory.js";
 import { handlePatchDirectoryProfile } from "../controllers/directory/handlePatchDirectoryProfile.js";
 import { handleGetDirectoryOrganizations } from "../controllers/directory/handleGetDirectoryOrganizations.js";
@@ -121,6 +122,12 @@ export const directoryRouter = (): Router => {
    *           type: array
    *           items:
    *             $ref: '#/components/schemas/DirectoryMarker'
+   *         noGroup:
+   *           type: boolean
+   *           description: |
+   *             In no group of the organization: no live membership and no
+   *             managed group. People without an account always are. Sent on
+   *             list rows to the owner and org admins only.
    *     DirectorySectionView:
    *       type: object
    *       required: [level]
@@ -266,7 +273,7 @@ export const directoryRouter = (): Router => {
    *       allOf:
    *         - $ref: '#/components/schemas/DirectoryPerson'
    *         - type: object
-   *           required: [organizationId, self, ended, sections, canReadHistory]
+   *           required: [organizationId, self, ended, sections, canReadHistory, actions]
    *           properties:
    *             organizationId:
    *               type: string
@@ -275,6 +282,22 @@ export const directoryRouter = (): Router => {
    *               description: The record is the caller's own.
    *             ended:
    *               type: boolean
+   *             actions:
+   *               type: object
+   *               description: What the caller may do to this record from its profile.
+   *               required: [end, export, erase]
+   *               properties:
+   *                 end:
+   *                   type: boolean
+   *                   description: |
+   *                     End employment: the End act cell allows the caller,
+   *                     the record is open and it isn't the owner's.
+   *                 export:
+   *                   type: boolean
+   *                   description: The Person export. The owner and org admins, for a person with an account.
+   *                 erase:
+   *                   type: boolean
+   *                   description: Erase. The owner and org admins, for a Deleted account.
    *             canReadHistory:
    *               type: boolean
    *               description: The caller is the owner, an org admin or HR.
@@ -321,8 +344,10 @@ export const directoryRouter = (): Router => {
    *       through the organization's Permission table, sorted by name. People
    *       without an account and External workers are included. A lapsed plan
    *       keeps this readable. `formerList` says whether the caller may open
-   *       the Former list (the owner, org admins and HR), and `settings`
-   *       whether they may open Directory settings (the same three).
+   *       the Former list (the owner, org admins and HR), `settings`
+   *       whether they may open Directory settings (the same three), and
+   *       `noGroupFilter` whether the rows carry `noGroup` (the owner and org
+   *       admins).
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -338,7 +363,7 @@ export const directoryRouter = (): Router => {
    *           application/json:
    *             schema:
    *               type: object
-   *               required: [people, formerList, settings]
+   *               required: [people, formerList, settings, noGroupFilter]
    *               properties:
    *                 people:
    *                   type: array
@@ -347,6 +372,8 @@ export const directoryRouter = (): Router => {
    *                 formerList:
    *                   type: boolean
    *                 settings:
+   *                   type: boolean
+   *                 noGroupFilter:
    *                   type: boolean
    *       '401':
    *         description: Not signed in
@@ -691,6 +718,106 @@ export const directoryRouter = (): Router => {
    *         description: "`DIRECTORY_OFF`"
    */
   app.get("/:organizationId/people/:employmentId/history", tryCatch(handleGetProfileHistory));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people/{employmentId}/end-preview:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: What End employment would do to this record
+   *     description: |
+   *       For the End dialog: the dates End accepts and the one to suggest,
+   *       the open records whose Reports to it clears, the groups the person
+   *       leaves, the groups they manage (End is refused while any is
+   *       listed), how many booked days it cancels, whether it drops a
+   *       delegated org-admin row, and the Directory roles it ends. People
+   *       without an account have no groups, bookings or admin row. Only for
+   *       a caller whose End act cell allows it; never plan-gated. End itself
+   *       is `POST /api/employment/{employmentId}/end`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The effects of ending today or earlier
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [employmentId, today, startedOn, suggestedEndedOn, reportees, groups, managedGroups, cancelledBookings, organizationAdmin, directoryRoles]
+   *               properties:
+   *                 employmentId:
+   *                   type: string
+   *                 today:
+   *                   type: string
+   *                   format: date
+   *                   description: Today in the organization's time zone, the latest date End accepts.
+   *                 startedOn:
+   *                   type: string
+   *                   format: date
+   *                   description: The spell's first day, the earliest date End accepts.
+   *                 suggestedEndedOn:
+   *                   type: string
+   *                   format: date
+   *                   description: The Leaving date when it is today or earlier, otherwise today.
+   *                 reportees:
+   *                   type: array
+   *                   description: Open records whose Reports to names this person, by name.
+   *                   items:
+   *                     type: object
+   *                     required: [employmentId, name]
+   *                     properties:
+   *                       employmentId: { type: string }
+   *                       name: { type: string }
+   *                 groups:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     required: [id, name]
+   *                     properties:
+   *                       id: { type: string }
+   *                       name: { type: string }
+   *                 managedGroups:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     required: [id, name]
+   *                     properties:
+   *                       id: { type: string }
+   *                       name: { type: string }
+   *                 cancelledBookings:
+   *                   type: integer
+   *                   minimum: 0
+   *                   description: Pending requests and approved days after today.
+   *                 organizationAdmin:
+   *                   type: boolean
+   *                   description: The person holds a delegated org-admin row End drops.
+   *                 directoryRoles:
+   *                   type: array
+   *                   items:
+   *                     type: string
+   *                     enum: [HR, LEADERSHIP]
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `END_DENIED` when the End act cell doesn't allow the caller, or the record is the owner's"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`, or `EMPLOYMENT_ENDED`"
+   */
+  app.get("/:organizationId/people/:employmentId/end-preview", tryCatch(handleGetEndPreview));
 
   /**
    * @openapi

@@ -20,6 +20,7 @@ import {
 
 export type DirectoryViewer = {
   organizationId: string;
+  ownerUserId: string;
   standing: ViewerStanding;
   /** The viewer's access to one record of this organization. No database read. */
   accessTo: (record: DirectoryRecord) => DirectoryAccess;
@@ -113,6 +114,7 @@ export const loadDirectoryViewer = async (
   const cells = await readPermissionCells(organizationId, tx);
   return {
     organizationId,
+    ownerUserId: organization.ownerUserId,
     standing,
     accessTo: (record) => resolveAccess(cells, standing, record),
     formerList: standing.owner || standing.organizationAdmin || standing.roles.includes("HR"),

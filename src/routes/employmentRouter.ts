@@ -189,14 +189,19 @@ export const employmentRouter = (): Router => {
    *       slots, drops their delegated org-admin row, and cancels their
    *       pending requests and their approved bookings after today. Past
    *       bookings and today's stay. Each cancelled day gets a CANCELLED event
-   *       with the caller as actor and the reason "employment ended". Nobody
-   *       is notified.
+   *       with the caller as actor and the reason "employment ended". It also
+   *       ends the person's Directory roles and clears Reports to on every
+   *       open record that names them, with a Profile history entry each.
+   *       Nobody is notified.
    *
-   *       The owner and org admins only, never plan-gated, attendance on or
-   *       off. For now only a Deleted account's Employment can be ended: the
-   *       Employment is one row per organization, so ending a live person and
-   *       adding them back would overwrite the spell. The account itself, and
-   *       the person's records in other organizations, are untouched.
+   *       In a Directory organization the End act cell of the Permission
+   *       table decides who may (Owner, HR and Org admin by default);
+   *       elsewhere the owner and org admins. Never plan-gated, attendance on
+   *       or off. A live account, a Deleted account and a person without an
+   *       account all end this way; adding the person back later starts a new
+   *       spell. The owner's own Employment can't be ended. The account
+   *       itself, and the person's records in other organizations, are
+   *       untouched.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -265,19 +270,22 @@ export const employmentRouter = (): Router => {
    *       '401':
    *         description: Not signed in
    *       '403':
-   *         description: The caller is not the owner or an org admin of the organization
+   *         description: |
+   *           The caller may not end it: outside the directory they are not the
+   *           owner or an org admin, inside it the End act cell doesn't allow
+   *           them.
    *       '404':
    *         description: No such Employment
    *       '409':
    *         description: |
-   *           `context.code` is `EMPLOYMENT_ENDED` when it already ended, or
+   *           `context.code` is `EMPLOYMENT_ENDED` when it already ended,
    *           `MANAGES_GROUP` while the person manages one of the
-   *           organization's groups.
+   *           organization's groups, or `OWNER_EMPLOYMENT` for the owner's own.
    *       '422':
    *         description: |
    *           A malformed id or date, or `context.code` is
    *           `END_DATE_IN_FUTURE`, `END_DATE_BEFORE_START` (before the spell
-   *           started) or `ACCOUNT_NOT_DELETED`.
+   *           started).
    */
   app.post(
     "/:employmentId/end",

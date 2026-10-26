@@ -267,8 +267,11 @@ export const groupUsersRouter = (): Router => {
    *       today (in the organization's time zone, UTC while attendance was
    *       never set up), are cancelled with a CANCELLED event naming the
    *       caller and the reason "removed from group"; past bookings and
-   *       today's stay, and nobody is notified. Losing the last link to the
-   *       organization ends the Employment. Deliberately available on
+   *       today's stay, and nobody is notified. Losing the last group of the
+   *       organization revokes a delegated org-admin row, and losing the last
+   *       link ends the Employment. In a Directory organization neither
+   *       happens: the person stays employed in no group, admin row included,
+   *       until End employment. Deliberately available on
    *       read-only (over plan limit) groups, since removing members is how an
    *       owner gets back under their plan's limits.
    *     security:

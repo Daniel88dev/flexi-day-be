@@ -23,8 +23,42 @@ DIRECTORY_PLAN_REQUIRED`) when the plan fails the gate, 409 `DIRECTORY_ALREADY_O
 ## Turning it off
 
 `POST /api/organization/directory/disable`, owner only, on every plan. It updates the settings row
-and keeps every other directory row. It ends nobody. The turn-off dialog and Delete all directory
+and keeps every other directory row. It ends nobody: people left in no group stay employed until
+someone ends them. The turn-off dialog and Delete all directory
 data are T-514.
+
+## Who ends an Employment
+
+While the stored toggle is on, on any plan, `syncEmployment` opens Employments and never ends them.
+Removing someone from their last group, revoking an org-admin grant, Change manager and group
+deletion only remove links: the person stays employed in no group, and removing the last group no
+longer revokes their admin row. Their pending requests and bookings after today in that group are
+still cancelled. Nobody is notified. Turning the directory off brings the derived rule back for
+each person's next link change; it ends nobody at the switch.
+
+People in no group show on Team attendance to org admins only, as before. The directory list marks
+them with `noGroup` for the owner and org admins (`noGroupFilter` says the rows carry it), and the
+web offers a No group filter from it. A person without an account is always in no group.
+
+### End employment
+
+`POST /api/employment/{employmentId}/end` with `{ endedOn }`, today or earlier in the
+organization's zone. In a Directory organization the End act cell decides (Owner, HR and Org admin
+by default; roles count only while the directory is on); elsewhere the owner and org admins. Never
+plan-gated. A live account, a Deleted account and a person without an account all end; the owner's
+own Employment is 409 `OWNER_EMPLOYMENT`, and a group's manager 409 `MANAGES_GROUP`.
+
+One transaction (`endLockedEmployment` in `src/services/employment/endEmploymentServices.ts`)
+leaves every group, clears approver slots, drops the admin row, cancels bookings, stamps the end,
+ends Directory roles and clears Reports to on every open record that names the person, writing a
+Card history entry (`fields: ["reportsTo"]`) per record with the Audience the End cell credited.
+Ended records keep theirs. Erase runs the same ending first.
+
+`GET /api/directory/{organizationId}/people/{employmentId}/end-preview` feeds the dialog: today,
+the spell start, the suggested date (a Leaving date of today or earlier, else today), the people
+whose Reports to is cleared, the groups left and managed, the booked days cancelled, the admin row
+and the roles. The profile's `actions` says which of End, Export and Erase the viewer gets; Export
+and Erase stay with the owner and org admins.
 
 ## The plan gate
 
@@ -80,8 +114,8 @@ admin brings neither.
 - `GET /api/directory/{organizationId}/roles` lists every eligible person with their roles, for the
   owner, org admins and HR. `PUT .../roles/{employmentId}` with `{ roles }` sets them, owner only.
   Adding a role needs the directory plan; removing one never does.
-- Ending an Employment (`syncEmployment`, End employment) and deleting an account remove its roles
-  in the same transaction. A rejoin is a new Employment, so it starts without them.
+- Ending an Employment (End employment, and `syncEmployment` outside the directory) and deleting an
+  account remove its roles in the same transaction. A rejoin is a new Employment, so it starts without them.
 - `loadDirectoryViewer` reads the viewer's roles from their open Employment, so the resolver credits
   the HR and Leadership Audiences, and the profile's `account.directoryRoles` shows them.
 

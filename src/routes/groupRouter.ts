@@ -611,7 +611,8 @@ export const groupRouter = (): Router => {
    *       be a Deleted account. A caller cannot name themselves, because the
    *       manager approves the group's requests. Managing a group links the
    *       new manager to the organization, and the outgoing manager's
-   *       Employment ends if it was their last link. Approver slots and
+   *       Employment ends if it was their last link, except in a Directory
+   *       organization, where only End employment ends one. Approver slots and
    *       membership flags are left as they are. The change is written to the
    *       group's change log.
    *     security:

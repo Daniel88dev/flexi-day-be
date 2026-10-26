@@ -67,6 +67,8 @@ export type DirectoryPerson = {
   photoUrl: string | null;
   user: UserSummary;
   markers: DirectoryMarker[];
+  /** In no group of the organization; sent to the owner and org admins only. */
+  noGroup?: boolean;
 };
 
 export type FormerDirectoryPerson = DirectoryPerson & { startedAt: Date; endedAt: Date };
@@ -109,6 +111,17 @@ export type DirectoryPeople = {
   formerList: boolean;
   /** The viewer opens Directory settings: the owner, org admins and HR. */
   settings: boolean;
+  /** The rows carry `noGroup`: the owner and org admins. */
+  noGroupFilter: boolean;
+};
+
+export type ProfileActions = {
+  /** End employment, by the End act cell, on an open record that isn't the owner's. */
+  end: boolean;
+  /** The Person export: the owner and org admins, for a person with an account. */
+  export: boolean;
+  /** Erase: the owner and org admins, for a Deleted account. */
+  erase: boolean;
 };
 
 export type DirectoryAccountStatus = "ACTIVE" | "NO_ACCOUNT" | "DELETED";
@@ -128,6 +141,8 @@ export type DirectoryProfile = DirectoryPerson & {
   };
   /** The owner, org admins and HR read the profile history. */
   canReadHistory: boolean;
+  /** What the viewer may do to this record from its profile. */
+  actions: ProfileActions;
   /** For the owner, org admins, HR and the person. */
   account?: {
     status: DirectoryAccountStatus;

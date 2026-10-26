@@ -306,11 +306,8 @@ describe("Employments by spell", () => {
       expect(members?.otherMembers ?? 0).toBe(employed.length);
     });
 
-    it("is refused by End employment, Erase and the Person export with a clear code", async () => {
-      const end = await request(server.url)
-        .post(`/api/employment/${recordId}/end`)
-        .set("Cookie", ownerCookie)
-        .send({ endedOn: "2026-10-01" });
+    // End employment ends one since T-507: directoryEnding.e2e.test.ts.
+    it("is refused by Erase and the Person export with a clear code", async () => {
       const erase = await request(server.url)
         .post(`/api/employment/${recordId}/erase`)
         .set("Cookie", ownerCookie)
@@ -319,7 +316,6 @@ describe("Employments by spell", () => {
         .post(`/api/employment/${recordId}/export`)
         .set("Cookie", ownerCookie);
 
-      expect([end.status, errorCode(end)]).toEqual([422, "ACCOUNT_NOT_DELETED"]);
       expect([erase.status, errorCode(erase)]).toEqual([422, "ACCOUNT_NOT_DELETED"]);
       expect([personExport.status, errorCode(personExport)]).toEqual([422, "NO_ACCOUNT"]);
       const [record] = await db.select().from(employments).where(eq(employments.id, recordId));

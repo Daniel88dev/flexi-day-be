@@ -302,6 +302,25 @@ describe("resolveAccess, the granting audience", () => {
   });
 });
 
+describe("resolveAccess, the audience that allows an act", () => {
+  it("names the first audience whose cell allows it, the owner before anyone", () => {
+    expect(
+      resolveAccess(defaults, colleague({ roles: ["HR"] }), openRecord).actGrantedBy.END_EMPLOYMENT
+    ).toBe("HR");
+    expect(
+      resolveAccess(defaults, colleague({ owner: true, roles: ["HR"] }), openRecord).actGrantedBy
+        .END_EMPLOYMENT
+    ).toBe("OWNER");
+  });
+
+  it("names nobody when no cell allows it", () => {
+    const viewer = colleague({ roles: ["LEADERSHIP"] });
+    const access = resolveAccess(defaults, viewer, openRecord);
+    expect(access.acts.END_EMPLOYMENT).toBe(false);
+    expect(access.actGrantedBy.END_EMPLOYMENT).toBeNull();
+  });
+});
+
 describe("resolveAccess, both Directory roles on one person", () => {
   it("credits HR and Leadership together, and the wider cell wins per Section", () => {
     const cells = tableWith({ "CONTACT/HR": "READ", "CONTACT/LEADERSHIP": "WRITE" });

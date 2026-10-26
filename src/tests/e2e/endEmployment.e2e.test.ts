@@ -265,13 +265,17 @@ describe("ending an Employment", () => {
       expect((await employmentOf(world.organizationId, world.member.id)).endedAt).toBeNull();
     });
 
-    it("refuses an account that was not deleted", async () => {
+    it("ends a live account too, and refuses the owner's own Employment", async () => {
       const world = await setUp();
 
       const res = await end(world.owner.id, world.employment.id, world.today);
+      expect(res.status).toBe(200);
+      expect((await employmentOf(world.organizationId, world.member.id)).endedAt).not.toBeNull();
 
-      expect(res.status).toBe(422);
-      expect(res.body.errors[0].context.code).toBe("ACCOUNT_NOT_DELETED");
+      const own = await employmentOf(world.organizationId, world.owner.id);
+      const refused = await end(world.owner.id, own.id, world.today);
+      expect(refused.status).toBe(409);
+      expect(refused.body.errors[0].context.code).toBe("OWNER_EMPLOYMENT");
     });
 
     it("refuses an Employment that already ended", async () => {

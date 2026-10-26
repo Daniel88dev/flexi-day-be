@@ -43,6 +43,8 @@ export type DirectoryAccess = {
   /** The audience whose cell gave each Section its level; null where the viewer reads nothing. */
   grantedBy: Record<SectionRow, A | null>;
   acts: Record<ActRow, boolean>;
+  /** The audience whose cell allows each act; null where the viewer may not. */
+  actGrantedBy: Record<ActRow, A | null>;
   /** The viewer reads the Card, so the record shows in their lists and its profile opens. */
   inReach: boolean;
   /** No account, Invite sent and Account deleted. */
@@ -116,10 +118,13 @@ export const resolveAccess = (
   }
 
   const acts = {} as Record<ActRow, boolean>;
+  const actGrantedBy = {} as Record<ActRow, A | null>;
   for (const row of ACT_ROWS) {
-    acts[row] = audiences.some(
+    const grantor = audiences.find(
       (audience) => audience === A.Owner || stored.get(`${row}/${audience}`) === V.Allowed
     );
+    acts[row] = grantor !== undefined;
+    actGrantedBy[row] = grantor ?? null;
   }
 
   const restrictedMarkers = audiences.some((audience) => FORMER_AUDIENCES.includes(audience));
@@ -128,6 +133,7 @@ export const resolveAccess = (
     sections,
     grantedBy,
     acts,
+    actGrantedBy,
     inReach: sections[R.Card] !== V.None,
     restrictedMarkers,
     accountFacts: restrictedMarkers || audiences.includes(A.Self),
