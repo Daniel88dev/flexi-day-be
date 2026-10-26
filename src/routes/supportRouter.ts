@@ -56,7 +56,10 @@ export const supportRouter = (): Router => {
    *     summary: Organization detail for support debugging
    *     description: |
    *       Support-allowlist only. Owner, resolved plan entitlements, all
-   *       groups **including deleted ones**, and the administrator list.
+   *       groups **including deleted ones**, the administrator list, and the
+   *       people directory's state: on or off, the current and the accepted
+   *       agreement version, and counts (acceptances, stored Permission table
+   *       cells, open and former Employments). Never a Profile field.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -67,7 +70,7 @@ export const supportRouter = (): Router => {
    *           type: string
    *     responses:
    *       '200':
-   *         description: Organization, owner, plan, groups, admins
+   *         description: Organization, owner, plan, groups, admins, directory
    *       '403':
    *         description: Allowlisted caller without two-factor enabled
    *       '404':

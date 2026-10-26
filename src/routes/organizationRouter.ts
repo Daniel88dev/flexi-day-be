@@ -16,6 +16,11 @@ import { handleGetAttendanceSettings } from "../controllers/organization/handleG
 import { handlePutAttendanceSettings } from "../controllers/organization/handlePutAttendanceSettings.js";
 import { handlePostOrganizationExport } from "../controllers/organization/handlePostOrganizationExport.js";
 import { handleGetOrganizationExport } from "../controllers/organization/handleGetOrganizationExport.js";
+import { handleGetDirectorySettings } from "../controllers/directory/handleGetDirectorySettings.js";
+import { handlePostEnableDirectory } from "../controllers/directory/handlePostEnableDirectory.js";
+import { handlePostDisableDirectory } from "../controllers/directory/handlePostDisableDirectory.js";
+import { handlePostAcceptDirectoryAgreement } from "../controllers/directory/handlePostAcceptDirectoryAgreement.js";
+import { validateDirectoryAgreementBody } from "../services/directory/types.js";
 
 export const organizationRouter = (): Router => {
   const app = Router();
@@ -560,6 +565,248 @@ export const organizationRouter = (): Router => {
     "/attendance-settings",
     bodyValidationMiddleware(validatePutAttendanceSettings),
     tryCatch(handlePutAttendanceSettings)
+  );
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     DirectoryState:
+   *       type: object
+   *       properties:
+   *         organizationId:
+   *           type: string
+   *         isOwner:
+   *           type: boolean
+   *         enabled:
+   *           type: boolean
+   *           description: |
+   *             The stored toggle. It stays on through a lapse or a downgrade
+   *             until the owner turns it off (a Directory organization).
+   *         enabledAt:
+   *           type: string
+   *           format: date-time
+   *           nullable: true
+   *         disabledAt:
+   *           type: string
+   *           format: date-time
+   *           nullable: true
+   *         writable:
+   *           type: boolean
+   *           description: |
+   *             The plan passes the directory gate right now: Enterprise (paid,
+   *             trialing or in grace), or an active `ENTERPRISE` or `CUSTOM`
+   *             manual override. Turning on and adding data need it.
+   *         agreement:
+   *           type: object
+   *           properties:
+   *             currentVersion:
+   *               type: integer
+   *             acceptedVersion:
+   *               type: integer
+   *               nullable: true
+   *             acceptedAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *             acceptedByName:
+   *               type: string
+   *               nullable: true
+   *             newVersionReady:
+   *               type: boolean
+   *               description: On, and the latest acceptance is older than the current version.
+   *         people:
+   *           type: object
+   *           description: Live Employment counts for the enable dialog's summary.
+   *           properties:
+   *             open:
+   *               type: integer
+   *             former:
+   *               type: integer
+   */
+
+  /**
+   * @openapi
+   * /api/organization/directory:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: Whether the people directory is on, and its agreement
+   *     description: |
+   *       Organization admins only, owner and delegate alike. An organization
+   *       that never turned the directory on has no settings row and answers
+   *       `enabled: false`. Carries no Profile field.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The directory state
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryState'
+   *       '400':
+   *         description: |
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization, or the caller has none yet
+   */
+  app.get("/directory", tryCatch(handleGetDirectorySettings));
+
+  /**
+   * @openapi
+   * /api/organization/directory/enable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn the people directory on and accept its agreement
+   *     description: |
+   *       Owner only. In one transaction it writes the directory settings row
+   *       (on, by whom, when), an agreement acceptance row for the current
+   *       version, and the organization's own copy of the product's default
+   *       Permission table, fixed cells included. A re-enable keeps the cells
+   *       the organization already stored and adds only the cells the product
+   *       gained since. Nothing is written per Employment.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - agreementVersion
+   *             properties:
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *                 description: The agreement version the owner was shown.
+   *     responses:
+   *       '200':
+   *         description: The directory state after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryState'
+   *       '400':
+   *         description: Invalid body, or no unambiguous default organization
+   *       '402':
+   *         description: |
+   *           The plan is Free or Pro (`reason: PLAN_LIMIT`,
+   *           `code: DIRECTORY_PLAN_REQUIRED`).
+   *       '403':
+   *         description: Caller is not the organization owner (`code: OWNER_ONLY`)
+   *       '404':
+   *         description: No such organization
+   *       '409':
+   *         description: |
+   *           `DIRECTORY_ALREADY_ON`, or `AGREEMENT_VERSION_STALE` when the
+   *           version sent is not the current one.
+   */
+  app.post(
+    "/directory/enable",
+    bodyValidationMiddleware(validateDirectoryAgreementBody),
+    tryCatch(handlePostEnableDirectory)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/directory/disable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn the people directory off
+   *     description: |
+   *       Owner only, on every plan. Updates the settings row and keeps every
+   *       other directory row, Permission table included. Ends nobody. Calling
+   *       it while the directory is off changes nothing.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The directory state after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryState'
+   *       '403':
+   *         description: Caller is not the organization owner (`code: OWNER_ONLY`)
+   *       '404':
+   *         description: No such organization
+   */
+  app.post("/directory/disable", tryCatch(handlePostDisableDirectory));
+
+  /**
+   * @openapi
+   * /api/organization/directory/agreement:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Accept a new version of the directory agreement
+   *     description: |
+   *       Owner only, on every plan. Stores one acceptance row for the current
+   *       version. Until the owner accepts, nothing pauses; the web shows the
+   *       owner a banner.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - agreementVersion
+   *             properties:
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *     responses:
+   *       '200':
+   *         description: The directory state after the acceptance
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryState'
+   *       '400':
+   *         description: Invalid body
+   *       '403':
+   *         description: Caller is not the organization owner (`code: OWNER_ONLY`)
+   *       '404':
+   *         description: No such organization
+   *       '409':
+   *         description: |
+   *           `DIRECTORY_OFF` while the directory is off, or
+   *           `AGREEMENT_VERSION_STALE`.
+   */
+  app.post(
+    "/directory/agreement",
+    bodyValidationMiddleware(validateDirectoryAgreementBody),
+    tryCatch(handlePostAcceptDirectoryAgreement)
   );
 
   return app;

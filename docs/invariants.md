@@ -297,6 +297,11 @@ read-only) to debug customer reports.
    UI hint only; the guard re-checks the allowlist on every request.
 6. **Responses exclude `note` and `rejectionReason`** from vacation rows — personal detail that
    debugging state bugs never needs.
+7. **The directory shows as state and counts, never a Profile field.** The organization detail
+   carries `directory` from `directorySupportSummary`: on or off, agreement versions and counts.
+   Flexi Day processes directory data for the organization, so support has no reason to read it.
+   "support detail shows the directory without a Profile field" in
+   `directorySettings.e2e.test.ts` pins the shape.
 
 ## Rate limiting (`src/middleware/limiter.ts`)
 

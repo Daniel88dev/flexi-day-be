@@ -35,6 +35,20 @@ export type SupportOrganizationDetail = {
   plan: Entitlements & { status: string | null };
   groups: SupportGroupListItem[];
   admins: OrganizationAdminListItem[];
+  /** State and counts only: the support surface never carries a Profile field. */
+  directory: SupportDirectorySummary;
+};
+
+export type SupportDirectorySummary = {
+  enabled: boolean;
+  enabledAt: Date | null;
+  disabledAt: Date | null;
+  currentAgreementVersion: number;
+  acceptedAgreementVersion: number | null;
+  acceptedAt: Date | null;
+  acceptances: number;
+  permissionCells: number;
+  people: { open: number; former: number };
 };
 
 export type SupportGroupMember = {
