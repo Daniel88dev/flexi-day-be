@@ -70,6 +70,13 @@ resource "aws_apprunner_service" "main" {
             # the backend refuses to boot on a half-configured deploy.
             ATTACHMENTS_BUCKET = aws_s3_bucket.attachments.bucket
 
+            # Organization data: Profile photos and exports in the bucket, and
+            # the key that wraps each organization's data key (iam.tf grants
+            # both). Nothing reads them until the export and field-encryption
+            # code lands, so they ride ahead of it.
+            ORGANIZATION_DATA_BUCKET      = aws_s3_bucket.organization_data.bucket
+            ORGANIZATION_DATA_KMS_KEY_ARN = aws_kms_key.organization_data.arn
+
             # CALENDAR_SYNC_DRIVER stays unset so the backend uses the live
             # driver. The connections reuse the sign-in client secrets below.
             CALENDAR_SYNC_GOOGLE_ENABLED    = tostring(var.calendar_sync_google_enabled)
@@ -186,5 +193,40 @@ resource "aws_apprunner_service" "main" {
 
   tags = {
     Name = "${var.project_name}-${var.environment}"
+  }
+}
+
+# App Runner creates its two log groups itself, with no retention, so they come
+# in through import rather than a create. A replaced service gets a new
+# service_id and new groups, and the plan then replaces these two.
+locals {
+  apprunner_log_group_prefix = "/aws/apprunner/${aws_apprunner_service.main.service_name}/${aws_apprunner_service.main.service_id}"
+}
+
+import {
+  to = aws_cloudwatch_log_group.apprunner_application
+  id = "${local.apprunner_log_group_prefix}/application"
+}
+
+import {
+  to = aws_cloudwatch_log_group.apprunner_service
+  id = "${local.apprunner_log_group_prefix}/service"
+}
+
+resource "aws_cloudwatch_log_group" "apprunner_application" {
+  name              = "${local.apprunner_log_group_prefix}/application"
+  retention_in_days = 30
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-apprunner-application"
+  }
+}
+
+resource "aws_cloudwatch_log_group" "apprunner_service" {
+  name              = "${local.apprunner_log_group_prefix}/service"
+  retention_in_days = 30
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-apprunner-service"
   }
 }

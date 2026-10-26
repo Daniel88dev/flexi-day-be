@@ -148,6 +148,37 @@ resource "aws_iam_role_policy" "apprunner_attachments" {
   })
 }
 
+# Organization data. Read and write anywhere in the bucket, list so a missing
+# key reads as NoSuchKey, and the two KMS calls: S3 makes them on the role's
+# behalf for SSE-KMS, and field encryption makes them directly for each
+# organization's data key. Deleting under versioning leaves an old version
+# that the lifecycle rule removes, so no DeleteObjectVersion.
+resource "aws_iam_role_policy" "apprunner_organization_data" {
+  name = "${var.project_name}-${var.environment}-apprunner-organization-data"
+  role = aws_iam_role.apprunner_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.organization_data.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.organization_data.arn}/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey", "kms:Decrypt"]
+        Resource = aws_kms_key.organization_data.arn
+      }
+    ]
+  })
+}
+
 # --- Developer database access via IAM authentication ----------------------
 # Lets the named IAM user connect to Postgres as the "${var.db_iam_login}"
 # database role using a short-lived token (aws rds generate-db-auth-token)

@@ -99,3 +99,14 @@ output "attachment_processor_cd_variable_command" {
   description = "Run once after the first apply so CD starts shipping the Lambda code"
   value       = "gh variable set ATTACHMENT_PROCESSOR_FUNCTION_NAME --body ${aws_lambda_function.attachment_processor.function_name} -R Daniel88dev/flexi-day-be"
 }
+
+# Organization data
+output "organization_data_bucket_name" {
+  description = "Bucket holding organization data; App Runner reads it as ORGANIZATION_DATA_BUCKET"
+  value       = aws_s3_bucket.organization_data.bucket
+}
+
+output "organization_data_kms_key_arn" {
+  description = "KMS key encrypting the bucket and wrapping each organization's data key; App Runner reads it as ORGANIZATION_DATA_KMS_KEY_ARN"
+  value       = aws_kms_key.organization_data.arn
+}

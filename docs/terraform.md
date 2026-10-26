@@ -2,8 +2,8 @@
 
 `terraform/` defines everything Flexi Day runs on in AWS: the App Runner service, RDS Postgres, the
 VPC around it, the Route 53 records for `api.flexi-day.com`, the Secrets Manager entries App Runner
-injects, the attachments bucket with the Lambda that checks uploads, and the IAM roles tying them
-together. Nothing here was clicked together in the console, so an infrastructure change that skips
+injects, the attachments bucket with the Lambda that checks uploads, the organization-data bucket
+and its KMS key, and the IAM roles tying them together. Nothing here was clicked together in the console, so an infrastructure change that skips
 these files never reaches production.
 
 State is a local file, `terraform/terraform.tfstate`, gitignored, with no S3 backend. It lives on one
@@ -236,6 +236,58 @@ manages the role itself.
 Lambda runtimes are validated by the AWS provider against a fixed list, which is why the provider
 constraint is `~> 6.0`: `nodejs24.x` does not exist in 5.x. Bumping the constraint means
 `terraform init -upgrade` before the next plan.
+
+## Organization data: bucket, key and log hygiene
+
+`organization-data.tf` holds the bucket for organization data, `flexi-day-prod-organization-data`:
+Profile photos, Person and Organization exports under `exports/`, and later per-person documents.
+It mirrors `attachments` in its public-access block, `BucketOwnerEnforced` ownership and CORS rule,
+and differs in four ways:
+
+- **Versioning is on.** An old version expires 7 days after it stops being current, the same window
+  as the RDS backups, so a value removed by a Retention purge or an Erase is gone from both stores
+  after 7 days. Expired delete markers are cleaned up too.
+- **No age-based expiry.** Retention and erasure remove objects, not the lifecycle. Only two
+  prefixes expire: `incoming/` after a day, for an upload nobody processed, and `exports/` after 7
+  days, the life of an export's download. Unfinished multipart uploads are aborted after a day.
+- **SSE-KMS with S3 Bucket Keys** under the key below, rather than SSE-S3.
+- **No Lambda yet.** The second trigger on the attachment processor, and its KMS rights with a
+  condition on the bucket's encryption context, arrive with the Profile photo.
+
+The key is a customer managed KMS key, `alias/flexi-day-be-production-organization-data`. It
+encrypts the bucket and wraps each organization's data key for the Sensitive section fields, so
+losing it loses all of that for good. Three guards stand in the way: `prevent_destroy`, a 30-day
+deletion window, and a key policy that denies `kms:ScheduleKeyDeletion` to every principal but the
+account root user, even one holding AdministratorAccess. The policy's other statement is AWS's default
+grant to the account, which is what lets IAM policies work on the key at all. Rotation is automatic,
+yearly; KMS keeps the old key material, so nothing is re-encrypted.
+
+Deleting the key on purpose takes the root user, after `prevent_destroy` and the resource have left
+the files. The key then waits 30 days, and `aws kms cancel-key-deletion` brings it back within that
+time.
+
+The App Runner instance role gets `apprunner_organization_data`: list the bucket, get, put and
+delete objects, and `kms:GenerateDataKey` and `kms:Decrypt` on the key. S3 makes those KMS calls on
+the role's behalf for every presigned upload and download, and field encryption makes them
+directly. A delete under versioning leaves an old version, which the lifecycle rule removes, so the
+role has no `DeleteObjectVersion`. App Runner receives `ORGANIZATION_DATA_BUCKET` and
+`ORGANIZATION_DATA_KMS_KEY_ARN`; `config.ts` does not read them until the code that uses them
+lands.
+
+Two log settings keep Profile values out of CloudWatch:
+
+- The RDS parameter group sets `log_parameter_max_length = 0`. Slow-query lines (over the 1 s of
+  `log_min_duration_statement`) keep their statement and drop the bound values. Error lines already
+  drop them, through `log_parameter_max_length_on_error`, which defaults to 0. The parameter is
+  dynamic, so it takes effect without a reboot.
+- The App Runner log groups, `/aws/apprunner/<service name>/<service id>/application` and
+  `/service`, keep 30 days. App Runner created them itself with no retention, so `apprunner.tf`
+  brings them in with `import` blocks, and the first apply shows them as imports with an in-place
+  retention change. A replaced service gets a new service id and new groups, and the plan then
+  replaces these two.
+
+The application side matches: `src/utils/queryError.ts` strips a failed query's bound values from
+what the logger, `errorMiddleware` and Sentry's `beforeSend` see.
 
 ## RDS instance class and reserved instance
 

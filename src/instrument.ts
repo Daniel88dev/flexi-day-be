@@ -3,6 +3,7 @@
 import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import dotenv from "dotenv";
+import { scrubQueryErrorEvent } from "./utils/queryError.js";
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ if (enabled) {
       queues: false,
       graphQL: { document: false, variables: false },
     },
+    beforeSend: (event, hint) => scrubQueryErrorEvent(event, hint.originalException),
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0.2),
     // Profiling is trace-lifecycle-bound: it runs for the duration of every sampled
     // trace. Keep this low or an always-on server burns through the profile-hours

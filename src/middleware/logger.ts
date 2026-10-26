@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { getRequestContext } from "../utils/requestStore.js";
 import { isSensitiveErrorProperty } from "../utils/redact.js";
+import { scrubQueryError } from "../utils/queryError.js";
 
 const LOG_DIR = path.resolve(process.cwd(), process.env.LOG_DIR ?? "logs");
 let fileTransports: InstanceType<typeof transports.File>[] = [];
@@ -71,9 +72,10 @@ const requestContextFormat = format((info) => {
 const errorSerializerFormat = format((info) => {
   // Spread rather than rebuild: winston keys level/message/splat by symbol.
   const out: Record<string, unknown> = { ...info };
-  for (const [key, value] of Object.entries(out)) {
-    if (!(value instanceof Error)) continue;
+  for (const [key, raw] of Object.entries(out)) {
+    if (!(raw instanceof Error)) continue;
     Reflect.deleteProperty(out, key);
+    const value = scrubQueryError(raw) as Error;
 
     // Own enumerable scalars first, so the standard fields below win on a clash.
     // This is where Node's `code`/`errno`/`syscall` and pg's `detail`/
