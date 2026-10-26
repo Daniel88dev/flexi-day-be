@@ -536,6 +536,7 @@ describe("ending an Employment in a Directory organization", () => {
         hold: false,
         invite: false,
         changeType: true,
+        copyFromPreviousSpell: false,
       });
       expect(await actionsOf(mia.id, bobEmployment)).toEqual({
         end: true,
@@ -544,6 +545,7 @@ describe("ending an Employment in a Directory organization", () => {
         hold: false,
         invite: false,
         changeType: true,
+        copyFromPreviousSpell: false,
       });
       expect(await actionsOf(gina.id, await employmentIdOf(world.organizationId, mia.id))).toEqual({
         end: false,
@@ -552,6 +554,7 @@ describe("ending an Employment in a Directory organization", () => {
         hold: false,
         invite: false,
         changeType: false,
+        copyFromPreviousSpell: false,
       });
       expect(
         (await actionsOf(owner.id, await employmentIdOf(world.organizationId, owner.id))).end

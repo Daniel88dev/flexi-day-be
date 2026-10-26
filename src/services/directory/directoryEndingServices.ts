@@ -42,7 +42,8 @@ export const profileActions = (
     endedAt: Date | null;
     accountDeletedAt: Date | null;
   },
-  access: DirectoryAccess
+  access: DirectoryAccess,
+  copyFromPreviousSpell = false
 ): ProfileActions => ({
   end:
     record.endedAt === null && record.userId !== viewer.ownerUserId && access.acts[R.EndEmployment],
@@ -52,4 +53,5 @@ export const profileActions = (
   hold: administersOrganization(viewer) && record.endedAt !== null,
   invite: record.userId === null && record.endedAt === null && access.acts[R.SendDirectoryInvite],
   changeType: record.endedAt === null && access.acts[R.ChangeWorkerType],
+  copyFromPreviousSpell,
 });

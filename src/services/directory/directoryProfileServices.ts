@@ -29,6 +29,7 @@ import {
 } from "./directoryEndingServices.js";
 import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
 import { emergencyContactNotice } from "./emergencyContactNotice.js";
+import { copyFromPreviousSpellOffered } from "./previousSpellServices.js";
 import { nextRemoval, profileRetention, readRetentionSchedules } from "./retentionSchedule.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
 import {
@@ -395,7 +396,12 @@ export const getDirectoryProfile = async (
     ended: row.endedAt !== null,
     sections: sectionsOf(viewer, row, access, photo),
     canReadHistory: canReadHistory(viewer),
-    actions: profileActions(viewer, row, access),
+    actions: profileActions(
+      viewer,
+      row,
+      access,
+      await copyFromPreviousSpellOffered(viewer, row, access, tx)
+    ),
   };
   if (row.endedAt !== null) {
     const schedule = (await readRetentionSchedules(viewer.organizationId, [row.id], tx)).get(

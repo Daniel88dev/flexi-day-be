@@ -236,6 +236,11 @@ export type ProfileActions = {
   invite: boolean;
   /** Change worker type, by its act cell, on an open record. */
   changeType: boolean;
+  /**
+   * Copy from previous spell: the owner, org admins and HR, on an open record
+   * whose previous spell still holds a Section the caller can copy.
+   */
+  copyFromPreviousSpell: boolean;
 };
 
 export type DirectoryAccountStatus = "ACTIVE" | "NO_ACCOUNT" | "DELETED";
@@ -392,6 +397,34 @@ export type PostDirectoryInvite = z.infer<typeof validatePostDirectoryInvite>;
 export const validatePutWorkerType = z.object({ type: z.enum(workerType) }).strict();
 
 export type PutWorkerType = z.infer<typeof validatePutWorkerType>;
+
+/** The Sections Copy from previous spell can bring over, by their profile keys. */
+export const COPYABLE_SECTION_KEYS = ["contact", "personal", "photo"] as const;
+
+export type CopyableSectionKey = (typeof COPYABLE_SECTION_KEYS)[number];
+
+export const validatePostCopyPreviousSpell = z
+  .object({ sections: z.array(z.enum(COPYABLE_SECTION_KEYS)).min(1).max(3) })
+  .strict();
+
+export type PostCopyPreviousSpell = z.infer<typeof validatePostCopyPreviousSpell>;
+
+/**
+ * One Section in the Copy from previous spell dialog. `COPYABLE`: the previous
+ * spell holds it and the caller may write it here. `REMOVED_ON`: a Retention
+ * purge emptied it on the previous spell. `EMPTY`: the previous spell holds
+ * nothing else. `FILLED`: this spell already holds it, and a copy never
+ * overwrites. `NOT_WRITABLE`: the caller's cells don't allow writing it.
+ */
+export type CopyableSection =
+  | { status: "COPYABLE" | "EMPTY" | "FILLED" | "NOT_WRITABLE" }
+  | { status: "REMOVED_ON"; date: string };
+
+export type PreviousSpellView = {
+  previous: { employmentId: string; startedAt: Date; endedAt: Date };
+  /** Personal is absent when this spell is an External worker's. */
+  sections: Partial<Record<CopyableSectionKey, CopyableSection>>;
+};
 
 /** A directory invite as its sender sees it. The code and the link secret stay out. */
 export type DirectoryInviteView = {

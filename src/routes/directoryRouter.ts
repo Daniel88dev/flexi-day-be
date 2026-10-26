@@ -12,7 +12,10 @@ import {
   validatePutDirectoryRoles,
   validatePostProfilePhoto,
   validatePutWorkerType,
+  validatePostCopyPreviousSpell,
 } from "../services/directory/types.js";
+import { handleGetPreviousSpell } from "../controllers/directory/handleGetPreviousSpell.js";
+import { handlePostCopyPreviousSpell } from "../controllers/directory/handlePostCopyPreviousSpell.js";
 import { handlePutWorkerType } from "../controllers/directory/handlePutWorkerType.js";
 import { handleDeleteProfilePhoto } from "../controllers/directory/handleDeleteProfilePhoto.js";
 import { handleGetProfilePhotoStatus } from "../controllers/directory/handleGetProfilePhotoStatus.js";
@@ -387,7 +390,7 @@ export const directoryRouter = (): Router => {
    *             actions:
    *               type: object
    *               description: What the caller may do to this record from its profile.
-   *               required: [end, export, erase, hold, invite, changeType]
+   *               required: [end, export, erase, hold, invite, changeType, copyFromPreviousSpell]
    *               properties:
    *                 end:
    *                   type: boolean
@@ -412,6 +415,13 @@ export const directoryRouter = (): Router => {
    *                 changeType:
    *                   type: boolean
    *                   description: Change worker type. The act cell allows the caller and the record is open.
+   *                 copyFromPreviousSpell:
+   *                   type: boolean
+   *                   description: |
+   *                     Copy from previous spell: the caller is the owner, an
+   *                     org admin or HR, the record is open, and its previous
+   *                     spell holds a Section the caller can copy. The web
+   *                     shows its banner from this.
    *             canReadHistory:
    *               type: boolean
    *               description: The caller is the owner, an org admin or HR.
@@ -843,6 +853,171 @@ export const directoryRouter = (): Router => {
     "/:organizationId/people/:employmentId/worker-type",
     bodyValidationMiddleware(validatePutWorkerType),
     tryCatch(handlePutWorkerType)
+  );
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     DirectoryCopyableSection:
+   *       type: object
+   *       required: [status]
+   *       description: |
+   *         What one Section of the previous spell offers this spell.
+   *         COPYABLE: the previous spell holds it and the caller may write it
+   *         here. REMOVED_ON: a Retention purge emptied it on the previous
+   *         spell, on `date`. EMPTY: the previous spell holds nothing else.
+   *         FILLED: this spell already holds it, and a copy never overwrites.
+   *         NOT_WRITABLE: the caller's cells don't allow writing it here.
+   *       properties:
+   *         status:
+   *           type: string
+   *           enum: [COPYABLE, REMOVED_ON, EMPTY, FILLED, NOT_WRITABLE]
+   *         date:
+   *           type: string
+   *           format: date
+   *           description: Only with REMOVED_ON, the day of the purge in the nightly run's zone.
+   * /api/directory/{organizationId}/people/{employmentId}/previous-spell:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: What Copy from previous spell can bring over to this spell
+   *     description: |
+   *       The person's previous spell in the organization, and for each of
+   *       Contact, Personal and Photo whether it can be copied onto this open
+   *       spell. The previous spell is the latest ended Employment begun
+   *       before this one with the same user, or with the same email when
+   *       either spell has no account. Card, Work contact and Job never carry
+   *       over, and Personal is absent when this spell is an External
+   *       worker's. Never carries values. For the owner, org admins and HR;
+   *       readable on a lapsed plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The previous spell and its Sections
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [previous, sections]
+   *               properties:
+   *                 previous:
+   *                   type: object
+   *                   required: [employmentId, startedAt, endedAt]
+   *                   properties:
+   *                     employmentId:
+   *                       type: string
+   *                     startedAt:
+   *                       type: string
+   *                       format: date-time
+   *                     endedAt:
+   *                       type: string
+   *                       format: date-time
+   *                 sections:
+   *                   type: object
+   *                   properties:
+   *                     contact:
+   *                       $ref: '#/components/schemas/DirectoryCopyableSection'
+   *                     personal:
+   *                       $ref: '#/components/schemas/DirectoryCopyableSection'
+   *                     photo:
+   *                       $ref: '#/components/schemas/DirectoryCopyableSection'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `COPY_DENIED` for anyone but the owner, org admins and HR"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, `PERSON_NOT_FOUND` when the record is elsewhere or out of reach, or `NO_PREVIOUS_SPELL`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`, or `EMPLOYMENT_ENDED` when this spell has ended"
+   */
+  app.get("/:organizationId/people/:employmentId/previous-spell", tryCatch(handleGetPreviousSpell));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people/{employmentId}/previous-spell/copy:
+   *   post:
+   *     tags:
+   *       - Directory
+   *     summary: Copy from previous spell
+   *     description: |
+   *       Copies whole Sections, among Contact, Personal and Photo, from the
+   *       person's previous spell onto this open spell, as far as retention
+   *       left them. Contact and Personal are opened and sealed again for the
+   *       new record; the Profile photo's two sizes are stored again under the
+   *       new spell. A Section this spell already holds is never overwritten.
+   *       Each copied Section writes a profile history row naming its fields,
+   *       never values, with the caller and the Audience that grants them
+   *       Write on it. The values never reach the caller, so no read-log row
+   *       is written. For the owner, org admins and HR, with Write on each
+   *       chosen Section; needs the directory plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [sections]
+   *             properties:
+   *               sections:
+   *                 type: array
+   *                 minItems: 1
+   *                 maxItems: 3
+   *                 items:
+   *                   type: string
+   *                   enum: [contact, personal, photo]
+   *     responses:
+   *       '200':
+   *         description: The profile after the copy
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryProfile'
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: "`DIRECTORY_PLAN_REQUIRED`: the organization's plan has lapsed"
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, `COPY_DENIED`, or `SECTION_NOT_WRITABLE` for a chosen Section the caller can't write"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, `PERSON_NOT_FOUND`, or `NO_PREVIOUS_SPELL`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`, `EMPLOYMENT_ENDED`, `SECTION_ALREADY_FILLED` when this spell holds a chosen Section, or `SECTION_NOT_HELD` when the previous spell no longer does"
+   *       '422':
+   *         description: "A malformed body, or `EMPLOYEES_ONLY` for Personal on an External worker's spell"
+   *       '503':
+   *         description: The organization-data store is not configured
+   */
+  app.post(
+    "/:organizationId/people/:employmentId/previous-spell/copy",
+    bodyValidationMiddleware(validatePostCopyPreviousSpell),
+    tryCatch(handlePostCopyPreviousSpell)
   );
 
   /**
