@@ -5,6 +5,7 @@ import {
   validatePatchDirectoryProfile,
   validatePatchPermissionCell,
   validatePutDirectoryGeneralSettings,
+  validatePutRetentionPeriod,
   validatePutDirectoryRoles,
   validatePostProfilePhoto,
 } from "../services/directory/types.js";
@@ -22,6 +23,9 @@ import { handlePostShowSection } from "../controllers/directory/handlePostShowSe
 import { handleGetReadLog } from "../controllers/directory/handleGetReadLog.js";
 import { handleGetDirectoryGeneralSettings } from "../controllers/directory/handleGetDirectoryGeneralSettings.js";
 import { handlePutDirectoryGeneralSettings } from "../controllers/directory/handlePutDirectoryGeneralSettings.js";
+import { handleGetRetentionPreview } from "../controllers/directory/handleGetRetentionPreview.js";
+import { handleGetRetentionSettings } from "../controllers/directory/handleGetRetentionSettings.js";
+import { handlePutRetentionPeriod } from "../controllers/directory/handlePutRetentionPeriod.js";
 import { handlePatchDirectoryProfile } from "../controllers/directory/handlePatchDirectoryProfile.js";
 import { handleGetDirectoryOrganizations } from "../controllers/directory/handleGetDirectoryOrganizations.js";
 import { handleGetDirectoryPeople } from "../controllers/directory/handleGetDirectoryPeople.js";
@@ -744,8 +748,9 @@ export const directoryRouter = (): Router => {
    *     description: |
    *       Every write to the profile, newest first: who made it, when, the
    *       Section, the fields it changed and the Audience that granted it.
-   *       Never the values. The owner, org admins and HR only. A lapsed plan
-   *       keeps this readable.
+   *       A Retention purge reads `actor` RETENTION, with no actor name and no
+   *       Audience. Never the values. The owner, org admins and HR only. A
+   *       lapsed plan keeps this readable.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -768,7 +773,7 @@ export const directoryRouter = (): Router => {
    *               type: array
    *               items:
    *                 type: object
-   *                 required: [id, at, actorName, section, fields, audience]
+   *                 required: [id, at, actorName, section, fields, actor, audience]
    *                 properties:
    *                   id:
    *                     type: string
@@ -785,8 +790,14 @@ export const directoryRouter = (): Router => {
    *                     type: array
    *                     items:
    *                       type: string
+   *                   actor:
+   *                     type: string
+   *                     enum: [PERSON, RETENTION]
+   *                     description: RETENTION for a Retention purge, PERSON for everything else.
    *                   audience:
    *                     type: string
+   *                     nullable: true
+   *                     description: Null on a Retention purge.
    *                     enum: [OWNER, SELF, COLLEAGUE, EXTERNAL_WORKER, GROUP_ADMIN, HR, LEADERSHIP, ORGANIZATION_ADMIN]
    *       '401':
    *         description: Not signed in
@@ -835,7 +846,7 @@ export const directoryRouter = (): Router => {
    *           application/json:
    *             schema:
    *               type: object
-   *               required: [employmentId, today, startedOn, suggestedEndedOn, reportees, groups, managedGroups, cancelledBookings, organizationAdmin, directoryRoles]
+   *               required: [employmentId, today, startedOn, suggestedEndedOn, reportees, groups, managedGroups, cancelledBookings, organizationAdmin, directoryRoles, atEndSections]
    *               properties:
    *                 employmentId:
    *                   type: string
@@ -888,6 +899,12 @@ export const directoryRouter = (): Router => {
    *                   items:
    *                     type: string
    *                     enum: [HR, LEADERSHIP]
+   *                 atEndSections:
+   *                   type: array
+   *                   description: Sections whose Retention period is "at end" and that hold something; End empties them in its transaction.
+   *                   items:
+   *                     type: string
+   *                     enum: [CARD, PHOTO, WORK_CONTACT, JOB, CONTACT, PERSONAL]
    *       '401':
    *         description: Not signed in
    *       '403':
@@ -1303,6 +1320,188 @@ export const directoryRouter = (): Router => {
     bodyValidationMiddleware(validatePutDirectoryGeneralSettings),
     tryCatch(handlePutDirectoryGeneralSettings)
   );
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     RetentionPeriod:
+   *       type: string
+   *       enum: [AT_END, DAYS_30, MONTHS_6, YEAR_1, YEARS_3, YEARS_5, YEARS_10, UNTIL_ERASED]
+   *       description: How long a Section is kept after an Employment ends, shortest first.
+   *     RetentionPeriods:
+   *       type: object
+   *       required: [CARD, PHOTO, WORK_CONTACT, JOB, CONTACT, PERSONAL]
+   *       properties:
+   *         CARD: { $ref: '#/components/schemas/RetentionPeriod' }
+   *         PHOTO: { $ref: '#/components/schemas/RetentionPeriod' }
+   *         WORK_CONTACT: { $ref: '#/components/schemas/RetentionPeriod' }
+   *         JOB: { $ref: '#/components/schemas/RetentionPeriod' }
+   *         CONTACT: { $ref: '#/components/schemas/RetentionPeriod' }
+   *         PERSONAL: { $ref: '#/components/schemas/RetentionPeriod' }
+   *     RetentionSettings:
+   *       type: object
+   *       required: [editable, periods, defaults]
+   *       properties:
+   *         editable:
+   *           type: boolean
+   *           description: The caller is the owner or an org admin, who change these. HR reads them.
+   *         periods:
+   *           $ref: '#/components/schemas/RetentionPeriods'
+   *         defaults:
+   *           $ref: '#/components/schemas/RetentionPeriods'
+   */
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/settings/retention:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: The organization's Retention periods
+   *     description: |
+   *       One Retention period per Section: how long it is kept after an
+   *       Employment ends, counted from the later of the end date and the
+   *       moment the ending was recorded. A Section the organization never
+   *       set reads as the product default. The owner, org admins and HR read
+   *       them.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The Retention settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/RetentionSettings'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `SETTINGS_DENIED` for anyone but the owner, org admins and HR"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *   put:
+   *     tags:
+   *       - Directory
+   *     summary: Change one Section's Retention period
+   *     description: |
+   *       Sets the period of one Section. It also applies to Employments that
+   *       already ended: a shorter period removes what is past it at the next
+   *       nightly run, and a longer one brings nothing back. The owner and org
+   *       admins only. Works on every plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [section, period]
+   *             properties:
+   *               section:
+   *                 type: string
+   *                 enum: [CARD, PHOTO, WORK_CONTACT, JOB, CONTACT, PERSONAL]
+   *               period:
+   *                 $ref: '#/components/schemas/RetentionPeriod'
+   *     responses:
+   *       '200':
+   *         description: The Retention settings as saved
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/RetentionSettings'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, `SETTINGS_DENIED`, or `SETTINGS_NOT_EDITABLE` for HR"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: A malformed body, a period off the list, or a row that is not a Section
+   */
+  app.get("/:organizationId/settings/retention", tryCatch(handleGetRetentionSettings));
+  app.put(
+    "/:organizationId/settings/retention",
+    bodyValidationMiddleware(validatePutRetentionPeriod),
+    tryCatch(handlePutRetentionPeriod)
+  );
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/settings/retention/preview:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: How many people a Retention period would remove
+   *     description: |
+   *       Counts the ended Employments that still hold the Section and would
+   *       be past the given period at the next nightly run, for the dialog that
+   *       confirms a shortening. Changes nothing. The owner and org admins only.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: section
+   *         required: true
+   *         schema:
+   *           type: string
+   *           enum: [CARD, PHOTO, WORK_CONTACT, JOB, CONTACT, PERSONAL]
+   *       - in: query
+   *         name: period
+   *         required: true
+   *         schema:
+   *           $ref: '#/components/schemas/RetentionPeriod'
+   *     responses:
+   *       '200':
+   *         description: The count
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [section, period, affected]
+   *               properties:
+   *                 section:
+   *                   type: string
+   *                 period:
+   *                   $ref: '#/components/schemas/RetentionPeriod'
+   *                 affected:
+   *                   type: integer
+   *                   description: People whose Section the next nightly run would remove under this period.
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `SETTINGS_NOT_EDITABLE` for anyone but the owner and org admins"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: A missing or unknown section or period
+   */
+  app.get("/:organizationId/settings/retention/preview", tryCatch(handleGetRetentionPreview));
 
   /**
    * @openapi

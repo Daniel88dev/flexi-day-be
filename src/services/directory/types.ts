@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { contractType, workingTime } from "../../db/schema/directory-profile-schema.js";
+import {
+  contractType,
+  profileHistoryActor,
+  workingTime,
+} from "../../db/schema/directory-profile-schema.js";
 import { directoryRole, roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { AttachmentRejectionReason } from "../attachment/processor.js";
 import {
@@ -10,6 +14,8 @@ import {
 import { readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 import type { CountryView, PhoneView } from "./contactFormat.js";
+import { retentionPeriod } from "../../db/schema/directory-retention-schema.js";
+import { SECTION_ROWS, type SectionRow } from "./permissionResolver.js";
 
 export const validateDirectoryAgreementBody = z.object({
   /** The agreement version the owner was shown and accepted. */
@@ -286,7 +292,9 @@ export type ProfileHistoryEntry = {
   actorName: string | null;
   section: directoryPermissionRow;
   fields: string[];
-  audience: directoryAudience;
+  /** RETENTION for a Retention purge, which has no actor and no Audience. */
+  actor: profileHistoryActor;
+  audience: directoryAudience | null;
 };
 
 export const validatePatchPermissionCell = z
@@ -428,6 +436,29 @@ export const validatePutDirectoryGeneralSettings = z
   .strict();
 
 export type PutDirectoryGeneralSettings = z.infer<typeof validatePutDirectoryGeneralSettings>;
+
+export const validatePutRetentionPeriod = z
+  .object({
+    section: z.enum(SECTION_ROWS),
+    period: z.enum(retentionPeriod),
+  })
+  .strict();
+
+export type PutRetentionPeriod = z.infer<typeof validatePutRetentionPeriod>;
+
+export const validateRetentionPreviewQuery = validatePutRetentionPeriod;
+
+export type RetentionSettings = {
+  /** The owner and org admins change these; HR reads them. */
+  editable: boolean;
+  periods: Record<SectionRow, retentionPeriod>;
+  defaults: Record<SectionRow, retentionPeriod>;
+};
+
+export type RetentionPreview = PutRetentionPeriod & {
+  /** Ended Employments whose Section the period would remove at the next nightly run. */
+  affected: number;
+};
 
 export type DirectoryGeneralSettings = {
   /** The owner and org admins change these; HR reads them. */

@@ -1,9 +1,14 @@
 import { eq } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
-import { organizationDirectorySettings } from "../../db/schema/directory-schema.js";
+import {
+  directoryPermissionRow,
+  organizationDirectorySettings,
+} from "../../db/schema/directory-schema.js";
 import { appLanguage } from "../../db/schema/user-settings-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
+import { readRetentionPeriods } from "./retentionPurge.js";
+import { retentionPeriodLabel } from "./retentionPeriods.js";
 import type { DirectoryGeneralSettings, PutDirectoryGeneralSettings } from "./types.js";
 
 export type NoticeTexts = Record<appLanguage, string>;
@@ -26,12 +31,17 @@ export const DEFAULT_EMERGENCY_CONTACT_NOTICE: NoticeTexts = {
     "jejich údaje předali organizaci {organization}.",
 };
 
-/**
- * How long Contact is kept after an Employment ends, as the notice names it.
- * The product default until retention periods become editable (T-511).
- */
-export const contactRetentionLabel = (language: appLanguage): string =>
-  language === appLanguage.Czech ? "30 dní" : "30 days";
+/** How long the organization keeps Contact after an Employment ends, as the notice names it. */
+export const contactRetentionLabels = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<Record<appLanguage, string>> => {
+  const period = (await readRetentionPeriods(organizationId, tx))[directoryPermissionRow.Contact];
+  return {
+    [appLanguage.English]: retentionPeriodLabel(period, appLanguage.English),
+    [appLanguage.Czech]: retentionPeriodLabel(period, appLanguage.Czech),
+  };
+};
 
 export const renderNotice = (
   text: string,
@@ -66,7 +76,7 @@ export const emergencyContactNotice = async (
   const stored = await readStoredNotice(organization.id, tx);
   return renderNotice(stored[language] ?? DEFAULT_EMERGENCY_CONTACT_NOTICE[language], {
     organization: organization.name,
-    period: contactRetentionLabel(language),
+    period: (await contactRetentionLabels(organization.id, tx))[language],
   });
 };
 
@@ -90,6 +100,7 @@ export const readGeneralSettings = async (
     );
   }
   const stored = await readStoredNotice(viewer.organizationId, tx);
+  const period = await contactRetentionLabels(viewer.organizationId, tx);
   return {
     editable: canEditGeneralSettings(viewer),
     emergencyContactNotice: { en: stored[appLanguage.English], cs: stored[appLanguage.Czech] },
@@ -97,10 +108,7 @@ export const readGeneralSettings = async (
       en: DEFAULT_EMERGENCY_CONTACT_NOTICE[appLanguage.English],
       cs: DEFAULT_EMERGENCY_CONTACT_NOTICE[appLanguage.Czech],
     },
-    period: {
-      en: contactRetentionLabel(appLanguage.English),
-      cs: contactRetentionLabel(appLanguage.Czech),
-    },
+    period: { en: period[appLanguage.English], cs: period[appLanguage.Czech] },
   };
 };
 

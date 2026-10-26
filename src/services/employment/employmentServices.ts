@@ -132,9 +132,10 @@ export const syncEmployment = async (
 
   if (await isDirectoryOrganization(organizationId, tx)) return;
 
+  const now = new Date();
   const ended = await client
     .update(employments)
-    .set({ endedAt: new Date() })
+    .set({ endedAt: now, endRecordedAt: now })
     .where(
       and(
         eq(employments.organizationId, organizationId),

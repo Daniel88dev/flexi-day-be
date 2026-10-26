@@ -579,6 +579,7 @@ describe("ending an Employment in a Directory organization", () => {
         cancelledBookings: 2,
         organizationAdmin: true,
         directoryRoles: ["HR"],
+        atEndSections: [],
       });
     });
 

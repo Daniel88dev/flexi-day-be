@@ -530,6 +530,7 @@ describe("Person export", () => {
           section: "JOB",
           fields: ["employeeNumber", "workingTime"],
           by: "Dana Delegate",
+          actor: "PERSON",
           audience: "ORGANIZATION_ADMIN",
         },
       ]);

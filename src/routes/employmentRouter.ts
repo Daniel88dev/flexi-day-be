@@ -192,6 +192,8 @@ export const employmentRouter = (): Router => {
    *       with the caller as actor and the reason "employment ended". It also
    *       ends the person's Directory roles and clears Reports to on every
    *       open record that names them, with a Profile history entry each.
+   *       Every Section whose Retention period is "at end" is emptied in the
+   *       same transaction, with a retention entry in the Profile history.
    *       Nobody is notified.
    *
    *       In a Directory organization the End act cell of the Permission
