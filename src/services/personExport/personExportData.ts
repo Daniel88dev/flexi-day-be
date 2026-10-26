@@ -11,21 +11,36 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
-import { readLog, readLogAudience } from "../../db/schema/read-log-schema.js";
+import type { directoryPermissionRow } from "../../db/schema/directory-schema.js";
+import { readLog, readLogAudience, type readLogKind } from "../../db/schema/read-log-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacationEvents } from "../../db/schema/vacation-event-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { downloadFileName } from "../attachment/attachmentServices.js";
 import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
 import { collectProfileExport } from "../directory/directoryProfileServices.js";
+import { collectSensitiveExport } from "../directory/sensitiveSections.js";
 import { getPersonContacts } from "../person/personName.js";
 
 /** The fixed purpose labels the person sees in place of reader names (C-579/21). */
-const PURPOSE: Record<readLogAudience, string> = {
+export const READ_PURPOSE: Record<readLogAudience, string> = {
   [readLogAudience.Owner]: "owner",
   [readLogAudience.OrganizationAdmin]: "organization administration",
+  [readLogAudience.Hr]: "HR administration",
+  [readLogAudience.GroupAdmin]: "line management",
+  [readLogAudience.Leadership]: "leadership",
+  [readLogAudience.Colleague]: "colleague",
+  [readLogAudience.ExternalWorker]: "external worker",
   [readLogAudience.Self]: "self-service",
 };
+
+/** A Read log row as the person sees it: when, what and why, never who. */
+export const readLogExportEntry = (row: {
+  at: Date;
+  kind: readLogKind;
+  sections: directoryPermissionRow[] | null;
+  audience: readLogAudience;
+}) => ({ at: row.at, kind: row.kind, sections: row.sections, purpose: READ_PURPOSE[row.audience] });
 
 export type BookingStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
@@ -86,6 +101,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
   const employmentIds = spells.map((spell) => spell.id);
   const profile = await collectProfileExport(organizationId, employmentIds);
   const photos = await readyPhotoIds(employmentIds);
+  const sensitive = await collectSensitiveExport(organizationId, employmentIds);
 
   const organizationGroups = await db
     .select({
@@ -199,7 +215,12 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
   );
 
   const reads = await db
-    .select({ at: readLog.createdAt, kind: readLog.kind, audience: readLog.audience })
+    .select({
+      at: readLog.createdAt,
+      kind: readLog.kind,
+      sections: readLog.sections,
+      audience: readLog.audience,
+    })
     .from(readLog)
     .where(
       and(eq(readLog.organizationId, organizationId), eq(readLog.subjectUserId, subjectUserId))
@@ -329,6 +350,8 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       ...spell,
       profile: profile.profiles.get(spell.id) ?? null,
       photo: photoOfSpell(spell.id),
+      contact: sensitive.get(spell.id)?.contact ?? null,
+      personal: sensitive.get(spell.id)?.personal ?? null,
     })),
     groups: memberships.map((row) => ({
       groupId: row.groupId,
@@ -357,7 +380,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       by: nameOf(row.changingUserId),
     })),
     profileHistory: profile.history,
-    readLog: reads.map((row) => ({ at: row.at, kind: row.kind, purpose: PURPOSE[row.audience] })),
+    readLog: reads.map(readLogExportEntry),
   };
 
   return { person, files, employmentIds };

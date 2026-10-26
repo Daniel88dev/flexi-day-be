@@ -383,7 +383,7 @@ describe("The Permission table editor, Directory roles and Permission history", 
       expect(holder.roles).toEqual(["HR", "LEADERSHIP"]);
       expect((await hana.get(former)).status).toBe(200);
       const leo = await hana.get(`/api/directory/${organizationId}/people/${employment.leo}`);
-      expect(leo.body.sections.contact).toEqual({ level: "WRITE" });
+      expect(leo.body.sections.contact).toEqual(expect.objectContaining({ level: "WRITE" }));
       expect(leo.body.canReadHistory).toBe(true);
       const own = await hana.get(`/api/directory/${organizationId}/people/${employment.hana}`);
       expect(own.body.account.directoryRoles).toEqual(["HR", "LEADERSHIP"]);

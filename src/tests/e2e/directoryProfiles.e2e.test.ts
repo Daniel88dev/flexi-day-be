@@ -326,7 +326,7 @@ describe("Reading the people directory through the Permission table", () => {
           level: "READ",
           spell: { startedAt: expect.any(String), endedAt: null },
         }),
-        contact: { level: "WRITE" },
+        contact: expect.objectContaining({ level: "WRITE", notice: expect.any(String) }),
         personal: { level: "WRITE" },
       });
       expect(res.body.account).toEqual({

@@ -4,6 +4,7 @@ import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js"
 import {
   validatePatchDirectoryProfile,
   validatePatchPermissionCell,
+  validatePutDirectoryGeneralSettings,
   validatePutDirectoryRoles,
   validatePostProfilePhoto,
 } from "../services/directory/types.js";
@@ -17,6 +18,10 @@ import { handlePatchPermissionCell } from "../controllers/directory/handlePatchP
 import { handlePutDirectoryRoles } from "../controllers/directory/handlePutDirectoryRoles.js";
 import { handleGetEndPreview } from "../controllers/directory/handleGetEndPreview.js";
 import { handleGetProfileHistory } from "../controllers/directory/handleGetProfileHistory.js";
+import { handlePostShowSection } from "../controllers/directory/handlePostShowSection.js";
+import { handleGetReadLog } from "../controllers/directory/handleGetReadLog.js";
+import { handleGetDirectoryGeneralSettings } from "../controllers/directory/handleGetDirectoryGeneralSettings.js";
+import { handlePutDirectoryGeneralSettings } from "../controllers/directory/handlePutDirectoryGeneralSettings.js";
 import { handlePatchDirectoryProfile } from "../controllers/directory/handlePatchDirectoryProfile.js";
 import { handleGetDirectoryOrganizations } from "../controllers/directory/handleGetDirectoryOrganizations.js";
 import { handleGetDirectoryPeople } from "../controllers/directory/handleGetDirectoryPeople.js";
@@ -225,6 +230,22 @@ export const directoryRouter = (): Router => {
    *                 Location's country, then the interface language, else null).
    *               allOf:
    *                 - $ref: '#/components/schemas/DirectoryCountry'
+   *     DirectoryContactView:
+   *       description: |
+   *         The Contact Section on a profile, never with its values: only
+   *         Show returns them. A caller who writes Contact also gets the
+   *         Art. 14 notice, filled in for the organization in the caller's
+   *         language, and the country the phone pickers start on.
+   *       allOf:
+   *         - $ref: '#/components/schemas/DirectorySectionView'
+   *         - type: object
+   *           properties:
+   *             notice:
+   *               type: string
+   *             phoneCountryDefault:
+   *               nullable: true
+   *               allOf:
+   *                 - $ref: '#/components/schemas/DirectoryCountry'
    *     DirectoryJobView:
    *       allOf:
    *         - $ref: '#/components/schemas/DirectorySectionView'
@@ -313,9 +334,11 @@ export const directoryRouter = (): Router => {
    *                 job:
    *                   $ref: '#/components/schemas/DirectoryJobView'
    *                 contact:
-   *                   $ref: '#/components/schemas/DirectorySectionView'
+   *                   $ref: '#/components/schemas/DirectoryContactView'
    *                 personal:
-   *                   $ref: '#/components/schemas/DirectorySectionView'
+   *                   description: Absent on an External worker's record. Never carries values.
+   *                   allOf:
+   *                     - $ref: '#/components/schemas/DirectorySectionView'
    *             account:
    *               type: object
    *               properties:
@@ -445,7 +468,10 @@ export const directoryRouter = (): Router => {
    *     description: |
    *       The profile of one Employment, open or ended. `sections` holds a key
    *       only for each Section the caller reads, at their level: a Section
-   *       they can't read is absent. Contact and Personal carry no values here.
+   *       they can't read is absent. Contact and Personal carry no values here,
+   *       for anyone, the person included: `POST .../show/{section}` returns
+   *       them. Opening a profile writes no read-log row. Personal is absent
+   *       on an External worker's record.
    *       The spell dates sit in `job`, so only Job readers get them.
    *       `account` (status, sign-in email, directory roles) is present for
    *       the owner, org admins, HR and the person. An ended record is reached
@@ -498,10 +524,10 @@ export const directoryRouter = (): Router => {
    *   patch:
    *     tags:
    *       - Directory
-   *     summary: Edit the Card, Work contact and Job Sections of a profile
+   *     summary: Edit the Sections of a profile
    *     description: |
-   *       Sets or clears Card, Work contact and Job fields of one Employment,
-   *       open or ended.
+   *       Sets or clears Card, Work contact, Job, Contact and Personal fields
+   *       of one Employment, open or ended.
    *       In each field a value sets it, `null` clears it and a missing key
    *       leaves it as it is. Each Section in the body needs a write cell for
    *       the caller in the organization's Permission table. The profile row
@@ -518,6 +544,13 @@ export const directoryRouter = (): Router => {
    *       number is unique, ignoring case, among the organization's open
    *       Employments. A work phone is one number in international form with
    *       no extension, stored in E.164; a work email is stored lowercase.
+   *
+   *       Contact and Personal are Sensitive sections, stored encrypted under
+   *       the organization's data key. The answer never carries their values,
+   *       so a write writes no read-log row. A filled emergency contact needs a
+   *       name and a phone; a filled home address needs line 1, city and an
+   *       ISO 3166-1 alpha-2 country; a date of birth lies between 1900-01-01
+   *       and today. Personal applies to employees only.
    *
    *       Each Section the write changed adds one profile history entry: who,
    *       when, which fields and through which Audience, never the values.
@@ -621,6 +654,51 @@ export const directoryRouter = (): Router => {
    *                     nullable: true
    *                     enum: [FULL_TIME, PART_TIME]
    *                     description: Employees only.
+   *               contact:
+   *                 type: object
+   *                 additionalProperties: false
+   *                 properties:
+   *                   privatePhone:
+   *                     type: string
+   *                     nullable: true
+   *                     maxLength: 40
+   *                     description: International form. Stored in E.164.
+   *                   privateEmail:
+   *                     type: string
+   *                     format: email
+   *                     nullable: true
+   *                     maxLength: 254
+   *                     description: Stored lowercase.
+   *                   emergencyContact1:
+   *                     $ref: '#/components/schemas/DirectoryEmergencyContactInput'
+   *                   emergencyContact2:
+   *                     $ref: '#/components/schemas/DirectoryEmergencyContactInput'
+   *               personal:
+   *                 type: object
+   *                 additionalProperties: false
+   *                 description: Employees only.
+   *                 properties:
+   *                   homeAddress:
+   *                     type: object
+   *                     nullable: true
+   *                     additionalProperties: false
+   *                     required: [line1, city, country]
+   *                     properties:
+   *                       line1: { type: string, minLength: 1, maxLength: 200 }
+   *                       line2: { type: string, nullable: true, maxLength: 200 }
+   *                       postalCode: { type: string, nullable: true, maxLength: 16 }
+   *                       city: { type: string, minLength: 1, maxLength: 100 }
+   *                       region: { type: string, nullable: true, maxLength: 100 }
+   *                       country:
+   *                         type: string
+   *                         minLength: 2
+   *                         maxLength: 2
+   *                         description: ISO 3166-1 alpha-2.
+   *                   dateOfBirth:
+   *                     type: string
+   *                     format: date
+   *                     nullable: true
+   *                     description: From 1900-01-01 to today.
    *     responses:
    *       '200':
    *         description: The profile as the caller now reads it
@@ -646,7 +724,9 @@ export const directoryRouter = (): Router => {
    *           A malformed body, or `EMPLOYEES_ONLY` (an employee-only field set
    *           on an External worker), `PROBATION_BEFORE_START`,
    *           `REPORTS_TO_NOT_FOUND` (not an open Employment of the
-   *           organization), `REPORTS_TO_SELF` or `INVALID_PHONE`.
+   *           organization), `REPORTS_TO_SELF`, `INVALID_PHONE`,
+   *           `INVALID_COUNTRY` or `DATE_OF_BIRTH_OUT_OF_RANGE`.
+   *           `EMPLOYEES_ONLY` also answers Personal on an External worker's record.
    */
   app.patch(
     "/:organizationId/people/:employmentId",
@@ -818,6 +898,411 @@ export const directoryRouter = (): Router => {
    *         description: "`DIRECTORY_OFF`, or `EMPLOYMENT_ENDED`"
    */
   app.get("/:organizationId/people/:employmentId/end-preview", tryCatch(handleGetEndPreview));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     DirectoryEmergencyContact:
+   *       type: object
+   *       required: [name, phone]
+   *       properties:
+   *         name:
+   *           type: string
+   *         phone:
+   *           $ref: '#/components/schemas/DirectoryPhone'
+   *     DirectoryEmergencyContactInput:
+   *       type: object
+   *       nullable: true
+   *       additionalProperties: false
+   *       required: [name, phone]
+   *       description: A filled slot needs both. `null` clears it.
+   *       properties:
+   *         name:
+   *           type: string
+   *           minLength: 1
+   *           maxLength: 100
+   *         phone:
+   *           type: string
+   *           maxLength: 40
+   *           description: International form. Stored in E.164.
+   *     DirectoryShownContact:
+   *       type: object
+   *       required: [section, level, recorded, privatePhone, privateEmail, emergencyContact1, emergencyContact2]
+   *       properties:
+   *         section:
+   *           type: string
+   *           enum: [CONTACT]
+   *         level:
+   *           type: string
+   *           enum: [READ, WRITE]
+   *         recorded:
+   *           type: boolean
+   *           description: A read-log row was written. False for the person's own record.
+   *         privatePhone:
+   *           nullable: true
+   *           allOf:
+   *             - $ref: '#/components/schemas/DirectoryPhone'
+   *         privateEmail:
+   *           type: string
+   *           nullable: true
+   *         emergencyContact1:
+   *           nullable: true
+   *           allOf:
+   *             - $ref: '#/components/schemas/DirectoryEmergencyContact'
+   *         emergencyContact2:
+   *           nullable: true
+   *           allOf:
+   *             - $ref: '#/components/schemas/DirectoryEmergencyContact'
+   *     DirectoryShownPersonal:
+   *       type: object
+   *       required: [section, level, recorded, homeAddress, dateOfBirth]
+   *       properties:
+   *         section:
+   *           type: string
+   *           enum: [PERSONAL]
+   *         level:
+   *           type: string
+   *           enum: [READ, WRITE]
+   *         recorded:
+   *           type: boolean
+   *           description: A read-log row was written. False for the person's own record.
+   *         homeAddress:
+   *           type: object
+   *           nullable: true
+   *           required: [line1, line2, postalCode, city, region, country]
+   *           properties:
+   *             line1: { type: string }
+   *             line2: { type: string, nullable: true }
+   *             postalCode: { type: string, nullable: true }
+   *             city: { type: string }
+   *             region: { type: string, nullable: true }
+   *             country:
+   *               $ref: '#/components/schemas/DirectoryCountry'
+   *         dateOfBirth:
+   *           type: string
+   *           format: date
+   *           nullable: true
+   */
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people/{employmentId}/show/{section}:
+   *   post:
+   *     tags:
+   *       - Directory
+   *     summary: Show one Sensitive section of a profile
+   *     description: |
+   *       Returns the values of Contact or Personal, the only route that
+   *       carries them. The caller needs a read cell for the Section in the
+   *       organization's Permission table. For anyone but the person, each
+   *       call writes one read-log row: reader, Employment, Section, the
+   *       Audience that granted the read and the time, never the values. The
+   *       person's own record writes none. Personal applies to employees
+   *       only. A lapsed plan keeps this readable. The answer is never cached.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: section
+   *         required: true
+   *         schema:
+   *           type: string
+   *           enum: [contact, personal]
+   *       - in: query
+   *         name: language
+   *         required: false
+   *         description: The language of country names. Defaults to the caller's stored language, then English.
+   *         schema:
+   *           type: string
+   *           enum: [en, cs]
+   *     responses:
+   *       '200':
+   *         description: The Section's values
+   *         content:
+   *           application/json:
+   *             schema:
+   *               oneOf:
+   *                 - $ref: '#/components/schemas/DirectoryShownContact'
+   *                 - $ref: '#/components/schemas/DirectoryShownPersonal'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `SECTION_NOT_READABLE` when the caller has no read cell for the Section"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, `PERSON_NOT_FOUND`, or `SECTION_NOT_FOUND` for a Section other than contact and personal"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: "`EMPLOYEES_ONLY`: Personal on an External worker's record"
+   */
+  app.post("/:organizationId/people/:employmentId/show/:section", tryCatch(handlePostShowSection));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/read-log:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: The organization's Read log
+   *     description: |
+   *       Who read a Sensitive section of someone else's profile, when, which
+   *       Sections and through which Audience, plus every Person and
+   *       Organization export (kind `export`), newest first. Readers' names are
+   *       included; values never are, because the rows hold none. The owner and
+   *       org admins only; HR reads it only by also being an org admin. Rows are
+   *       kept 12 months. `people` and `readers` list everyone the log holds,
+   *       for the filters. A lapsed plan keeps this readable.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: employmentId
+   *         required: false
+   *         description: Only rows about this Employment.
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: readerUserId
+   *         required: false
+   *         description: Only rows by this reader.
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: before
+   *         required: false
+   *         description: The `nextBefore` of the previous page.
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: limit
+   *         required: false
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 200
+   *           default: 50
+   *     responses:
+   *       '200':
+   *         description: One page of the log
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [entries, nextBefore, people, readers]
+   *               properties:
+   *                 entries:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     required: [id, kind, at, reader, person, sections, audience]
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       kind:
+   *                         type: string
+   *                         enum: [read, export]
+   *                       at:
+   *                         type: string
+   *                         format: date-time
+   *                       reader:
+   *                         type: object
+   *                         properties:
+   *                           userId: { type: string }
+   *                           name: { type: string, nullable: true }
+   *                       person:
+   *                         type: object
+   *                         properties:
+   *                           employmentId: { type: string, nullable: true }
+   *                           name:
+   *                             type: string
+   *                             nullable: true
+   *                             description: Null once the person was erased.
+   *                       sections:
+   *                         type: array
+   *                         nullable: true
+   *                         description: The Sections a read opened; null on an export.
+   *                         items:
+   *                           type: string
+   *                           enum: [CONTACT, PERSONAL]
+   *                       audience:
+   *                         type: string
+   *                         enum: [OWNER, ORGANIZATION_ADMIN, SELF, HR, LEADERSHIP, GROUP_ADMIN, COLLEAGUE, EXTERNAL_WORKER]
+   *                 nextBefore:
+   *                   type: string
+   *                   nullable: true
+   *                 people:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       employmentId: { type: string }
+   *                       name: { type: string }
+   *                 readers:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       userId: { type: string }
+   *                       name: { type: string, nullable: true }
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `READ_LOG_DENIED` for anyone but the owner and org admins"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: A malformed query
+   */
+  app.get("/:organizationId/read-log", tryCatch(handleGetReadLog));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     DirectoryGeneralSettings:
+   *       type: object
+   *       required: [editable, emergencyContactNotice, defaults, period]
+   *       properties:
+   *         editable:
+   *           type: boolean
+   *           description: The caller is the owner or an org admin, who change these. HR reads them.
+   *         emergencyContactNotice:
+   *           type: object
+   *           description: The organization's own Art. 14 notice per language, null where it uses the default.
+   *           properties:
+   *             en: { type: string, nullable: true }
+   *             cs: { type: string, nullable: true }
+   *         defaults:
+   *           type: object
+   *           description: The product's default texts, with `{organization}` and `{period}` unfilled.
+   *           properties:
+   *             en: { type: string }
+   *             cs: { type: string }
+   *         period:
+   *           type: object
+   *           description: What `{period}` reads as, how long Contact is kept after an Employment ends.
+   *           properties:
+   *             en: { type: string }
+   *             cs: { type: string }
+   */
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/settings/general:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: The General tab of Directory settings
+   *     description: |
+   *       The Art. 14 notice shown under the emergency contacts to whoever
+   *       edits them, in English and Czech: the organization's own text or the
+   *       product default. `{organization}` becomes the organization's name and
+   *       `{period}` how long Contact is kept after an Employment ends. The
+   *       owner, org admins and HR read it.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The General settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryGeneralSettings'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `SETTINGS_DENIED` for anyone but the owner, org admins and HR"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *   put:
+   *     tags:
+   *       - Directory
+   *     summary: Change the Art. 14 notice
+   *     description: |
+   *       Sets the organization's own notice text per language. `null` goes back
+   *       to the product default and a missing key leaves the text as it is.
+   *       The owner and org admins only. Works on every plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [emergencyContactNotice]
+   *             properties:
+   *               emergencyContactNotice:
+   *                 type: object
+   *                 additionalProperties: false
+   *                 properties:
+   *                   en:
+   *                     type: string
+   *                     nullable: true
+   *                     minLength: 1
+   *                     maxLength: 2000
+   *                   cs:
+   *                     type: string
+   *                     nullable: true
+   *                     minLength: 1
+   *                     maxLength: 2000
+   *     responses:
+   *       '200':
+   *         description: The General settings as saved
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryGeneralSettings'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, `SETTINGS_DENIED`, or `SETTINGS_NOT_EDITABLE` for HR"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: A malformed body
+   */
+  app.get("/:organizationId/settings/general", tryCatch(handleGetDirectoryGeneralSettings));
+  app.put(
+    "/:organizationId/settings/general",
+    bodyValidationMiddleware(validatePutDirectoryGeneralSettings),
+    tryCatch(handlePutDirectoryGeneralSettings)
+  );
 
   /**
    * @openapi

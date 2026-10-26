@@ -443,7 +443,7 @@ describe("Person export", () => {
         expect.objectContaining({ detail: "Quota for 2026 set to 25 days", by: "Olga Owner" }),
       ]);
       expect(person.readLog).toEqual([
-        { at: expect.any(String), kind: "export", purpose: "owner" },
+        { at: expect.any(String), kind: "export", sections: null, purpose: "owner" },
       ]);
 
       const bookings = entries.get("bookings.csv")!.toString("utf8").split("\r\n");

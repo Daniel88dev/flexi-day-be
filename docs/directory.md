@@ -300,3 +300,58 @@ early; the next response signs a fresh one.
 
 The Person export carries each spell's full photo as `profile-photos/<employmentId>.jpg`, named in
 `employments[].photo`.
+
+## Sensitive sections
+
+Decisions: fenro T-473 (the fields), T-477 (encryption and the Read log), T-478 (Show), T-474
+(export) and T-504 (this build).
+
+Contact and Personal are the Sensitive sections. They live in `directory_sensitive_profiles`, one
+row per Employment, each Section one JSON value sealed under the organization's data key (see
+[`field-encryption.md`](field-encryption.md)). An emptied Section stores null. Nothing in them is
+searched, sorted or kept unique.
+
+| Section  | Field                     | Rule                                                                                                                       |
+| -------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Contact  | Private phone             | One number in international form, stored in E.164                                                                          |
+| Contact  | Private email             | Up to 254 characters, stored lowercase                                                                                     |
+| Contact  | Emergency contact 1 and 2 | A name (1 to 100) and a phone (E.164), both needed in a filled slot; no relation                                           |
+| Personal | Home address              | Line 1, line 2, postal code (up to 16), city, region, ISO country; line 1, city and country needed once any part is filled |
+| Personal | Date of birth             | From 1900-01-01 to today in the organization's time zone                                                                   |
+
+Personal applies to employees only: the profile leaves it out on an External worker's record, and
+Show and writes answer 422 `EMPLOYEES_ONLY`. Writes go through the profile `PATCH` as `contact`
+and `personal`, with the same plan rule and profile history as the other Sections. Further
+refusals: 422 `INVALID_COUNTRY`, `DATE_OF_BIRTH_OUT_OF_RANGE`.
+
+### Show and the Read log
+
+No profile or `PATCH` answer carries a Contact or Personal value, for anyone. The values come only
+from `POST /api/directory/{organizationId}/people/{employmentId}/show/{contact|personal}`, for a
+caller whose cell reads the Section (403 `SECTION_NOT_READABLE` otherwise). For anyone but the
+person, each call writes one `read_log` row of kind `read`: reader, Employment, the Section, the
+Audience whose cell granted it, the time, never a value. The person's own record writes none, in
+any spell. The web holds an opened Section for the visit to that person, so the profile and the
+edit page share one Show.
+
+A record without an account has no subject user: its row has `subject_user_id` null and names the
+Employment in `employment_ids`. Rows outlive Erase, because they hold no values.
+
+`GET /api/directory/{organizationId}/read-log` lists reads and exports, newest first, with readers'
+names, filterable by `employmentId` and `readerUserId`, to the owner and org admins (403
+`READ_LOG_DENIED` otherwise, HR included). The nightly tick removes rows older than 12 months
+(`runReadLogPurge`). The phone never shows the log.
+
+The Person export carries each spell's `contact` and `personal` as stored, and `readLog` with the
+date, kind, Sections and a purpose label taken from the Audience (HR administration, organization
+administration, line management, leadership, owner), without readers. The Organization export does
+the same for people without an account.
+
+### The Art. 14 notice
+
+Whoever writes Contact gets `sections.contact.notice` on the profile, shown under the emergency
+contacts. The product default text is in `emergencyContactNotice.ts`, in English and Czech; the
+legal wording is the owner's (T-496). The owner and org admins replace it per language through
+`PUT /api/directory/{organizationId}/settings/general`; HR reads it. `{organization}` becomes the
+organization's name and `{period}` how long Contact is kept after the end: 30 days until retention
+periods become editable (T-511).

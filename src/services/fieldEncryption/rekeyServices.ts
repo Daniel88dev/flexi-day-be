@@ -17,7 +17,14 @@ export type EncryptedTable = {
  * exactly these, so a table that encrypts a field and is missing here is left
  * unreadable by the first re-key.
  */
-export const ENCRYPTED_TABLES: EncryptedTable[] = [];
+export const ENCRYPTED_TABLES: EncryptedTable[] = [
+  {
+    table: "directory_sensitive_profiles",
+    id: "employment_id",
+    organizationId: "organization_id",
+    columns: ["contact", "personal"],
+  },
+];
 
 export type RekeyResult = {
   organizationId: string;

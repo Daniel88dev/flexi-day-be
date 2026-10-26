@@ -335,7 +335,7 @@ describe("Employments by spell", () => {
       );
       expect(people.every((person) => typeof person.userId === "string")).toBe(true);
       const logged = await organizationPeople(organizationId);
-      expect(logged.flatMap((person) => person.employmentIds)).not.toContain(recordId);
+      expect(logged).toContainEqual({ userId: null, employmentIds: [recordId] });
     });
   });
 });

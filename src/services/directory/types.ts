@@ -7,6 +7,7 @@ import {
   directoryPermissionRow,
   directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
+import { readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 import type { CountryView, PhoneView } from "./contactFormat.js";
 
@@ -106,6 +107,49 @@ export type DirectoryPhotoView = DirectorySectionView & {
   photo: { smallUrl: string; fullUrl: string } | null;
 };
 
+export type EmergencyContactView = { name: string; phone: PhoneView };
+
+/** The Contact values, only ever in a Show response. */
+export type ContactSectionValues = {
+  privatePhone: PhoneView | null;
+  /** Lowercase. */
+  privateEmail: string | null;
+  emergencyContact1: EmergencyContactView | null;
+  emergencyContact2: EmergencyContactView | null;
+};
+
+export type HomeAddressView = {
+  line1: string;
+  line2: string | null;
+  postalCode: string | null;
+  city: string;
+  region: string | null;
+  country: CountryView;
+};
+
+/** The Personal values, only ever in a Show response. */
+export type PersonalSectionValues = {
+  homeAddress: HomeAddressView | null;
+  /** `YYYY-MM-DD`. */
+  dateOfBirth: string | null;
+};
+
+/**
+ * The Contact Section on a profile: never its values, which only Show returns.
+ * Whoever writes it gets the Art. 14 notice and the phone picker's start.
+ */
+export type DirectoryContactView = DirectorySectionView & {
+  notice?: string;
+  phoneCountryDefault?: CountryView | null;
+};
+
+export type SensitiveSectionName = "contact" | "personal";
+
+/** What Show returns for one Sensitive section. `recorded` says a read-log row was written. */
+export type ShownSection =
+  | ({ section: "CONTACT"; level: "READ" | "WRITE"; recorded: boolean } & ContactSectionValues)
+  | ({ section: "PERSONAL"; level: "READ" | "WRITE"; recorded: boolean } & PersonalSectionValues);
+
 export type DirectoryPeople = {
   people: DirectoryPerson[];
   formerList: boolean;
@@ -136,7 +180,8 @@ export type DirectoryProfile = DirectoryPerson & {
     photo?: DirectoryPhotoView;
     workContact?: DirectoryWorkContactView;
     job?: DirectoryJobView;
-    contact?: DirectorySectionView;
+    contact?: DirectoryContactView;
+    /** Absent on an External worker's record: Personal applies to employees only. */
     personal?: DirectorySectionView;
   };
   /** The owner, org admins and HR read the profile history. */
@@ -154,6 +199,13 @@ export type DirectoryProfile = DirectoryPerson & {
 /** A value sets the field, `null` clears it, and a missing key leaves it as it is. */
 const text = (max: number) => z.string().trim().min(1).max(max).nullable().optional();
 const day = z.iso.date().nullable().optional();
+const optionalLine = (max: number) => z.string().trim().max(max).nullable().optional();
+const phone = z.string().trim().min(1).max(40);
+const emergencyContact = z
+  .object({ name: z.string().trim().min(1).max(100), phone })
+  .strict()
+  .nullable()
+  .optional();
 
 export const validatePatchDirectoryProfile = z
   .object({
@@ -182,6 +234,43 @@ export const validatePatchDirectoryProfile = z
         probationEndDate: day,
         contractType: z.enum(contractType).nullable().optional(),
         workingTime: z.enum(workingTime).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+    contact: z
+      .object({
+        /** International form; the service parses it and stores E.164. */
+        privatePhone: phone.nullable().optional(),
+        privateEmail: z
+          .string()
+          .trim()
+          .toLowerCase()
+          .pipe(z.email().max(254))
+          .nullable()
+          .optional(),
+        /** A filled slot needs both a name and a phone. */
+        emergencyContact1: emergencyContact,
+        emergencyContact2: emergencyContact,
+      })
+      .strict()
+      .optional(),
+    personal: z
+      .object({
+        /** Line 1, city and country are needed once any part is filled. */
+        homeAddress: z
+          .object({
+            line1: z.string().trim().min(1).max(200),
+            line2: optionalLine(200),
+            postalCode: optionalLine(16),
+            city: z.string().trim().min(1).max(100),
+            region: optionalLine(100),
+            /** ISO 3166-1 alpha-2. */
+            country: z.string().trim().toUpperCase().length(2),
+          })
+          .strict()
+          .nullable()
+          .optional(),
+        dateOfBirth: day,
       })
       .strict()
       .optional(),
@@ -298,3 +387,55 @@ export const validatePhotoProcessed = z.discriminatedUnion("status", [
 ]);
 
 export type PhotoProcessedPayload = z.infer<typeof validatePhotoProcessed>;
+export const validateReadLogQuery = z.object({
+  employmentId: z.string().min(1).optional(),
+  readerUserId: z.string().min(1).optional(),
+  /** The id of the last row of the previous page. */
+  before: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export type ReadLogEntry = {
+  id: string;
+  kind: readLogKind;
+  at: Date;
+  /** `name` is null once the reader's user row is gone. */
+  reader: { userId: string; name: string | null };
+  /** `name` is null once the person was erased. */
+  person: { employmentId: string | null; name: string | null };
+  /** The Sections a read opened; null on an export. */
+  sections: directoryPermissionRow[] | null;
+  audience: readLogAudience;
+};
+
+export type ReadLogPage = {
+  entries: ReadLogEntry[];
+  /** Pass as `before` for the next page; null on the last. */
+  nextBefore: string | null;
+  /** Everyone the log holds rows about, for the person filter. */
+  people: { employmentId: string; name: string }[];
+  /** Everyone the log holds rows by, for the reader filter. */
+  readers: { userId: string; name: string | null }[];
+};
+
+const noticeText = z.string().trim().min(1).max(2000).nullable().optional();
+
+export const validatePutDirectoryGeneralSettings = z
+  .object({
+    /** The organization's own Art. 14 notice per language; null goes back to the default. */
+    emergencyContactNotice: z.object({ en: noticeText, cs: noticeText }).strict(),
+  })
+  .strict();
+
+export type PutDirectoryGeneralSettings = z.infer<typeof validatePutDirectoryGeneralSettings>;
+
+export type DirectoryGeneralSettings = {
+  /** The owner and org admins change these; HR reads them. */
+  editable: boolean;
+  /** The organization's own texts; null where it uses the default. */
+  emergencyContactNotice: { en: string | null; cs: string | null };
+  /** The product defaults, with `{organization}` and `{period}` unfilled. */
+  defaults: { en: string; cs: string };
+  /** What `{period}` reads as: how long Contact is kept after an Employment ends. */
+  period: { en: string; cs: string };
+};

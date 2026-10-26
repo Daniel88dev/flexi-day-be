@@ -77,6 +77,9 @@ export const organizationDirectorySettings = pgTable("organization_directory_set
   disabledByUserId: text("disabled_by_user_id").references(() => user.id, {
     onDelete: "set null",
   }),
+  /** The organization's own Art. 14 emergency-contact notice; null reads as the product default. */
+  emergencyContactNoticeEn: text("emergency_contact_notice_en"),
+  emergencyContactNoticeCs: text("emergency_contact_notice_cs"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
