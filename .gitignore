@@ -171,6 +171,7 @@ terraform.rc
 
 # the disk attachment store's files (ATTACHMENTS_DIR default)
 .attachments/
+.organization-data/
 
 # attachment-processor Lambda build output (npm run lambda:build)
 lambda/attachment-processor/dist/

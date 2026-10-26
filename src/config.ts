@@ -82,6 +82,18 @@ type AttachmentsConfig = {
   callbackSecret?: string;
 };
 
+type OrganizationDataConfig = {
+  /**
+   * The organization-data bucket (`exports/` today). Unset means the disk store
+   * under `localDir`, except in production, where nothing is stored until it is set.
+   */
+  bucket?: string;
+  /** Read for field encryption later; the bucket's default SSE-KMS key covers the store. */
+  kmsKeyArn?: string;
+  region: string;
+  localDir: string;
+};
+
 type OAuthClientCredentials = { clientId: string; clientSecret: string };
 
 type CalendarSyncConfig = {
@@ -130,6 +142,7 @@ type Config = {
   /** Platform-support read surface. `undefined` means the routes do not exist. */
   support?: SupportConfig;
   attachments: AttachmentsConfig;
+  organizationData: OrganizationDataConfig;
   /** Direct writes into users' Google or Microsoft calendars. `undefined` when no provider is on. */
   calendarSync?: CalendarSyncConfig;
   /** Push to phones straight through APNs. `undefined` means the log sender stands in. */
@@ -326,6 +339,15 @@ const parseAttachments = (): AttachmentsConfig => {
   };
 };
 
+// Optional even in production: the Terraform that creates the bucket is applied
+// by hand, and a required variable would stop the deploy before it is.
+const parseOrganizationData = (): OrganizationDataConfig => ({
+  bucket: process.env.ORGANIZATION_DATA_BUCKET || undefined,
+  kmsKeyArn: process.env.ORGANIZATION_DATA_KMS_KEY_ARN || undefined,
+  region: awsRegion,
+  localDir: process.env.ORGANIZATION_DATA_DIR || path.resolve(".organization-data", environment),
+});
+
 /**
  * Connections reuse the sign-in OAuth clients, so a provider's switch counts
  * only while that provider's sign-in credentials are configured.
@@ -445,6 +467,7 @@ export const config: Config = {
   dev: parseDevTools(),
   support: parseSupport(),
   attachments: parseAttachments(),
+  organizationData: parseOrganizationData(),
   calendarSync: parseCalendarSync(),
   apns: parseApns(),
 };

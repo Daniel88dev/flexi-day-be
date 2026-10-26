@@ -9,6 +9,7 @@ export enum notificationType {
   BalanceLow = "balance_low",
   Comment = "comment",
   SessionAutoClosed = "session_auto_closed",
+  ExportReady = "export_ready",
 }
 
 export const notificationTypeEnum = pgEnum("notification_type", enumToPgEnum(notificationType));
