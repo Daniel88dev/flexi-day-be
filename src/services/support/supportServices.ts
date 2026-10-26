@@ -18,6 +18,7 @@ import type {
   SupportOrganizationListItem,
 } from "./types.js";
 import { personName } from "../person/personName.js";
+import { directorySupportSummary } from "../directory/directorySettingsServices.js";
 
 const SEARCH_LIMIT = 50;
 const VACATION_LIMIT = 200;
@@ -169,6 +170,7 @@ export const getOrganizationDetailForSupport = async (
       members: membersByGroup.get(group.id) ?? 0,
     })),
     admins: await listOrganizationAdmins(organizationId),
+    directory: await directorySupportSummary(organizationId),
   };
 };
 

@@ -37,6 +37,7 @@ import { requestContext } from "./middleware/requestContext.js";
 import { billingRouter } from "./routes/billingRouter.js";
 import { organizationRouter } from "./routes/organizationRouter.js";
 import { employmentRouter } from "./routes/employmentRouter.js";
+import { directoryRouter } from "./routes/directoryRouter.js";
 import { attendanceRouter } from "./routes/attendanceRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
 import { supportRouter } from "./routes/supportRouter.js";
@@ -140,6 +141,7 @@ export const createServer = () => {
   app.use("/api/billing", billingRouter());
   app.use("/api/organization", organizationRouter());
   app.use("/api/employment", employmentRouter());
+  app.use("/api/directory", directoryRouter());
   app.use("/api/attendance", attendanceRouter());
   app.use("/api/attachments", attachmentRouter());
   app.use("/api/person-exports", personExportRouter());

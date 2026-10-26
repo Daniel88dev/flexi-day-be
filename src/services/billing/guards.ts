@@ -395,3 +395,39 @@ export const assertGroupEventsActive = async (
     });
   }
 };
+
+export const DIRECTORY_PLAN_REQUIRED = "DIRECTORY_PLAN_REQUIRED";
+
+/**
+ * Whether the organization may add directory data right now: Enterprise or a
+ * Custom override, grace included. The first Enterprise-only check, so it
+ * names the plans instead of testing `!== "FREE"`. Resolved at read time like
+ * every entitlement, so a lapse closes writes without touching a row.
+ */
+export const isDirectoryWritable = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<boolean> => {
+  const { plan } = await entitlementsForOrganization(organizationId, tx);
+  return plan === "ENTERPRISE" || plan === "CUSTOM";
+};
+
+/**
+ * Throws 402 unless {@link isDirectoryWritable}. Guards turning the directory
+ * on and every write that adds directory data. Removing data (turning off,
+ * clearing, erasing, retention) never calls it.
+ */
+export const assertDirectoryWritable = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  if (!(await isDirectoryWritable(organizationId, tx))) {
+    throw new AppError({
+      message: "The people directory requires the Enterprise plan",
+      logging: true,
+      code: 402,
+      context: { organizationId },
+      publicContext: { reason: "PLAN_LIMIT", code: DIRECTORY_PLAN_REQUIRED },
+    });
+  }
+};

@@ -59,6 +59,8 @@ import {
   assertCanAddMember,
   assertCanCreateGroup,
   assertCanEnableSickDayBenefit,
+  assertDirectoryWritable,
+  isDirectoryWritable,
   isAttachmentUploadAvailable,
   assertGroupEventsActive,
   assertGroupsWritable,
@@ -549,5 +551,67 @@ describe("assertGroupEventsActive", () => {
     });
 
     await expect(assertGroupEventsActive("group-1")).resolves.toBeUndefined();
+  });
+});
+
+describe("directory plan gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const paid = (plan: subscriptionPlan, status: subscriptionStatus, graceEndsAt: Date | null) => ({
+    ...lapsedProSub,
+    plan,
+    status,
+    graceEndsAt,
+  });
+  const inGrace = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const override = (plan: manualPlanOverride) => ({
+    ...lapsedProSub,
+    plan: null,
+    status: null,
+    manualPlanOverride: plan,
+  });
+
+  it.each([
+    [
+      "an active Enterprise subscription",
+      paid(subscriptionPlan.Enterprise, subscriptionStatus.Active, null),
+    ],
+    [
+      "a trialing Enterprise subscription",
+      paid(subscriptionPlan.Enterprise, subscriptionStatus.Trialing, null),
+    ],
+    ["Enterprise in grace", paid(subscriptionPlan.Enterprise, subscriptionStatus.PastDue, inGrace)],
+    ["an Enterprise override", override(manualPlanOverride.Enterprise)],
+    ["a Custom override", override(manualPlanOverride.Custom)],
+  ])("passes %s", async (_label, sub) => {
+    mockGetSubscription.mockResolvedValue(sub);
+
+    await expect(isDirectoryWritable("org-1")).resolves.toBe(true);
+    await expect(assertDirectoryWritable("org-1")).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["Free, with no subscription", undefined],
+    ["an active Pro subscription", paid(subscriptionPlan.Pro, subscriptionStatus.Active, null)],
+    ["Pro in grace", paid(subscriptionPlan.Pro, subscriptionStatus.PastDue, inGrace)],
+    ["a Pro override", override(manualPlanOverride.Pro)],
+    [
+      "Enterprise after its grace ran out",
+      paid(subscriptionPlan.Enterprise, subscriptionStatus.Canceled, new Date(0)),
+    ],
+  ])("refuses %s with a 402", async (_label, sub) => {
+    mockGetSubscription.mockResolvedValue(sub);
+
+    await expect(isDirectoryWritable("org-1")).resolves.toBe(false);
+    await expect(assertDirectoryWritable("org-1")).rejects.toMatchObject({
+      code: 402,
+      errors: [
+        expect.objectContaining({
+          publicContext: { reason: "PLAN_LIMIT", code: "DIRECTORY_PLAN_REQUIRED" },
+        }),
+      ],
+    });
   });
 });

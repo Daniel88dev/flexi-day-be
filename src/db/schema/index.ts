@@ -33,6 +33,11 @@ import { authSecretFingerprint } from "./auth-secret-schema.js";
 import { personExports } from "./person-export-schema.js";
 import { readLog } from "./read-log-schema.js";
 import { organizationDataKeys } from "./organization-data-key-schema.js";
+import {
+  directoryAgreementAcceptances,
+  directoryPermissionCells,
+  organizationDirectorySettings,
+} from "./directory-schema.js";
 
 export const schema = {
   account,
@@ -76,4 +81,7 @@ export const schema = {
   personExports,
   readLog,
   organizationDataKeys,
+  organizationDirectorySettings,
+  directoryAgreementAcceptances,
+  directoryPermissionCells,
 };
