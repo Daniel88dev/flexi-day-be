@@ -11,6 +11,7 @@ import {
   directoryPermissionRow,
   directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
+import { workerType } from "../../db/schema/employment-schema.js";
 import { readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 import type { CountryView, PhoneView } from "./contactFormat.js";
@@ -217,14 +218,16 @@ export type DirectoryPeople = {
   settings: boolean;
   /** The rows carry `noGroup`: the owner and org admins. */
   noGroupFilter: boolean;
+  /** The viewer holds the Create account-less person act. */
+  addPerson: boolean;
 };
 
 export type ProfileActions = {
   /** End employment, by the End act cell, on an open record that isn't the owner's. */
   end: boolean;
-  /** The Person export: the owner and org admins, for a person with an account. */
+  /** The Person export: the owner and org admins, on any record. */
   export: boolean;
-  /** Erase: the owner and org admins, for a Deleted account. */
+  /** Erase: the owner and org admins, for a Deleted account or a person without an account. */
   erase: boolean;
   /** Set or lift the Retention hold: the owner and org admins, on an ended record. */
   hold: boolean;
@@ -344,6 +347,32 @@ export const validatePatchDirectoryProfile = z
   .strict();
 
 export type PatchDirectoryProfile = z.infer<typeof validatePatchDirectoryProfile>;
+
+const directoryEmail = z.string().trim().toLowerCase().pipe(z.email().max(254));
+
+/** Add person: an Employment without an account, with the Card fields the dialog offers. */
+export const validatePostDirectoryPerson = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    type: z.enum(workerType).default(workerType.Employee),
+    email: directoryEmail.nullable().optional(),
+    card: z
+      .object({
+        jobTitle: text(100),
+        reportsToEmploymentId: z.string().min(1).nullable().optional(),
+        departmentId: z.string().min(1).nullable().optional(),
+        locationId: z.string().min(1).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type PostDirectoryPerson = z.infer<typeof validatePostDirectoryPerson>;
+
+export const validateDirectoryEmailCheck = z.object({ email: directoryEmail }).strict();
+
+export type DirectoryEmailCheck = z.infer<typeof validateDirectoryEmailCheck>;
 
 export type ProfileHistoryEntry = {
   id: string;

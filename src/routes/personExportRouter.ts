@@ -72,7 +72,7 @@ export const personExportRouter = (): Router => {
    *   schemas:
    *     PersonExport:
    *       type: object
-   *       required: [id, organizationId, scope, subjectUserId, status, createdAt, readyAt, expiresAt]
+   *       required: [id, organizationId, scope, subjectUserId, subjectEmploymentId, status, createdAt, readyAt, expiresAt]
    *       properties:
    *         id:
    *           type: string
@@ -86,7 +86,13 @@ export const personExportRouter = (): Router => {
    *         subjectUserId:
    *           type: string
    *           nullable: true
-   *           description: The person the export is about; null for an Organization export.
+   *           description: |
+   *             The person the export is about; null for an Organization
+   *             export and for a person without an account.
+   *         subjectEmploymentId:
+   *           type: string
+   *           nullable: true
+   *           description: The Employment of a person without an account the export is about.
    *         status:
    *           type: string
    *           enum: [PENDING, READY, FAILED]

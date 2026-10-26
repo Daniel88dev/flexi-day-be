@@ -1,5 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { appLanguage } from "../../db/schema/user-settings-schema.js";
@@ -35,6 +36,16 @@ export const canReadPermissionTable = (viewer: DirectoryViewer) =>
   viewer.standing.owner ||
   viewer.standing.organizationAdmin ||
   viewer.standing.roles.includes("HR");
+
+/**
+ * The audience whose Create account-less person cell lets the viewer add a
+ * person, or null. The act resolves on the record it creates, open and without
+ * an account, which no group admin reaches, so Group admin never credits.
+ */
+export const createPersonGrantor = (viewer: DirectoryViewer) =>
+  viewer.accessTo({ userId: null, ended: false }).actGrantedBy[
+    directoryPermissionRow.CreateAccountlessPerson
+  ];
 
 /** User ids the viewer reaches as a Group admin: the plain members of the groups they manage or hold admin access in. */
 const readGroupAdminReach = async (

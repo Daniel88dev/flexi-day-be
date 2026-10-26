@@ -2,8 +2,10 @@ import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
+  validateDirectoryEmailCheck,
   validatePatchDirectoryProfile,
   validatePatchPermissionCell,
+  validatePostDirectoryPerson,
   validatePutDirectoryGeneralSettings,
   validatePutRetentionPeriod,
   validatePutDirectoryRoles,
@@ -29,6 +31,8 @@ import { handlePutRetentionPeriod } from "../controllers/directory/handlePutRete
 import { handlePutRetentionHold } from "../controllers/directory/handlePutRetentionHold.js";
 import { handleDeleteRetentionHold } from "../controllers/directory/handleDeleteRetentionHold.js";
 import { handlePatchDirectoryProfile } from "../controllers/directory/handlePatchDirectoryProfile.js";
+import { handlePostDirectoryEmailCheck } from "../controllers/directory/handlePostDirectoryEmailCheck.js";
+import { handlePostDirectoryPerson } from "../controllers/directory/handlePostDirectoryPerson.js";
 import { handleGetDirectoryOrganizations } from "../controllers/directory/handleGetDirectoryOrganizations.js";
 import { handleGetDirectoryPeople } from "../controllers/directory/handleGetDirectoryPeople.js";
 import { handleGetDirectoryProfile } from "../controllers/directory/handleGetDirectoryProfile.js";
@@ -447,7 +451,8 @@ export const directoryRouter = (): Router => {
    *       the Former list (the owner, org admins and HR), `settings`
    *       whether they may open Directory settings (the same three), and
    *       `noGroupFilter` whether the rows carry `noGroup` (the owner and org
-   *       admins).
+   *       admins), and `addPerson` whether the caller holds the Create
+   *       account-less person act.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -463,7 +468,7 @@ export const directoryRouter = (): Router => {
    *           application/json:
    *             schema:
    *               type: object
-   *               required: [people, formerList, settings, noGroupFilter]
+   *               required: [people, formerList, settings, noGroupFilter, addPerson]
    *               properties:
    *                 people:
    *                   type: array
@@ -475,6 +480,8 @@ export const directoryRouter = (): Router => {
    *                   type: boolean
    *                 noGroupFilter:
    *                   type: boolean
+   *                 addPerson:
+   *                   type: boolean
    *       '401':
    *         description: Not signed in
    *       '403':
@@ -485,6 +492,172 @@ export const directoryRouter = (): Router => {
    *         description: "`DIRECTORY_OFF`: the directory is off in this organization"
    */
   app.get("/:organizationId/people", tryCatch(handleGetDirectoryPeople));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people:
+   *   post:
+   *     tags:
+   *       - Directory
+   *     summary: Add a person without an account
+   *     description: |
+   *       Opens an Employment with no account bound, holding the person's
+   *       name, worker type and optional email, plus the Card fields given.
+   *       Needs the Create account-less person act cell (Owner, HR and Org
+   *       admin by default); the act covers the name and the Card fields
+   *       without a Card write cell. Group admin never credits, because no
+   *       group admin reaches a person without an account. One Card entry in
+   *       the profile history records the name and the fields set.
+   *
+   *       The email is unique among the organization's open Employments,
+   *       compared ignoring case. Such a person is in no group and gets no
+   *       bookings, attendance, quotas or notifications. Needs the directory
+   *       plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: language
+   *         required: false
+   *         description: The language of country names in the answer.
+   *         schema:
+   *           type: string
+   *           enum: [en, cs]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [name]
+   *             properties:
+   *               name:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 200
+   *                 description: Trimmed.
+   *               type:
+   *                 type: string
+   *                 enum: [employee, external]
+   *                 default: employee
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 maxLength: 254
+   *                 nullable: true
+   *                 description: Stored lowercased.
+   *               card:
+   *                 type: object
+   *                 additionalProperties: false
+   *                 properties:
+   *                   jobTitle:
+   *                     type: string
+   *                     minLength: 1
+   *                     maxLength: 100
+   *                     nullable: true
+   *                   departmentId:
+   *                     type: string
+   *                     nullable: true
+   *                   locationId:
+   *                     type: string
+   *                     nullable: true
+   *                   reportsToEmploymentId:
+   *                     type: string
+   *                     nullable: true
+   *                     description: Another open Employment of the organization.
+   *     responses:
+   *       '201':
+   *         description: The new profile
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryProfile'
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: "`reason: PLAN_LIMIT`: the organization's plan doesn't include the directory"
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `CREATE_DENIED` without the Create account-less person act"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`, or `EMPLOYMENT_EMAIL_TAKEN` when an open Employment holds the email"
+   *       '422':
+   *         description: "A malformed body, `ENTRY_NOT_FOUND`, `ENTRY_ARCHIVED`, `REPORTS_TO_NOT_FOUND` or `REPORTS_TO_SELF`"
+   */
+  app.post(
+    "/:organizationId/people",
+    bodyValidationMiddleware(validatePostDirectoryPerson),
+    tryCatch(handlePostDirectoryPerson)
+  );
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people/email-check:
+   *   post:
+   *     tags:
+   *       - Directory
+   *     summary: Whether an email is free for Add person
+   *     description: |
+   *       Answers whether any open Employment of the organization, with or
+   *       without an account, holds the email, ignoring case. The Add person
+   *       dialog asks on blur. The email travels in the body, never the URL.
+   *       Only for viewers holding the Create account-less person act cell.
+   *       Writes nothing and is never plan-gated.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [email]
+   *             properties:
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 maxLength: 254
+   *     responses:
+   *       '200':
+   *         description: The answer
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [available]
+   *               properties:
+   *                 available:
+   *                   type: boolean
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY` or `CREATE_DENIED`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: A malformed body
+   */
+  app.post(
+    "/:organizationId/people/email-check",
+    bodyValidationMiddleware(validateDirectoryEmailCheck),
+    tryCatch(handlePostDirectoryEmailCheck)
+  );
 
   /**
    * @openapi

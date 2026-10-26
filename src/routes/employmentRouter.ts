@@ -319,8 +319,11 @@ export const employmentRouter = (): Router => {
    *       name them "Deleted account".
    *
    *       The owner and org admins only, never plan-gated, and only for a
-   *       Deleted account. `confirmName` must match the name the People card
-   *       shows, ignoring case and extra spaces.
+   *       Deleted account or a person without an account. A person without
+   *       an account is that one Employment, which goes with its profile,
+   *       sealed Sections, Profile photos, profile history and Person
+   *       exports. `confirmName` must match the name the People card or the
+   *       profile shows, ignoring case and extra spaces.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -384,7 +387,9 @@ export const employmentRouter = (): Router => {
    *       caller gets an `export_ready` notification once it is `READY`.
    *
    *       The owner and org admins only, on every plan, for any Employment:
-   *       open or ended, account bound or deleted. Group managers and members
+   *       open or ended, account bound, deleted or never there. A person
+   *       without an account is that one Employment, and the export row
+   *       names it in `subjectEmploymentId`. Group managers and members
    *       get 403. Each new request writes one `export` row to the Read log.
    *       While an earlier request by the same caller for the same person is
    *       still `PENDING`, that one is returned and nothing new is written.
@@ -411,9 +416,7 @@ export const employmentRouter = (): Router => {
    *       '404':
    *         description: No such Employment
    *       '422':
-   *         description: |
-   *           Malformed employment id, or `context.code` is `NO_ACCOUNT`: the
-   *           Employment has no account bound, so there is no Person export of it
+   *         description: Malformed employment id
    *       '503':
    *         description: "`context.code` is `EXPORT_UNAVAILABLE`: no organization-data store is configured"
    */

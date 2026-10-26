@@ -15,8 +15,10 @@ export type PersonExportRow = {
   id: string;
   organizationId: string;
   scope: personExportScope;
-  /** Null for an Organization export. */
+  /** Null for an Organization export and for a person without an account. */
   subjectUserId: string | null;
+  /** The subject of a Person export of someone without an account. */
+  subjectEmploymentId: string | null;
   requestedByUserId: string;
   status: personExportStatus;
   attempts: number;
@@ -35,6 +37,7 @@ export type PersonExportView = {
   organizationId: string;
   scope: personExportScope;
   subjectUserId: string | null;
+  subjectEmploymentId: string | null;
   status: personExportStatus;
   createdAt: Date;
   readyAt: Date | null;

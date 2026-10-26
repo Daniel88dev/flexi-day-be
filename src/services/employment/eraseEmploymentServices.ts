@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
 import { attachments } from "../../db/schema/attachment-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
@@ -38,16 +38,106 @@ type StoredAttachment = Pick<AttachmentType, "id" | "storageKey" | "status">;
 
 export type ErasedEmployment = {
   organizationId: string;
-  userId: string;
+  /** Null for a person without an account. */
+  userId: string | null;
   employmentIds: string[];
   attachments: StoredAttachment[];
   exportKeys: string[];
   notices: number;
 };
 
+type LockedEmployment = typeof employments.$inferSelect;
+
+/** An open Employment ends today first, as End employment does, Reports to clears included. */
+const endBeforeErase = async (
+  employment: LockedEmployment,
+  actorUserId: string,
+  tx: DbTransaction
+): Promise<void> => {
+  if (employment.endedAt !== null) return;
+  const { organizationId } = employment;
+  const today = businessDateInZone(new Date(), await organizationTimeZone(organizationId, tx));
+  await endLockedEmployment(
+    employment,
+    {
+      endedOn: today,
+      actorUserId,
+      audience: await adminAudience(actorUserId, organizationId, tx),
+    },
+    tx
+  );
+};
+
+/**
+ * Deletes the person's own exports and every Organization export, which holds
+ * them too. A build in progress holds the export's lock for its whole run;
+ * waiting on it means no ZIP lands after the row is gone.
+ */
+const removeExportsHolding = async (
+  organizationId: string,
+  subject: SQL,
+  tx: DbTransaction
+): Promise<string[]> => {
+  const exportIds = (
+    await tx
+      .select({ id: personExports.id })
+      .from(personExports)
+      .where(
+        and(
+          eq(personExports.organizationId, organizationId),
+          or(subject, eq(personExports.scope, personExportScope.Organization))
+        )
+      )
+  ).map((row) => row.id);
+  for (const exportId of exportIds) {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${exportLockKey(exportId)}, 0))`
+    );
+  }
+  if (exportIds.length > 0) {
+    await tx.delete(personExports).where(inArray(personExports.id, exportIds));
+  }
+  return exportIds;
+};
+
+/**
+ * A person without an account is that one Employment: Erase deletes it, and
+ * its profile, sealed Sections, photos and history go with it through the
+ * cascade. They hold no bookings, quotas, memberships or attachments.
+ */
+const eraseAccountlessEmployment = async (
+  employment: LockedEmployment,
+  input: { confirmName: string; actorUserId: string },
+  tx: DbTransaction
+): Promise<ErasedEmployment> => {
+  const { organizationId } = employment;
+  if (!sameName(input.confirmName, employment.name ?? "")) {
+    throw refuse(422, "NAME_MISMATCH", "The typed name does not match the person", {
+      userId: input.actorUserId,
+      employmentId: employment.id,
+    });
+  }
+  await endBeforeErase(employment, input.actorUserId, tx);
+  const exportIds = await removeExportsHolding(
+    organizationId,
+    eq(personExports.subjectEmploymentId, employment.id),
+    tx
+  );
+  await tx.delete(employments).where(eq(employments.id, employment.id));
+  return {
+    organizationId,
+    userId: null,
+    employmentIds: [employment.id],
+    attachments: [],
+    exportKeys: exportIds.map((exportId) => exportStorageKey(organizationId, exportId)),
+    notices: 0,
+  };
+};
+
 /**
  * Erase: removes everything one organization holds about a Deleted account,
- * across every spell. Ends an open Employment first. Owner and org admins
+ * across every spell, or a person without an account, which is one
+ * Employment. Ends an open Employment first. Owner and org admins
  * only, on any plan, and only once the admin typed the person's name.
  *
  * The Read log's rows about the person stay, as do the stripped user row and
@@ -63,7 +153,8 @@ export const eraseEmployment = async (
   const employment = await lockEmploymentForAdmin(input, tx);
   const { organizationId } = employment;
 
-  if (employment.userId === null || employment.accountDeletedAt === null) {
+  if (employment.userId === null) return eraseAccountlessEmployment(employment, input, tx);
+  if (employment.accountDeletedAt === null) {
     throw refuse(
       422,
       "ACCOUNT_NOT_DELETED",
@@ -78,18 +169,7 @@ export const eraseEmployment = async (
     throw refuse(422, "NAME_MISMATCH", "The typed name does not match the person", context);
   }
 
-  if (employment.endedAt === null) {
-    const today = businessDateInZone(new Date(), await organizationTimeZone(organizationId, tx));
-    await endLockedEmployment(
-      employment,
-      {
-        endedOn: today,
-        actorUserId: input.actorUserId,
-        audience: await adminAudience(input.actorUserId, organizationId, tx),
-      },
-      tx
-    );
-  }
+  await endBeforeErase(employment, input.actorUserId, tx);
 
   // Soft-deleted groups too: their rows still hold the person's records.
   const groupIds = (
@@ -116,30 +196,11 @@ export const eraseEmployment = async (
       status: attachments.status,
     });
 
-  // An Organization export holds the person too. A build in progress holds this
-  // lock for its whole run; waiting on it means no ZIP lands after the row is gone.
-  const exportIds = (
-    await tx
-      .select({ id: personExports.id })
-      .from(personExports)
-      .where(
-        and(
-          eq(personExports.organizationId, organizationId),
-          or(
-            eq(personExports.subjectUserId, userId),
-            eq(personExports.scope, personExportScope.Organization)
-          )
-        )
-      )
-  ).map((row) => row.id);
-  for (const exportId of exportIds) {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${exportLockKey(exportId)}, 0))`
-    );
-  }
-  if (exportIds.length > 0) {
-    await tx.delete(personExports).where(inArray(personExports.id, exportIds));
-  }
+  const exportIds = await removeExportsHolding(
+    organizationId,
+    eq(personExports.subjectUserId, userId),
+    tx
+  );
 
   const touchedGroupIds = new Set(groupIds);
   if (groupIds.length > 0) {
