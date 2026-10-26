@@ -22,7 +22,7 @@ export const contractTypeEnum = pgEnum("directory_contract_type", enumToPgEnum(c
 export const workingTimeEnum = pgEnum("directory_working_time", enumToPgEnum(workingTime));
 
 /**
- * The Card and Job fields of one Employment's Profile. The row appears the
+ * The Card, Work contact and Job fields of one Employment's Profile. The row appears the
  * first time someone saves a field; a missing row reads as an empty profile.
  * It goes with its Employment, so Erase removes it. Ending or erasing the
  * Employment named in `reportsToEmploymentId` never deletes this row: erasing
@@ -48,6 +48,10 @@ export const directoryProfiles = pgTable(
     probationEndDate: date("probation_end_date", { mode: "string" }),
     contractType: contractTypeEnum("contract_type"),
     workingTime: workingTimeEnum("working_time"),
+    /** Lowercase, never synced with the sign-in email. */
+    workEmail: text("work_email"),
+    /** E.164. */
+    workPhone: text("work_phone"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()

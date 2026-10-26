@@ -468,7 +468,7 @@ describe("Person export", () => {
       if (ownSession) expect(everything).not.toContain(ownSession.token);
     });
 
-    it("carries the Card and Job fields of every spell and the profile history, without values in the history", async () => {
+    it("carries the Card, Work contact and Job fields of every spell and the profile history, without values in the history", async () => {
       const world = await setUp();
       const [ownerEmployment] = await db
         .select({ id: employments.id })
@@ -490,6 +490,8 @@ describe("Person export", () => {
         probationEndDate: "2024-06-01",
         contractType: contractType.Permanent,
         workingTime: workingTime.PartTime,
+        workEmail: "jana.work@example.test",
+        workPhone: "+420601123456",
       });
       await db.insert(directoryProfileHistory).values({
         id: uuidv4(),
@@ -518,6 +520,8 @@ describe("Person export", () => {
         probationEndDate: "2024-06-01",
         contractType: "PERMANENT",
         workingTime: "PART_TIME",
+        workEmail: "jana.work@example.test",
+        workPhone: "+420601123456",
       });
       expect(person.profileHistory).toEqual([
         {

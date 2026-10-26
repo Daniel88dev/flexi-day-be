@@ -17,6 +17,7 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { getPersonContacts, personName, type PersonColumns } from "../person/personName.js";
+import { countryView, phoneCountryDefault, phoneView } from "./contactFormat.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
 import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
@@ -72,6 +73,8 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
         probationEndDate: directoryProfiles.probationEndDate,
         contractType: directoryProfiles.contractType,
         workingTime: directoryProfiles.workingTime,
+        workEmail: directoryProfiles.workEmail,
+        workPhone: directoryProfiles.workPhone,
         reportsToId: reportsTo.id,
         reportsToUserId: reportsTo.userId,
         reportsToEndedAt: reportsTo.endedAt,
@@ -179,6 +182,12 @@ export const nameFromAccount = (record: {
   accountDeletedAt: Date | null;
 }) => record.userId !== null && record.endedAt === null && record.accountDeletedAt === null;
 
+/** Locations (T-501) will pass the record's Location country here. */
+const phoneCountryView = (viewer: DirectoryViewer) => {
+  const code = phoneCountryDefault({ locationCountry: null, language: viewer.language });
+  return code === null ? null : countryView(code, viewer.language);
+};
+
 const sectionsOf = (
   viewer: DirectoryViewer,
   record: RecordRow,
@@ -190,6 +199,7 @@ const sectionsOf = (
   };
   const card = view(R.Card);
   const job = view(R.Job);
+  const workContact = view(R.WorkContact);
   const reachesManager =
     record.reportsToId !== null &&
     viewer.accessTo({ userId: record.reportsToUserId, ended: record.reportsToEndedAt !== null })
@@ -208,7 +218,14 @@ const sectionsOf = (
       nameFromAccount: nameFromAccount(record),
     },
     photo: view(R.Photo),
-    workContact: view(R.WorkContact),
+    workContact: workContact && {
+      ...workContact,
+      workEmail: record.workEmail ?? null,
+      workPhone: record.workPhone ? phoneView(record.workPhone, viewer.language) : null,
+      ...(access.sections[R.WorkContact] === V.Write && {
+        phoneCountryDefault: phoneCountryView(viewer),
+      }),
+    },
     job: job && {
       ...job,
       spell: { startedAt: record.startedAt, endedAt: record.endedAt },
@@ -273,7 +290,7 @@ export const getDirectoryProfile = async (
 };
 
 /**
- * The Card and Job fields of the given spells, keyed by Employment id, and
+ * The Card, Work contact and Job fields of the given spells, keyed by Employment id, and
  * their profile history, oldest first, for the Person export. History rows
  * name the actor and the Audience and carry no values.
  */
@@ -287,6 +304,9 @@ export type ExportedProfile = {
   probationEndDate: string | null;
   contractType: contractType | null;
   workingTime: workingTime | null;
+  workEmail: string | null;
+  /** E.164. */
+  workPhone: string | null;
 };
 
 export type ExportedProfileHistoryEntry = {
@@ -325,6 +345,8 @@ export const collectProfileExport = async (
       probationEndDate: directoryProfiles.probationEndDate,
       contractType: directoryProfiles.contractType,
       workingTime: directoryProfiles.workingTime,
+      workEmail: directoryProfiles.workEmail,
+      workPhone: directoryProfiles.workPhone,
     })
     .from(directoryProfiles)
     .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
@@ -348,6 +370,8 @@ export const collectProfileExport = async (
         probationEndDate: fields.probationEndDate,
         contractType: fields.contractType,
         workingTime: fields.workingTime,
+        workEmail: fields.workEmail,
+        workPhone: fields.workPhone,
       },
     ])
   );

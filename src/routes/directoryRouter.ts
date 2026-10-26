@@ -141,6 +141,52 @@ export const directoryRouter = (): Router => {
    *               description: |
    *                 True while a bound, open account supplies the name, which
    *                 then can't be edited here.
+   *     DirectoryCountry:
+   *       type: object
+   *       required: [code, name]
+   *       properties:
+   *         code:
+   *           type: string
+   *           description: ISO 3166-1 alpha-2.
+   *         name:
+   *           type: string
+   *           description: In the caller's language, for clients without `Intl.DisplayNames`.
+   *     DirectoryPhone:
+   *       type: object
+   *       required: [e164, display, country]
+   *       properties:
+   *         e164:
+   *           type: string
+   *           description: The stored number, for `tel:` links.
+   *         display:
+   *           type: string
+   *           description: The international format, for clients without a phone library.
+   *         country:
+   *           nullable: true
+   *           allOf:
+   *             - $ref: '#/components/schemas/DirectoryCountry'
+   *     DirectoryWorkContactView:
+   *       allOf:
+   *         - $ref: '#/components/schemas/DirectorySectionView'
+   *         - type: object
+   *           required: [workEmail, workPhone]
+   *           properties:
+   *             workEmail:
+   *               type: string
+   *               nullable: true
+   *               description: Lowercase. Separate from the sign-in email.
+   *             workPhone:
+   *               nullable: true
+   *               allOf:
+   *                 - $ref: '#/components/schemas/DirectoryPhone'
+   *             phoneCountryDefault:
+   *               nullable: true
+   *               description: |
+   *                 Present only for a caller who writes Work contact: the
+   *                 country the edit form's phone picker starts on (the
+   *                 Location's country, then the interface language, else null).
+   *               allOf:
+   *                 - $ref: '#/components/schemas/DirectoryCountry'
    *     DirectoryJobView:
    *       allOf:
    *         - $ref: '#/components/schemas/DirectorySectionView'
@@ -209,7 +255,7 @@ export const directoryRouter = (): Router => {
    *                 photo:
    *                   $ref: '#/components/schemas/DirectorySectionView'
    *                 workContact:
-   *                   $ref: '#/components/schemas/DirectorySectionView'
+   *                   $ref: '#/components/schemas/DirectoryWorkContactView'
    *                 job:
    *                   $ref: '#/components/schemas/DirectoryJobView'
    *                 contact:
@@ -347,6 +393,9 @@ export const directoryRouter = (): Router => {
    *       the owner, org admins, HR and the person. An ended record is reached
    *       only by the owner, org admins and HR. A lapsed plan keeps this
    *       readable.
+   *
+   *       Every phone carries its display form and every country its name in
+   *       the caller's language, because the iPhone app formats neither.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -360,6 +409,13 @@ export const directoryRouter = (): Router => {
    *         required: true
    *         schema:
    *           type: string
+   *       - in: query
+   *         name: language
+   *         required: false
+   *         description: The language of country names. Defaults to the caller's stored language, then English.
+   *         schema:
+   *           type: string
+   *           enum: [en, cs]
    *     responses:
    *       '200':
    *         description: The profile
@@ -384,9 +440,10 @@ export const directoryRouter = (): Router => {
    *   patch:
    *     tags:
    *       - Directory
-   *     summary: Edit the Card and Job Sections of a profile
+   *     summary: Edit the Card, Work contact and Job Sections of a profile
    *     description: |
-   *       Sets or clears Card and Job fields of one Employment, open or ended.
+   *       Sets or clears Card, Work contact and Job fields of one Employment,
+   *       open or ended.
    *       In each field a value sets it, `null` clears it and a missing key
    *       leaves it as it is. Each Section in the body needs a write cell for
    *       the caller in the organization's Permission table. The profile row
@@ -401,7 +458,8 @@ export const directoryRouter = (): Router => {
    *       A body that only clears works on every plan. Contract type, working
    *       time and probation end date apply to employees only. The employee
    *       number is unique, ignoring case, among the organization's open
-   *       Employments.
+   *       Employments. A work phone is one number in international form with
+   *       no extension, stored in E.164; a work email is stored lowercase.
    *
    *       Each Section the write changed adds one profile history entry: who,
    *       when, which fields and through which Audience, never the values.
@@ -418,6 +476,13 @@ export const directoryRouter = (): Router => {
    *         required: true
    *         schema:
    *           type: string
+   *       - in: query
+   *         name: language
+   *         required: false
+   *         description: The language of country names. Defaults to the caller's stored language, then English.
+   *         schema:
+   *           type: string
+   *           enum: [en, cs]
    *     requestBody:
    *       required: true
    *       content:
@@ -445,6 +510,21 @@ export const directoryRouter = (): Router => {
    *                     type: string
    *                     nullable: true
    *                     description: Another open Employment of the same organization, never the person's own.
+   *               workContact:
+   *                 type: object
+   *                 additionalProperties: false
+   *                 properties:
+   *                   workEmail:
+   *                     type: string
+   *                     format: email
+   *                     nullable: true
+   *                     maxLength: 254
+   *                     description: Stored lowercase. Never synced with the sign-in email.
+   *                   workPhone:
+   *                     type: string
+   *                     nullable: true
+   *                     maxLength: 40
+   *                     description: International form, such as `+420 601 123 456`. Stored in E.164.
    *               job:
    *                 type: object
    *                 additionalProperties: false
@@ -508,7 +588,7 @@ export const directoryRouter = (): Router => {
    *           A malformed body, or `EMPLOYEES_ONLY` (an employee-only field set
    *           on an External worker), `PROBATION_BEFORE_START`,
    *           `REPORTS_TO_NOT_FOUND` (not an open Employment of the
-   *           organization) or `REPORTS_TO_SELF`.
+   *           organization), `REPORTS_TO_SELF` or `INVALID_PHONE`.
    */
   app.patch(
     "/:organizationId/people/:employmentId",
