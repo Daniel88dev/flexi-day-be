@@ -46,7 +46,7 @@ export type PhotoUploadStatus = {
   rejectionReason: string | null;
 };
 
-const requireStore = (context: object): OrganizationDataStore => {
+export const requireStore = (context: object): OrganizationDataStore => {
   if (!organizationDataStore) {
     throw new AppError({
       code: 503,

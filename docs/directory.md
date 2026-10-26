@@ -340,6 +340,35 @@ What follows from the type, whether the directory is on or off:
   Types that draw on none book as for employees.
 - Group membership, calendars, reports, notifications, Birthday and seat caps work as for employees.
 
+### Copy from previous spell
+
+Decisions: fenro T-471 (a rejoin starts empty), T-473 (whole Sections, Personal skipped for
+External workers), T-474 (only what retention left), T-478 (the banner and dialog), T-513 (this
+build).
+
+A new spell's profile starts empty. Its previous spell is the latest ended Employment of the
+organization begun before it with the same user, or with the same email (case-insensitive) when
+either spell has no account (`findPreviousSpell` in `previousSpellServices.ts`).
+
+`GET /api/directory/{org}/people/{employmentId}/previous-spell` names the previous spell and gives
+Contact, Personal and Photo a status each: `COPYABLE`, `REMOVED_ON` (a Retention purge emptied it,
+with the day), `EMPTY`, `FILLED` (this spell already holds it) or `NOT_WRITABLE`. Personal is absent
+on an External worker's spell. `POST .../previous-spell/copy` with `{ sections }` copies the chosen
+Sections in one transaction:
+
+- the owner, org admins and HR only (403 `COPY_DENIED`), with Write on each chosen Section of the
+  new spell, on an open spell (409 `EMPLOYMENT_ENDED`), and 402 on a lapsed plan;
+- a Section this spell holds is never overwritten (409 `SECTION_ALREADY_FILLED`), and one the
+  previous spell no longer holds is refused (409 `SECTION_NOT_HELD`);
+- Contact and Personal are opened and sealed again under the new row's context, never copied as
+  ciphertext; the values never reach the caller, so no Read log row is written;
+- the Profile photo's two files are written again under a new photo id in the new spell's folder,
+  which the controller deletes if the transaction fails;
+- each copied Section writes a profile history row with the fields that held a value.
+
+Card, Work contact and Job never carry over. The profile's `actions.copyFromPreviousSpell` is true
+while a Section is `COPYABLE` for the caller, and the web shows its banner from it.
+
 ### Departments and Locations
 
 Decisions: fenro T-473 (the lists and the act row), T-478 (archived entries), T-501 (this build).
