@@ -2,6 +2,7 @@ import { and, asc, eq, isNotNull, ne } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
+import { user } from "../../db/schema/auth-schema.js";
 import { getPersonContacts } from "../person/personName.js";
 import type { OwnedOrganizationGoing } from "./types.js";
 
@@ -23,8 +24,9 @@ export const getOwnedOrganizationsGoing = async (
   const result: OwnedOrganizationGoing[] = [];
   for (const organization of owned) {
     const rows = await db
-      .selectDistinct({ userId: employments.userId })
+      .selectDistinct({ userId: user.id })
       .from(employments)
+      .innerJoin(user, eq(user.id, employments.userId))
       .where(
         and(
           eq(employments.organizationId, organization.id),

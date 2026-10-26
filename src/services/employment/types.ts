@@ -1,22 +1,34 @@
 import { z } from "zod";
 import type { UserSummary } from "../../utils/userPresentation.js";
+import type { workerType } from "../../db/schema/employment-schema.js";
 
 export type EmploymentType = {
   id: string;
   organizationId: string;
-  userId: string;
+  /** Null for a person without an account. */
+  userId: string | null;
+  type: workerType;
   startedAt: Date;
-  /** Null while the person is still one of the organization's people. */
+  /** Null while the spell is open. */
   endedAt: Date | null;
+  name: string | null;
+  email: string | null;
   requiredMinutesPerDay: number | null;
+  accountDeletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
+/** An Employment with an account bound to it, the only kind attendance hangs off. */
+export type BoundEmploymentType = EmploymentType & { userId: string };
+
 export type EmploymentListItem = {
   id: string;
-  userId: string;
-  email: string;
+  /** Null for a person without an account; `user` is then keyed on the Employment's id. */
+  userId: string | null;
+  type: workerType;
+  /** The account's email, else the Employment's own copy. */
+  email: string | null;
   startedAt: Date;
   endedAt: Date | null;
   ended: boolean;

@@ -54,9 +54,8 @@ export const lockEmploymentForAdmin = async (
  * cancelled, and the Employment ends on `endedOn` (today or earlier, in the
  * organization's time zone). Owner and org admins only, on any plan.
  *
- * Only a Deleted account can be ended for now. Employments are one row per
- * organization until spells land, so ending a live person and adding them to
- * a group again would reopen the row and overwrite the spell just ended.
+ * Only a Deleted account can be ended for now; T-507 opens it to live
+ * accounts and T-508 to account-less Employments.
  *
  * Runs no `syncEmployment`: it would end the row at `now()` instead of on the
  * chosen date.
@@ -72,7 +71,7 @@ export const endEmployment = async (
   if (employment.endedAt !== null) {
     throw refuse(409, "EMPLOYMENT_ENDED", "This employment has already ended", context);
   }
-  if (employment.accountDeletedAt === null) {
+  if (employment.userId === null || employment.accountDeletedAt === null) {
     throw refuse(
       422,
       "ACCOUNT_NOT_DELETED",

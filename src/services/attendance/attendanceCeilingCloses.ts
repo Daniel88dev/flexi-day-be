@@ -7,6 +7,7 @@ import {
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
+import { user } from "../../db/schema/auth-schema.js";
 import {
   ATTENDANCE_SETTINGS_DEFAULTS,
   organizationAttendanceSettings,
@@ -71,13 +72,14 @@ export const overdueSessions = async (now: Date): Promise<OverdueSession[]> =>
     .select({
       id: attendanceSessions.id,
       employmentId: attendanceSessions.employmentId,
-      userId: employments.userId,
+      userId: user.id,
       businessDate: attendanceSessions.businessDate,
       timezone: attendanceSessions.timezone,
       closeAt: sql<Date>`${sessionCeilingEnd}`.mapWith(attendanceSessions.startedAt),
     })
     .from(attendanceSessions)
     .innerJoin(employments, eq(employments.id, attendanceSessions.employmentId))
+    .innerJoin(user, eq(user.id, employments.userId))
     .leftJoin(
       organizationAttendanceSettings,
       eq(organizationAttendanceSettings.organizationId, employments.organizationId)

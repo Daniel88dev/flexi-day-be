@@ -267,6 +267,13 @@
       "when": 1792995417180,
       "tag": "0037_organization_data_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792996480954,
+      "tag": "0038_employment_spells",
+      "breakpoints": true
     }
   ]
 }

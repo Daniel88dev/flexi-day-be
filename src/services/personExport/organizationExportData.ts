@@ -76,6 +76,9 @@ export const collectOrganizationExport = async (organizationId: string) => {
     .select({
       id: employments.id,
       userId: employments.userId,
+      type: employments.type,
+      name: employments.name,
+      email: employments.email,
       startedAt: employments.startedAt,
       endedAt: employments.endedAt,
       accountDeletedAt: employments.accountDeletedAt,
@@ -83,13 +86,14 @@ export const collectOrganizationExport = async (organizationId: string) => {
     .from(employments)
     .where(eq(employments.organizationId, organizationId))
     .orderBy(asc(employments.startedAt), asc(employments.id));
+  const bound = spells.flatMap(({ userId, ...spell }) => (userId ? [{ ...spell, userId }] : []));
 
   const ids = new Set<string>();
   const note = (id: string | null | undefined) => {
     if (id) ids.add(id);
   };
   note(organization?.ownerUserId);
-  spells.forEach((row) => note(row.userId));
+  bound.forEach((row) => note(row.userId));
   admins.forEach((row) => {
     note(row.userId);
     note(row.grantedByUserId);
@@ -109,7 +113,7 @@ export const collectOrganizationExport = async (organizationId: string) => {
 
   const people: OrganizationExportPerson[] = [];
   const folders = new Set<string>();
-  for (const spell of spells) {
+  for (const spell of bound) {
     if (people.some((person) => person.userId === spell.userId)) continue;
     const name = nameOf(spell.userId) ?? "";
     let folder = `people/${safeFileName(name)}-${spell.userId.slice(0, 8)}`;
@@ -219,15 +223,27 @@ export const collectOrganizationExport = async (organizationId: string) => {
       userId: person.userId,
       name: person.name,
       folder: `${person.folder}/`,
-      employments: spells
+      employments: bound
         .filter((spell) => spell.userId === person.userId)
         .map((spell) => ({
           id: spell.id,
+          type: spell.type,
           startedAt: spell.startedAt,
           endedAt: spell.endedAt,
           accountDeletedAt: spell.accountDeletedAt,
         })),
     })),
+    // No account means no Person export folder: the Employment is all there is.
+    peopleWithoutAccount: spells
+      .filter((spell) => spell.userId === null)
+      .map((spell) => ({
+        employmentId: spell.id,
+        name: spell.name,
+        email: spell.email,
+        type: spell.type,
+        startedAt: spell.startedAt,
+        endedAt: spell.endedAt,
+      })),
   };
 
   return { document, people };

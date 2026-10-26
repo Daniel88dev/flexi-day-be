@@ -58,7 +58,7 @@ export const eraseEmployment = async (
   const employment = await lockEmploymentForAdmin(input, tx);
   const { organizationId } = employment;
 
-  if (employment.accountDeletedAt === null) {
+  if (employment.userId === null || employment.accountDeletedAt === null) {
     throw refuse(
       422,
       "ACCOUNT_NOT_DELETED",

@@ -28,7 +28,8 @@ import { getGroup } from "../group/groupServices.js";
  * visible only to org admins.
  */
 
-type EmploymentSubject = { organizationId: string; userId: string };
+/** `userId` is null for a person without an account, whom only org admins reach. */
+type EmploymentSubject = { organizationId: string; userId: string | null };
 
 export type EmploymentAudience =
   { everyone: true } | { everyone: false; userIds: string[]; groupIds: string[] };
@@ -58,6 +59,7 @@ export const canAdministerEmployment = async (
   tx?: DbTransaction
 ): Promise<boolean> => {
   if (await isOrganizationAdmin(viewerUserId, employment.organizationId, tx)) return true;
+  if (employment.userId === null) return false;
 
   return administersGroupOfMember(viewerUserId, employment.userId, employment.organizationId, tx);
 };
