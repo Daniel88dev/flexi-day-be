@@ -449,6 +449,7 @@ describe("turning the directory off", () => {
             emergencyContactNotice: { en: "Our own notice", cs: "Naše vlastní upozornění" },
           })
         );
+        ok(await ownerApi.post(`${base}/checklist/hide`));
         ok(await ownerApi.put(`${base}/people/${dana}/worker-type`, { type: "external" }));
         ok(await ownerApi.post(`${base}/people/${bob}/show/contact`));
         ok(await ownerApi.post(`${base}/people/${petra}/show/contact`));
@@ -585,6 +586,7 @@ describe("turning the directory off", () => {
           enabled: false,
           emergencyContactNoticeEn: null,
           emergencyContactNoticeCs: null,
+          checklistHiddenAt: null,
           dataDeletedByUserId: world.users.owner.id,
         });
         for (const key of [...world.photoKeysOf, ...world.exportKeys]) {

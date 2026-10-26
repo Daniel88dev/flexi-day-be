@@ -125,6 +125,7 @@ export const deleteAllDirectoryData = async (
     .set({
       emergencyContactNoticeEn: null,
       emergencyContactNoticeCs: null,
+      checklistHiddenAt: null,
       dataDeletedAt: new Date(),
       dataDeletedByUserId: userId,
     })

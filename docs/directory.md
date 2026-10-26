@@ -20,6 +20,30 @@ Refusals, in order: 403 `OWNER_ONLY` for anyone but the owner, 402 (`reason: PLA
 DIRECTORY_PLAN_REQUIRED`) when the plan fails the gate, 409 `DIRECTORY_ALREADY_ON`, and 409
 `AGREEMENT_VERSION_STALE` when the version sent is not the current one.
 
+### The members' notice
+
+With `tellMembers: true` in the body, the enable plans one `directory_enabled` Notification per
+bound open Employment inside its transaction and sends them after the commit
+(`src/services/directory/directoryEnabledNotice.ts`): "Acme turned on the people directory. Check
+your profile and add your contact details." It is in-app and pushed passively, never mailed, in the
+reader's language, and links to the reader's own profile (`/directory/person/?organizationId=…&employmentId=…`).
+The owner who turned it on, Deleted accounts, people without an account and leavers get nothing. An
+absent `tellMembers` sends nothing. The web's tickbox is on at the first enable (no `enabledAt`
+yet) and off at later ones.
+
+### The setup checklist
+
+`GET /api/directory/{org}/checklist`, for the owner, org admins and HR (403 `CHECKLIST_DENIED`
+otherwise). Four items tick themselves from the data: a Department that is not archived, a Location
+that is not archived, HR held on an open Employment with a live account, and a job title on an open
+Profile. Assign HR and the "Review who sees what" link go to the owner only. No emails, no
+reminders.
+
+`hidden` is true once every item the viewer sees is done, or once anyone clicked Hide
+(`POST .../checklist/hide`, every plan). Hide stamps `organization_directory_settings.checklist_hidden_at`;
+it counts only while it is at or after `enabled_at`, so a re-enable shows the checklist again with
+the ticks the data still earns.
+
 ## Turning it off
 
 `POST /api/organization/directory/disable`, owner only, on every plan. It updates the settings row
@@ -51,7 +75,7 @@ while the directory is off (409 `DIRECTORY_ON`), and only with the organization'
 | `directory_departments`, `directory_locations`                                             | `read_log`, until its own 12-month purge                      |
 | `directory_role_assignments`, `directory_permission_cells`, `directory_permission_history` | `directory_profile_history` of Employments with an account    |
 | `directory_retention_periods`, `directory_retention_holds`                                 | the settings row, stamped `data_deleted_at` and `_by_user_id` |
-| the notice texts on the settings row                                                       |                                                               |
+| the notice texts and the checklist's Hide stamp on the settings row                        |                                                               |
 | every `person_exports` row of the organization and its file                                |                                                               |
 | every Employment without an account, open or ended, with its invites and history           |                                                               |
 

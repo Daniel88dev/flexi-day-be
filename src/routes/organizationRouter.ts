@@ -24,6 +24,7 @@ import { handlePostDeleteAllDirectoryData } from "../controllers/directory/handl
 import {
   validateDirectoryAgreementBody,
   validateDirectoryDeleteAllBody,
+  validateEnableDirectoryBody,
 } from "../services/directory/types.js";
 
 export const organizationRouter = (): Router => {
@@ -688,6 +689,11 @@ export const organizationRouter = (): Router => {
    *       Permission table, fixed cells included. A re-enable keeps the cells
    *       the organization already stored and adds only the cells the product
    *       gained since. Nothing is written per Employment.
+   *
+   *       With `tellMembers`, after the commit every person with a bound open
+   *       Employment, the owner and Deleted accounts aside, gets one
+   *       `directory_enabled` Notification, in-app and pushed, never mailed,
+   *       linking to their own profile.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -708,6 +714,10 @@ export const organizationRouter = (): Router => {
    *                 type: integer
    *                 minimum: 1
    *                 description: The agreement version the owner was shown.
+   *               tellMembers:
+   *                 type: boolean
+   *                 default: false
+   *                 description: Send the members' notice once the directory is on.
    *     responses:
    *       '200':
    *         description: The directory state after the change
@@ -732,7 +742,7 @@ export const organizationRouter = (): Router => {
    */
   app.post(
     "/directory/enable",
-    bodyValidationMiddleware(validateDirectoryAgreementBody),
+    bodyValidationMiddleware(validateEnableDirectoryBody),
     tryCatch(handlePostEnableDirectory)
   );
 
