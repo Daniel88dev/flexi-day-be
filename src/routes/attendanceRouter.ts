@@ -325,10 +325,12 @@ export const attendanceRouter = (): Router => {
    *           organization and `GROUPS` when they see only their groups'
    *           members, whether or not a group was named. `group` is
    *           `{ id, groupName }` when the answer was narrowed, otherwise null.
-   *           A person is `{ employmentId, userId, user, groups,
-   *           requiredMinutesPerDay, requiredMinutesOverride, days, totals }`,
-   *           sorted by name; `groups` is `[{ id, groupName }]` of the live
-   *           groups they belong to. Each day and the totals read exactly as
+   *           A person is `{ employmentId, userId, user, accountDeleted,
+   *           groups, requiredMinutesPerDay, requiredMinutesOverride, days,
+   *           totals }`, sorted by name; `groups` is `[{ id, groupName }]` of
+   *           the live groups they belong to. `accountDeleted` marks a person
+   *           who deleted their account: every date after the business date
+   *           they did is a `NOT_EMPLOYED` exclusion, so nothing is owed. Each day and the totals read exactly as
    *           on `/api/attendance/month`, without `sessions` — `entered` still
    *           says whether a session on the date was entered after the fact,
    *           and `changedAfterDay` whether one on it was changed by its own

@@ -20,6 +20,9 @@ export const user = pgTable("user", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
+  // Set once Account deletion has stripped the row down to its id. The row
+  // stays so the organization's records still point at someone.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 // Property names must match better-auth's session fields exactly, including

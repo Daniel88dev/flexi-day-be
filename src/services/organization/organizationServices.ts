@@ -4,7 +4,7 @@ import { organizationUsers } from "../../db/schema/organization-users-schema.js"
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getUserById } from "../user/userServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import AppError from "../../utils/appError.js";
@@ -263,7 +263,7 @@ export const listOrganizationAdmins = async (
 
 /**
  * People who can be promoted to org admin: active members of the org's live
- * groups, minus the owner and anyone already an admin. Restricting the pool to
+ * groups, minus the owner, anyone already an admin and Deleted accounts. Restricting the pool to
  * the org's own people is what lets the endpoint avoid an email lookup, which
  * would otherwise let any owner probe whether an address has an account.
  */
@@ -273,7 +273,7 @@ export const listOrganizationAdminCandidates = async (
   const rows = await db
     .selectDistinct({
       userId: groupUsers.userId,
-      userName: personName(user, { organizationId }),
+      userName: personName(user, { organizationId }).as("candidate_name"),
       email: user.email,
       groupName: groups.groupName,
     })
@@ -284,10 +284,13 @@ export const listOrganizationAdminCandidates = async (
       and(
         eq(groups.organizationId, organizationId),
         isNull(groups.deletedAt),
-        isNull(groupUsers.deletedAt)
+        isNull(groupUsers.deletedAt),
+        isNull(user.deletedAt)
       )
     )
-    .orderBy(asc(personName(user, { organizationId })));
+    // By the alias: DISTINCT needs the very expression it selects, and the
+    // helper's bound parameters would not match a second copy of it.
+    .orderBy(sql`"candidate_name" asc`);
 
   const admins = await listOrganizationAdmins(organizationId);
   const excluded = new Set(admins.map((admin) => admin.userId));

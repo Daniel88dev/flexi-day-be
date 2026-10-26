@@ -174,7 +174,9 @@ export const reportRouter = (): Router => {
    *       Each entry of `changes` carries `actor` and `actorDeleted`. An
    *       `actor` of null with `actorDeleted: false` means the quota rollover
    *       made the change; with `actorDeleted: true`, the person who made it
-   *       has since deleted their account.
+   *       deleted their account before Deleted accounts kept their id. An
+   *       account deleted since keeps its `actor`, named by the copy this
+   *       organization kept, or "Deleted account" once it holds none.
    *     security:
    *       - bearerAuth: []
    *     parameters:

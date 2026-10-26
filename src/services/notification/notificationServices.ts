@@ -1,6 +1,7 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { notifications } from "../../db/schema/notification-schema.js";
 import { and, desc, eq, isNull } from "drizzle-orm";
+import { isDeletedAccount } from "../user/userServices.js";
 import type { NotificationInsertType, NotificationRecord } from "./types.js";
 
 /**
@@ -118,13 +119,15 @@ export const deleteAllNotificationsForUser = async (
 };
 
 /**
- * Inserts a notification row. Used by future workflow code; kept in the same
- * service module so all notification persistence lives in one place.
+ * Inserts a notification row, or nothing for a Deleted account, which has
+ * nobody left to read it. Kept in the same service module so all notification
+ * persistence lives in one place.
  */
 export const createNotification = async (
   record: NotificationInsertType,
   tx?: DbTransaction
 ): Promise<NotificationRecord | undefined> => {
+  if (await isDeletedAccount(record.userId)) return undefined;
   const [row] = await (tx ?? db).insert(notifications).values(record).returning();
   return row;
 };

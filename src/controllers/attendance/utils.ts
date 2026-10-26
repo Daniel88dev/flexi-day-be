@@ -114,6 +114,7 @@ export const presentAttendanceTeam = (team: AttendanceTeamType) => ({
     employmentId: person.employmentId,
     userId: person.userId,
     user: person.user,
+    accountDeleted: person.accountDeleted,
     groups: person.groups,
     requiredMinutesPerDay: person.requiredMinutesPerDay,
     requiredMinutesOverride: person.requiredMinutesOverride,

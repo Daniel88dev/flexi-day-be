@@ -78,8 +78,8 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
 
   await assertConfirmed(session, password);
 
-  // The calendar step needs the ledger and the tokens, which cascade with the
-  // user, so it runs before the transaction and only when nothing blocks it.
+  // The calendar step needs the ledger and the tokens, which the transaction
+  // deletes, so it runs before it and only when nothing blocks it.
   const calendarConnections =
     (await getDeletionBlockers(session.userId)).length === 0
       ? await disconnectAllProviders(session.userId)
@@ -92,6 +92,7 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
     userId: session.userId,
     groups: deleted.groups,
     organizations: deleted.organizations,
+    cancelledRequests: deleted.cancelledRequests,
     attachments: deleted.attachments.length,
     appleLinks: appleRevocations.length,
     calendarConnections,

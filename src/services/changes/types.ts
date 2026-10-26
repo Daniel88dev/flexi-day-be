@@ -8,7 +8,7 @@ export type ChangeRecordType = {
   changeDetail: string;
   /** Null when the quota rollover wrote the row, or when `changingUserDeleted` is set. */
   changingUserId: string | null;
-  /** The person who made the change has since deleted their account. */
+  /** The actor was cleared by an account deletion made before Deleted accounts kept their row. */
   changingUserDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;

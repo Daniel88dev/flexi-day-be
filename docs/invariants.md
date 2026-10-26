@@ -559,9 +559,19 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
 The policy is in [`account-deletion.md`](account-deletion.md). Two things it leans on elsewhere:
 
 - **`changes.changing_user_id` keeps no `ON DELETE`.** A NULL actor with `changing_user_deleted`
-  false is how the quota rollover is told apart from a person. Account deletion clears the actor
-  and sets the flag in one statement; a check constraint stops the flag riding with an actor id.
-  Switching the FK to `SET NULL` would relabel every deleted admin's edits as the rollover's.
+  false is how the quota rollover is told apart from a person. Account deletion now keeps the
+  user row and the actor id; the flag stays only on rows from deletions made before that, and a
+  check constraint stops it riding with an actor id. Switching the FK to `SET NULL` would relabel
+  every deleted admin's edits as the rollover's.
+- **A Deleted account never gets a session.** The `databaseHooks.session.create.before` hook in
+  `src/utils/auth.ts` refuses any session for a user row with `deleted_at`, whatever let the
+  sign-in get that far. Without it a credential or provider link written back onto the stripped
+  row would sign someone in as the organization's frozen record.
+  `src/tests/e2e/deletedAccount.e2e.test.ts` ("keeps only the id, and nobody can sign in as it")
+  plants both and fails if the sign-in succeeds.
+- **The Employment is stamped before the user row is stripped.** The `employments_follow_user`
+  trigger copies `user.name` and `user.email` onto open Employments, and since migration 0033 it
+  skips those with `account_deleted_at`. Stripping first would blank the organization's copy.
 - **Every path that adds someone to an organization takes `lockOrganization`.** Deletion locks the
   organizations the user owns or manages a group in, then checks its blockers again. A join that
   skipped the lock could commit between that check and the delete, and the other person's group or

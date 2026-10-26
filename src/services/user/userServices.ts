@@ -1,6 +1,6 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 
 export type UserContact = {
   id: string;
@@ -70,4 +70,29 @@ export const deleteUserByIdAndEmail = async (userId: string, email: string): Pro
     .where(and(eq(user.id, userId), eq(user.email, email)))
     .returning({ id: user.id });
   return removed.length > 0;
+};
+
+/**
+ * Whether the user is a Deleted account. Inside a transaction it waits on an
+ * account deletion holding the row, so a write that checks first cannot land
+ * after the deletion commits.
+ */
+export const isDeletedAccount = async (userId: string, tx?: DbTransaction): Promise<boolean> => {
+  const query = (tx ?? db)
+    .select({ deletedAt: user.deletedAt })
+    .from(user)
+    .where(eq(user.id, userId))
+    .limit(1);
+  const [row] = await (tx ? query.for("key share") : query);
+  return Boolean(row?.deletedAt);
+};
+
+/** The ids among `userIds` that are Deleted accounts. */
+export const deletedAccountIds = async (userIds: string[]): Promise<Set<string>> => {
+  if (userIds.length === 0) return new Set();
+  const rows = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(and(inArray(user.id, userIds), isNotNull(user.deletedAt)));
+  return new Set(rows.map((row) => row.id));
 };

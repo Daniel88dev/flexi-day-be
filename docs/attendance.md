@@ -76,7 +76,8 @@ applies from the next clock-in and moves no session to another day.
 
 No attendance is owed on a business date that is:
 
-- outside the Employment's own spell, before it began or after it ended;
+- outside the Employment's own spell, before it began or after it ended, or after the business
+  date the person deleted their account on (`account_deleted_at`, read in the organization's zone);
 - not one of the organization's `workingDays`;
 - a public holiday for the organization's `holidayCountry`;
 - covered by a live, approved absence of type `VACATION`, `SICK`, `SICK_DAY`, `PAID_TIME_OFF`,

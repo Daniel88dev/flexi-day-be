@@ -561,7 +561,7 @@ export const usersRouter = (): Router => {
    *         `GROUP_HAS_MEMBERS`: the caller manages a live group in which
    *         another user has a live membership. `ORGANIZATION_HAS_MEMBERS`:
    *         the caller owns an organization in which another user has an open
-   *         Employment. `SUBSCRIPTION_RENEWING`: an organization the caller
+   *         Employment, not counting Deleted accounts. `SUBSCRIPTION_RENEWING`: an organization the caller
    *         owns has a Paddle subscription that is not `canceled` and has no
    *         scheduled cancellation; cancel it in the customer portal first.
    *         `SUPPORT_ADMIN`: the caller is a platform support admin, or was
@@ -922,20 +922,38 @@ export const usersRouter = (): Router => {
    *       revoked. This step is best effort; a failure is logged and does not
    *       fail the request.
    *
-   *       Hard-deletes the account in one transaction: the user and everything
-   *       that hangs off them, the groups they manage and the organizations
-   *       they own (both only possible once nobody else is in them), with
-   *       their subscription rows. The caller is cleared from main and temp
-   *       approver slots of other people's groups, and quota changes they
-   *       made stay with a deleted-actor marker. Stored attachment objects
-   *       are removed after the commit; a failure there is logged and does not
+   *       Then one transaction separates account data from organization
+   *       data. Account data goes: sessions (web and Native, with their push
+   *       registrations), provider links, two-factor, settings,
+   *       notifications, calendar connections and feeds, and the Birthday,
+   *       which leaves a tombstone. The user row stays, stripped to its id:
+   *       an empty name, the email `<id>@deleted.invalid`, no picture and
+   *       `deletedAt` set, and no session is ever created for it again.
+   *
+   *       Organization data in other people's organizations stays. Every
+   *       Employment stays open with `accountDeletedAt` set and its name and
+   *       email copy frozen; no time is owed after that business date and the
+   *       yearly rollover opens no new year. Bookings, quotas and the change
+   *       log keep pointing at the id, and readers show the frozen name.
+   *       Memberships stay with view, admin and approver access cleared; main
+   *       and temp approver slots are cleared and a delegated org-admin grant
+   *       is revoked. Pending requests are cancelled with a timeline entry
+   *       that has no actor and the reason `account deleted`, and nobody is
+   *       notified. A running attendance session is closed at the moment of
+   *       deletion as the sweep would close it, so the day is flagged.
+   *
+   *       The groups the caller manages and the organizations they own go,
+   *       with their subscription rows (both only possible once nobody else
+   *       is in them; a deleted account left in an owned organization does
+   *       not count). Stored attachment objects of an owned organization are
+   *       removed after the commit; a failure there is logged and does not
    *       fail the request. Each Apple account link is then revoked at Apple
    *       with the refresh token read before the transaction; a link without
    *       one, or a revoke Apple refuses, is logged and does not fail the
-   *       request either. Every session ends, web and Native, so the old
-   *       cookie answers 401 afterwards. Every refusal, a wrong password
-   *       included, spends the same failures-only rate limit as sign-in. The
-   *       full policy is in `docs/account-deletion.md`.
+   *       request either. The old cookie answers 401 afterwards. Every
+   *       refusal, a wrong password included, spends the same failures-only
+   *       rate limit as sign-in. The full policy is in
+   *       `docs/account-deletion.md`.
    *
    *       Blockers are checked again inside the deleting transaction, under
    *       the same organization locks a join takes, so someone joining in

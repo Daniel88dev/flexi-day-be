@@ -5,6 +5,8 @@ import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
+import { employments } from "../../db/schema/employment-schema.js";
+import { v4 as uuidv4 } from "uuid";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { rolloverQuotasForYear } from "../../services/quotaRollover/quotaRolloverServices.js";
 import {
@@ -241,6 +243,30 @@ describe("Quota rollover E2E", () => {
 
     expect(result.created).toBe(1);
     expect(await quotaFor(manager.id, deadGroup, YEAR)).toBeUndefined();
+  });
+
+  it("opens no new year for an Employment whose account was deleted", async () => {
+    const manager = await makeUser("Manager");
+    const departed = await makeUser("Departed");
+    const groupId = await makeGroup("Engineering", manager.id);
+    await addMember(groupId, manager.id);
+    await addMember(groupId, departed.id);
+    await addQuota(groupId, departed.id, PREVIOUS, { vacationDays: 20 });
+    const [group] = await db.select().from(groups).where(eq(groups.id, groupId));
+    await db.insert(employments).values({
+      id: uuidv4(),
+      organizationId: group!.organizationId,
+      userId: departed.id,
+      name: "Departed",
+      accountDeletedAt: new Date(),
+    });
+
+    const result = await rolloverQuotasForYear(YEAR);
+
+    expect(result.created).toBe(1);
+    expect(await quotaFor(manager.id, groupId, YEAR)).toBeDefined();
+    expect(await quotaFor(departed.id, groupId, YEAR)).toBeUndefined();
+    expect(await quotaFor(departed.id, groupId, PREVIOUS)).toBeDefined();
   });
 
   it("gives a member in two groups one allowance per group", async () => {

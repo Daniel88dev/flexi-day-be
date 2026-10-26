@@ -216,6 +216,7 @@ export const listEmployments = async (
       startedAt: employments.startedAt,
       endedAt: employments.endedAt,
       requiredMinutesPerDay: employments.requiredMinutesPerDay,
+      accountDeletedAt: employments.accountDeletedAt,
       userName: personName(user, { organizationId }),
       email: user.email,
     })
@@ -233,6 +234,7 @@ export const listEmployments = async (
   return rows.map(({ userName, ...row }) => ({
     ...row,
     ended: row.endedAt !== null,
+    accountDeleted: row.accountDeletedAt !== null,
     user: buildUserSummary({ id: row.userId, name: userName }),
   }));
 };

@@ -17,8 +17,11 @@ import {
   type DayExclusion,
 } from "./attendanceCalculation.js";
 
-/** The current spell. Dates either side of it are excluded outright. */
-type EmploymentSpell = { startedAt: Date; endedAt: Date | null };
+/**
+ * The current spell. Dates either side of it are excluded outright, and so is
+ * every date after the business date the person deleted their account on.
+ */
+type EmploymentSpell = { startedAt: Date; endedAt: Date | null; accountDeletedAt?: Date | null };
 
 export type AttendanceExclusionInput = {
   organizationId: string;
@@ -72,8 +75,17 @@ const buildExclusions = (
   const employedTo =
     employment.endedAt === null ? null : businessDateInZone(employment.endedAt, timezone);
 
+  const deletedOn =
+    employment.accountDeletedAt == null
+      ? null
+      : businessDateInZone(employment.accountDeletedAt, timezone);
+
   for (const date of dates) {
-    if (date < employedFrom || (employedTo !== null && date > employedTo)) {
+    if (
+      date < employedFrom ||
+      (employedTo !== null && date > employedTo) ||
+      (deletedOn !== null && date > deletedOn)
+    ) {
       exclusions.set(date, full(AttendanceExclusionCause.NotEmployed));
     }
   }

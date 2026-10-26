@@ -102,6 +102,7 @@ export const getTeamAttendance = async (
       employmentId: employment.id,
       userId: employment.userId,
       user: employment.user,
+      accountDeleted: employment.accountDeleted,
       groups: (groupsByUser.get(employment.userId) ?? []).filter(
         (group) => nameable === null || nameable.has(group.id)
       ),

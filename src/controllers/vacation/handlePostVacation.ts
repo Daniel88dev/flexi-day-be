@@ -18,6 +18,7 @@ import { assertGroupAdmin } from "../../services/groupUser/groupAccess.js";
 import { getGroup } from "../../services/group/groupServices.js";
 import { getGroupUser } from "../../services/groupUser/groupUserServices.js";
 import { getPersonContact } from "../../services/person/personName.js";
+import { isDeletedAccount } from "../../services/user/userServices.js";
 import { postVacationBulk } from "../../services/vacation/vacationServices.js";
 import { markCalendarTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 import { createVacationEvents } from "../../services/vacationEvent/vacationEventServices.js";
@@ -199,6 +200,15 @@ export const handlePostVacation = async (req: Request, res: Response) => {
           context: { targetUserId, groupId: data.groupId },
         });
       }
+    }
+
+    if (await isDeletedAccount(targetUserId, tx)) {
+      throw new AppError({
+        message: "That person deleted their account",
+        logging: true,
+        code: 403,
+        context: { targetUserId, groupId: data.groupId },
+      });
     }
 
     await assertRequestWithinQuota(records, tx);

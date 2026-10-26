@@ -4,6 +4,7 @@ import AppError from "../../utils/appError.js";
 import type { ValidatedPostOrganizationAdminType } from "../../services/organization/types.js";
 import { assertOrganizationOwner, resolveAdministeredOrganization } from "./utils.js";
 import { countActiveMembershipsInOrganization } from "../../services/groupUser/groupUserServices.js";
+import { isDeletedAccount } from "../../services/user/userServices.js";
 import {
   grantOrganizationAdmin,
   listOrganizationAdminCandidates,
@@ -56,10 +57,9 @@ export const handlePostOrganizationAdmin = async (req: Request, res: Response) =
     // The check above is only the fast path; this is the one that counts,
     // because it runs under the organization lock that the revocation in
     // `handleDeleteGroupUser` also takes.
-    assertStillEligible: (tx) =>
-      countActiveMembershipsInOrganization(data.userId, organization.id, tx).then(
-        (count) => count > 0
-      ),
+    assertStillEligible: async (tx) =>
+      (await countActiveMembershipsInOrganization(data.userId, organization.id, tx)) > 0 &&
+      !(await isDeletedAccount(data.userId, tx)),
   });
 
   const admins = await listOrganizationAdmins(organization.id);
