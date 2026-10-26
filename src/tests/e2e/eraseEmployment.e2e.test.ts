@@ -17,6 +17,11 @@ import {
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
+import {
+  directoryProfileHistory,
+  directoryProfiles,
+} from "../../db/schema/directory-profile-schema.js";
+import { directoryAudience, directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { groupEvents } from "../../db/schema/group-event-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
@@ -437,6 +442,80 @@ describe("erasing a person's organization data", () => {
       expect(await employmentsOf(world.organizationId, world.member.id)).toEqual([]);
       expect(
         await countWhere(db.select().from(vacation).where(eq(vacation.userId, world.member.id)))
+      ).toBe(1);
+    });
+
+    it("removes the person's profile and its history, and clears Reports to wherever it names them", async () => {
+      const world = await setUp();
+      const colleagueEmployment = (
+        await employmentsOf(world.organizationId, world.colleague.id)
+      )[0]!;
+      await db.insert(directoryProfiles).values([
+        {
+          employmentId: world.employment.id,
+          organizationId: world.organizationId,
+          jobTitle: "Support specialist",
+          employeeNumber: "A-0044",
+        },
+        {
+          employmentId: colleagueEmployment.id,
+          organizationId: world.organizationId,
+          jobTitle: "Agent",
+          reportsToEmploymentId: world.employment.id,
+        },
+      ]);
+      await db.insert(directoryProfileHistory).values([
+        {
+          id: uuidv4(),
+          organizationId: world.organizationId,
+          employmentId: world.employment.id,
+          actorUserId: world.owner.id,
+          section: directoryPermissionRow.Job,
+          fields: ["employeeNumber"],
+          audience: directoryAudience.Owner,
+        },
+        {
+          id: uuidv4(),
+          organizationId: world.organizationId,
+          employmentId: colleagueEmployment.id,
+          actorUserId: world.member.id,
+          section: directoryPermissionRow.Card,
+          fields: ["jobTitle"],
+          audience: directoryAudience.OrganizationAdmin,
+        },
+      ]);
+
+      const res = await erase(world.owner.id, world.employment.id, "Jana Nováková");
+
+      expect(res.status).toBe(204);
+      expect(
+        await countWhere(
+          db
+            .select()
+            .from(directoryProfiles)
+            .where(eq(directoryProfiles.employmentId, world.employment.id))
+        )
+      ).toBe(0);
+      expect(
+        await countWhere(
+          db
+            .select()
+            .from(directoryProfileHistory)
+            .where(eq(directoryProfileHistory.employmentId, world.employment.id))
+        )
+      ).toBe(0);
+      const [colleagueProfile] = await db
+        .select()
+        .from(directoryProfiles)
+        .where(eq(directoryProfiles.employmentId, colleagueEmployment.id));
+      expect(colleagueProfile).toMatchObject({ jobTitle: "Agent", reportsToEmploymentId: null });
+      expect(
+        await countWhere(
+          db
+            .select()
+            .from(directoryProfileHistory)
+            .where(eq(directoryProfileHistory.employmentId, colleagueEmployment.id))
+        )
       ).toBe(1);
     });
 

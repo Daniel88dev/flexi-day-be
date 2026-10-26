@@ -279,7 +279,7 @@ describe("Reading the people directory through the Permission table", () => {
       const external = await (await as(users.eli.id))(profilePath(organizationId, employment.jana));
       expect(external.status).toBe(200);
       expect(external.body.sections).toEqual({
-        card: { level: "READ" },
+        card: expect.objectContaining({ level: "READ" }),
         photo: { level: "READ" },
       });
       expect(external.body).not.toHaveProperty("account");
@@ -289,7 +289,7 @@ describe("Reading the people directory through the Permission table", () => {
       )(profilePath(organizationId, employment.jana));
       expect(colleague.body).toMatchObject({ name: "Jana Member", self: false, ended: false });
       expect(colleague.body.sections).toEqual({
-        card: { level: "READ" },
+        card: expect.objectContaining({ level: "READ" }),
         photo: { level: "READ" },
         workContact: { level: "READ" },
       });
@@ -303,7 +303,7 @@ describe("Reading the people directory through the Permission table", () => {
 
       const member = await get(profilePath(organizationId, employment.jana));
       expect(Object.keys(member.body.sections)).toEqual(["card", "photo", "workContact", "job"]);
-      expect(member.body.sections.job).toEqual({
+      expect(member.body.sections.job).toMatchObject({
         level: "READ",
         spell: { startedAt: expect.any(String), endedAt: null },
       });
@@ -319,10 +319,13 @@ describe("Reading the people directory through the Permission table", () => {
 
       expect(res.body.self).toBe(true);
       expect(res.body.sections).toEqual({
-        card: { level: "READ" },
+        card: expect.objectContaining({ level: "READ" }),
         photo: { level: "WRITE" },
         workContact: { level: "READ" },
-        job: { level: "READ", spell: { startedAt: expect.any(String), endedAt: null } },
+        job: expect.objectContaining({
+          level: "READ",
+          spell: { startedAt: expect.any(String), endedAt: null },
+        }),
         contact: { level: "WRITE" },
         personal: { level: "WRITE" },
       });
@@ -359,7 +362,10 @@ describe("Reading the people directory through the Permission table", () => {
 
       const res = await (await as(users.karel.id))(profilePath(organizationId, employment.jana));
 
-      expect(res.body.sections).toEqual({ card: { level: "READ" }, photo: { level: "READ" } });
+      expect(res.body.sections).toEqual({
+        card: expect.objectContaining({ level: "READ" }),
+        photo: { level: "READ" },
+      });
     });
 
     it("reaches an ended record for the owner only, and answers 404 to the rest", async () => {

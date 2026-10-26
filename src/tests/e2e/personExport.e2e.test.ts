@@ -13,6 +13,13 @@ import {
   attendanceEventType,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
+import {
+  contractType,
+  directoryProfileHistory,
+  directoryProfiles,
+  workingTime,
+} from "../../db/schema/directory-profile-schema.js";
+import { directoryAudience, directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { notifications, notificationType } from "../../db/schema/notification-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
@@ -459,6 +466,83 @@ describe("Person export", () => {
         .from(session)
         .where(eq(session.userId, world.member.id));
       if (ownSession) expect(everything).not.toContain(ownSession.token);
+    });
+
+    it("carries the Card and Job fields of every spell and the profile history, without values in the history", async () => {
+      const world = await setUp();
+      const [ownerEmployment] = await db
+        .select({ id: employments.id })
+        .from(employments)
+        .where(
+          and(
+            eq(employments.organizationId, world.organizationId),
+            eq(employments.userId, world.owner.id)
+          )
+        );
+      await db.insert(directoryProfiles).values({
+        employmentId: world.employment.id,
+        organizationId: world.organizationId,
+        jobTitle: "Support specialist",
+        reportsToEmploymentId: ownerEmployment!.id,
+        legalName: "Jana Marie Nováková",
+        employeeNumber: "A-0044",
+        startDate: "2024-03-01",
+        probationEndDate: "2024-06-01",
+        contractType: contractType.Permanent,
+        workingTime: workingTime.PartTime,
+      });
+      await db.insert(directoryProfileHistory).values({
+        id: uuidv4(),
+        organizationId: world.organizationId,
+        employmentId: world.employment.id,
+        actorUserId: world.delegate.id,
+        section: directoryPermissionRow.Job,
+        fields: ["employeeNumber", "workingTime"],
+        audience: directoryAudience.OrganizationAdmin,
+      });
+      const queue = await buildNow();
+
+      const res = await adminRequest(world.owner.id, world.employment.id);
+      await queue.drain();
+      const signed = await sign(world.owner.id, res.body.id);
+      const entries = readZip((await download(signed.body.url)).body as Buffer);
+      const person = JSON.parse(entries.get("person.json")!.toString("utf8"));
+
+      expect(person.employments[0].profile).toEqual({
+        jobTitle: "Support specialist",
+        reportsTo: { employmentId: ownerEmployment!.id, name: "Olga Owner" },
+        legalName: "Jana Marie Nováková",
+        employeeNumber: "A-0044",
+        startDate: "2024-03-01",
+        leavingDate: null,
+        probationEndDate: "2024-06-01",
+        contractType: "PERMANENT",
+        workingTime: "PART_TIME",
+      });
+      expect(person.profileHistory).toEqual([
+        {
+          at: expect.any(String),
+          employmentId: world.employment.id,
+          section: "JOB",
+          fields: ["employeeNumber", "workingTime"],
+          by: "Dana Delegate",
+          audience: "ORGANIZATION_ADMIN",
+        },
+      ]);
+    });
+
+    it("sends an empty profile for a spell nobody has edited", async () => {
+      const world = await setUp();
+      const queue = await buildNow();
+
+      const res = await adminRequest(world.owner.id, world.employment.id);
+      await queue.drain();
+      const signed = await sign(world.owner.id, res.body.id);
+      const entries = readZip((await download(signed.body.url)).body as Buffer);
+      const person = JSON.parse(entries.get("person.json")!.toString("utf8"));
+
+      expect(person.employments[0].profile).toBeNull();
+      expect(person.profileHistory).toEqual([]);
     });
 
     it("tells the requester the export is ready, in-app, and lists it as ready", async () => {

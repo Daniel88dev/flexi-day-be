@@ -16,6 +16,7 @@ import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacationEvents } from "../../db/schema/vacation-event-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { downloadFileName } from "../attachment/attachmentServices.js";
+import { collectProfileExport } from "../directory/directoryProfileServices.js";
 import { getPersonContacts } from "../person/personName.js";
 
 /** The fixed purpose labels the person sees in place of reader names (C-579/21). */
@@ -77,6 +78,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
     )
     .orderBy(asc(employments.startedAt));
   const employmentIds = spells.map((spell) => spell.id);
+  const profile = await collectProfileExport(organizationId, employmentIds);
 
   const organizationGroups = await db
     .select({
@@ -304,7 +306,10 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
   const person = {
     exportedAt: new Date(),
     organization: organization ?? { id: organizationId, name: null },
-    employments: spells,
+    employments: spells.map((spell) => ({
+      ...spell,
+      profile: profile.profiles.get(spell.id) ?? null,
+    })),
     groups: memberships.map((row) => ({
       groupId: row.groupId,
       groupName: groupName.get(row.groupId) ?? null,
@@ -331,6 +336,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       detail: row.changeDetail,
       by: nameOf(row.changingUserId),
     })),
+    profileHistory: profile.history,
     readLog: reads.map((row) => ({ at: row.at, kind: row.kind, purpose: PURPOSE[row.audience] })),
   };
 

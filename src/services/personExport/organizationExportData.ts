@@ -8,6 +8,7 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
+import { collectProfileExport } from "../directory/directoryProfileServices.js";
 import { getPersonContacts } from "../person/personName.js";
 import { safeFileName } from "./personExportData.js";
 
@@ -122,6 +123,12 @@ export const collectOrganizationExport = async (organizationId: string) => {
     people.push({ userId: spell.userId, name, folder });
   }
 
+  const accountless = spells.filter((spell) => spell.userId === null);
+  const accountlessProfiles = await collectProfileExport(
+    organizationId,
+    accountless.map((spell) => spell.id)
+  );
+
   const document = {
     exportedAt: new Date(),
     organization: organization
@@ -234,16 +241,18 @@ export const collectOrganizationExport = async (organizationId: string) => {
         })),
     })),
     // No account means no Person export folder: the Employment is all there is.
-    peopleWithoutAccount: spells
-      .filter((spell) => spell.userId === null)
-      .map((spell) => ({
-        employmentId: spell.id,
-        name: spell.name,
-        email: spell.email,
-        type: spell.type,
-        startedAt: spell.startedAt,
-        endedAt: spell.endedAt,
-      })),
+    peopleWithoutAccount: accountless.map((spell) => ({
+      employmentId: spell.id,
+      name: spell.name,
+      email: spell.email,
+      type: spell.type,
+      startedAt: spell.startedAt,
+      endedAt: spell.endedAt,
+      profile: accountlessProfiles.profiles.get(spell.id) ?? null,
+      profileHistory: accountlessProfiles.history.filter(
+        (entry) => entry.employmentId === spell.id
+      ),
+    })),
   };
 
   return { document, people };

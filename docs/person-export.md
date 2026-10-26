@@ -19,14 +19,14 @@ organization holds about one person. The work is in `src/services/personExport/`
 One organization's Organization data about the person, across every spell. The name and email are
 the Employment's own copies.
 
-| File                      | Contents                                                                                                    |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `person.json`             | Everything below, plus Employments, group memberships, managed groups and the Read log's dates and purposes |
-| `bookings.csv`            | Every booking in any state, with the names of who created, approved, rejected or cancelled it               |
-| `attendance-sessions.csv` | Sessions with break minutes and any location fixes still held; breaks and events are in `person.json`       |
-| `quotas.csv`              | Each year's allowance per group                                                                             |
-| `changes.csv`             | The change log entries about the person                                                                     |
-| `attachments/`            | The bytes of every attachment still held                                                                    |
+| File                      | Contents                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `person.json`             | Everything below, plus Employments with their Card and Job fields, the profile history, group memberships, managed groups and the Read log's dates and purposes |
+| `bookings.csv`            | Every booking in any state, with the names of who created, approved, rejected or cancelled it                                                                   |
+| `attendance-sessions.csv` | Sessions with break minutes and any location fixes still held; breaks and events are in `person.json`                                                           |
+| `quotas.csv`              | Each year's allowance per group                                                                                                                                 |
+| `changes.csv`             | The change log entries about the person                                                                                                                         |
+| `attachments/`            | The bytes of every attachment still held                                                                                                                        |
 
 Account data stays out: login, the account's own name and email, Account picture, sessions,
 settings, notifications, Birthday. Reader names never appear in the Read log section, only the

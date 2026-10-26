@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { contractType, workingTime } from "../../db/schema/directory-profile-schema.js";
+import type {
+  directoryAudience,
+  directoryPermissionRow,
+} from "../../db/schema/directory-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 
 export const validateDirectoryAgreementBody = z.object({
@@ -50,6 +55,8 @@ export type DirectorySectionView = { level: "READ" | "WRITE" };
 export type DirectoryPerson = {
   employmentId: string;
   name: string;
+  /** A Card field, so everyone who reaches the person reads it. */
+  jobTitle: string | null;
   /** The Account picture; the Profile photo arrives with the Photo Section. */
   image: string | null;
   user: UserSummary;
@@ -57,6 +64,26 @@ export type DirectoryPerson = {
 };
 
 export type FormerDirectoryPerson = DirectoryPerson & { startedAt: Date; endedAt: Date };
+
+export type DirectoryCardView = DirectorySectionView & {
+  jobTitle: string | null;
+  /** Null when unset. `name` is null when the viewer can't reach that person. */
+  reportsTo: { employmentId: string; name: string | null } | null;
+  /** The name follows a bound, open account and nobody edits it here. */
+  nameFromAccount: boolean;
+};
+
+export type DirectoryJobView = DirectorySectionView & {
+  spell: { startedAt: Date; endedAt: Date | null };
+  legalName: string | null;
+  employeeNumber: string | null;
+  /** `YYYY-MM-DD`. Never filled in from the spell start. */
+  startDate: string | null;
+  leavingDate: string | null;
+  probationEndDate: string | null;
+  contractType: contractType | null;
+  workingTime: workingTime | null;
+};
 
 export type DirectoryPeople = { people: DirectoryPerson[]; formerList: boolean };
 
@@ -68,17 +95,60 @@ export type DirectoryProfile = DirectoryPerson & {
   ended: boolean;
   /** Only the Sections the viewer reads are present. */
   sections: {
-    card?: DirectorySectionView;
+    card?: DirectoryCardView;
     photo?: DirectorySectionView;
     workContact?: DirectorySectionView;
-    job?: DirectorySectionView & { spell: { startedAt: Date; endedAt: Date | null } };
+    job?: DirectoryJobView;
     contact?: DirectorySectionView;
     personal?: DirectorySectionView;
   };
+  /** The owner, org admins and HR read the profile history. */
+  canReadHistory: boolean;
   /** For the owner, org admins, HR and the person. */
   account?: {
     status: DirectoryAccountStatus;
     signInEmail: string | null;
     directoryRoles: ("HR" | "LEADERSHIP")[];
   };
+};
+
+/** A value sets the field, `null` clears it, and a missing key leaves it as it is. */
+const text = (max: number) => z.string().trim().min(1).max(max).nullable().optional();
+const day = z.iso.date().nullable().optional();
+
+export const validatePatchDirectoryProfile = z
+  .object({
+    card: z
+      .object({
+        name: z.string().trim().min(1).max(200).optional(),
+        jobTitle: text(100),
+        reportsToEmploymentId: z.string().min(1).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+    job: z
+      .object({
+        legalName: text(200),
+        employeeNumber: text(50),
+        startDate: day,
+        leavingDate: day,
+        probationEndDate: day,
+        contractType: z.enum(contractType).nullable().optional(),
+        workingTime: z.enum(workingTime).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type PatchDirectoryProfile = z.infer<typeof validatePatchDirectoryProfile>;
+
+export type ProfileHistoryEntry = {
+  id: string;
+  at: Date;
+  /** Null once the actor's user row is gone. */
+  actorName: string | null;
+  section: directoryPermissionRow;
+  fields: string[];
+  audience: directoryAudience;
 };
