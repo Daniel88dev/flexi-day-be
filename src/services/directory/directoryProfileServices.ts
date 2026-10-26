@@ -26,6 +26,8 @@ import {
   profileActions,
 } from "./directoryEndingServices.js";
 import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
+import { emergencyContactNotice } from "./emergencyContactNotice.js";
+import { getOrganizationById } from "../organization/organizationServices.js";
 import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
 import type {
@@ -292,7 +294,7 @@ const sectionsOf = (
       workingTime: record.workingTime ?? null,
     },
     contact: view(R.Contact),
-    personal: view(R.Personal),
+    personal: record.type === workerType.External ? undefined : view(R.Personal),
   };
   return Object.fromEntries(
     Object.entries(sections).filter(([, section]) => section !== undefined)
@@ -334,6 +336,18 @@ export const getDirectoryProfile = async (
     canReadHistory: canReadHistory(viewer),
     actions: profileActions(viewer, row, access),
   };
+  if (profile.sections.contact?.level === V.Write) {
+    const organization = await getOrganizationById(viewer.organizationId, tx);
+    profile.sections.contact = {
+      ...profile.sections.contact,
+      notice: await emergencyContactNotice(
+        { id: viewer.organizationId, name: organization?.name ?? "" },
+        viewer.language,
+        tx
+      ),
+      phoneCountryDefault: phoneCountryView(viewer),
+    };
+  }
   if (access.accountFacts) {
     profile.account = {
       status:

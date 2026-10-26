@@ -33,6 +33,14 @@ export const countryView = (code: string, language: appLanguage): CountryView =>
   return { code: upper, name: names.of(upper) ?? upper };
 };
 
+const knownRegions = new Intl.DisplayNames(["en"], { type: "region", fallback: "none" });
+// Region codes Intl names that are not countries.
+const NOT_COUNTRIES = new Set(["EU", "EZ", "UN", "ZZ", "QO", "XA", "XB"]);
+
+/** An ISO 3166-1 alpha-2 country code, upper case. */
+export const isCountryCode = (code: string): boolean =>
+  /^[A-Z]{2}$/.test(code) && !NOT_COUNTRIES.has(code) && knownRegions.of(code) !== undefined;
+
 export const phoneView = (e164: string, language: appLanguage): PhoneView => {
   const phone = parsePhoneNumberFromString(e164);
   return {

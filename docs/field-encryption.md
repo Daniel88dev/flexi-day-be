@@ -48,7 +48,8 @@ it again just moves to the next version.
 The script walks `ENCRYPTED_TABLES` in `rekeyServices.ts`. **A table that stores encrypted fields
 must be listed there**, with its id column, its organization column and the encrypted columns,
 and must seal each value with `fieldContext(<table>, <column>, <id>)`. A table missing from the
-list is left unreadable by the first re-key.
+list is left unreadable by the first re-key. Today it holds `directory_sensitive_profiles`
+(columns `contact` and `personal`, id `employment_id`).
 
 Run it only when a data key may be compromised. Against production it runs from a terminal (it
 refuses without one) with the production environment and AWS credentials allowed to call

@@ -13,7 +13,17 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
-import { parsePhone } from "./contactFormat.js";
+import { isCountryCode, parsePhone } from "./contactFormat.js";
+import {
+  EMPTY_CONTACT,
+  EMPTY_PERSONAL,
+  readSensitiveSection,
+  writeSensitiveSections,
+  type StoredContact,
+  type StoredPersonal,
+} from "./sensitiveSections.js";
+import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
+import { businessDateInZone } from "../../utils/dateFunc.js";
 import { getPersonContacts } from "../person/personName.js";
 import {
   canReadHistory,
@@ -58,11 +68,123 @@ const EMPTY: ProfileColumns = {
 };
 
 const setsAValue = (patch: PatchDirectoryProfile) =>
-  [patch.card, patch.workContact, patch.job].some(
+  [patch.card, patch.workContact, patch.job, patch.contact, patch.personal].some(
     (section) =>
       section !== undefined &&
       Object.values(section).some((value) => value !== null && value !== undefined)
   );
+
+type SensitivePatch = {
+  contact?: Partial<StoredContact>;
+  personal?: Partial<StoredPersonal>;
+};
+
+const EARLIEST_DATE_OF_BIRTH = "1900-01-01";
+
+/** Parses phones, checks the country and the date of birth, and returns the values to store. */
+const checkSensitivePatch = async (
+  patch: PatchDirectoryProfile,
+  organizationId: string,
+  context: Record<string, unknown>,
+  tx: DbTransaction
+): Promise<SensitivePatch> => {
+  const phoneOrRefuse = (input: string) => {
+    const e164 = parsePhone(input);
+    if (e164 === null) {
+      throw refuse(422, "INVALID_PHONE", "That isn't a valid phone number", context);
+    }
+    return e164;
+  };
+  const result: SensitivePatch = {};
+
+  if (patch.contact) {
+    const contact: Partial<StoredContact> = {};
+    const { privatePhone, privateEmail, emergencyContact1, emergencyContact2 } = patch.contact;
+    if (privatePhone !== undefined) {
+      contact.privatePhone = privatePhone === null ? null : phoneOrRefuse(privatePhone);
+    }
+    if (privateEmail !== undefined) contact.privateEmail = privateEmail;
+    const slot = (entry: { name: string; phone: string } | null) =>
+      entry === null ? null : { name: entry.name, phone: phoneOrRefuse(entry.phone) };
+    if (emergencyContact1 !== undefined) contact.emergencyContact1 = slot(emergencyContact1);
+    if (emergencyContact2 !== undefined) contact.emergencyContact2 = slot(emergencyContact2);
+    result.contact = contact;
+  }
+
+  if (patch.personal) {
+    const personal: Partial<StoredPersonal> = {};
+    const { homeAddress, dateOfBirth } = patch.personal;
+    if (homeAddress !== undefined) {
+      if (homeAddress !== null && !isCountryCode(homeAddress.country)) {
+        throw refuse(422, "INVALID_COUNTRY", "That isn't a country code", context);
+      }
+      const line = (value: string | null | undefined) => (value ? value : null);
+      personal.homeAddress =
+        homeAddress === null
+          ? null
+          : {
+              line1: homeAddress.line1,
+              line2: line(homeAddress.line2),
+              postalCode: line(homeAddress.postalCode),
+              city: homeAddress.city,
+              region: line(homeAddress.region),
+              country: homeAddress.country,
+            };
+    }
+    if (dateOfBirth !== undefined) {
+      if (dateOfBirth !== null) {
+        const today = businessDateInZone(
+          new Date(),
+          await organizationTimeZone(organizationId, tx)
+        );
+        if (dateOfBirth < EARLIEST_DATE_OF_BIRTH || dateOfBirth > today) {
+          throw refuse(
+            422,
+            "DATE_OF_BIRTH_OUT_OF_RANGE",
+            "A date of birth lies between 1900-01-01 and today",
+            context
+          );
+        }
+      }
+      personal.dateOfBirth = dateOfBirth;
+    }
+    result.personal = personal;
+  }
+  return result;
+};
+
+const changedKeys = (before: object, after: object) =>
+  Object.keys(after).filter(
+    (key) =>
+      JSON.stringify(new Map(Object.entries(before)).get(key) ?? null) !==
+      JSON.stringify(new Map(Object.entries(after)).get(key) ?? null)
+  );
+
+/** Merges the patch into the sealed Sections and returns the fields each one changed. */
+const writeSensitivePatch = async (
+  organizationId: string,
+  employmentId: string,
+  patch: SensitivePatch,
+  tx: DbTransaction
+): Promise<{ contact: string[]; personal: string[] }> => {
+  const stored = await readSensitiveSection(organizationId, employmentId, tx);
+  const before = {
+    contact: stored.contact ?? EMPTY_CONTACT,
+    personal: stored.personal ?? EMPTY_PERSONAL,
+  };
+  const after = {
+    contact: { ...before.contact, ...patch.contact },
+    personal: { ...before.personal, ...patch.personal },
+  };
+  const changes = {
+    contact: changedKeys(before.contact, after.contact),
+    personal: changedKeys(before.personal, after.personal),
+  };
+  if (changes.contact.length + changes.personal.length > 0) {
+    await writeSensitiveSections(organizationId, employmentId, after, tx);
+  }
+  return changes;
+};
 
 /**
  * Writes the Card, Work contact and Job fields of one profile, and the frozen or
@@ -101,6 +223,8 @@ export const updateDirectoryProfile = async (
     [R.Card, patch.card],
     [R.WorkContact, patch.workContact],
     [R.Job, patch.job],
+    [R.Contact, patch.contact],
+    [R.Personal, patch.personal],
   ];
   for (const [row, section] of touched) {
     if (section !== undefined && access.sections[row] !== V.Write) {
@@ -119,6 +243,14 @@ export const updateDirectoryProfile = async (
     }
     workContact.workPhone = e164;
   }
+
+  if (patch.personal !== undefined && record.type === workerType.External) {
+    throw refuse(422, "EMPLOYEES_ONLY", "The Personal Section applies to employees only", context);
+  }
+  const sensitivePatch =
+    patch.contact === undefined && patch.personal === undefined
+      ? undefined
+      : await checkSensitivePatch(patch, organizationId, context, tx);
 
   if (setsAValue(patch)) await assertDirectoryWritable(organizationId, tx);
 
@@ -226,11 +358,17 @@ export const updateDirectoryProfile = async (
     cardChanges.unshift("name");
   }
 
+  const sensitiveChanges = sensitivePatch
+    ? await writeSensitivePatch(organizationId, employmentId, sensitivePatch, tx)
+    : { contact: [], personal: [] };
+
   const history = (
     [
       [R.Card, cardChanges],
       [R.WorkContact, workContactChanges],
       [R.Job, jobChanges],
+      [R.Contact, sensitiveChanges.contact],
+      [R.Personal, sensitiveChanges.personal],
     ] as const
   )
     .filter(([, fields]) => fields.length > 0)

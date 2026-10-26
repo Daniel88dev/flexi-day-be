@@ -309,6 +309,13 @@
       "when": 1793007227270,
       "tag": "0043_directory_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793008227396,
+      "tag": "0044_directory_sensitive_sections",
+      "breakpoints": true
     }
   ]
 }

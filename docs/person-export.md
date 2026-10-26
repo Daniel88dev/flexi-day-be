@@ -19,19 +19,20 @@ organization holds about one person. The work is in `src/services/personExport/`
 One organization's Organization data about the person, across every spell. The name and email are
 the Employment's own copies.
 
-| File                      | Contents                                                                                                                                                        |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `person.json`             | Everything below, plus Employments with their Card and Job fields, the profile history, group memberships, managed groups and the Read log's dates and purposes |
-| `bookings.csv`            | Every booking in any state, with the names of who created, approved, rejected or cancelled it                                                                   |
-| `attendance-sessions.csv` | Sessions with break minutes and any location fixes still held; breaks and events are in `person.json`                                                           |
-| `quotas.csv`              | Each year's allowance per group                                                                                                                                 |
-| `changes.csv`             | The change log entries about the person                                                                                                                         |
-| `attachments/`            | The bytes of every attachment still held                                                                                                                        |
-| `profile-photos/`         | Each spell's Profile photo in its full size, named in `employments[].photo`                                                                                     |
+| File                      | Contents                                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `person.json`             | Everything below, plus Employments with their Card, Job, Contact and Personal fields, the profile history, group memberships, managed groups and the Read log's dates and purposes |
+| `bookings.csv`            | Every booking in any state, with the names of who created, approved, rejected or cancelled it                                                                                      |
+| `attendance-sessions.csv` | Sessions with break minutes and any location fixes still held; breaks and events are in `person.json`                                                                              |
+| `quotas.csv`              | Each year's allowance per group                                                                                                                                                    |
+| `changes.csv`             | The change log entries about the person                                                                                                                                            |
+| `attachments/`            | The bytes of every attachment still held                                                                                                                                           |
+| `profile-photos/`         | Each spell's Profile photo in its full size, named in `employments[].photo`                                                                                                        |
 
 Account data stays out: login, the account's own name and email, Account picture, sessions,
 settings, notifications, Birthday. Reader names never appear in the Read log section, only the
-purpose (owner, organization administration, self-service). A CSV cell that starts like a formula
+purpose from the audience (owner, organization administration, HR administration, line
+management, leadership, self-service). A CSV cell that starts like a formula
 gets a leading `'`. Employment type and the profile sections join the file when they exist.
 
 ## Delivery
@@ -71,7 +72,8 @@ on every plan: `POST /api/organization/export`, and `GET` for the newest one. A 
 
 It is a `person_exports` row with `scope` `ORGANIZATION` and no subject, so it shares the queue,
 the lock, the store key, the signed link and the `export_ready` Notification. The request writes one
-`export` row in the Read log for every person in it, under the `OWNER` audience. The build reads
+`export` row in the Read log for every person in it, under the `OWNER` audience; a person without
+an account gets a row with no subject user, named by their Employment. The build reads
 one person at a time into the ZIP.
 
 ## Deleting the organization
@@ -86,6 +88,8 @@ deletes its own file.
 ## The Read log
 
 `read_log` is append-only. No route updates or deletes a row, and a trigger refuses every UPDATE.
-Rows go only with their organization, and an Erase leaves them in place. Each row names the reader, the person, the spells
+Rows go with their organization, or after 12 months on the nightly tick, and an Erase leaves them
+in place. Each row names the reader, the person, the spells
 (`employmentIds`, no foreign key, so a row outlives an erasure) and the audience the reader acted
-under. Sensitive-section reads will land in the same table with a kind of their own.
+under. Sensitive section reads land in the same table with the kind `read` and the Sections opened
+(see [`directory.md`](directory.md#show-and-the-read-log)).

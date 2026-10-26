@@ -15,14 +15,14 @@ import { organizationExportsPrefix } from "./personExportBuild.js";
 import type { PersonExportRow } from "./types.js";
 
 /**
- * Every person with an account the organization holds an Employment for, open
- * or ended, with their spells oldest first. Account-less Employments are left
- * out: the Read log names its subject by user id.
+ * Every person the organization holds an Employment for, open or ended, with
+ * their spells oldest first: one entry per account, and one per Employment
+ * without an account, whose Read log row has no subject user.
  */
 export const organizationPeople = async (
   organizationId: string,
   tx?: DbTransaction
-): Promise<{ userId: string; employmentIds: string[] }[]> => {
+): Promise<{ userId: string | null; employmentIds: string[] }[]> => {
   const rows = await (tx ?? db)
     .select({ id: employments.id, userId: employments.userId })
     .from(employments)
@@ -30,13 +30,20 @@ export const organizationPeople = async (
     .orderBy(asc(employments.startedAt), asc(employments.id));
 
   const byUser = new Map<string, string[]>();
+  const accountless: { userId: null; employmentIds: string[] }[] = [];
   for (const row of rows) {
-    if (row.userId === null) continue;
+    if (row.userId === null) {
+      accountless.push({ userId: null, employmentIds: [row.id] });
+      continue;
+    }
     const spells = byUser.get(row.userId) ?? [];
     spells.push(row.id);
     byUser.set(row.userId, spells);
   }
-  return [...byUser].map(([userId, employmentIds]) => ({ userId, employmentIds }));
+  return [
+    ...[...byUser].map(([userId, employmentIds]) => ({ userId, employmentIds })),
+    ...accountless,
+  ];
 };
 
 /**
