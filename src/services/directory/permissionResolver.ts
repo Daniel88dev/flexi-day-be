@@ -40,6 +40,8 @@ export type DirectoryRecord = { userId: string | null; ended: boolean };
 export type DirectoryAccess = {
   audiences: A[];
   sections: Record<SectionRow, SectionLevel>;
+  /** The audience whose cell gave each Section its level; null where the viewer reads nothing. */
+  grantedBy: Record<SectionRow, A | null>;
   acts: Record<ActRow, boolean>;
   /** The viewer reads the Card, so the record shows in their lists and its profile opens. */
   inReach: boolean;
@@ -97,13 +99,20 @@ export const resolveAccess = (
   const stored = new Map(cells.map((cell) => [`${cell.row}/${cell.audience}`, cell.value]));
 
   const sections = {} as Record<SectionRow, SectionLevel>;
+  const grantedBy = {} as Record<SectionRow, A | null>;
   for (const row of SECTION_ROWS) {
-    let widest: SectionLevel = audiences.includes(A.Self) ? V.Read : V.None;
+    const self = audiences.includes(A.Self);
+    let widest: SectionLevel = self ? V.Read : V.None;
+    let grantor: A | null = self ? A.Self : null;
     for (const audience of audiences) {
       const level = sectionLevel(stored.get(`${row}/${audience}`), audience);
-      if (RANK[level] > RANK[widest]) widest = level;
+      if (RANK[level] > RANK[widest]) {
+        widest = level;
+        grantor = audience;
+      }
     }
     sections[row] = widest;
+    grantedBy[row] = grantor;
   }
 
   const acts = {} as Record<ActRow, boolean>;
@@ -117,6 +126,7 @@ export const resolveAccess = (
   return {
     audiences,
     sections,
+    grantedBy,
     acts,
     inReach: sections[R.Card] !== V.None,
     restrictedMarkers,

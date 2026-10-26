@@ -273,3 +273,31 @@ describe("resolveAccess, directory acts", () => {
     expect(resolveAccess(defaults, viewer, openRecord).acts.SEND_DIRECTORY_INVITE).toBe(false);
   });
 });
+
+describe("resolveAccess, the granting audience", () => {
+  it("names the audience whose cell gave the widest level", () => {
+    const { grantedBy } = resolveAccess(
+      defaults,
+      standing({ organizationAdmin: true }),
+      openRecord
+    );
+    expect(grantedBy.CARD).toBe("ORGANIZATION_ADMIN");
+    expect(grantedBy.JOB).toBe("ORGANIZATION_ADMIN");
+  });
+
+  it("names the owner before any other audience the owner also holds", () => {
+    const viewer = colleague({ owner: true, organizationAdmin: true });
+    expect(resolveAccess(defaults, viewer, openRecord).grantedBy.CARD).toBe("OWNER");
+  });
+
+  it("names Self for the person's own Sections, and the wider audience where one wins", () => {
+    const viewer = colleague({ organizationAdmin: true });
+    const { grantedBy } = resolveAccess(defaults, viewer, ownRecord);
+    expect(grantedBy.CONTACT).toBe("SELF");
+    expect(grantedBy.CARD).toBe("ORGANIZATION_ADMIN");
+  });
+
+  it("names nobody for a Section the viewer can't read", () => {
+    expect(resolveAccess(defaults, colleague(), openRecord).grantedBy.JOB).toBeNull();
+  });
+});

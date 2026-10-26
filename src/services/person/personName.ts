@@ -11,7 +11,7 @@ export type PersonScope =
   { organizationId: SQLWrapper | string } | { groupId: SQLWrapper | string };
 
 /** `user`, or an alias of it. */
-type PersonColumns = { id: AnyPgColumn; name: AnyPgColumn; deletedAt: AnyPgColumn };
+export type PersonColumns = { id: AnyPgColumn; name: AnyPgColumn; deletedAt: AnyPgColumn };
 
 export const DELETED_ACCOUNT_NAME = "Deleted account";
 

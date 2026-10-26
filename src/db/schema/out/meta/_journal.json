@@ -281,6 +281,13 @@
       "when": 1792997279194,
       "tag": "0039_directory_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793001393860,
+      "tag": "0040_directory_profiles",
+      "breakpoints": true
     }
   ]
 }

@@ -38,6 +38,7 @@ import {
   directoryPermissionCells,
   organizationDirectorySettings,
 } from "./directory-schema.js";
+import { directoryProfileHistory, directoryProfiles } from "./directory-profile-schema.js";
 
 export const schema = {
   account,
@@ -84,4 +85,6 @@ export const schema = {
   organizationDirectorySettings,
   directoryAgreementAcceptances,
   directoryPermissionCells,
+  directoryProfiles,
+  directoryProfileHistory,
 };

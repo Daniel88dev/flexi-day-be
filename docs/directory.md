@@ -112,3 +112,57 @@ What else a viewer learns:
 Refusals: 404 `ORGANIZATION_NOT_FOUND`, 409 `DIRECTORY_OFF`, 403 `NOT_IN_DIRECTORY` for a viewer
 who is not the owner, an org admin or one of the organization's open people, and 404
 `PERSON_NOT_FOUND` for a record out of reach or in another organization.
+
+## Editing a profile
+
+Decisions: fenro T-473 (the fields), T-477 (profile history), T-483 (start date) and T-500 (this
+build).
+
+`PATCH /api/directory/{organizationId}/people/{employmentId}` writes the Card and Job fields of one
+Employment, open or ended. In the body, a value sets a field, `null` clears it and a missing key
+leaves it alone. Each Section in the body needs a write cell for the caller, resolved the same way
+reads are. The profile lives in `directory_profiles`, one row per Employment, created on the first
+write; a missing row reads as an empty profile.
+
+| Section | Field              | Rule                                                                                |
+| ------- | ------------------ | ----------------------------------------------------------------------------------- |
+| Card    | Name               | Only without a bound, open account: no account, an ended spell or a Deleted account |
+| Card    | Job title          | 1 to 100 characters, trimmed                                                        |
+| Card    | Reports to         | Another open Employment of the organization, never the person's own                 |
+| Job     | Legal name         | 1 to 200 characters                                                                 |
+| Job     | Employee number    | 1 to 50 characters, unique ignoring case among the open Employments                 |
+| Job     | Start date         | Never filled in from the spell; the web shows the spell start as a hint             |
+| Job     | Leaving date       | Informational, ends nothing                                                         |
+| Job     | Probation end date | Not before the start date; employees only                                           |
+| Job     | Contract type      | Permanent, fixed-term, apprenticeship, internship, other; employees only            |
+| Job     | Working time       | Full-time or part-time; employees only                                              |
+
+The name writes the Employment's own copy. The directory shows that copy on every record except
+an open one whose account is bound and not deleted, and the name helper shows a Deleted account's
+copy everywhere else. A rename stamps the user row, so a phone pulls the new name. The sign-in
+email is not editable here.
+
+Setting any value needs the directory plan (402 `PLAN_LIMIT`); a body that only clears works on
+every plan, so a lapsed organization can still correct and remove.
+
+Reports to grants nothing. Erasing the person it names clears it everywhere, through the foreign
+key. Ending that Employment clears it on open records (T-507).
+
+Refusals: 404 `PERSON_NOT_FOUND`, 403 `SECTION_NOT_WRITABLE`, 403 `NAME_FROM_ACCOUNT`, 402,
+422 `EMPLOYEES_ONLY`, `PROBATION_BEFORE_START`, `REPORTS_TO_NOT_FOUND`, `REPORTS_TO_SELF`, and 409
+`EMPLOYEE_NUMBER_TAKEN`.
+
+### Profile history
+
+Each write adds one `directory_profile_history` row per Section it changed: the actor, the
+Employment, the Section, the names of the fields whose value changed and the Audience whose cell
+granted the write. A rename counts as a Card change. No row ever holds a value. A write that changes
+nothing adds nothing.
+
+`GET /api/directory/{organizationId}/people/{employmentId}/history` serves it, newest first, to the
+owner, org admins and HR (403 `HISTORY_DENIED` otherwise). Rows go with their Employment, so Erase
+removes them.
+
+The Person export carries each spell's Card and Job fields under `employments[].profile` and the
+history under `profileHistory`; the Organization export does the same for people without an
+account.
