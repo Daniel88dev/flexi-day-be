@@ -10,7 +10,9 @@ import type {
 } from "../../services/attachment/types.js";
 
 /** The part of an S3 object-created event the handler reads. */
-export type S3ObjectCreatedEvent = { Records: { s3: { object: { key: string } } }[] };
+export type S3ObjectCreatedEvent = {
+  Records: { s3: { bucket?: { name: string }; object: { key: string } } }[];
+};
 
 type UploadMetadataKey = (typeof UPLOAD_METADATA)[keyof typeof UPLOAD_METADATA];
 
@@ -18,7 +20,8 @@ export type IncomingObject = {
   bytes: Buffer;
   /** The `Content-Type` the presigned POST pinned: the type the uploader claimed. */
   contentType: string | undefined;
-  metadata: Partial<Record<UploadMetadataKey, string>>;
+  /** The `x-amz-meta-*` fields the presigned POST pinned, lower-cased and unprefixed. */
+  metadata: Partial<Record<UploadMetadataKey, string>> & Record<string, string | undefined>;
 };
 
 /** The handler's view of the bucket, so a test can stand in for S3. */
@@ -49,7 +52,7 @@ export type ProcessorDeps = {
 };
 
 // S3 writes keys into events URL-encoded, with spaces as `+`.
-const decodeKey = (key: string): string => decodeURIComponent(key.replace(/\+/g, " "));
+export const decodeKey = (key: string): string => decodeURIComponent(key.replace(/\+/g, " "));
 
 /**
  * Whether the final object must go. A row that is gone keeps no bytes. A row
@@ -133,3 +136,26 @@ export const createHandler = ({ store, notify, log = console.log }: ProcessorDep
     }
   };
 };
+
+/**
+ * One function serves two buckets. Events from the attachments bucket take
+ * the attachment path; any other bucket's are Profile photos of the
+ * organization-data bucket, the only other one whose notification invokes it.
+ */
+export const routeByBucket =
+  ({
+    attachmentsBucket,
+    attachments,
+    photos,
+  }: {
+    attachmentsBucket: string;
+    attachments: (event: S3ObjectCreatedEvent) => Promise<void>;
+    photos: (bucket: string) => (key: string) => Promise<void>;
+  }) =>
+  async (event: S3ObjectCreatedEvent): Promise<void> => {
+    for (const record of event.Records) {
+      const bucket = record.s3.bucket?.name ?? attachmentsBucket;
+      if (bucket === attachmentsBucket) await attachments({ Records: [record] });
+      else await photos(bucket)(decodeKey(record.s3.object.key));
+    }
+  };

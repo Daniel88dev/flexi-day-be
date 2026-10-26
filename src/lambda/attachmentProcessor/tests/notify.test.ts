@@ -127,4 +127,27 @@ describe("attachment-processor notify", () => {
     await expect(notify(payload)).rejects.toThrow("Attachment callback failed: 404");
     await expect(notify(payload)).rejects.toThrow("Attachment callback failed: 500");
   });
+
+  it("sends a Profile photo report to the photo route and knows its gone reason", async () => {
+    const api = fakeApi(reply(200), reply(404, errorBody({ reason: "PHOTO_GONE" })));
+    const notify = createNotify({
+      apiUrl: "https://api.example.test",
+      readSecret: () => Promise.resolve("s1"),
+      fetch: api.fetch,
+      path: "/api/directory/photos/processed",
+      goneReason: "PHOTO_GONE",
+    });
+    const photo = { photoId: "7a1c9f0e-2b3d-4e5f-8a9b-0c1d2e3f4a5b", status: "READY" as const };
+
+    await expect(notify(photo)).resolves.toEqual({ result: "applied" });
+    await expect(notify(photo)).resolves.toEqual({ result: "gone" });
+    expect(api.calls[0]!.url).toBe("https://api.example.test/api/directory/photos/processed");
+    expect(
+      verifyAttachmentCallback(
+        "s1",
+        Buffer.from(api.calls[0]!.body),
+        api.calls[0]!.signature ?? undefined
+      )
+    ).toBe(true);
+  });
 });

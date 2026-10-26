@@ -43,6 +43,7 @@ import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.j
 import { supportRouter } from "./routes/supportRouter.js";
 import { attachmentRouter } from "./routes/attachmentRouter.js";
 import { localAttachmentRouter } from "./routes/localAttachmentRouter.js";
+import { photoCallbackRouter } from "./routes/photoCallbackRouter.js";
 import { attachmentCallbackRouter } from "./routes/attachmentCallbackRouter.js";
 import { isDiskAttachmentStore } from "./services/attachment/attachmentStore.js";
 import { isDiskOrganizationDataStore } from "./services/organizationData/organizationDataStore.js";
@@ -94,6 +95,7 @@ export const createServer = () => {
   // signed with its own secret. Without one the route does not exist.
   if (config.attachments.callbackSecret) {
     app.use("/api/attachments/processed", attachmentCallbackRouter());
+    app.use("/api/directory/photos/processed", photoCallbackRouter());
   }
 
   app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());

@@ -17,6 +17,7 @@ import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
+import { employmentPhotosPrefix, removePhotoObjects } from "../directory/directoryPhotoServices.js";
 import { getPersonContact } from "../person/personName.js";
 import { exportLockKey, exportStorageKey } from "../personExport/personExportBuild.js";
 import { endEmployment, lockEmploymentForAdmin } from "./endEmploymentServices.js";
@@ -219,4 +220,9 @@ export const removeErasedObjects = async (erased: ErasedEmployment): Promise<voi
       logger.error("erase.export_object_failed", { ...context, key, error });
     }
   }
+  await removePhotoObjects(
+    erased.employmentIds.map((employmentId) =>
+      employmentPhotosPrefix(erased.organizationId, employmentId)
+    )
+  );
 };

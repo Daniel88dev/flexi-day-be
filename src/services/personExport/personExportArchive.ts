@@ -1,7 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
 import { ZipArchive } from "archiver";
-import type { PersonExportContent } from "./personExportData.js";
+import type { ExportAttachmentFile, PersonExportContent } from "./personExportData.js";
 
 type Cell = string | number | boolean | Date | null | undefined;
 
@@ -128,7 +128,7 @@ export const csvFiles = ({ person }: PersonExportContent): Record<string, string
   ),
 });
 
-type ReadFile = (storageKey: string) => Promise<Buffer | undefined>;
+type ReadFile = (file: ExportAttachmentFile) => Promise<Buffer | undefined>;
 
 // One entry in memory at a time: each append waits until the archive has taken it.
 const appendAndWait = (archive: ZipArchive, data: Buffer | string, name: string) =>
@@ -152,9 +152,9 @@ const appendAndWait = (archive: ZipArchive, data: Buffer | string, name: string)
   });
 
 /**
- * One person's entries under `prefix`: `person.json`, the four CSVs and each
- * held attachment's bytes. `readFile` returns undefined for an attachment
- * whose object is gone, which then leaves its entry's `file` pointing nowhere.
+ * One person's entries under `prefix`: `person.json`, the four CSVs, each
+ * held attachment's bytes and each spell's Profile photo. `readFile` returns
+ * undefined for a file whose object is gone, and its `file` becomes null.
  */
 const appendPersonEntries = async (
   archive: ZipArchive,
@@ -164,7 +164,7 @@ const appendPersonEntries = async (
 ): Promise<void> => {
   const missing = new Set<string>();
   for (const file of content.files) {
-    const bytes = await readFile(file.storageKey);
+    const bytes = await readFile(file);
     if (!bytes) {
       missing.add(file.path);
       continue;
@@ -173,6 +173,9 @@ const appendPersonEntries = async (
   }
   const person = {
     ...content.person,
+    employments: content.person.employments.map((spell) =>
+      spell.photo && missing.has(spell.photo.file) ? { ...spell, photo: null } : spell
+    ),
     attachments: content.person.attachments.map((entry) =>
       entry.file && missing.has(entry.file) ? { ...entry, file: null } : entry
     ),

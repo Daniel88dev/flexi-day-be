@@ -89,15 +89,15 @@ const processPdf = (bytes: Buffer): ProcessedAttachment => {
   return { ok: true, bytes, contentType: "application/pdf", width: null, height: null };
 };
 
-const toJpeg = async (input: Sharp): Promise<ProcessedAttachment> => {
+const toJpeg = async (input: Sharp, maxEdge = MAX_IMAGE_EDGE_PX): Promise<ProcessedAttachment> => {
   try {
     // `rotate()` bakes the EXIF orientation in before the metadata is dropped;
     // sharp strips EXIF, ICC and XMP unless asked to keep them.
     const { data, info } = await input
       .rotate()
       .resize({
-        width: MAX_IMAGE_EDGE_PX,
-        height: MAX_IMAGE_EDGE_PX,
+        width: maxEdge,
+        height: maxEdge,
         fit: "inside",
         withoutEnlargement: true,
       })
@@ -120,11 +120,16 @@ const processImage = (bytes: Buffer) =>
 
 // libheif applies the file's rotation and mirroring itself, so the bitmap
 // arrives upright and carries no metadata for sharp to strip.
-const processHeic = async (bytes: Buffer): Promise<ProcessedAttachment> => {
+const decodeToSharp = async (bytes: Buffer): Promise<Sharp | undefined> => {
   const decoded = await decodeHeic(bytes, MAX_INPUT_PIXELS).catch(() => undefined);
-  if (!decoded) return { ok: false, reason: AttachmentRejectionReason.ImageUnreadable };
+  if (!decoded) return undefined;
   const { data, width, height } = decoded;
-  return toJpeg(sharp(data, { raw: { width, height, channels: 4 } }));
+  return sharp(data, { raw: { width, height, channels: 4 } });
+};
+
+const processHeic = async (bytes: Buffer): Promise<ProcessedAttachment> => {
+  const input = await decodeToSharp(bytes);
+  return input ? toJpeg(input) : { ok: false, reason: AttachmentRejectionReason.ImageUnreadable };
 };
 
 /**
@@ -141,4 +146,49 @@ export const processAttachment = async (
   }
   if (claimedType === "application/pdf") return processPdf(bytes);
   return claimedType === "image/heic" ? processHeic(bytes) : processImage(bytes);
+};
+
+/** The two sizes of a Profile photo: small for lists, full for the profile header. */
+export const PROFILE_PHOTO_EDGE_PX = { small: 256, full: 1024 } as const;
+
+export const PROFILE_PHOTO_CONTENT_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/heic",
+] as const satisfies readonly AttachmentContentType[];
+
+export type ProfilePhotoContentType = (typeof PROFILE_PHOTO_CONTENT_TYPES)[number];
+
+export const isProfilePhotoContentType = (value: string): value is ProfilePhotoContentType =>
+  (PROFILE_PHOTO_CONTENT_TYPES as readonly string[]).includes(value);
+
+export type ProcessedProfilePhoto =
+  { ok: true; small: Buffer; full: Buffer } | { ok: false; reason: AttachmentRejectionReason };
+
+/**
+ * A Profile photo, decoded and rewritten to two JPEGs without EXIF or GPS
+ * metadata. Shared by the disk store and the `attachment-processor` Lambda.
+ * It only decodes and resizes: no face detection or any other analysis.
+ */
+export const processProfilePhoto = async (
+  bytes: Buffer,
+  claimedType: string
+): Promise<ProcessedProfilePhoto> => {
+  if (!isProfilePhotoContentType(claimedType) || sniffContentType(bytes) !== claimedType) {
+    return { ok: false, reason: AttachmentRejectionReason.TypeMismatch };
+  }
+  const source =
+    claimedType === "image/heic"
+      ? await decodeToSharp(bytes)
+      : sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS });
+  if (!source) return { ok: false, reason: AttachmentRejectionReason.ImageUnreadable };
+
+  const [small, full] = await Promise.all([
+    toJpeg(source.clone(), PROFILE_PHOTO_EDGE_PX.small),
+    toJpeg(source.clone(), PROFILE_PHOTO_EDGE_PX.full),
+  ]);
+  if (!small.ok) return small;
+  if (!full.ok) return full;
+  return { ok: true, small: small.bytes, full: full.bytes };
 };

@@ -251,8 +251,8 @@ and differs in four ways:
   prefixes expire: `incoming/` after a day, for an upload nobody processed, and `exports/` after 7
   days, the life of an export's download. Unfinished multipart uploads are aborted after a day.
 - **SSE-KMS with S3 Bucket Keys** under the key below, rather than SSE-S3.
-- **No Lambda yet.** The second trigger on the attachment processor, and its KMS rights with a
-  condition on the bucket's encryption context, arrive with the Profile photo.
+- **Profile photos reach the attachment processor.** A second notification sends `incoming/` of
+  this bucket to the same Lambda, described below.
 
 The key is a customer managed KMS key, `alias/flexi-day-be-production-organization-data`. It
 encrypts the bucket and wraps each organization's data key for the Sensitive section fields, so
@@ -288,6 +288,25 @@ Two log settings keep Profile values out of CloudWatch:
 
 The application side matches: `src/utils/queryError.ts` strips a failed query's bound values from
 what the logger, `errorMiddleware` and Sentry's `beforeSend` see.
+
+### Profile photos and the attachment processor
+
+The browser posts a Profile photo to `incoming/<photoId>` of this bucket under a presigned POST the
+API signs ([`directory.md`](directory.md#profile-photo)). Three resources at the end of
+`organization-data.tf` hand it to `attachment-processor`:
+
+- `aws_s3_bucket_notification.organization_data`: `s3:ObjectCreated:*` on `incoming/`.
+- `aws_lambda_permission.organization_data_bucket`: S3 may invoke the function from this bucket.
+- `aws_iam_role_policy.attachment_processor_organization_data`: list the bucket, read and delete
+  `incoming/*`, write and delete `photos/*`, and `kms:Decrypt` and `kms:GenerateDataKey` on the key.
+
+The KMS statement carries two conditions: `kms:ViaService` is S3 in the region, and
+`kms:EncryptionContext:aws:s3:arn` is the bucket's ARN, which is the context S3 sends with Bucket
+Keys on. Field encryption calls KMS directly with an `organizationId` context, so the Lambda can
+never unwrap an organization's data key, and it never reaches `exports/`.
+
+The function itself is unchanged. It tells the two buckets apart by the bucket name in each event
+record, so it needs no new environment variable.
 
 ## RDS instance class and reserved instance
 

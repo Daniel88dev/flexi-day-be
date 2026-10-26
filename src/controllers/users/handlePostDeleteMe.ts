@@ -12,6 +12,10 @@ import {
   removeAttachmentObjects,
 } from "../../services/accountDeletion/accountDeletionServices.js";
 import { removeOrganizationExports } from "../../services/personExport/organizationExportServices.js";
+import {
+  organizationPhotosPrefix,
+  removePhotoObjects,
+} from "../../services/directory/directoryPhotoServices.js";
 import { disconnectAllProviders } from "../../services/calendarConnection/calendarConnectionServices.js";
 import { collectAppleRevocations } from "../../services/appleAuthorization/appleAuthorizationServices.js";
 import { revokeAtApple } from "../../services/appleAuthorization/appleRevocation.js";
@@ -98,6 +102,7 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
   await sendAccountDeletedNotices(session.userId, deleted.notices);
   await removeAttachmentObjects(session.userId, deleted.attachments);
   await removeOrganizationExports(deleted.organizationIds);
+  await removePhotoObjects(deleted.organizationIds.map(organizationPhotosPrefix));
   await revokeAtApple(appleClient, session.userId, appleRevocations);
   logger.info("account deleted", {
     userId: session.userId,

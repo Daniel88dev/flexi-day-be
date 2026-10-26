@@ -280,7 +280,7 @@ describe("Reading the people directory through the Permission table", () => {
       expect(external.status).toBe(200);
       expect(external.body.sections).toEqual({
         card: expect.objectContaining({ level: "READ" }),
-        photo: { level: "READ" },
+        photo: { level: "READ", photo: null },
       });
       expect(external.body).not.toHaveProperty("account");
 
@@ -290,7 +290,7 @@ describe("Reading the people directory through the Permission table", () => {
       expect(colleague.body).toMatchObject({ name: "Jana Member", self: false, ended: false });
       expect(colleague.body.sections).toEqual({
         card: expect.objectContaining({ level: "READ" }),
-        photo: { level: "READ" },
+        photo: { level: "READ", photo: null },
         workContact: { level: "READ", workEmail: null, workPhone: null },
       });
       expect(colleague.body).not.toHaveProperty("account");
@@ -320,7 +320,7 @@ describe("Reading the people directory through the Permission table", () => {
       expect(res.body.self).toBe(true);
       expect(res.body.sections).toEqual({
         card: expect.objectContaining({ level: "READ" }),
-        photo: { level: "WRITE" },
+        photo: { level: "WRITE", photo: null },
         workContact: { level: "READ", workEmail: null, workPhone: null },
         job: expect.objectContaining({
           level: "READ",
@@ -364,7 +364,7 @@ describe("Reading the people directory through the Permission table", () => {
 
       expect(res.body.sections).toEqual({
         card: expect.objectContaining({ level: "READ" }),
-        photo: { level: "READ" },
+        photo: { level: "READ", photo: null },
       });
     });
 

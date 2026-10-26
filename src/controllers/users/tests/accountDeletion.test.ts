@@ -16,10 +16,12 @@ const {
   mockSendNotices,
   mockOwnedOrganizations,
   mockRemoveExports,
+  mockRemovePhotos,
   APPLE_CLIENT,
 } = vi.hoisted(() => ({
   mockOwnedOrganizations: vi.fn(),
   mockRemoveExports: vi.fn(),
+  mockRemovePhotos: vi.fn(),
   mockGetBlockers: vi.fn(),
   mockGetConfirmation: vi.fn(),
   mockGetHash: vi.fn(),
@@ -57,6 +59,11 @@ vi.mock("../../../services/accountDeletion/ownedOrganizations.js", () => ({
 
 vi.mock("../../../services/personExport/organizationExportServices.js", () => ({
   removeOrganizationExports: mockRemoveExports,
+}));
+
+vi.mock("../../../services/directory/directoryPhotoServices.js", () => ({
+  organizationPhotosPrefix: (organizationId: string) => `photos/${organizationId}/`,
+  removePhotoObjects: mockRemovePhotos,
 }));
 
 vi.mock("../../../services/appleAuthorization/appleAuthorizationServices.js", () => ({
@@ -215,6 +222,8 @@ describe("account deletion handlers", () => {
       expect(mockDeleteAccount).toHaveBeenCalledWith(mockAuthData.userId, TX);
       expect(mockRemoveObjects).toHaveBeenCalledWith(mockAuthData.userId, []);
       expect(mockRemoveExports).toHaveBeenCalledWith(["owned-organization"]);
+      expect(mockRemovePhotos).toHaveBeenCalledWith(["photos/owned-organization/"]);
+      expect(firstCall(mockRemovePhotos)).toBeGreaterThan(firstCall(mockDeleteAccount));
       expect(firstCall(mockRemoveExports)).toBeGreaterThan(firstCall(mockDeleteAccount));
       expect(res.status).toHaveBeenCalledWith(204);
       const cleared = (res as unknown as { clearCookie: ReturnType<typeof vi.fn> }).clearCookie.mock
@@ -266,6 +275,7 @@ describe("account deletion handlers", () => {
         groups: 0,
         handedOverGroups,
         organizations: 0,
+        organizationIds: [],
         cancelledRequests: 0,
         attachments: [],
       });

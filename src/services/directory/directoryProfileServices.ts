@@ -13,12 +13,14 @@ import {
   directoryPermissionRow as R,
   directoryPermissionValue as V,
 } from "../../db/schema/directory-schema.js";
+import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { getPersonContacts, personName, type PersonColumns } from "../person/personName.js";
 import { countryView, phoneCountryDefault, phoneView } from "./contactFormat.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
+import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
 import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
 import type {
@@ -75,6 +77,7 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
         workingTime: directoryProfiles.workingTime,
         workEmail: directoryProfiles.workEmail,
         workPhone: directoryProfiles.workPhone,
+        photoId: directoryPhotos.id,
         reportsToId: reportsTo.id,
         reportsToUserId: reportsTo.userId,
         reportsToEndedAt: reportsTo.endedAt,
@@ -89,6 +92,13 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
       .from(employments)
       .leftJoin(user, eq(employments.userId, user.id))
       .leftJoin(directoryProfiles, eq(directoryProfiles.employmentId, employments.id))
+      .leftJoin(
+        directoryPhotos,
+        and(
+          eq(directoryPhotos.employmentId, employments.id),
+          eq(directoryPhotos.status, directoryPhotoStatus.Ready)
+        )
+      )
       .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
       .leftJoin(reportsToUser, eq(reportsToUser.id, reportsTo.userId))
       .$dynamic(),
@@ -116,11 +126,32 @@ const markersOf = (row: RecordRow, access: DirectoryAccess): DirectoryMarker[] =
   return markers;
 };
 
-const toPerson = (row: RecordRow, access: DirectoryAccess): DirectoryPerson => ({
+/** The Profile photo's links, only for a viewer who reads the Photo Section. */
+const photoOf = async (
+  viewer: DirectoryViewer,
+  row: RecordRow,
+  access: DirectoryAccess
+): Promise<ProfilePhotoView | null> => {
+  if (row.photoId === null || access.sections[R.Photo] === V.None) return null;
+  return (
+    (await photoView({
+      id: row.photoId,
+      organizationId: viewer.organizationId,
+      employmentId: row.id,
+    })) ?? null
+  );
+};
+
+const toPerson = (
+  row: RecordRow,
+  access: DirectoryAccess,
+  photo: ProfilePhotoView | null
+): DirectoryPerson => ({
   employmentId: row.id,
   name: row.name,
   jobTitle: row.jobTitle ?? null,
   image: row.image ?? null,
+  photoUrl: photo?.smallUrl ?? null,
   user: buildUserSummary({ id: row.userId ?? row.id, name: row.name }),
   markers: markersOf(row, access),
 });
@@ -138,7 +169,7 @@ export const listDirectoryPeople = async (
   const people: DirectoryPerson[] = [];
   for (const row of rows) {
     const access = accessFor(viewer, row);
-    if (access.inReach) people.push(toPerson(row, access));
+    if (access.inReach) people.push(toPerson(row, access, await photoOf(viewer, row, access)));
   }
   return { people, formerList: viewer.formerList, settings: canReadPermissionTable(viewer) };
 };
@@ -170,7 +201,11 @@ export const listFormerDirectoryPeople = async (
   for (const row of rows) {
     const access = accessFor(viewer, row);
     if (!access.inReach) continue;
-    former.push({ ...toPerson(row, access), startedAt: row.startedAt, endedAt: row.endedAt! });
+    former.push({
+      ...toPerson(row, access, await photoOf(viewer, row, access)),
+      startedAt: row.startedAt,
+      endedAt: row.endedAt!,
+    });
   }
   return former;
 };
@@ -191,7 +226,8 @@ const phoneCountryView = (viewer: DirectoryViewer) => {
 const sectionsOf = (
   viewer: DirectoryViewer,
   record: RecordRow,
-  access: DirectoryAccess
+  access: DirectoryAccess,
+  photo: ProfilePhotoView | null
 ): DirectoryProfile["sections"] => {
   const view = (row: SectionRow): DirectorySectionView | undefined => {
     const level = access.sections[row];
@@ -217,7 +253,10 @@ const sectionsOf = (
             },
       nameFromAccount: nameFromAccount(record),
     },
-    photo: view(R.Photo),
+    photo: (() => {
+      const section = view(R.Photo);
+      return section && { ...section, photo };
+    })(),
     workContact: workContact && {
       ...workContact,
       workEmail: record.workEmail ?? null,
@@ -270,12 +309,13 @@ export const getDirectoryProfile = async (
     });
   }
 
+  const photo = await photoOf(viewer, row, access);
   const profile: DirectoryProfile = {
-    ...toPerson(row, access),
+    ...toPerson(row, access, photo),
     organizationId: viewer.organizationId,
     self: row.userId !== null && row.userId === viewer.standing.userId,
     ended: row.endedAt !== null,
-    sections: sectionsOf(viewer, row, access),
+    sections: sectionsOf(viewer, row, access, photo),
     canReadHistory: canReadHistory(viewer),
   };
   if (access.accountFacts) {

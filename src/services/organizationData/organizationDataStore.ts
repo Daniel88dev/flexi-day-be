@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   DeleteObjectCommand,
@@ -10,16 +10,35 @@ import {
   NoSuchKey,
   PutObjectCommand,
   S3Client,
+  type S3ClientConfig,
 } from "@aws-sdk/client-s3";
+import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { config } from "../../config.js";
 import { contentDisposition } from "../attachment/contentDisposition.js";
+import { incomingKey } from "../attachment/s3Layout.js";
+import { UPLOAD_URL_TTL_MS, type UploadTarget } from "../attachment/types.js";
 
 export type SignedDownload = { url: string; expiresAt: string };
+
+/**
+ * S3 object metadata the presigned photo POST pins, so the Lambda learns
+ * which photo an object is and where its two sizes go without a database.
+ */
+export const PHOTO_UPLOAD_METADATA = { photoId: "photo-id", storageKey: "storage-key" } as const;
+
+/** An image link is signed at the start of its hour, so it stays the same all hour. */
+export const IMAGE_URL_WINDOW_MS = 60 * 60 * 1000;
+/** Two windows, so a link handed out late in its hour still works for one more. */
+export const IMAGE_URL_TTL_MS = 2 * IMAGE_URL_WINDOW_MS;
+
+const imageWindowStart = (now = Date.now()) =>
+  Math.floor(now / IMAGE_URL_WINDOW_MS) * IMAGE_URL_WINDOW_MS;
 
 /** Where organization data lives: the organization-data bucket, or disk without one. */
 export interface OrganizationDataStore {
   putFile: (key: string, filePath: string, contentType: string) => Promise<void>;
+  putObject: (key: string, bytes: Buffer, contentType: string) => Promise<void>;
   getObject: (key: string) => Promise<Buffer | undefined>;
   deleteObject: (key: string) => Promise<void>;
   /** Deletes every object whose key starts with `prefix`, which must end in `/`. */
@@ -30,6 +49,15 @@ export interface OrganizationDataStore {
     contentType: string;
     ttlMs: number;
   }) => Promise<SignedDownload>;
+  /** Where the browser sends a Profile photo's bytes: `incoming/<photoId>` on S3. */
+  createPhotoUploadTarget: (input: {
+    photoId: string;
+    contentType: string;
+    size: number;
+    storageKey: string;
+  }) => Promise<UploadTarget>;
+  /** A link to show an image, the same for the hour it was signed in (see {@link IMAGE_URL_TTL_MS}). */
+  createImageUrl: (key: string) => Promise<string>;
 }
 
 export type SignedLocalDownload = {
@@ -48,13 +76,43 @@ const sign = (input: SignedLocalDownload) =>
     )
     .digest("hex");
 
+const sameSignature = (expected: string, signature: string) => {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
 /** True when `signature` was issued for exactly this download and it has not expired. */
 export const verifyLocalDownload = (input: SignedLocalDownload, signature: string): boolean => {
   if (!Number.isFinite(input.expires) || input.expires < Date.now()) return false;
-  const expected = Buffer.from(sign(input));
-  const given = Buffer.from(signature);
-  return expected.length === given.length && timingSafeEqual(expected, given);
+  return sameSignature(sign(input), signature);
 };
+
+const signParts = (parts: string[]) =>
+  createHmac("sha256", signingKey).update(parts.join("\n")).digest("hex");
+
+export type SignedLocalPhotoUpload = { photoId: string; expires: number };
+export type SignedLocalImage = { key: string; expires: number };
+
+const photoUploadParts = (input: SignedLocalPhotoUpload) => [
+  "organization-data-photo-upload",
+  input.photoId,
+  input.expires.toString(),
+];
+const imageParts = (input: SignedLocalImage) => [
+  "organization-data-image",
+  input.key,
+  input.expires.toString(),
+];
+
+const verifyParts = (expires: number, parts: string[], signature: string) =>
+  Number.isFinite(expires) && expires >= Date.now() && sameSignature(signParts(parts), signature);
+
+export const verifyLocalPhotoUpload = (input: SignedLocalPhotoUpload, signature: string) =>
+  verifyParts(input.expires, photoUploadParts(input), signature);
+
+export const verifyLocalImage = (input: SignedLocalImage, signature: string) =>
+  verifyParts(input.expires, imageParts(input), signature);
 
 const apiBaseUrl = config.auth?.url ?? `http://localhost:${config.api.port.toString()}`;
 
@@ -77,6 +135,11 @@ export const createDiskOrganizationDataStore = (root: string): OrganizationDataS
     const file = keyToPath(root, key);
     await mkdir(path.dirname(file), { recursive: true });
     await copyFile(filePath, file);
+  },
+  putObject: async (key, bytes) => {
+    const file = keyToPath(root, key);
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, bytes);
   },
   getObject: async (key) => {
     try {
@@ -105,15 +168,36 @@ export const createDiskOrganizationDataStore = (root: string): OrganizationDataS
       expiresAt: new Date(signed.expires).toISOString(),
     });
   },
+  createPhotoUploadTarget: ({ photoId, contentType }) => {
+    const signed = { photoId, expires: Date.now() + UPLOAD_URL_TTL_MS };
+    const url = new URL(`/api/organization-data/local/photos/${photoId}`, apiBaseUrl);
+    url.searchParams.set("expires", signed.expires.toString());
+    url.searchParams.set("signature", signParts(photoUploadParts(signed)));
+    return Promise.resolve({
+      url: url.toString(),
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      expiresAt: new Date(signed.expires).toISOString(),
+    });
+  },
+  createImageUrl: (key) => {
+    const signed = { key, expires: imageWindowStart() + IMAGE_URL_TTL_MS };
+    const url = new URL("/api/organization-data/local/image", apiBaseUrl);
+    url.searchParams.set("key", key);
+    url.searchParams.set("expires", signed.expires.toString());
+    url.searchParams.set("signature", signParts(imageParts(signed)));
+    return Promise.resolve(url.toString());
+  },
 });
 
 /** The production store. Objects take the bucket's default SSE-KMS key. */
 export const createS3OrganizationDataStore = (options: {
   bucket: string;
   region: string;
+  credentials?: S3ClientConfig["credentials"];
 }): OrganizationDataStore => {
   const { bucket } = options;
-  const client = new S3Client({ region: options.region });
+  const client = new S3Client({ region: options.region, credentials: options.credentials });
 
   return {
     putFile: async (key, filePath, contentType) => {
@@ -126,6 +210,11 @@ export const createS3OrganizationDataStore = (options: {
           ContentLength: size,
           ContentType: contentType,
         })
+      );
+    },
+    putObject: async (key, bytes, contentType) => {
+      await client.send(
+        new PutObjectCommand({ Bucket: bucket, Key: key, Body: bytes, ContentType: contentType })
       );
     },
     getObject: async (key) => {
@@ -179,6 +268,34 @@ export const createS3OrganizationDataStore = (options: {
       );
       return { url, expiresAt: new Date(Date.now() + ttlMs).toISOString() };
     },
+    createPhotoUploadTarget: async ({ photoId, contentType, size, storageKey }) => {
+      const expires = Date.now() + UPLOAD_URL_TTL_MS;
+      const { url, fields } = await createPresignedPost(client, {
+        Bucket: bucket,
+        Key: incomingKey(photoId),
+        Conditions: [["content-length-range", 1, size]],
+        Fields: {
+          "Content-Type": contentType,
+          [`x-amz-meta-${PHOTO_UPLOAD_METADATA.photoId}`]: photoId,
+          [`x-amz-meta-${PHOTO_UPLOAD_METADATA.storageKey}`]: storageKey,
+        },
+        Expires: UPLOAD_URL_TTL_MS / 1000,
+      });
+      return { url, method: "POST", fields, expiresAt: new Date(expires).toISOString() };
+    },
+    // The signing date is pinned to the hour, so every response in that hour
+    // hands out the same URL and the browser and the phone can cache the image.
+    createImageUrl: (key) =>
+      getSignedUrl(
+        client,
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          ResponseContentType: "image/jpeg",
+          ResponseCacheControl: `private, max-age=${(IMAGE_URL_WINDOW_MS / 1000).toString()}`,
+        }),
+        { expiresIn: IMAGE_URL_TTL_MS / 1000, signingDate: new Date(imageWindowStart()) }
+      ),
   };
 };
 

@@ -16,6 +16,7 @@ import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacationEvents } from "../../db/schema/vacation-event-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { downloadFileName } from "../attachment/attachmentServices.js";
+import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
 import { collectProfileExport } from "../directory/directoryProfileServices.js";
 import { getPersonContacts } from "../person/personName.js";
 
@@ -48,7 +49,12 @@ export const safeFileName = (name: string): string =>
   // eslint-disable-next-line no-control-regex
   name.replace(/[/\\\x00-\x1f]/g, "_").slice(0, 120) || "file";
 
-export type ExportAttachmentFile = { path: string; storageKey: string };
+/** A file the ZIP carries: an attachment, or a Profile photo from the organization-data store. */
+export type ExportAttachmentFile = {
+  path: string;
+  storageKey: string;
+  store?: "organizationData";
+};
 
 /**
  * Everything one organization holds about one person, across every spell:
@@ -79,6 +85,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
     .orderBy(asc(employments.startedAt));
   const employmentIds = spells.map((spell) => spell.id);
   const profile = await collectProfileExport(organizationId, employmentIds);
+  const photos = await readyPhotoIds(employmentIds);
 
   const organizationGroups = await db
     .select({
@@ -303,12 +310,25 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       })),
   }));
 
+  const photoOfSpell = (employmentId: string) => {
+    const photo = photos.get(employmentId);
+    if (!photo) return null;
+    const path = `profile-photos/${employmentId}.jpg`;
+    files.push({
+      path,
+      storageKey: photoKeys(photoPrefix({ ...photo, employmentId })).full,
+      store: "organizationData",
+    });
+    return { file: path, uploadedAt: photo.readyAt };
+  };
+
   const person = {
     exportedAt: new Date(),
     organization: organization ?? { id: organizationId, name: null },
     employments: spells.map((spell) => ({
       ...spell,
       profile: profile.profiles.get(spell.id) ?? null,
+      photo: photoOfSpell(spell.id),
     })),
     groups: memberships.map((row) => ({
       groupId: row.groupId,

@@ -1,7 +1,11 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { handlePostPersonExportDownload } from "../controllers/personExport/handlePostPersonExportDownload.js";
 import { handleLocalOrganizationDataDownload } from "../controllers/personExport/handleLocalOrganizationDataDownload.js";
+import { handleLocalImage } from "../controllers/directory/handleLocalImage.js";
+import { handleLocalPhotoUpload } from "../controllers/directory/handleLocalPhotoUpload.js";
+import { MAX_PROFILE_PHOTO_BYTES } from "../services/directory/directoryPhotoServices.js";
+import { tooLarge } from "./localAttachmentRouter.js";
 
 export const personExportRouter = (): Router => {
   const app = Router();
@@ -144,6 +148,80 @@ export const localOrganizationDataRouter = (): Router => {
    *         description: The file is gone
    */
   app.get("/", tryCatch(handleLocalOrganizationDataDownload));
+
+  /**
+   * @openapi
+   * /api/organization-data/local/photos/{photoId}:
+   *   put:
+   *     tags:
+   *       - Directory
+   *     summary: Upload a Profile photo's bytes (disk store only)
+   *     description: |
+   *       The `upload.url` returned by `POST /api/directory/{organizationId}/people/{employmentId}/photo`
+   *       when the API runs without an organization-data bucket. Authorized by
+   *       `expires` and `signature`, not by a session. The bytes are rewritten
+   *       into both sizes and the upload settles before the response.
+   *     parameters:
+   *       - { in: path, name: photoId, required: true, schema: { type: string, format: uuid } }
+   *       - { in: query, name: expires, required: true, schema: { type: integer } }
+   *       - { in: query, name: signature, required: true, schema: { type: string } }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         image/png: {}
+   *         image/jpeg: {}
+   *         image/webp: {}
+   *         image/heic: {}
+   *     responses:
+   *       '200':
+   *         description: The settled upload
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProfilePhotoUpload'
+   *       '403':
+   *         description: The link is invalid or has expired
+   *       '409':
+   *         description: The upload is no longer waiting for bytes
+   *       '413':
+   *         description: The body exceeds 10 MB
+   *       '422':
+   *         description: The body is empty
+   */
+  app.put(
+    "/photos/:photoId",
+    express.raw({ type: () => true, limit: MAX_PROFILE_PHOTO_BYTES }),
+    tryCatch(handleLocalPhotoUpload)
+  );
+
+  /**
+   * @openapi
+   * /api/organization-data/local/image:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: Show an image from the organization-data disk store (disk store only)
+   *     description: |
+   *       The Profile photo links in directory responses when the API runs
+   *       without an organization-data bucket. Authorized by the signature,
+   *       and cached privately for an hour like the S3 link.
+   *     parameters:
+   *       - { in: query, name: key, required: true, schema: { type: string } }
+   *       - { in: query, name: expires, required: true, schema: { type: integer } }
+   *       - { in: query, name: signature, required: true, schema: { type: string } }
+   *     responses:
+   *       '200':
+   *         description: The JPEG
+   *         content:
+   *           image/jpeg: {}
+   *       '403':
+   *         description: The signature is wrong or the link has expired
+   *       '404':
+   *         description: The image is gone
+   */
+  app.get("/image", tryCatch(handleLocalImage));
+
+  app.use(tooLarge);
 
   return app;
 };

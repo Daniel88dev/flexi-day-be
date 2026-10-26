@@ -5,7 +5,11 @@ import {
   validatePatchDirectoryProfile,
   validatePatchPermissionCell,
   validatePutDirectoryRoles,
+  validatePostProfilePhoto,
 } from "../services/directory/types.js";
+import { handleDeleteProfilePhoto } from "../controllers/directory/handleDeleteProfilePhoto.js";
+import { handleGetProfilePhotoStatus } from "../controllers/directory/handleGetProfilePhotoStatus.js";
+import { handlePostProfilePhoto } from "../controllers/directory/handlePostProfilePhoto.js";
 import { handleGetDirectoryRoles } from "../controllers/directory/handleGetDirectoryRoles.js";
 import { handleGetPermissionHistory } from "../controllers/directory/handleGetPermissionHistory.js";
 import { handleGetPermissionTable } from "../controllers/directory/handleGetPermissionTable.js";
@@ -80,7 +84,7 @@ export const directoryRouter = (): Router => {
    *         org admins and HR only.
    *     DirectoryPerson:
    *       type: object
-   *       required: [employmentId, name, jobTitle, image, user, markers]
+   *       required: [employmentId, name, jobTitle, image, photoUrl, user, markers]
    *       properties:
    *         employmentId:
    *           type: string
@@ -96,7 +100,15 @@ export const directoryRouter = (): Router => {
    *         image:
    *           type: string
    *           nullable: true
-   *           description: The Account picture, for the avatar fallback.
+   *           description: The Account picture, the avatar when there is no Profile photo.
+   *         photoUrl:
+   *           type: string
+   *           nullable: true
+   *           description: |
+   *             The small Profile photo, a signed link that stays the same for
+   *             an hour. Null when there is none or the caller can't read the
+   *             Photo Section; the avatar then falls back to `image`, then
+   *             to initials.
    *         user:
    *           type: object
    *           description: Initials and avatar colour, keyed on the user or, without an account, the Employment.
@@ -116,6 +128,25 @@ export const directoryRouter = (): Router => {
    *         level:
    *           type: string
    *           enum: [READ, WRITE]
+   *     DirectoryPhotoView:
+   *       allOf:
+   *         - $ref: '#/components/schemas/DirectorySectionView'
+   *         - type: object
+   *           required: [photo]
+   *           properties:
+   *             photo:
+   *               type: object
+   *               nullable: true
+   *               description: |
+   *                 The Profile photo as two signed links, each the same for an
+   *                 hour and valid for at least one more. Null when there is none.
+   *               properties:
+   *                 smallUrl:
+   *                   type: string
+   *                   description: For lists and cards.
+   *                 fullUrl:
+   *                   type: string
+   *                   description: For the profile header.
    *     DirectoryCardView:
    *       allOf:
    *         - $ref: '#/components/schemas/DirectorySectionView'
@@ -253,7 +284,7 @@ export const directoryRouter = (): Router => {
    *                 card:
    *                   $ref: '#/components/schemas/DirectoryCardView'
    *                 photo:
-   *                   $ref: '#/components/schemas/DirectorySectionView'
+   *                   $ref: '#/components/schemas/DirectoryPhotoView'
    *                 workContact:
    *                   $ref: '#/components/schemas/DirectoryWorkContactView'
    *                 job:
@@ -1022,6 +1053,175 @@ export const directoryRouter = (): Router => {
     "/:organizationId/roles/:employmentId",
     bodyValidationMiddleware(validatePutDirectoryRoles),
     tryCatch(handlePutDirectoryRoles)
+  );
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     ProfilePhotoUpload:
+   *       type: object
+   *       required: [id, status, rejectionReason]
+   *       properties:
+   *         id:
+   *           type: string
+   *           format: uuid
+   *         status:
+   *           type: string
+   *           enum: [UPLOADING, READY, REJECTED]
+   *         rejectionReason:
+   *           type: string
+   *           nullable: true
+   *           enum: [TYPE_MISMATCH, IMAGE_UNREADABLE, null]
+   */
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people/{employmentId}/photo:
+   *   post:
+   *     tags:
+   *       - Directory
+   *     summary: Start uploading a Profile photo
+   *     description: |
+   *       Registers an upload and answers where the browser sends the bytes.
+   *       Against S3 that is a presigned POST to the organization-data
+   *       bucket's `incoming/` prefix (docs/adr/0003): post the `fields`
+   *       first and the file last, named `file`. The disk store answers a
+   *       signed PUT instead, which processes the bytes before it answers.
+   *       The `attachment-processor` Lambda (or the disk store) rewrites the
+   *       image into a small and a full JPEG without EXIF or GPS metadata,
+   *       then the upload settles `READY` and replaces the previous photo,
+   *       or `REJECTED`. Poll the status route meanwhile.
+   *
+   *       Needs a write cell on the Photo row: by default the person, HR and
+   *       org admins, and only the admin columns while no account is bound.
+   *       Setting a photo needs the directory plan. An earlier upload of the
+   *       same person that has not settled is dropped.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - { in: path, name: organizationId, required: true, schema: { type: string } }
+   *       - { in: path, name: employmentId, required: true, schema: { type: string } }
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [contentType, size]
+   *             properties:
+   *               contentType:
+   *                 type: string
+   *                 description: image/png, image/jpeg, image/webp or image/heic.
+   *               size:
+   *                 type: integer
+   *                 minimum: 1
+   *                 description: Bytes; at most 10 MB.
+   *     responses:
+   *       '201':
+   *         description: The upload and its target
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [photo, upload]
+   *               properties:
+   *                 photo:
+   *                   $ref: '#/components/schemas/ProfilePhotoUpload'
+   *                 upload:
+   *                   type: object
+   *                   required: [url, method, expiresAt]
+   *                   properties:
+   *                     url: { type: string }
+   *                     method: { type: string, enum: [POST, PUT] }
+   *                     fields:
+   *                       type: object
+   *                       additionalProperties: { type: string }
+   *                       description: POST only, the signed form fields.
+   *                     headers:
+   *                       type: object
+   *                       additionalProperties: { type: string }
+   *                       description: PUT only.
+   *                     expiresAt: { type: string, format: date-time }
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: "`reason: PLAN_LIMIT`, `code: DIRECTORY_PLAN_REQUIRED`: the plan is not Enterprise or Custom"
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `SECTION_NOT_WRITABLE` without a write cell on the Photo row"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: "A malformed body, or `reason` `UNSUPPORTED_TYPE` or `FILE_TOO_LARGE`"
+   *       '503':
+   *         description: No organization-data store is configured
+   *   delete:
+   *     tags:
+   *       - Directory
+   *     summary: Remove the Profile photo
+   *     description: |
+   *       Removes the current photo and any upload in flight, and deletes
+   *       both stored sizes. Works on every plan. Records a profile history
+   *       entry when there was a photo. Answers 204 whether or not one existed.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - { in: path, name: organizationId, required: true, schema: { type: string } }
+   *       - { in: path, name: employmentId, required: true, schema: { type: string } }
+   *     responses:
+   *       '204':
+   *         description: No photo is left
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `SECTION_NOT_WRITABLE`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   */
+  app.post(
+    "/:organizationId/people/:employmentId/photo",
+    bodyValidationMiddleware(validatePostProfilePhoto),
+    tryCatch(handlePostProfilePhoto)
+  );
+  app.delete("/:organizationId/people/:employmentId/photo", tryCatch(handleDeleteProfilePhoto));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people/{employmentId}/photo/{photoId}:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: How a Profile photo upload stands
+   *     description: The writer polls this after sending the bytes, until the upload settles.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - { in: path, name: organizationId, required: true, schema: { type: string } }
+   *       - { in: path, name: employmentId, required: true, schema: { type: string } }
+   *       - { in: path, name: photoId, required: true, schema: { type: string } }
+   *     responses:
+   *       '200':
+   *         description: The upload
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ProfilePhotoUpload'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `SECTION_NOT_WRITABLE`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, `PERSON_NOT_FOUND`, or `PHOTO_NOT_FOUND` once it was replaced, removed or dropped"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   */
+  app.get(
+    "/:organizationId/people/:employmentId/photo/:photoId",
+    tryCatch(handleGetProfilePhotoStatus)
   );
 
   return app;

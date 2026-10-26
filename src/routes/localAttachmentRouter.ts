@@ -6,7 +6,7 @@ import { handleLocalAttachmentUpload } from "../controllers/attachment/handleLoc
 import { handleLocalAttachmentDownload } from "../controllers/attachment/handleLocalAttachmentDownload.js";
 
 // body-parser's own 413 is not an AppError, so errorMiddleware would report a 500.
-const tooLarge: ErrorRequestHandler = (err: unknown, _req, _res, next) => {
+export const tooLarge: ErrorRequestHandler = (err: unknown, _req, _res, next) => {
   const type = (err as { type?: string } | null)?.type;
   if (type === "entity.too.large") {
     return next(
