@@ -2,6 +2,8 @@
 
 The directory is an opt-in setting of one organization. Only its owner turns it on, and doing so
 accepts the directory agreement. Decisions behind this page: fenro T-472, T-475, T-481 and T-483.
+How Employments change in a Directory organization (spells, records without an account, no ending
+on link loss) is in [ADR 0008](adr/0008-employment-spells-and-directory-records.md).
 
 ## Turning it on
 
@@ -27,7 +29,8 @@ bound open Employment inside its transaction and sends them after the commit
 (`src/services/directory/directoryEnabledNotice.ts`): "Acme turned on the people directory. Check
 your profile and add your contact details." It is in-app and pushed passively, never mailed, in the
 reader's language, and links to the reader's own profile (`/directory/person/?organizationId=…&employmentId=…`).
-The owner who turned it on, Deleted accounts, people without an account and leavers get nothing. An
+The owner who turned it on gets one too. Deleted accounts, people without an account and leavers
+get nothing. An
 absent `tellMembers` sends nothing. The web's tickbox is on at the first enable (no `enabledAt`
 yet) and off at later ones.
 
@@ -58,8 +61,12 @@ fenro T-483 and T-514.
   on those rows and Erase on rows without an account.
 - It revokes open directory invites that name no group. Invites that name a group stay valid and
   still claim.
-- Directory roles stay stored and grant nothing, since every directory route answers 409
-  `DIRECTORY_OFF`. The External worker type keeps its effects. Retention keeps running.
+- Directory roles stay stored and grant nothing, since the directory routes answer 409
+  `DIRECTORY_OFF`. The External worker type keeps its effects.
+- Retention keeps running, so its controls stay open to the owner and org admins: setting and
+  lifting a hold, reading and changing Retention periods and their preview, and the Read log. Those
+  routes load the viewer with `whileOff` (`loadDirectoryViewer`), which lets those two through
+  without Directory roles and still answers 409 `DIRECTORY_OFF` to everyone else.
 
 ## Delete all directory data
 
@@ -76,12 +83,14 @@ while the directory is off (409 `DIRECTORY_ON`), and only with the organization'
 | `directory_role_assignments`, `directory_permission_cells`, `directory_permission_history` | `directory_profile_history` of Employments with an account    |
 | `directory_retention_periods`, `directory_retention_holds`                                 | the settings row, stamped `data_deleted_at` and `_by_user_id` |
 | the notice texts and the checklist's Hide stamp on the settings row                        |                                                               |
-| every `person_exports` row of the organization and its file                                |                                                               |
+| every Person export row of the organization and its file                                   | Organization exports, the owner's return copy                 |
 | every Employment without an account, open or ended, with its invites and history           |                                                               |
 
-Retention settings, holds, the notice text and exports are not named in T-483. They go because
-they are directory configuration or copies of Profile fields, and a later enable starts from the
-product defaults for all of them, as it does for the Permission table.
+Retention settings, holds, the notice text and Person exports are not named in T-483. They go
+because they are directory configuration or copies of Profile fields, and a later enable starts
+from the product defaults for all of them, as it does for the Permission table. Organization
+exports stay: the owner may take the return copy before deleting, and it expires on its own after
+7 days.
 
 ## Turning it back on
 
@@ -131,7 +140,8 @@ in grace) and an active Enterprise or Custom override. Free and Pro fail in ever
 at read time, so a lapse writes nothing. Turning on and adding directory data call it; removing data
 never does.
 
-A Directory organization stays one through a lapse: the stored toggle decides, not the plan.
+A Directory organization stays one through a lapse or a downgrade until the owner turns it off: the
+stored toggle decides, not the plan.
 
 ## The agreement
 
@@ -149,10 +159,14 @@ Contact, Personal) and five act rows (Create account-less person, Send directory
 worker type, End an Employment, Manage departments and locations), against eight Audiences. A cell
 the table has no entry for has no row. Which cells are fixed is part of the default, not stored.
 
-A row added to the default later lands in every stored copy with its default value without a
-migration: `readPermissionCells` fills any cell a copy lacks from the default, and the first change
-to that cell stores it. A stored cell always wins, so changing an existing default cell leaves every
-copy alone.
+**A new row ships with a migration that inserts its default into every stored copy**
+(`insert ... on conflict do nothing` for every organization holding cells). Until it runs,
+`readPermissionCells` fills any cell a copy lacks from the default, so nothing breaks, and the
+owner's next edit (`storeMissingCells` in `changePermissionCell`) or a re-enable stores every
+missing cell at its default. Without the migration a later change to that row's default would
+silently change every copy that never stored it, which is the override model T-472 rejected. A
+stored cell always wins, so changing an existing default cell leaves every copy alone. The e2e
+suite checks that every enabled organization's copy holds every product cell.
 
 ### Editing the table
 
@@ -234,7 +248,8 @@ Routes, all read-only and open through a lapse:
 
 - `GET /api/directory/{organizationId}/people`: open Employments in reach, by name.
 - `GET /api/directory/{organizationId}/former`: ended spells in reach, latest end first; 403
-  `FORMER_LIST_DENIED` for anyone but the owner, org admins and HR.
+  `FORMER_LIST_DENIED` for anyone but the owner, org admins and HR. `startedAt` and `endedAt` are
+  null for a viewer who doesn't read Job; the server still sorts by the end.
 - `GET /api/directory/{organizationId}/people/{employmentId}`: the profile, with a key in
   `sections` only for each Section the viewer reads. Spell dates sit in `job`.
 
@@ -244,6 +259,8 @@ What else a viewer learns:
   go to the owner, org admins and HR.
 - `account` (status, sign-in email, directory roles) goes to the owner, org admins, HR and the
   person.
+- `user.id` is null on a record without an account, for every viewer, so the id can't tell a
+  colleague who has no account; initials and colour still come keyed on the Employment.
 - `image` is the Account picture and `photoUrl` the small Profile photo. The web shows the Profile
   photo, then the Account picture, then initials. No leave or attendance status appears on any
   directory route.
@@ -610,8 +627,9 @@ row per Section the owner or an org admin changed; a missing row reads as the pr
 The list is at end, 30 days, 6 months, 1 year, 3 years, 5 years, 10 years, until erased, with no
 caps and on every plan. `GET|PUT /api/directory/{organizationId}/settings/retention` reads (owner,
 org admins, HR) and sets one Section (owner and org admins, 403 `SETTINGS_NOT_EDITABLE`).
-`GET .../settings/retention/preview?section=&period=` counts the ended Employments the next nightly
-run would empty under a period, for the dialog that confirms a shortening.
+`GET .../settings/retention/preview?section=&period=` counts the people the next nightly run would
+empty under a period, for the dialog that confirms a shortening: one per account, or per email for
+spells without one, however many spells they have.
 
 **The clock** starts at the later of `employments.ended_at` and `end_recorded_at`, the moment the
 ending was written, so a backdated ending never purges on the spot. Every end path stamps
@@ -629,9 +647,10 @@ row. Every statement clears only rows that still hold data, so a second run, or 
 finds nothing. It never asks the plan or the directory toggle, and notifies nobody. It never
 touches the Employment row, its frozen name and email, its dates or its type.
 
-**At end** Sections are emptied inside `endLockedEmployment` (End and Erase). An Employment ended
-by `syncEmployment`, which happens only while the directory is off, is caught by the next nightly
-run, where "at end" counts as no time at all.
+**At end** Sections are emptied inside the transaction that ends the Employment:
+`endLockedEmployment` (End and Erase) and the end branch of `syncEmployment`, which runs only while
+the directory is off. That branch leaves the Profile photo, whose bytes can only go after a commit
+it doesn't own, to the next nightly run, where "at end" counts as no time at all.
 
 ### Retention hold
 

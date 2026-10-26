@@ -1,21 +1,18 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
-import {
-  directoryProfileHistory,
-  directoryProfiles,
-} from "../../db/schema/directory-profile-schema.js";
+import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import { directorySensitiveProfiles } from "../../db/schema/directory-sensitive-profile-schema.js";
 import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
-import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { getActiveGroupsForUsersInOrganization } from "../groupUser/groupUserServices.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { zeroQuotasFromYear } from "../userYearQuotas/userYearQuotasServices.js";
 import { getDirectoryProfile } from "./directoryProfileServices.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
 import { JOB_COLUMNS, PERSONAL_FIELDS } from "./profileSectionFields.js";
+import { recordProfileHistory } from "./profileHistory.js";
 import type { DirectoryProfile, PutWorkerType } from "./types.js";
 
 /**
@@ -32,23 +29,7 @@ export const changeWorkerType = async (
   tx: DbTransaction
 ): Promise<DirectoryProfile> => {
   const { organizationId } = viewer;
-  const context = { organizationId, employmentId, viewerUserId: viewer.standing.userId };
-
-  const [record] = await tx
-    .select({
-      id: employments.id,
-      userId: employments.userId,
-      type: employments.type,
-      endedAt: employments.endedAt,
-    })
-    .from(employments)
-    .where(and(eq(employments.organizationId, organizationId), eq(employments.id, employmentId)))
-    .for("update");
-  const access =
-    record && viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null });
-  if (!record || !access?.inReach) {
-    throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
-  }
+  const { record, access, context } = await lockRecordInReach(viewer, employmentId, tx);
   const audience = access.actGrantedBy[R.ChangeWorkerType];
   if (audience === null) {
     throw refuse(403, "WORKER_TYPE_DENIED", "You can't change this person's worker type", context);
@@ -115,16 +96,16 @@ export const changeWorkerType = async (
   await tx.update(employments).set({ type: input.type }).where(eq(employments.id, employmentId));
   history.push({ section: R.ChangeWorkerType, fields: ["type"] });
 
-  await tx.insert(directoryProfileHistory).values(
+  await recordProfileHistory(
     history.map(({ section, fields }) => ({
-      id: generateRandomUUID(),
       organizationId,
       employmentId,
       actorUserId: viewer.standing.userId,
       section,
       fields,
       audience,
-    }))
+    })),
+    tx
   );
 
   return getDirectoryProfile(viewer, employmentId, tx);

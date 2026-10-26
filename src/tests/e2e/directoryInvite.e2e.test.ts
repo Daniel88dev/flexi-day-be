@@ -12,16 +12,14 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import {
-  disableDirectory,
-  enableDirectory,
-} from "../../services/directory/directorySettingsServices.js";
+import { disableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser, resetReportData } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 type SentEmail = { to: string; template: string; data: Record<string, string> };
 const sentEmails: SentEmail[] = [];
@@ -98,14 +96,7 @@ describe("directory invite and claim", () => {
       await syncEmployment(organizationId, person.id);
     }
 
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     const world = { organizationId, support, users: { owner, bob, gabi, dana, hana } };
     const hr = await (
@@ -122,20 +113,7 @@ describe("directory invite and claim", () => {
 
   type World = Awaited<ReturnType<typeof setUp>>;
 
-  async function as(userId: string) {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-    };
-  }
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
+  const as = (userId: string) => apiAs(server.url, userId);
 
   async function employmentIdOf(organizationId: string, userId: string) {
     const [row] = await db

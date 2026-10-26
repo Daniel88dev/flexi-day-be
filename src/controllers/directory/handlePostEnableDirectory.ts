@@ -19,7 +19,7 @@ export const handlePostEnableDirectory = async (req: Request, res: Response) => 
     await enableDirectory({ organizationId: organization.id, userId, agreementVersion }, tx);
     return {
       state: await readDirectoryState(organization.id, tx),
-      notices: tellMembers ? await planDirectoryEnabledNotices(organization.id, userId, tx) : [],
+      notices: tellMembers ? await planDirectoryEnabledNotices(organization.id, tx) : [],
     };
   });
   await sendDirectoryEnabledNotices(organization.id, notices);

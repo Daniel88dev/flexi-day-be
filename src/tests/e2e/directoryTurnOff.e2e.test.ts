@@ -42,13 +42,9 @@ import { photoKeys, photoPrefix } from "../../services/directory/directoryPhotoS
 import { exportStorageKey } from "../../services/personExport/personExportBuild.js";
 import { DIRECTORY_PERMISSION_DEFAULTS } from "../../services/directory/permissionDefaults.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
-import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
-import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { enableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import {
   addMember,
   makeGroup,
@@ -57,6 +53,7 @@ import {
   resetReportData,
 } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 type SentEmail = { to: string; template: string; data: Record<string, string> };
 const sentEmails: SentEmail[] = [];
@@ -105,20 +102,7 @@ describe("turning the directory off", () => {
     await cleanupTestData();
   });
 
-  async function as(userId: string) {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object = {}) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-    };
-  }
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const openEmploymentOf = async (organizationId: string, userId: string) => {
     const [row] = await db
@@ -158,14 +142,7 @@ describe("turning the directory off", () => {
     for (const person of [owner, bob, dana, ivan]) {
       await syncEmployment(organizationId, person.id);
     }
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     await removeMember(support, ivan.id);
     await syncEmployment(organizationId, ivan.id);
@@ -217,6 +194,71 @@ describe("turning the directory off", () => {
         .sort();
 
       expect(unlinked).toEqual([ivan, world.accountless.petra, world.accountless.eva].sort());
+    });
+  });
+
+  describe("retention while the directory is off", () => {
+    it("lets the owner and org admins set a hold, lengthen a period and read the log", async () => {
+      const world = await setUp();
+      const { organizationId } = world;
+      const saved = await world.ownerApi.patch(
+        `/api/directory/${organizationId}/people/${world.accountless.petra}`,
+        { contact: { privateEmail: "petra.home@example.test" } }
+      );
+      expect(saved.status).toBe(200);
+      const shown = await world.ownerApi.post(
+        `/api/directory/${organizationId}/people/${world.accountless.petra}/show/contact`
+      );
+      expect(shown.status).toBe(200);
+      await db
+        .update(employments)
+        .set({ endedAt: new Date(), endRecordedAt: new Date() })
+        .where(eq(employments.id, world.accountless.petra));
+      await turnOff(world);
+
+      const dana = await as(world.users.dana.id);
+      const hold = `/api/directory/${organizationId}/people/${world.accountless.petra}/hold`;
+      const settings = `/api/directory/${organizationId}/settings/retention`;
+      expect((await dana.put(hold, {})).status).toBe(200);
+      const [held] = await db
+        .select()
+        .from(directoryRetentionHolds)
+        .where(eq(directoryRetentionHolds.employmentId, world.accountless.petra));
+      expect(held?.setByUserId).toBe(world.users.dana.id);
+
+      const lengthened = await dana.put(settings, { section: "CONTACT", period: "YEARS_10" });
+      expect(lengthened.status).toBe(200);
+      expect(lengthened.body.periods.CONTACT).toBe("YEARS_10");
+      expect((await dana.get(settings)).status).toBe(200);
+      const preview = await dana.get(`${settings}/preview?section=CONTACT&period=AT_END`);
+      expect(preview.status).toBe(200);
+
+      const log = await world.ownerApi.get(`/api/directory/${organizationId}/read-log`);
+      expect(log.status).toBe(200);
+      expect(log.body.entries).toEqual([
+        expect.objectContaining({
+          kind: "read",
+          person: expect.objectContaining({ employmentId: world.accountless.petra }),
+        }),
+      ]);
+
+      const lifted = await world.ownerApi.delete(hold);
+      expect(lifted.status).toBe(200);
+    });
+
+    it("still refuses everyone else with DIRECTORY_OFF", async () => {
+      const world = await setUp();
+      await turnOff(world);
+
+      const bob = await as(world.users.bob.id);
+      for (const res of [
+        await bob.get(`/api/directory/${world.organizationId}/read-log`),
+        await bob.get(`/api/directory/${world.organizationId}/settings/retention`),
+        await world.ownerApi.get(`/api/directory/${world.organizationId}/people`),
+      ]) {
+        expect(res.status).toBe(409);
+        expect(code(res)).toBe("DIRECTORY_OFF");
+      }
     });
   });
 
@@ -481,6 +523,7 @@ describe("turning the directory off", () => {
         }
 
         const exportKeys: string[] = [];
+        let organizationExportKey = "";
         for (const row of [
           { scope: personExportScope.Person, subjectUserId: world.users.bob.id },
           { scope: personExportScope.Organization, subjectUserId: null },
@@ -500,11 +543,12 @@ describe("turning the directory off", () => {
             readyAt: new Date(),
             expiresAt: new Date(Date.now() + 86_400_000),
           });
-          exportKeys.push(key);
+          if (row.scope === personExportScope.Organization) organizationExportKey = key;
+          else exportKeys.push(key);
         }
 
         await turnOff(world);
-        return { ...world, bob, ivan, dana, photoKeysOf, exportKeys };
+        return { ...world, bob, ivan, dana, photoKeysOf, exportKeys, organizationExportKey };
       };
 
       const byOrganization = async (
@@ -518,8 +562,7 @@ describe("turning the directory off", () => {
           | typeof directoryPermissionCells
           | typeof directoryPermissionHistory
           | typeof directoryRetentionPeriods
-          | typeof directoryRetentionHolds
-          | typeof personExports,
+          | typeof directoryRetentionHolds,
         organizationId: string
       ) => (await db.select().from(table).where(eq(table.organizationId, organizationId))).length;
 
@@ -544,7 +587,7 @@ describe("turning the directory off", () => {
         readLog: await db.select().from(readLog).where(eq(readLog.organizationId, organizationId)),
       });
 
-      it("removes every profile field, photo, list, role, table, setting and account-less person", async () => {
+      it("removes every profile field, photo, list, role, table, setting, Person export and account-less person, and keeps Organization exports", async () => {
         const world = await seed();
         const { organizationId } = world;
         const tables = [
@@ -558,7 +601,6 @@ describe("turning the directory off", () => {
           directoryPermissionHistory,
           directoryRetentionPeriods,
           directoryRetentionHolds,
-          personExports,
         ] as const;
         for (const table of tables) {
           expect(await byOrganization(table, organizationId)).toBeGreaterThan(0);
@@ -570,6 +612,12 @@ describe("turning the directory off", () => {
         for (const table of tables) {
           expect(await byOrganization(table, organizationId)).toBe(0);
         }
+        const exportsLeft = await db
+          .select({ scope: personExports.scope })
+          .from(personExports)
+          .where(eq(personExports.organizationId, organizationId));
+        expect(exportsLeft).toEqual([{ scope: personExportScope.Organization }]);
+        expect(await organizationDataStore!.getObject(world.organizationExportKey)).toBeDefined();
         const accountless = await db
           .select()
           .from(employments)

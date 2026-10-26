@@ -3,6 +3,7 @@ import {
   directoryPermissionRow as R,
   directoryPermissionValue as V,
 } from "../../db/schema/directory-schema.js";
+import { directoryRole } from "../../db/schema/directory-role-schema.js";
 import { workerType } from "../../db/schema/employment-schema.js";
 
 export const SECTION_ROWS = [R.Card, R.Photo, R.WorkContact, R.Job, R.Contact, R.Personal] as const;
@@ -18,7 +19,6 @@ export const ACT_ROWS = [
 export type ActRow = (typeof ACT_ROWS)[number];
 
 export type SectionLevel = V.None | V.Read | V.Write;
-export type DirectoryRole = "HR" | "LEADERSHIP";
 
 export type PermissionCell = { row: R; audience: A; value: V };
 
@@ -30,7 +30,7 @@ export type ViewerStanding = {
   organizationAdmin: boolean;
   /** The type of the viewer's open Employment in the organization, if any. */
   employmentType: workerType | null;
-  roles: readonly DirectoryRole[];
+  roles: readonly directoryRole[];
   /** User ids the viewer reaches as a Group admin, along the attendance lines. */
   groupAdminReach: ReadonlySet<string>;
 };
@@ -70,8 +70,9 @@ const audiencesFor = (viewer: ViewerStanding, record: DirectoryRecord): A[] => {
   if (!record.ended && record.userId !== null && viewer.groupAdminReach.has(record.userId)) {
     audiences.push(A.GroupAdmin);
   }
-  if (viewer.roles.includes("HR")) audiences.push(A.Hr);
-  if (!record.ended && viewer.roles.includes("LEADERSHIP")) audiences.push(A.Leadership);
+  if (viewer.roles.includes(directoryRole.Hr)) audiences.push(A.Hr);
+  if (!record.ended && viewer.roles.includes(directoryRole.Leadership))
+    audiences.push(A.Leadership);
   if (viewer.organizationAdmin) audiences.push(A.OrganizationAdmin);
   return audiences;
 };

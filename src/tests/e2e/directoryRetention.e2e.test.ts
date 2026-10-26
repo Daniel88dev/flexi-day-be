@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
 import sharp from "sharp";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
@@ -16,19 +16,16 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import {
-  disableDirectory,
-  enableDirectory,
-} from "../../services/directory/directorySettingsServices.js";
+import { disableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { runRetentionPurge } from "../../jobs/retentionPurgeJob.js";
 import { purgeRetention } from "../../services/directory/retentionPurge.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { organizationDataStore } from "../../services/organizationData/organizationDataStore.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
-import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
+import { addMember, makeGroup, makeUser, removeMember } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const later = (days: number, from = new Date()) => new Date(from.getTime() + days * DAY);
@@ -89,14 +86,7 @@ describe("Retention periods and purges", () => {
       userId: dana.id,
       grantedByUserId: owner.id,
     });
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
     const employmentOf = async (userId: string) => {
       const [row] = await db
         .select({ id: employments.id })
@@ -112,6 +102,7 @@ describe("Retention periods and purges", () => {
     });
     return {
       organizationId,
+      support,
       users: { owner, jana, pavel, dana, hana, mira },
       employment: {
         jana: await employmentOf(jana.id),
@@ -123,21 +114,8 @@ describe("Retention periods and purges", () => {
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      post: (path: string, body: object = {}) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
   type Client = Awaited<ReturnType<typeof as>>;
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
 
   /** A store URL points at the configured API origin; send it to the test server instead. */
   const local = (url: string) => {
@@ -354,6 +332,28 @@ describe("Retention periods and purges", () => {
       expect(await purgeRetention()).toBe(0);
     });
 
+    it("empties at-end Sections when losing the last group ends the spell with the directory off, and leaves the photo to the nightly run", async () => {
+      const fixture = await setUp();
+      const { employment, users, organizationId, settings, support } = fixture;
+      await fill(fixture, employment.jana);
+      const owner = await as(users.owner.id);
+      await owner.put(settings, { section: "CONTACT", period: "AT_END" });
+      await owner.put(settings, { section: "PHOTO", period: "AT_END" });
+      await db.transaction((tx) =>
+        disableDirectory({ organizationId, userId: users.owner.id }, tx)
+      );
+
+      await removeMember(support, users.jana.id);
+      await db.transaction((tx) => syncEmployment(organizationId, users.jana.id, tx));
+
+      const after = await stored(employment.jana);
+      expect(after.sensitive).toMatchObject({ contact: null });
+      expect(after.sensitive?.personal).not.toBeNull();
+      expect(after.photos).toHaveLength(1);
+      expect(await purgeRetention()).toBe(1);
+      expect((await stored(employment.jana)).photos).toEqual([]);
+    });
+
     it("lets the nightly run catch an Employment that ended before its Section became at end", async () => {
       const fixture = await setUp();
       const { employment, users, settings } = fixture;
@@ -501,6 +501,16 @@ describe("Retention periods and purges", () => {
       });
       expect((await preview("AT_END")).body.affected).toBe(2);
       expect((await preview("YEARS_5")).body.affected).toBe(0);
+
+      await addMember(fixture.support, users.jana.id);
+      await syncEmployment(fixture.organizationId, users.jana.id);
+      const [rejoined] = await db
+        .select({ id: employments.id })
+        .from(employments)
+        .where(and(eq(employments.userId, users.jana.id), isNull(employments.endedAt)));
+      await fill(fixture, rejoined!.id);
+      await end(users.owner.id, rejoined!.id, isoDay(later(-5)));
+      expect((await preview("AT_END")).body.affected).toBe(2);
       expect((await preview("NEVER")).status).toBe(422);
       const hr = await (
         await as(users.hana.id)

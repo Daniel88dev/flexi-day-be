@@ -4,7 +4,7 @@ import { getAuth } from "../../middleware/authSession.js";
 import { sendDirectoryInvite } from "../../services/directory/directoryInviteServices.js";
 import type { PostDirectoryInvite } from "../../services/directory/types.js";
 import { notifyDirectoryInvited } from "../../services/groupUser/inviteNotifier.js";
-import { requirePathParam } from "../attendance/utils.js";
+import { requirePathParam } from "../pathParams.js";
 import { directoryViewerFor } from "./directoryViewerFor.js";
 
 export const handlePostDirectoryInvite = async (req: Request, res: Response) => {

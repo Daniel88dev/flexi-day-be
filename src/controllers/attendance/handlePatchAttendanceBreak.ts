@@ -3,7 +3,8 @@ import { db } from "../../db/db.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { correctAttendanceBreak } from "../../services/attendance/attendanceCorrections.js";
 import type { ValidatedAttendanceCorrectionType } from "../../services/attendance/types.js";
-import { presentSession, requirePathParam } from "./utils.js";
+import { requirePathParam } from "../pathParams.js";
+import { presentSession } from "./utils.js";
 
 /** Answers with the whole session: the day's figures moved with the break. */
 export const handlePatchAttendanceBreak = async (req: Request, res: Response) => {

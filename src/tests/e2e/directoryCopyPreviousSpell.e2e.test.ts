@@ -13,16 +13,15 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { enableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { purgeRetention } from "../../services/directory/retentionPurge.js";
 import { organizationDataStore } from "../../services/organizationData/organizationDataStore.js";
 import { directoryPhotos } from "../../db/schema/directory-photo-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const later = (days: number) => new Date(Date.now() + days * DAY);
@@ -89,14 +88,7 @@ describe("Copy from previous spell", () => {
       userId: dana.id,
       grantedByUserId: owner.id,
     });
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
     const openEmploymentOf = async (userId: string) => {
       const [row] = await db
         .select({ id: employments.id })
@@ -127,20 +119,7 @@ describe("Copy from previous spell", () => {
   };
   type Fixture = Awaited<ReturnType<typeof setUp>>;
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object = {}) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      post: (path: string, body: object = {}) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-    };
-  };
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
+  const as = (userId: string) => apiAs(server.url, userId);
 
   /** A store URL points at the configured API origin; send it to the test server instead. */
   const local = (url: string) => {

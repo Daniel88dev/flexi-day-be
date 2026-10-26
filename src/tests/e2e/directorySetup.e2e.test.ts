@@ -23,6 +23,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { authCookieFor, createTestSession } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs } from "./helpers/directoryWorld.js";
 
 const sentEmails: unknown[] = [];
 vi.mock("../../services/email/index.js", () => ({
@@ -136,22 +137,12 @@ describe("The directory setup checklist and the members' notice", () => {
         jana: await employmentOf(jana.id),
         dana: await employmentOf(dana.id),
         eva: await employmentOf(eva.id),
+        owner: await employmentOf(owner.id),
       },
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object = {}) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const enable = async (ownerId: string, organizationId: string, body: object = {}) => {
     const res = await (
@@ -181,7 +172,7 @@ describe("The directory setup checklist and the members' notice", () => {
 
       await enable(world.users.owner.id, world.organizationId, { tellMembers: true });
 
-      for (const name of ["jana", "dana", "eva"] as const) {
+      for (const name of ["jana", "dana", "eva", "owner"] as const) {
         const notices = await noticesOf(world.users[name].id);
         expect(notices).toEqual([
           expect.objectContaining({
@@ -194,12 +185,12 @@ describe("The directory setup checklist and the members' notice", () => {
       expect(sentEmails).toEqual([]);
     });
 
-    it("never reaches a Deleted account, a leaver or the owner who turned it on", async () => {
+    it("never reaches a Deleted account or a leaver", async () => {
       const world = await setUp();
 
       await enable(world.users.owner.id, world.organizationId, { tellMembers: true });
 
-      for (const id of [world.users.karel.id, world.users.petra.id, world.users.owner.id]) {
+      for (const id of [world.users.karel.id, world.users.petra.id]) {
         expect(await db.select().from(notifications).where(eq(notifications.userId, id))).toEqual(
           []
         );

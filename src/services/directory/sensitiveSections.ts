@@ -25,7 +25,6 @@ export type StoredAddress = {
   postalCode: string | null;
   city: string;
   region: string | null;
-  /** ISO 3166-1 alpha-2. */
   country: string;
 };
 

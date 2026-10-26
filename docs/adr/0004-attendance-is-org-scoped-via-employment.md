@@ -1,5 +1,9 @@
 # Attendance is org-scoped, through an explicit Employment row
 
+> Amended by [ADR 0008](0008-employment-spells-and-directory-records.md): an Employment is now one
+> spell, may exist without an account, and in a Directory organization ends only by End
+> employment.
+
 Attendance (designed in Daniel88dev/flexi-day-workspace#11) is the first feature whose subject is a
 person rather than a person-in-a-group. Vacation is `(user, group, day)` on purpose, billing is
 priced per group, and nothing stores who belongs to an organization: that set is the union of the

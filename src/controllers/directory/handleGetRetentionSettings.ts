@@ -3,6 +3,6 @@ import { readRetentionSettings } from "../../services/directory/retentionSetting
 import { directoryViewerFor } from "./directoryViewerFor.js";
 
 export const handleGetRetentionSettings = async (req: Request, res: Response) => {
-  const viewer = await directoryViewerFor(req);
+  const viewer = await directoryViewerFor(req, undefined, { whileOff: true });
   return res.status(200).json(await readRetentionSettings(viewer));
 };

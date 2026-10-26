@@ -2,7 +2,8 @@ import type { Request, Response } from "express";
 import { db } from "../../db/db.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { deleteAttendanceSession } from "../../services/attendance/attendanceCorrections.js";
-import { presentSession, requirePathParam } from "./utils.js";
+import { requirePathParam } from "../pathParams.js";
+import { presentSession } from "./utils.js";
 
 export const handleDeleteAttendanceSession = async (req: Request, res: Response) => {
   const auth = getAuth(req);

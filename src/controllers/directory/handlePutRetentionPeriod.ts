@@ -7,7 +7,7 @@ import { directoryViewerFor } from "./directoryViewerFor.js";
 export const handlePutRetentionPeriod = async (req: Request, res: Response) => {
   const body = req.body as PutRetentionPeriod;
   const settings = await db.transaction(async (tx) => {
-    const viewer = await directoryViewerFor(req, tx);
+    const viewer = await directoryViewerFor(req, tx, { whileOff: true });
     return updateRetentionPeriod(viewer, body, tx);
   });
   return res.status(200).json(settings);

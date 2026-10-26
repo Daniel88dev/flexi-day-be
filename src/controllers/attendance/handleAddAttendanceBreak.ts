@@ -3,7 +3,8 @@ import { db } from "../../db/db.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { addAttendanceBreak } from "../../services/attendance/attendanceCorrections.js";
 import type { ValidatedAttendanceBreakType } from "../../services/attendance/types.js";
-import { presentSession, requirePathParam } from "./utils.js";
+import { requirePathParam } from "../pathParams.js";
+import { presentSession } from "./utils.js";
 
 export const handleAddAttendanceBreak = async (req: Request, res: Response) => {
   const auth = getAuth(req);

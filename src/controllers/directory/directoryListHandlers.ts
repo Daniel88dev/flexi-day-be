@@ -11,10 +11,9 @@ import type {
   PatchListEntry,
   PostListEntry,
 } from "../../services/directory/types.js";
-import { requirePathParam } from "../attendance/utils.js";
+import { requirePathParam } from "../pathParams.js";
 import { directoryViewerFor } from "./directoryViewerFor.js";
 
-/** The four handlers of one list, Departments or Locations. */
 export const directoryListHandlers = (kind: DirectoryListKind) => ({
   list: async (req: Request, res: Response) => {
     const viewer = await directoryViewerFor(req);

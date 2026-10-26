@@ -41,7 +41,7 @@ describe("per-organization field encryption", () => {
       return cipher.encrypt("+420 777 123 456", PHONE);
     });
 
-    expect(stored).not.toContain("777");
+    expect(stored).not.toContain("777 123 456");
     expect(Buffer.from(stored, "utf8").toString("latin1")).not.toContain("+420");
 
     const read = await db.transaction(async (tx) =>

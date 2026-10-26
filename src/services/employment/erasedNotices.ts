@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, arrayOverlaps, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
 import { notifications, notificationType } from "../../db/schema/notification-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
@@ -84,7 +84,15 @@ export const removeNoticesAboutErasedPerson = async (
             .where(
               and(
                 eq(readLog.organizationId, organizationId),
-                eq(readLog.subjectUserId, userId),
+                or(
+                  eq(readLog.subjectUserId, userId),
+                  employmentIds.length === 0
+                    ? undefined
+                    : and(
+                        isNull(readLog.subjectUserId),
+                        arrayOverlaps(readLog.employmentIds, employmentIds)
+                      )
+                ),
                 ne(readLog.audience, readLogAudience.Self)
               )
             )

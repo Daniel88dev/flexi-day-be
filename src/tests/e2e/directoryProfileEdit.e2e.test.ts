@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import request from "supertest";
 import { and, eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createServer } from "../../server.js";
@@ -12,15 +11,14 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { enableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { getPersonContacts } from "../../services/person/personName.js";
 import { collectOrganizationExport } from "../../services/personExport/organizationExportData.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 describe("Editing the Card and Job Sections of a Profile", () => {
   let server: LoopbackServer;
@@ -87,14 +85,7 @@ describe("Editing the Card and Job Sections of a Profile", () => {
       email: "ada@example.test",
     });
 
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     const employmentOf = async (userId: string) => {
       const [row] = await db
@@ -120,14 +111,7 @@ describe("Editing the Card and Job Sections of a Profile", () => {
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const setCell = async (organizationId: string, row: string, audience: string, value: string) =>
     db
@@ -147,8 +131,6 @@ describe("Editing the Card and Job Sections of a Profile", () => {
       status: subscriptionStatus.Active,
       graceEndsAt: null,
     });
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
 
   describe("write cells", () => {
     it("saves a job title an org admin sets, and every Card reader sees it", async () => {

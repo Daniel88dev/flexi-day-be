@@ -8,10 +8,10 @@ organization holds about one person. The work is in `src/services/personExport/`
 
 - The owner and org admins, for any Employment from its People card row or its profile: open or
   ended, account bound, deleted or never there, on every plan.
-  `POST /api/employment/{employmentId}/export`. Group managers and members get 403. A person
-  without an account is that one Employment: the row names it in `subject_employment_id` instead
-  of a user, and the export holds no bookings, quotas, memberships or attachments, which only an
-  account can have.
+  `POST /api/employment/{employmentId}/export`. Group managers and members get 403. For a person
+  without an account the row names the Employment in `subject_employment_id` instead of a user,
+  and the export holds no bookings, quotas, memberships or attachments, which only an account can
+  have.
 - The person, for each organization where their account is bound to an Employment, open or ended,
   from the "Your data" card in Settings. `GET` and `POST /api/users/me/person-exports`.
 - A second request by the same person for the same subject while one is still `PENDING` returns
@@ -19,18 +19,23 @@ organization holds about one person. The work is in `src/services/personExport/`
 
 ## What it holds
 
-One organization's Organization data about the person, across every spell. The name and email are
-the Employment's own copies.
+One organization's Organization data about the person, across every spell. A spell is the
+person's when it carries their account, or, on a spell without an account, their email: an
+account's export also takes the account-less spells with an address one of its spells holds, and an
+account-less person's export takes every spell with their address (`personSpellIds` in
+`src/services/employment/personSpells.ts`, the same rule Copy from previous spell uses). The Read
+log section matches the person's account and every one of those spells, so reads from before a
+Claim stay in. The name and email are the Employment's own copies.
 
-| File                      | Contents                                                                                                                                                                           |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `person.json`             | Everything below, plus Employments with their Card, Job, Contact and Personal fields, the profile history, group memberships, managed groups and the Read log's dates and purposes |
-| `bookings.csv`            | Every booking in any state, with the names of who created, approved, rejected or cancelled it                                                                                      |
-| `attendance-sessions.csv` | Sessions with break minutes and any location fixes still held; breaks and events are in `person.json`                                                                              |
-| `quotas.csv`              | Each year's allowance per group                                                                                                                                                    |
-| `changes.csv`             | The change log entries about the person                                                                                                                                            |
-| `attachments/`            | The bytes of every attachment still held                                                                                                                                           |
-| `profile-photos/`         | Each spell's Profile photo in its full size, named in `employments[].photo`                                                                                                        |
+| File                      | Contents                                                                                                                                                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `person.json`             | Everything below, plus Employments with their Card, Job, Contact and Personal fields, the profile history, Directory roles and their history, group memberships, managed groups and the Read log's dates and purposes |
+| `bookings.csv`            | Every booking in any state, with the names of who created, approved, rejected or cancelled it                                                                                                                         |
+| `attendance-sessions.csv` | Sessions with break minutes and any location fixes still held; breaks and events are in `person.json`                                                                                                                 |
+| `quotas.csv`              | Each year's allowance per group                                                                                                                                                                                       |
+| `changes.csv`             | The change log entries about the person                                                                                                                                                                               |
+| `attachments/`            | The bytes of every attachment still held                                                                                                                                                                              |
+| `profile-photos/`         | Each spell's Profile photo in its full size, named in `employments[].photo`                                                                                                                                           |
 
 Account data stays out: login, the account's own name and email, Account picture, sessions,
 settings, notifications, Birthday. Reader names never appear in the Read log section, only the
@@ -54,7 +59,9 @@ gets a leading `'`. Employment type and the profile sections join the file when 
 - `READY` sets `expiresAt` 7 days on, matching the bucket's `exports/` lifecycle rule. The
   requester gets one `export_ready` Notification, in-app and pushed, never emailed.
 - Erasing the person deletes their Person exports and the organization's Organization exports,
-  rows and ZIPs (see [`account-deletion.md`](account-deletion.md#erase)).
+  rows and ZIPs (see [`account-deletion.md`](account-deletion.md#erase)). Delete all directory
+  data deletes every Person export and keeps the Organization exports, the owner's return copy,
+  which expire on their own.
 - `POST /api/person-exports/{exportId}/download` signs a link for one hour, for the requester only.
   It signs again as often as asked until `expiresAt`, then answers 410 `EXPORT_EXPIRED`.
   Every signing re-checks the standing the export was requested with: the owner for an
@@ -68,10 +75,11 @@ service (Art. 28(3)(g)). Only the owner can request it, from the Organization pa
 on every plan: `POST /api/organization/export`, and `GET` for the newest one. A delegated admin gets
 403 `OWNER_ONLY`. The delete dialog links to it but never waits for it.
 
-| Path                   | Contents                                                                                                                          |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `organization.json`    | The organization, its settings and attendance settings history, administrators, groups, memberships, group events, a people index |
-| `people/<name>-<id8>/` | One Person export folder per person with an Employment there, open or ended, Deleted accounts included                            |
+| Path                                     | Contents                                                                                                                                                                                                          |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `organization.json`                      | The organization, its settings and attendance settings history, administrators, groups, memberships, group events, a people index, and the people without an account with their Profile fields, history and reads |
+| `people-without-account/profile-photos/` | The full Profile photo of each person without an account, named in `peopleWithoutAccount[].photo`                                                                                                                 |
+| `people/<name>-<id8>/`                   | One Person export folder per person with an Employment there, open or ended, Deleted accounts included                                                                                                            |
 
 It is a `person_exports` row with `scope` `ORGANIZATION` and no subject, so it shares the queue,
 the lock, the store key, the signed link and the `export_ready` Notification. The request writes one

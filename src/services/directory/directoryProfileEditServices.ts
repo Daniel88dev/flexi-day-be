@@ -11,7 +11,6 @@ import {
 } from "../../db/schema/directory-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
-import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
 import { isCountryCode, parsePhone } from "./contactFormat.js";
 import {
@@ -28,13 +27,10 @@ import { assertAssignableEntry } from "./directoryListServices.js";
 import { revokeOpenEmploymentInvite } from "./directoryInviteServices.js";
 import { assertEmploymentEmailFree } from "../employment/accountlessClash.js";
 import { getPersonContacts } from "../person/personName.js";
-import {
-  canReadHistory,
-  getDirectoryProfile,
-  nameFromAccount,
-} from "./directoryProfileServices.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { getDirectoryProfile, nameFromAccount } from "./directoryProfileServices.js";
+import { administersPeople, lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
 import { CARD_COLUMNS, JOB_COLUMNS, WORK_CONTACT_COLUMNS } from "./profileSectionFields.js";
+import { recordProfileHistory } from "./profileHistory.js";
 import type { SectionRow } from "./permissionResolver.js";
 import type { DirectoryProfile, PatchDirectoryProfile, ProfileHistoryEntry } from "./types.js";
 
@@ -218,26 +214,7 @@ export const updateDirectoryProfile = async (
   tx: DbTransaction
 ): Promise<DirectoryProfile> => {
   const { organizationId } = viewer;
-  const context = { organizationId, employmentId, viewerUserId: viewer.standing.userId };
-
-  const [record] = await tx
-    .select({
-      id: employments.id,
-      userId: employments.userId,
-      type: employments.type,
-      name: employments.name,
-      email: employments.email,
-      endedAt: employments.endedAt,
-      accountDeletedAt: employments.accountDeletedAt,
-    })
-    .from(employments)
-    .where(and(eq(employments.organizationId, organizationId), eq(employments.id, employmentId)))
-    .for("update");
-  const access =
-    record && viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null });
-  if (!record || !access?.inReach) {
-    throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
-  }
+  const { record, access, context } = await lockRecordInReach(viewer, employmentId, tx);
 
   const touched: [SectionRow, object | undefined][] = [
     [R.Card, patch.card],
@@ -407,15 +384,14 @@ export const updateDirectoryProfile = async (
   )
     .filter(([, fields]) => fields.length > 0)
     .map(([row, fields]) => ({
-      id: generateRandomUUID(),
       organizationId,
       employmentId,
       actorUserId: viewer.standing.userId,
       section: row,
-      fields: [...fields],
+      fields,
       audience: access.grantedBy[row]!,
     }));
-  if (history.length > 0) await tx.insert(directoryProfileHistory).values(history);
+  await recordProfileHistory(history, tx);
 
   return getDirectoryProfile(viewer, employmentId, tx);
 };
@@ -435,7 +411,7 @@ export const listProfileHistory = async (
     employmentId,
     viewerUserId: viewer.standing.userId,
   };
-  if (!canReadHistory(viewer)) {
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "HISTORY_DENIED",

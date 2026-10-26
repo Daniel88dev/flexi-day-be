@@ -6,7 +6,11 @@ import {
 } from "../../db/schema/directory-schema.js";
 import { appLanguage } from "../../db/schema/user-settings-schema.js";
 import { refuse } from "../../utils/appError.js";
-import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
+import {
+  administersOrganization,
+  administersPeople,
+  type DirectoryViewer,
+} from "./directoryViewer.js";
 import { readRetentionPeriods } from "./retentionPurge.js";
 import { retentionPeriodLabel } from "./retentionPeriods.js";
 import type { DirectoryGeneralSettings, PutDirectoryGeneralSettings } from "./types.js";
@@ -15,8 +19,7 @@ export type NoticeTexts = Record<appLanguage, string>;
 
 /**
  * The product's default Art. 14 notice, shown under the emergency contacts to
- * whoever edits them. A placeholder: the legal wording is the owner's (fenro
- * T-496), and the branch does not reach main before it.
+ * whoever edits them. A placeholder until the owner's legal wording lands.
  */
 export const DEFAULT_EMERGENCY_CONTACT_NOTICE: NoticeTexts = {
   [appLanguage.English]:
@@ -80,15 +83,11 @@ export const emergencyContactNotice = async (
   });
 };
 
-/** The owner and org admins change the General settings; HR reads them. */
-export const canEditGeneralSettings = (viewer: DirectoryViewer) =>
-  viewer.standing.owner || viewer.standing.organizationAdmin;
-
 export const readGeneralSettings = async (
   viewer: DirectoryViewer,
   tx?: DbTransaction
 ): Promise<DirectoryGeneralSettings> => {
-  if (!canReadPermissionTable(viewer)) {
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "SETTINGS_DENIED",
@@ -102,7 +101,7 @@ export const readGeneralSettings = async (
   const stored = await readStoredNotice(viewer.organizationId, tx);
   const period = await contactRetentionLabels(viewer.organizationId, tx);
   return {
-    editable: canEditGeneralSettings(viewer),
+    editable: administersOrganization(viewer),
     emergencyContactNotice: { en: stored[appLanguage.English], cs: stored[appLanguage.Czech] },
     defaults: {
       en: DEFAULT_EMERGENCY_CONTACT_NOTICE[appLanguage.English],
@@ -121,7 +120,7 @@ export const updateGeneralSettings = async (
   body: PutDirectoryGeneralSettings,
   tx: DbTransaction
 ): Promise<DirectoryGeneralSettings> => {
-  if (!canEditGeneralSettings(viewer)) {
+  if (!administersOrganization(viewer)) {
     throw refuse(403, "SETTINGS_NOT_EDITABLE", "Only the owner and org admins change these", {
       organizationId: viewer.organizationId,
       viewerUserId: viewer.standing.userId,

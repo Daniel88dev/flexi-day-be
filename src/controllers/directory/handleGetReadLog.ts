@@ -9,6 +9,6 @@ export const handleGetReadLog = async (req: Request, res: Response) => {
   if (!query.success) {
     throw new AppError({ code: 422, message: "Invalid read log query", logging: false });
   }
-  const viewer = await directoryViewerFor(req);
+  const viewer = await directoryViewerFor(req, undefined, { whileOff: true });
   return res.status(200).json(await listReadLog(viewer, query.data));
 };

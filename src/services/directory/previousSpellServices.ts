@@ -1,7 +1,6 @@
-import { and, desc, eq, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lt, ne } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
-import { directoryProfileHistory } from "../../db/schema/directory-profile-schema.js";
 import {
   directoryPermissionRow as R,
   directoryPermissionValue as V,
@@ -11,10 +10,17 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import AppError, { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
-import { photoKeys, photoPrefix, requireStore } from "./directoryPhotoServices.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import {
+  photoKeys,
+  photoPrefix,
+  removePhotoObjects,
+  requireStore,
+} from "./directoryPhotoServices.js";
+import { administersPeople, lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
 import { CONTACT_FIELDS, PERSONAL_FIELDS, PHOTO_FIELDS } from "./profileSectionFields.js";
+import { recordProfileHistory } from "./profileHistory.js";
+import { samePersonAs } from "../employment/personSpells.js";
 import { readRetentionSchedules } from "./retentionSchedule.js";
 import { readSensitiveSection, writeSensitiveSections } from "./sensitiveSections.js";
 import {
@@ -42,12 +48,6 @@ type SpellRecord = {
 
 type PreviousSpell = { id: string; startedAt: Date; endedAt: Date };
 
-/** The owner, org admins and HR copy from a previous spell. */
-const copiesPreviousSpells = (viewer: DirectoryViewer) =>
-  viewer.standing.owner ||
-  viewer.standing.organizationAdmin ||
-  viewer.standing.roles.includes("HR");
-
 /**
  * The latest ended spell of the same person in the organization, begun before
  * this one: the same user, or the same email when either spell has no account.
@@ -57,14 +57,7 @@ const findPreviousSpell = async (
   record: SpellRecord,
   tx?: DbTransaction
 ): Promise<PreviousSpell | null> => {
-  const sameEmail =
-    record.email === null ? undefined : sql`lower(${employments.email}) = lower(${record.email})`;
-  const samePerson =
-    record.userId === null
-      ? sameEmail
-      : sameEmail === undefined
-        ? eq(employments.userId, record.userId)
-        : or(eq(employments.userId, record.userId), and(isNull(employments.userId), sameEmail));
+  const samePerson = samePersonAs(record);
   if (!samePerson) return null;
   const [row] = await (tx ?? db)
     .select({
@@ -144,7 +137,7 @@ export const copyFromPreviousSpellOffered = async (
   access: DirectoryAccess,
   tx?: DbTransaction
 ): Promise<boolean> => {
-  if (!copiesPreviousSpells(viewer) || record.endedAt !== null) return false;
+  if (!administersPeople(viewer) || record.endedAt !== null) return false;
   const previous = await findPreviousSpell(viewer.organizationId, record, tx);
   if (!previous) return false;
   const sections = await copyableSections(viewer, record, access, previous, tx);
@@ -158,31 +151,8 @@ const loadCopy = async (
   tx: DbTransaction,
   lock: boolean
 ) => {
-  const context = {
-    organizationId: viewer.organizationId,
-    employmentId,
-    viewerUserId: viewer.standing.userId,
-  };
-  const query = tx
-    .select({
-      id: employments.id,
-      userId: employments.userId,
-      email: employments.email,
-      type: employments.type,
-      startedAt: employments.startedAt,
-      endedAt: employments.endedAt,
-    })
-    .from(employments)
-    .where(
-      and(eq(employments.organizationId, viewer.organizationId), eq(employments.id, employmentId))
-    );
-  const [record] = lock ? await query.for("update") : await query;
-  const access =
-    record && viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null });
-  if (!record || !access?.inReach) {
-    throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
-  }
-  if (!copiesPreviousSpells(viewer)) {
+  const { record, access, context } = await lockRecordInReach(viewer, employmentId, tx, { lock });
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "COPY_DENIED",
@@ -221,17 +191,16 @@ const filled = (fields: readonly string[], value: Record<string, unknown> | null
 /**
  * Copies whole Sections from the previous spell onto this open one, in the
  * caller's transaction. Sealed Sections are opened and sealed again for the
- * new row; the photo's two files are written under a new photo id, and their
- * folder goes into `written` so the caller can delete it if the transaction
- * fails. Each copied Section gets a profile history row.
+ * new row; the photo's two files are written under a new photo id. A failure
+ * here deletes them; the returned folders are for the caller to delete if its
+ * transaction fails later. Each copied Section gets a profile history row.
  */
 export const copyFromPreviousSpell = async (
   viewer: DirectoryViewer,
   employmentId: string,
   input: PostCopyPreviousSpell,
-  tx: DbTransaction,
-  written: string[] = []
-): Promise<void> => {
+  tx: DbTransaction
+): Promise<{ photoPrefixes: string[] }> => {
   const { record, access, previous, context } = await loadCopy(viewer, employmentId, tx, true);
   const { organizationId } = viewer;
   const chosen = [...new Set(input.sections)];
@@ -292,7 +261,9 @@ export const copyFromPreviousSpell = async (
     }
   }
 
-  if (chosen.includes("photo")) {
+  const photoPrefixes: string[] = [];
+  const copyPhoto = async () => {
+    if (!chosen.includes("photo")) return;
     const photo = (await readyPhotoOf(previous.id, tx))!;
     const store = requireStore(context);
     const source = photoKeys(photoPrefix(photo));
@@ -309,7 +280,7 @@ export const copyFromPreviousSpell = async (
     }
     const copy = { id: generateRandomUUID(), organizationId, employmentId: record.id };
     const prefix = photoPrefix(copy);
-    written.push(prefix);
+    photoPrefixes.push(prefix);
     const target = photoKeys(prefix);
     await store.putObject(target.small, small, "image/jpeg");
     await store.putObject(target.full, full, "image/jpeg");
@@ -323,17 +294,24 @@ export const copyFromPreviousSpell = async (
       readyAt: new Date(),
     });
     history.push({ section: R.Photo, fields: [...PHOTO_FIELDS] });
-  }
+  };
 
-  await tx.insert(directoryProfileHistory).values(
-    history.map(({ section, fields }) => ({
-      id: generateRandomUUID(),
-      organizationId,
-      employmentId: record.id,
-      actorUserId: viewer.standing.userId,
-      section,
-      fields,
-      audience: access.grantedBy[section]!,
-    }))
-  );
+  try {
+    await copyPhoto();
+    await recordProfileHistory(
+      history.map(({ section, fields }) => ({
+        organizationId,
+        employmentId: record.id,
+        actorUserId: viewer.standing.userId,
+        section,
+        fields,
+        audience: access.grantedBy[section]!,
+      })),
+      tx
+    );
+  } catch (error) {
+    await removePhotoObjects(photoPrefixes);
+    throw error;
+  }
+  return { photoPrefixes };
 };

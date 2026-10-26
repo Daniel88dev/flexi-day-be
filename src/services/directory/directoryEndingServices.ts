@@ -3,13 +3,9 @@ import { db, type DbTransaction } from "../../db/db.js";
 import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { administersOrganization, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess } from "./permissionResolver.js";
 import type { ProfileActions } from "./types.js";
-
-/** The owner and org admins: they see who is in no group, export and erase. */
-export const administersOrganization = (viewer: DirectoryViewer) =>
-  viewer.standing.owner || viewer.standing.organizationAdmin;
 
 /** Account holders the organization links through a group: a live membership or a managed group. */
 export const groupedUserIds = async (

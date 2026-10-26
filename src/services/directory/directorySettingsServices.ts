@@ -153,17 +153,7 @@ export const enableDirectory = async (
       set: { enabled: true, enabledAt: now, enabledByUserId: userId },
     });
   await recordAcceptance(input, tx);
-  await tx
-    .insert(directoryPermissionCells)
-    .values(
-      DIRECTORY_PERMISSION_DEFAULTS.map(({ row, audience, value }) => ({
-        organizationId,
-        row,
-        audience,
-        value,
-      }))
-    )
-    .onConflictDoNothing();
+  await storeMissingCells(organizationId, tx);
 };
 
 /**
@@ -215,6 +205,21 @@ export const acceptDirectoryAgreement = async (
   }
   assertCurrentAgreement(input.agreementVersion, { organizationId });
   await recordAcceptance(input, tx);
+};
+
+/** Stores every product cell the organization's copy lacks, at its default. A stored cell stays. */
+export const storeMissingCells = async (organizationId: string, tx: DbTransaction) => {
+  await tx
+    .insert(directoryPermissionCells)
+    .values(
+      DIRECTORY_PERMISSION_DEFAULTS.map(({ row, audience, value }) => ({
+        organizationId,
+        row,
+        audience,
+        value,
+      }))
+    )
+    .onConflictDoNothing();
 };
 
 /** The organization's Permission table, a cell its copy lacks read as the product default. */
