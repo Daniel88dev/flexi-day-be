@@ -127,6 +127,24 @@ export interface GroupInviteData {
 }
 
 /**
+ * `directory-invite`: sent to a person without an account whom an admin
+ * invites from the organization's directory. It names the organization, never
+ * a group, and carries the invite link only.
+ */
+export interface DirectoryInviteData {
+  organizationName: string;
+  inviterName: string;
+  /** The name the organization holds for the person. */
+  personName: string;
+  /** The invite link, `{appUrl}/join/?token=<secret>`. Only ever sent to the invited address. */
+  inviteUrl: string;
+  invitedEmail: string;
+  expiresIn: string;
+  /** The same duration in Czech: the message carries both languages. */
+  expiresInCs: string;
+}
+
+/**
  * `subscription-grace`: sent to the organization's billing email when a
  * payment fails or a subscription is canceled — full limits continue for the
  * grace window, then over-limit groups go read-only. Account/billing mail, so
@@ -171,6 +189,7 @@ export type TemplatedEmail =
     }
   | { to: string; template: "vacation-comment"; data: VacationCommentData }
   | { to: string; template: "group-invite"; data: GroupInviteData }
+  | { to: string; template: "directory-invite"; data: DirectoryInviteData }
   | { to: string; template: "subscription-grace"; data: SubscriptionGraceData }
   | { to: string; template: "two-factor-code"; data: TwoFactorCodeData };
 

@@ -5,6 +5,7 @@ import {
   validateDirectoryEmailCheck,
   validatePatchDirectoryProfile,
   validatePatchPermissionCell,
+  validatePostDirectoryInvite,
   validatePostDirectoryPerson,
   validatePutDirectoryGeneralSettings,
   validatePutRetentionPeriod,
@@ -33,6 +34,7 @@ import { handleDeleteRetentionHold } from "../controllers/directory/handleDelete
 import { handlePatchDirectoryProfile } from "../controllers/directory/handlePatchDirectoryProfile.js";
 import { handlePostDirectoryEmailCheck } from "../controllers/directory/handlePostDirectoryEmailCheck.js";
 import { handlePostDirectoryPerson } from "../controllers/directory/handlePostDirectoryPerson.js";
+import { handlePostDirectoryInvite } from "../controllers/directory/handlePostDirectoryInvite.js";
 import { handleGetDirectoryOrganizations } from "../controllers/directory/handleGetDirectoryOrganizations.js";
 import { handleGetDirectoryPeople } from "../controllers/directory/handleGetDirectoryPeople.js";
 import { handleGetDirectoryProfile } from "../controllers/directory/handleGetDirectoryProfile.js";
@@ -92,12 +94,13 @@ export const directoryRouter = (): Router => {
    *   schemas:
    *     DirectoryMarker:
    *       type: string
-   *       enum: [EXTERNAL_WORKER, NO_ACCOUNT, ACCOUNT_DELETED, REJOINED]
+   *       enum: [EXTERNAL_WORKER, NO_ACCOUNT, ACCOUNT_DELETED, REJOINED, INVITE_SENT]
    *       description: |
    *         Badges on a row. Everyone who reaches the record sees
-   *         EXTERNAL_WORKER. NO_ACCOUNT, ACCOUNT_DELETED and REJOINED (an
-   *         ended spell whose person started a later one) go to the owner,
-   *         org admins and HR only.
+   *         EXTERNAL_WORKER. NO_ACCOUNT, ACCOUNT_DELETED, REJOINED (an
+   *         ended spell whose person started a later one) and INVITE_SENT (an
+   *         open record without an account whose directory invite is still
+   *         open) go to the owner, org admins and HR only.
    *     DirectoryPerson:
    *       type: object
    *       required: [employmentId, name, jobTitle, department, location, image, photoUrl, user, markers]
@@ -382,7 +385,7 @@ export const directoryRouter = (): Router => {
    *             actions:
    *               type: object
    *               description: What the caller may do to this record from its profile.
-   *               required: [end, export, erase, hold]
+   *               required: [end, export, erase, hold, invite]
    *               properties:
    *                 end:
    *                   type: boolean
@@ -398,6 +401,12 @@ export const directoryRouter = (): Router => {
    *                 hold:
    *                   type: boolean
    *                   description: Set or lift the Retention hold. The owner and org admins, on an ended record.
+   *                 invite:
+   *                   type: boolean
+   *                   description: |
+   *                     Send directory invite: the act cell allows the caller
+   *                     and the record is open and without an account. The
+   *                     record may still lack the email it needs.
    *             canReadHistory:
    *               type: boolean
    *               description: The caller is the owner, an org admin or HR.
@@ -661,6 +670,105 @@ export const directoryRouter = (): Router => {
 
   /**
    * @openapi
+   * /api/directory/{organizationId}/people/{employmentId}/invite:
+   *   post:
+   *     tags:
+   *       - Directory
+   *     summary: Send a directory invite to a person without an account
+   *     description: |
+   *       Issues a single-use invite bound to the person's email and emails its
+   *       link through the `directory-invite` template, which names the
+   *       organization and never a group. Redeeming it (by link, by sign-up
+   *       with invite or by code) binds the account to this Employment: the
+   *       Claim. Naming a group is optional; the redeemer then also joins it,
+   *       so the group must be a live group of the organization, writable and
+   *       with a free seat. Sending again revokes the open invite first.
+   *
+   *       Needs the Send directory invite act cell (Owner, HR and Org admin by
+   *       default). It resolves on the record, open and without an account,
+   *       so Group admin never credits. Needs the directory plan. The code and
+   *       the link secret never come back.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: false
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             properties:
+   *               groupId:
+   *                 type: string
+   *                 format: uuid
+   *                 nullable: true
+   *                 description: A group the person joins on redeeming. Omit for none.
+   *     responses:
+   *       '201':
+   *         description: The invite. `emailDelivered` is false when the email failed; send again.
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [invite, emailDelivered]
+   *               properties:
+   *                 emailDelivered:
+   *                   type: boolean
+   *                 invite:
+   *                   type: object
+   *                   required: [id, employmentId, groupId, email, status, expiresAt, createdAt]
+   *                   properties:
+   *                     id:
+   *                       type: string
+   *                     employmentId:
+   *                       type: string
+   *                     groupId:
+   *                       type: string
+   *                       nullable: true
+   *                     email:
+   *                       type: string
+   *                       format: email
+   *                     status:
+   *                       type: string
+   *                       enum: [open]
+   *                     expiresAt:
+   *                       type: string
+   *                       format: date-time
+   *                     createdAt:
+   *                       type: string
+   *                       format: date-time
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: "`reason: PLAN_LIMIT`: the plan doesn't include the directory, the group is read-only or full"
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `INVITE_DENIED` without the Send directory invite act"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND` when the record is elsewhere or out of reach"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`, or `EMPLOYMENT_ENDED`"
+   *       '422':
+   *         description: "A malformed body, `HAS_ACCOUNT`, `NO_EMAIL` or `GROUP_NOT_FOUND`"
+   */
+  app.post(
+    "/:organizationId/people/:employmentId/invite",
+    bodyValidationMiddleware(validatePostDirectoryInvite),
+    tryCatch(handlePostDirectoryInvite)
+  );
+
+  /**
+   * @openapi
    * /api/directory/{organizationId}/former:
    *   get:
    *     tags:
@@ -808,6 +916,11 @@ export const directoryRouter = (): Router => {
    *       deleted. A bound, open account's name and sign-in email follow the
    *       account. The name is never cleared.
    *
+   *       `card.email` sets, changes or clears the address of an open record
+   *       without an account, the one a directory invite goes to. It is
+   *       unique, ignoring case, among the organization's open Employments,
+   *       and a change revokes the record's open directory invite.
+   *
    *       Setting any value needs the directory plan (Enterprise or Custom).
    *       A body that only clears works on every plan. Contract type, working
    *       time and probation end date apply to employees only. The employee
@@ -861,6 +974,12 @@ export const directoryRouter = (): Router => {
    *                     minLength: 1
    *                     maxLength: 200
    *                     description: Trimmed. Refused for a bound, open account.
+   *                   email:
+   *                     type: string
+   *                     format: email
+   *                     maxLength: 254
+   *                     nullable: true
+   *                     description: Stored lowercase. Only on an open record without an account.
    *                   jobTitle:
    *                     type: string
    *                     nullable: true
@@ -996,10 +1115,11 @@ export const directoryRouter = (): Router => {
    *       '404':
    *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND` when the record is elsewhere or out of the caller's reach"
    *       '409':
-   *         description: "`DIRECTORY_OFF`, or `EMPLOYEE_NUMBER_TAKEN` when another open Employment holds the number"
+   *         description: "`DIRECTORY_OFF`, `EMPLOYEE_NUMBER_TAKEN` when another open Employment holds the number, or `EMPLOYMENT_EMAIL_TAKEN` when one holds the email"
    *       '422':
    *         description: |
-   *           A malformed body, or `EMPLOYEES_ONLY` (an employee-only field set
+   *           A malformed body, `EMAIL_FROM_ACCOUNT` (an email for a record
+   *           with an account or one that ended), or `EMPLOYEES_ONLY` (an employee-only field set
    *           on an External worker), `PROBATION_BEFORE_START`,
    *           `REPORTS_TO_NOT_FOUND` (not an open Employment of the
    *           organization), `REPORTS_TO_SELF`, `INVALID_PHONE`,

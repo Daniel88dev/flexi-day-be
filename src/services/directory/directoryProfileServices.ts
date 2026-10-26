@@ -82,6 +82,10 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
           where later_spell.organization_id = ${employments.organizationId}
             and later_spell.user_id = ${employments.userId}
             and later_spell.started_at > ${employments.startedAt})`,
+        inviteSent: sql<boolean>`exists (select 1 from invite_link open_invite
+          where open_invite.employment_id = ${employments.id}
+            and open_invite.used_at is null and open_invite.revoked_at is null
+            and open_invite.expires_at > now())`,
         jobTitle: directoryProfiles.jobTitle,
         departmentId: directoryDepartments.id,
         departmentName: directoryDepartments.name,
@@ -147,6 +151,7 @@ const markersOf = (row: RecordRow, access: DirectoryAccess): DirectoryMarker[] =
   if (row.userId === null) markers.push("NO_ACCOUNT");
   if (row.accountDeletedAt !== null) markers.push("ACCOUNT_DELETED");
   if (row.endedAt !== null && row.rejoined) markers.push("REJOINED");
+  if (row.userId === null && row.endedAt === null && row.inviteSent) markers.push("INVITE_SENT");
   return markers;
 };
 

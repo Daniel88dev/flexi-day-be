@@ -42,7 +42,10 @@ export type GroupUserListItem = GroupUser & {
 
 export type InviteLink = {
   id: string;
-  groupId: string;
+  /** Null on a directory invite that names no group. */
+  groupId: string | null;
+  /** The account-less Employment a directory invite claims. */
+  employmentId: string | null;
   code: string;
   /** Address the invite was issued to; null only on rows predating email invites. */
   email: string | null;
@@ -56,7 +59,8 @@ export type InviteLink = {
 
 export type InviteLinkInsertType = {
   id: string;
-  groupId: string;
+  groupId?: string | null;
+  employmentId?: string | null;
   code: string;
   email?: string | null;
   linkSecretHash?: string | null;
@@ -68,8 +72,12 @@ export type InviteStatus = "open" | "used" | "expired" | "revoked";
 
 /** What the invite link's holder may see before signing in. */
 export type InvitePreview = {
-  groupId: string;
-  groupName: string;
+  /** Null on a directory invite that names no group. */
+  groupId: string | null;
+  groupName: string | null;
+  organizationName: string;
+  /** The name the organization holds for the person the invite claims, if any. */
+  personName: string | null;
   inviterName: string | null;
   invitedEmail: string;
   status: InviteStatus;

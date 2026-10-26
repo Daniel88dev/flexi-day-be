@@ -9,15 +9,13 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
-import { lockEmploymentEmail } from "../employment/accountlessClash.js";
+import { assertEmploymentEmailFree } from "../employment/accountlessClash.js";
 import { assertAssignableEntry } from "./directoryListServices.js";
 import { assertReportsTo } from "./directoryProfileEditServices.js";
 import { getDirectoryProfile } from "./directoryProfileServices.js";
 import { createPersonGrantor, type DirectoryViewer } from "./directoryViewer.js";
 import { CARD_COLUMNS } from "./profileSectionFields.js";
 import type { DirectoryProfile, PostDirectoryPerson } from "./types.js";
-
-export const EMPLOYMENT_EMAIL_TAKEN = "EMPLOYMENT_EMAIL_TAKEN";
 
 const contextOf = (viewer: DirectoryViewer) => ({
   organizationId: viewer.organizationId,
@@ -96,17 +94,7 @@ export const createDirectoryPerson = async (
   }
 
   const email = input.email ?? null;
-  if (email) {
-    await lockEmploymentEmail(organizationId, email, tx);
-    if (await emailHeld(organizationId, email, tx)) {
-      throw refuse(
-        409,
-        EMPLOYMENT_EMAIL_TAKEN,
-        "Another open Employment in the organization holds this email",
-        context
-      );
-    }
-  }
+  if (email) await assertEmploymentEmailFree(organizationId, email, context, tx);
 
   await tx.insert(employments).values({
     id: employmentId,

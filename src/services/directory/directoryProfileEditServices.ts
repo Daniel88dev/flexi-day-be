@@ -25,6 +25,8 @@ import {
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { assertAssignableEntry } from "./directoryListServices.js";
+import { revokeOpenEmploymentInvite } from "./directoryInviteServices.js";
+import { assertEmploymentEmailFree } from "../employment/accountlessClash.js";
 import { getPersonContacts } from "../person/personName.js";
 import {
   canReadHistory,
@@ -224,6 +226,7 @@ export const updateDirectoryProfile = async (
       userId: employments.userId,
       type: employments.type,
       name: employments.name,
+      email: employments.email,
       endedAt: employments.endedAt,
       accountDeletedAt: employments.accountDeletedAt,
     })
@@ -251,6 +254,14 @@ export const updateDirectoryProfile = async (
   if (patch.card?.name !== undefined && nameFromAccount(record)) {
     throw refuse(403, "NAME_FROM_ACCOUNT", "The name follows the person's account", context);
   }
+  if (patch.card?.email !== undefined && (record.userId !== null || record.endedAt !== null)) {
+    throw refuse(
+      422,
+      "EMAIL_FROM_ACCOUNT",
+      "Only an open record without an account takes an email here",
+      context
+    );
+  }
 
   const workContact = { ...patch.workContact };
   if (workContact.workPhone) {
@@ -276,7 +287,11 @@ export const updateDirectoryProfile = async (
     .from(directoryProfiles)
     .where(eq(directoryProfiles.employmentId, employmentId));
   const before: ProfileColumns = stored ?? EMPTY;
-  const { name, ...cardFields } = patch.card ?? {};
+  const { name, email, ...cardFields } = patch.card ?? {};
+  const emailChanges = email !== undefined && email !== record.email;
+  if (emailChanges && email !== null) {
+    await assertEmploymentEmailFree(organizationId, email, context, tx, employmentId);
+  }
   const after: ProfileColumns = { ...before };
   for (const [key, value] of Object.entries({ ...cardFields, ...workContact, ...patch.job })) {
     if (value !== undefined) (after as Record<string, unknown>)[key] = value;
@@ -368,6 +383,13 @@ export const updateDirectoryProfile = async (
       await tx.update(user).set({ updatedAt: new Date() }).where(eq(user.id, record.userId));
     }
     cardChanges.unshift("name");
+  }
+
+  if (emailChanges) {
+    await tx.update(employments).set({ email }).where(eq(employments.id, employmentId));
+    // The invite went to the old address, which no longer claims this record.
+    await revokeOpenEmploymentInvite(employmentId, tx);
+    cardChanges.push("email");
   }
 
   const sensitiveChanges = sensitivePatch

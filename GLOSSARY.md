@@ -20,9 +20,10 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Calendar record type**   | The classification of a vacation row. Nine types, each with its own conditions — see [`docs/calendar-record-types.md`](docs/calendar-record-types.md). Avoid: leave type, vacation type, vacation kind.                                                                                               |
 | **Sick day benefit**       | Paid-plan organization toggle that makes Sick day a requestable, metered type — see [`docs/calendar-record-types.md`](docs/calendar-record-types.md).                                                                                                                                                 |
 | **Mirror**                 | A read-side projection of a user's records from one group into another.                                                                                                                                                                                                                               |
-| **Invite**                 | A single-use, expiring offer for one email address to join one group.                                                                                                                                                                                                                                 |
+| **Invite**                 | A single-use, expiring offer for one email address to join one group, to claim one Employment, or both.                                                                                                                                                                                               |
 | **Invite code**            | The short code of an invite, shown to the admin so they can pass it on. Avoid: validation code.                                                                                                                                                                                                       |
 | **Invite link**            | The URL in the invite email. Following it proves control of the mailbox.                                                                                                                                                                                                                              |
+| **Directory invite**       | An invite sent from the profile of a person without an account. It claims their Employment and names a group only if the sender chose one. See [`docs/directory.md`](docs/directory.md#the-directory-invite-and-the-claim).                                                                           |
 | **Request**                | The set of Vacation rows created by one submission, sharing a `request_id`. Attachments and retention hang off it, not the day.                                                                                                                                                                       |
 | **Working days**           | The days a Request is booked on, one per stored day, a half day included. The allowance charges a half day as 0.5.                                                                                                                                                                                    |
 | **Attachment**             | An image or PDF bound to one Request, and part of its Private details. Bytes live in S3, or on disk without a bucket (`docs/adr/0003`).                                                                                                                                                               |
@@ -171,8 +172,10 @@ to**, and has three ways in:
   link for an invitee with no account, creating a verified account already in the group — see
   [`docs/invariants.md`](docs/invariants.md).
 
-All three go through `redeemInvite`: the same member defaults, seat-cap check and quota opening,
-and any one of them uses up the invite for all. Re-inviting an address revokes the open invite, code and
+All three go through `redeemInvite`: first the Claim of an open account-less Employment the
+invite targets or whose address it was issued to, then the same member defaults, seat-cap check and
+quota opening, and any one of them uses up the invite for all. A directory invite may name no
+group, and then joins none. Re-inviting an address revokes the open invite, code and
 link together. Single use is enforced by the `usedAt IS NULL` predicate in the redeeming UPDATE, so
 concurrent redemptions cannot both win. Rows with a null `email` predate email invites and stay
 redeemable by anyone holding the code; rows with a null `link_secret_hash` predate invite links and
