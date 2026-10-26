@@ -16,10 +16,11 @@ export type AuthSecretCheck =
   | { outcome: "rotated"; sessionsDeleted: number };
 
 /**
- * A rotated secret voids every session cookie, but the rows would stay, and
- * with them each phone's push registration. So a changed fingerprint deletes
- * every session row; registrations cascade. The table lock makes instances
- * that boot together agree on one deletion.
+ * Takes the newest secret version, the one every cookie is signed with. A new
+ * version voids every session cookie, but the rows would stay, and with them
+ * each phone's push registration. So a changed fingerprint deletes every
+ * session row; registrations cascade. The table lock makes instances that boot
+ * together agree on one deletion.
  */
 export const checkAuthSecret = async (secret: string): Promise<AuthSecretCheck> => {
   const fingerprint = authSecretFingerprint(secret);

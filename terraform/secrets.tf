@@ -7,24 +7,61 @@ resource "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-# Scheduled rotation window for the Better Auth secret. `time_rotating` stores
-# a rotation timestamp in state and only advances it once the window elapses;
-# incidental `terraform apply` runs in between leave it unchanged. Advancing it
-# is the ONLY thing that rotates the secret below (and thus signs out every
-# active session + invalidates pending verify/reset tokens once per window).
-resource "time_rotating" "better_auth_secret_rotation" {
-  rotation_days = var.better_auth_rotation_days
-}
-
-# Random Better Auth secret (used unless var.better_auth_secret is set).
-# `keepers` ties the value to the rotation window: the secret is regenerated
-# only when time_rotating advances, i.e. at most once per rotation_days.
+# The Better Auth secret before versioning. It is version 1 below, and it
+# stays fixed: rotating it would make every row encrypted under it unreadable.
+# The keepers once tied it to a 90-day time_rotating window, which replaced
+# the key outright; ignoring them keeps the value this state already holds.
 resource "random_password" "better_auth_secret" {
   length  = 64
   special = false
 
-  keepers = {
-    rotated_at = time_rotating.better_auth_secret_rotation.rotation_rfc3339
+  lifecycle {
+    ignore_changes = [keepers]
+  }
+}
+
+# Better Auth secret versions. better-auth encrypts and signs with the newest
+# and decrypts with every version listed, so a rotation adds a version and
+# keeps the previous one for what is still encrypted under it. The backend
+# re-encrypts those rows onto the newest version at boot, which is what makes
+# two versions enough. Rotate by raising better_auth_secret_version by one;
+# docs/terraform.md has the runbook.
+locals {
+  better_auth_secret_versions = [
+    for v in [var.better_auth_secret_version, var.better_auth_secret_version - 1] : v if v >= 1
+  ]
+
+  # Version 1 is the secret the backend ran with before versioning, so moving
+  # to versions changes no key and signs nobody out.
+  better_auth_secret_values = merge(
+    {
+      "1" = var.better_auth_secret != "" ? var.better_auth_secret : random_password.better_auth_secret.result
+    },
+    { for v, secret in random_password.better_auth_secret_version : v => secret.result }
+  )
+}
+
+resource "random_password" "better_auth_secret_version" {
+  for_each = toset([for v in local.better_auth_secret_versions : tostring(v) if v >= 2])
+
+  length  = 64
+  special = false
+}
+
+resource "time_static" "better_auth_secret_version" {
+  for_each = toset([for v in local.better_auth_secret_versions : tostring(v)])
+}
+
+check "better_auth_secret_age" {
+  assert {
+    condition = timecmp(
+      plantimestamp(),
+      timeadd(
+        time_static.better_auth_secret_version[tostring(var.better_auth_secret_version)].rfc3339,
+        "${var.better_auth_rotation_days * 24}h"
+      )
+    ) < 0
+    error_message = "Better Auth secret version ${var.better_auth_secret_version} is older than ${var.better_auth_rotation_days} days. Rotate it by raising better_auth_secret_version by one (docs/terraform.md)."
   }
 }
 
@@ -51,6 +88,10 @@ resource "aws_secretsmanager_secret_version" "database_url" {
   secret_string = "postgresql://${var.db_username}:${urlencode(random_password.db_password.result)}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${var.db_name}"
 }
 
+# The single-secret slot from before versioning. It keeps version 1's value and
+# is still injected as BETTER_AUTH_SECRET, so a rollback to an image that reads
+# only that variable boots with the right key. Remove it, and its line in
+# apprunner.tf and iam.tf, once versioning has been through a rotation.
 resource "aws_secretsmanager_secret" "better_auth_secret" {
   name                    = "${var.project_name}-${var.environment}-better-auth-secret"
   description             = "Better Auth signing secret for ${var.project_name}"
@@ -62,12 +103,29 @@ resource "aws_secretsmanager_secret" "better_auth_secret" {
 }
 
 resource "aws_secretsmanager_secret_version" "better_auth_secret" {
-  secret_id = aws_secretsmanager_secret.better_auth_secret.id
-  secret_string = (
-    var.better_auth_secret != ""
-    ? var.better_auth_secret
-    : random_password.better_auth_secret.result
-  )
+  secret_id     = aws_secretsmanager_secret.better_auth_secret.id
+  secret_string = local.better_auth_secret_values["1"]
+}
+
+# BETTER_AUTH_SECRETS: `<version>:<secret>` pairs, newest first, in the format
+# better-auth reads. One string, because App Runner maps one env var to one
+# secret. Neither the version nor the 64 alphanumeric characters can hold a
+# comma or a colon.
+resource "aws_secretsmanager_secret" "better_auth_secrets" {
+  name                    = "${var.project_name}-${var.environment}-better-auth-secrets"
+  description             = "Better Auth secret versions for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-better-auth-secrets"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "better_auth_secrets" {
+  secret_id = aws_secretsmanager_secret.better_auth_secrets.id
+  secret_string = join(",", [
+    for v in local.better_auth_secret_versions : "${v}:${local.better_auth_secret_values[tostring(v)]}"
+  ])
 }
 
 # Google OAuth client secret. Only provisioned when Google sign-in is enabled

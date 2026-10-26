@@ -53,9 +53,9 @@ output "database_url_secret_arn" {
   value       = aws_secretsmanager_secret.database_url.arn
 }
 
-output "better_auth_secret_arn" {
-  description = "ARN of the BETTER_AUTH_SECRET secret"
-  value       = aws_secretsmanager_secret.better_auth_secret.arn
+output "better_auth_secrets_arn" {
+  description = "ARN of the BETTER_AUTH_SECRETS secret"
+  value       = aws_secretsmanager_secret.better_auth_secrets.arn
 }
 
 output "get_database_url_command" {

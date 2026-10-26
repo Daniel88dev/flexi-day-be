@@ -39,9 +39,11 @@ manage_dns_validation_records = false
 # is set; do not list it here, or it lands in the attachments bucket's CORS rule.
 trusted_origins = ["https://flexi-day.com", "https://www.flexi-day.com", "flexiday://"]
 
-# Better Auth secret: leave empty to auto-generate a random 64-char secret
-# (stored only in Secrets Manager + terraform state).
-better_auth_secret = ""
+# Better Auth secret version 1: leave empty to auto-generate a random 64-char
+# secret (stored only in Secrets Manager + terraform state). Later versions are
+# always generated. Raise better_auth_secret_version by one to rotate.
+better_auth_secret         = ""
+better_auth_secret_version = 1
 
 # Google OAuth: leave both empty to disable Google sign-in. When set, the
 # client id is injected as a plain env var and the client secret is stored in

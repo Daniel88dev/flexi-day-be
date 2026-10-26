@@ -163,14 +163,25 @@ variable "db_iam_login" {
 
 # Better Auth Configuration
 variable "better_auth_secret" {
-  description = "Better Auth secret; leave empty to auto-generate a rotating one (see better_auth_rotation_days)"
+  description = "Better Auth secret version 1, the key from before versioning; leave empty to use the generated one in state. Keep it set while version 1 is in use if it was ever set."
   type        = string
   sensitive   = true
   default     = ""
 }
 
+variable "better_auth_secret_version" {
+  description = "Newest Better Auth secret version. Raising it by one rotates: it adds a version and drops the one before the previous. Signs out every active user once."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.better_auth_secret_version >= 1 && floor(var.better_auth_secret_version) == var.better_auth_secret_version
+    error_message = "better_auth_secret_version must be a whole number of at least 1."
+  }
+}
+
 variable "better_auth_rotation_days" {
-  description = "Rotation window (days) for the auto-generated Better Auth secret. Only applies when better_auth_secret is empty. Advancing the window signs out all users once."
+  description = "Age (days) after which the plan warns that the newest Better Auth secret version is due for rotation."
   type        = number
   default     = 90
 }

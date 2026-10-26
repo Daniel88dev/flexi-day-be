@@ -8,6 +8,7 @@ type APIConfig = { port: number; env: "production" | "dev" | "test" };
 type DBConfig = { database: string };
 
 type AuthConfig = {
+  /** The current secret version's value. */
   secret: string;
   url: string;
   // Google OAuth. Optional: absent in test and until the credentials are
@@ -29,6 +30,13 @@ type AuthConfig = {
   appleKeyId?: string;
   appleAppBundleIdentifier?: string;
   applePrivateKey?: string;
+};
+
+type AuthSecretsConfig = {
+  /** Newest first. better-auth encrypts and signs with the first and decrypts with any of them. */
+  secrets: { version: number; value: string }[];
+  /** Decrypts ciphertext from before versioning, which names no version. Version 1 is that key. */
+  legacySecret?: string;
 };
 
 type EmailConfig = {
@@ -133,6 +141,8 @@ type Config = {
    */
   trustedOrigins: string[];
   auth?: AuthConfig;
+  /** `undefined` only under test with neither variable set, where better-auth uses its own. */
+  authSecrets?: AuthSecretsConfig;
   email: EmailConfig;
   quotaRollover: QuotaRolloverConfig;
   /** Billing via Paddle. `undefined` until the keys are provisioned — billing routes then 503. */
@@ -169,6 +179,45 @@ const parseNodeEnv = (value: string): NodeEnv => {
 };
 
 const environment = parseNodeEnv(envOrThrow("NODE_ENV"));
+
+const SECRET_ENTRY = /^([1-9]\d*):(.+)$/;
+
+// `BETTER_AUTH_SECRETS` is `<version>:<secret>` pairs, newest first. A lone
+// `BETTER_AUTH_SECRET` is version 1, which is what it was before versioning.
+// Terraform also sets `BETTER_AUTH_SECRET_VERSION` to the newest version, so a
+// deployment that resolved a stale list fails here instead of running on it.
+const parseAuthSecrets = (): AuthSecretsConfig | undefined => {
+  const raw = process.env.BETTER_AUTH_SECRETS?.trim();
+  if (!raw) {
+    const single = process.env.BETTER_AUTH_SECRET;
+    if (single) return { secrets: [{ version: 1, value: single }], legacySecret: single };
+    if (environment === "test") return undefined;
+    throw new Error("Missing environment variable: BETTER_AUTH_SECRETS or BETTER_AUTH_SECRET");
+  }
+
+  const secrets = raw.split(",").map((entry, index) => {
+    const [, version, value] = SECRET_ENTRY.exec(entry.trim()) ?? [];
+    if (!version || !value) {
+      throw new Error(
+        `Invalid BETTER_AUTH_SECRETS entry ${index + 1}: expected "<version>:<secret>"`
+      );
+    }
+    return { version: Number(version), value };
+  });
+  secrets.reduce((newer, older) => {
+    if (older.version >= newer.version) {
+      throw new Error("BETTER_AUTH_SECRETS must list each version once, newest first");
+    }
+    return older;
+  });
+  const expected = process.env.BETTER_AUTH_SECRET_VERSION;
+  if (expected && Number(expected) !== secrets[0]?.version) {
+    throw new Error(
+      `BETTER_AUTH_SECRET_VERSION is ${expected} but the newest version in BETTER_AUTH_SECRETS is ${secrets[0]?.version}`
+    );
+  }
+  return { secrets, legacySecret: secrets.find((s) => s.version === 1)?.value };
+};
 
 const parseTemplateStage = (): "dev" | "prod" => {
   const raw = process.env.EMAIL_TEMPLATE_STAGE?.toLowerCase();
@@ -413,6 +462,8 @@ const parseApns = (): ApnsConfig | undefined => {
   return { keyId, teamId, topic, privateKey };
 };
 
+const authSecrets = parseAuthSecrets();
+
 export const config: Config = {
   api: {
     port: (() => {
@@ -427,10 +478,11 @@ export const config: Config = {
     database: databaseUrl,
   },
   trustedOrigins: parseTrustedOrigins(),
+  authSecrets,
   auth:
     environment !== "test"
       ? {
-          secret: envOrThrow("BETTER_AUTH_SECRET"),
+          secret: authSecrets?.secrets[0]?.value ?? envOrThrow("BETTER_AUTH_SECRETS"),
           url: envOrThrow("BETTER_AUTH_URL"),
           googleClientId: process.env.GOOGLE_CLIENT_ID,
           googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,

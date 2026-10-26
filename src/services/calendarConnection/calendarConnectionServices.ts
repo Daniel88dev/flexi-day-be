@@ -393,10 +393,23 @@ export const connectionAccessToken = async (
   const adapter = providerAdapter(connection.provider);
   if (!adapter) throw providerOff(connection.provider);
 
-  const [refreshToken, accessToken] = await Promise.all([
-    decryptStoredOAuthToken(connection.refreshTokenEnc),
-    connection.accessTokenEnc ? decryptStoredOAuthToken(connection.accessTokenEnc) : null,
-  ]);
+  let refreshToken: string;
+  let accessToken: string | null;
+  try {
+    [refreshToken, accessToken] = await Promise.all([
+      decryptStoredOAuthToken(connection.refreshTokenEnc),
+      connection.accessTokenEnc ? decryptStoredOAuthToken(connection.accessTokenEnc) : null,
+    ]);
+  } catch {
+    // No secret version still held opens it, so only a new consent can.
+    await markNeedsReconnect(connection.id);
+    logger.warn("calendar_connection.needs_reconnect", {
+      connectionId: connection.id,
+      provider: connection.provider,
+      reason: "token_unreadable",
+    });
+    throw new ProviderGrantRevokedError("token_unreadable");
+  }
 
   let fresh;
   try {
