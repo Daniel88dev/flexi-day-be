@@ -162,8 +162,28 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   even when someone else signs in" and "stands through a challenge, and is replaced by the session
   that ends it". `src/tests/utils/nativeSession.test.ts` ("one session per device") pins the
   predicate on its own.
-- **A session ends by deleting its row, never by flagging it; a changed Better Auth secret deletes
-  every session on boot.** Push registrations (`push_registrations`, ADR 0006) hang off
+- **The auth secret rotates by version, and every boot moves encrypted rows onto the newest.**
+  `src/config.ts` reads `BETTER_AUTH_SECRETS` (`<version>:<secret>` pairs, newest first), or a lone
+  `BETTER_AUTH_SECRET` as version 1. `src/utils/auth.ts` gives better-auth the list and version 1
+  as the key for ciphertext from before versioning, which names no version. better-auth encrypts
+  under the newest version, tags the ciphertext `$ba$<version>$`, and decrypts with whichever
+  version the tag names. That covers TOTP secrets, backup codes, account OAuth tokens and calendar
+  tokens. Terraform keeps two versions, so a row still under the older one when the next rotation
+  lands never reads again, and for a dormant user's TOTP secret that is a lockout. Re-encrypting on
+  use would leave exactly those dormant rows behind, so `runAuthSecretCheck` runs
+  `reencryptToCurrentVersion` (`src/services/authSecret/reencryptServices.ts`) on every boot: each
+  value not under the newest version is decrypted and written back under it, conditional on the
+  value it read. A row no held version opens is left alone and logged as
+  `auth.secret_unreadable_rows`. A calendar connection whose token no version opens flips to
+  `NEEDS_RECONNECT` in `connectionAccessToken` rather than throwing on every sync. A new encrypted
+  column joins the sweep's list, or it outlives its key. `src/tests/utils/authSecretRotation.test.ts`
+  fails if a TOTP code, a backup code or a calendar token written before versioning or under
+  version 1 stops working after a rotation, `src/tests/e2e/authSecretReencrypt.e2e.test.ts` if the
+  sweep leaves a row on a version the next rotation drops, and
+  `src/services/calendarConnection/tests/connectionAccessToken.test.ts` if an unreadable token
+  throws without marking the connection.
+- **A session ends by deleting its row, never by flagging it; a new Better Auth secret version
+  deletes every session on boot.** Push registrations (`push_registrations`, ADR 0006) hang off
   `session.id` with `ON DELETE CASCADE`, and that cascade is the only thing that stops a phone
   receiving the previous user's notices. A session marked revoked but left in place would keep its
   registration, and APNs would keep delivering to it. A rotated secret voids every cookie but
@@ -171,10 +191,13 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   `src/index.ts` awaits through `runAuthSecretCheck` before the server listens, compares an HMAC
   keyed by the secret with the one in `auth_secret_fingerprint`. A different one deletes every
   session row; none stored records the current one and deletes nothing. The raw secret is never
-  stored or logged. Without the check, a phone nobody opens after a rotation never gets the 401 that
-  makes it unregister from APNs. A rolling deploy leaves a gap the check cannot close. Instances
-  still on the old secret keep creating sessions after the new instance has run its check, and those
-  rows survive it. Their cookies fail to verify on the new secret, so the phone's next call gets a
+  stored or logged. The fingerprint is of the newest version, the one better-auth signs every
+  cookie with, the phone's included; older versions only decrypt. A version rotation therefore
+  still voids every cookie, and deleting the rows is deliberate, not a leftover. Moving to versions
+  with the old secret as version 1 changes no fingerprint and deletes nothing. Without the check, a
+  phone nobody opens after a rotation never gets the 401 that makes it unregister from APNs. A
+  rolling deploy leaves a gap the check cannot close. Instances still on the old secret keep
+  creating sessions after the new instance has run its check, and those rows survive it. Their cookies fail to verify on the new secret, so the phone's next call gets a
   401 and its Signed-out wipe unregisters it from APNs. The row lingers until something else ends
   it, but nothing reaches the phone. The "ends with its session" block in
   `src/tests/e2e/pushRegistration.e2e.test.ts` fails if any session end (sign-out, a sign-in on the

@@ -136,7 +136,7 @@ resource "aws_apprunner_service" "main" {
         runtime_environment_secrets = merge(
           {
             DATABASE                    = aws_secretsmanager_secret.database_url.arn
-            BETTER_AUTH_SECRET          = aws_secretsmanager_secret.better_auth_secret.arn
+            BETTER_AUTH_SECRETS         = aws_secretsmanager_secret.better_auth_secrets.arn
             ATTACHMENTS_CALLBACK_SECRET = aws_secretsmanager_secret.attachments_callback_secret.arn
           },
           var.google_client_id != "" ? {
@@ -181,7 +181,7 @@ resource "aws_apprunner_service" "main" {
   # the schema must be migrated manually before the app can serve traffic.
   depends_on = [
     aws_secretsmanager_secret_version.database_url,
-    aws_secretsmanager_secret_version.better_auth_secret,
+    aws_secretsmanager_secret_version.better_auth_secrets,
     aws_secretsmanager_secret_version.google_client_secret,
     aws_secretsmanager_secret_version.microsoft_client_secret,
     aws_secretsmanager_secret_version.paddle_api_key,

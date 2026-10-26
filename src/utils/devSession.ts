@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { eq } from "drizzle-orm";
+import { config } from "../config.js";
 import { db } from "../db/db.js";
 import { session } from "../db/schema/auth-schema.js";
 import { generateRandomUUID } from "./generateUUID.js";
@@ -32,8 +33,8 @@ export async function createSessionToken(userId: string): Promise<string> {
  * base64url) of HMAC-SHA256(secret, token), appended after a dot.
  */
 export function signSessionToken(token: string): string {
-  const secret = process.env.BETTER_AUTH_SECRET;
-  if (!secret) throw new Error("BETTER_AUTH_SECRET is required to sign a session cookie");
+  const secret = config.authSecrets?.secrets[0]?.value;
+  if (!secret) throw new Error("BETTER_AUTH_SECRETS is required to sign a session cookie");
 
   const signature = crypto.createHmac("sha256", secret).update(token).digest("base64");
 

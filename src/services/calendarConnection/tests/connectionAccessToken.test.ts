@@ -30,7 +30,11 @@ vi.mock("../../../db/db.js", () => {
 
 vi.mock("../../../utils/oauthTokens.js", () => ({
   encryptOAuthToken: async (token: string) => `enc(${token})`,
-  decryptStoredOAuthToken: async (stored: string) => stored.replace(/^enc\((.*)\)$/, "$1"),
+  decryptStoredOAuthToken: async (stored: string) => {
+    const [, token] = /^enc\((.*)\)$/.exec(stored) ?? [];
+    if (token === undefined) throw new Error("Secret version 1 not found in keys");
+    return token;
+  },
 }));
 
 vi.mock("../providers/index.js", () => ({
@@ -134,6 +138,24 @@ describe("connectionAccessToken", () => {
       ProviderGrantRevokedError
     );
 
+    expect(writes).toEqual([
+      {
+        table: "calendar_connection",
+        values: { status: calendarConnectionStatus.NeedsReconnect, lastErrorAt: expect.any(Date) },
+      },
+      {
+        table: "calendar_sync",
+        values: { syncDueAt: null, syncAttempts: 0, lastError: "auth_revoked" },
+      },
+    ]);
+  });
+
+  it("flips the connection to needs-reconnect when no secret version opens its token", async () => {
+    await expect(
+      connectionAccessToken(connection({ refreshTokenEnc: "$ba$1$retired" }))
+    ).rejects.toMatchObject({ name: "ProviderGrantRevokedError", reason: "token_unreadable" });
+
+    expect(endpoint.requests).toHaveLength(0);
     expect(writes).toEqual([
       {
         table: "calendar_connection",

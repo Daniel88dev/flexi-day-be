@@ -323,6 +323,44 @@ minutes of downtime while RDS restarts the instance. The next apply without the 
 Before the expiry date, decide whether to buy another year. Otherwise the instance falls back to
 on-demand pricing without any warning.
 
+## Rotating the Better Auth secret
+
+`BETTER_AUTH_SECRETS` holds the Better Auth secret versions as `<version>:<secret>` pairs, newest
+first, in a single Secrets Manager string, because App Runner maps one environment variable to one
+secret. better-auth encrypts and signs with the newest version and decrypts with any version listed.
+Terraform lists two: `better_auth_secret_version` and the one before it. Version 1 is the secret
+from before versioning, which is `better_auth_secret` from `terraform.tfvars` when that is set and
+`random_password.better_auth_secret` in state otherwise.
+
+Nothing rotates on its own. Once the newest version is older than `better_auth_rotation_days` (90),
+the plan prints a warning from the `better_auth_secret_age` check. To rotate, raise
+`better_auth_secret_version` by one in `terraform.tfvars`, plan, and hand the apply to the user. The
+apply generates the new version, drops the one before the previous, and redeploys App Runner. When
+the new instance boots it deletes every session, because cookies are signed with the newest version
+only, and it re-encrypts TOTP secrets, backup codes, account OAuth tokens and calendar tokens onto
+the newest version. `docs/invariants.md` has both.
+
+- Raise it by one, and only after an instance has booted on the current list. A row moves to the
+  newest version only at a boot, so a jump by two, or two rotations before a deploy has run, drops
+  a version rows may still be under. The boot logs those rows as `auth.secret_unreadable_rows`; a
+  calendar connection among them asks its user to reconnect, and a TOTP secret among them locks
+  its user out of two-factor sign-in.
+- While version 1 is listed, a `better_auth_secret` set in `terraform.tfvars` must stay set: it is
+  version 1. Once version 3 is current, it is no longer read.
+
+### Moving to versions
+
+The first apply after versioning landed lists only version 1, the existing secret, so nobody is
+signed out. It starts injecting `BETTER_AUTH_SECRETS` and stops injecting `BETTER_AUTH_SECRET`, so
+the backend image that reads `BETTER_AUTH_SECRETS` has to be live before it. That image runs fine on
+`BETTER_AUTH_SECRET` alone, as version 1.
+
+The first boot of that image moves every encrypted row into a `$ba$1$` envelope, which no image from
+before versioning can read. Roll forward from then on: an older image boots, but two-factor sign-in
+and calendar sync fail for everyone. The old `-better-auth-secret` slot stays in Secrets Manager,
+unchanged and readable by the service, only so such an image can boot at all. Delete it, with its
+resources in `secrets.tf` and its line in `iam.tf`, after the first rotation.
+
 ## Before you plan
 
 - Applies belong to the user. Run `terraform fmt`, `terraform validate` and `terraform plan`, show
@@ -333,8 +371,8 @@ on-demand pricing without any warning.
 - Every secret but the two Apple `.p8` keys sits in plain text in `terraform.tfstate`, including the
   generated RDS password and the Better Auth secret. Passing a value as `TF_VAR_*` instead of
   writing it into `terraform.tfvars` changes nothing about that.
-- Advancing `better_auth_rotation_days` signs out every active user and voids pending verification
-  and reset tokens. It is not a knob to adjust in passing.
+- Raising `better_auth_secret_version` signs out every active user and voids pending email
+  verification links. It is not a knob to adjust in passing; "Rotating the Better Auth secret" above is the runbook.
 - Schema migrations do not run from Terraform, from `cd.yml`, or from the deploy.
   `npm run db:migrate:prod` applies them, reading the connection string from the same Secrets
   Manager entry Terraform creates. **The user runs that, never you**, on the same footing as
@@ -344,4 +382,4 @@ on-demand pricing without any warning.
 - `terraform destroy` against production would take the database with it. `deletion_protection`,
   which is on only while `environment = "production"`, is the sole thing in the way.
 - The files carry their own traps in comments, such as the two-step DNS rollout in `dns.tf` and the
-  rotation window in `secrets.tf`. Read the file you are about to edit.
+  secret versions in `secrets.tf`. Read the file you are about to edit.

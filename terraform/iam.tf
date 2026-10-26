@@ -72,6 +72,7 @@ resource "aws_iam_role_policy" "apprunner_secrets" {
           [
             aws_secretsmanager_secret.database_url.arn,
             aws_secretsmanager_secret.better_auth_secret.arn,
+            aws_secretsmanager_secret.better_auth_secrets.arn,
             aws_secretsmanager_secret.attachments_callback_secret.arn,
             aws_secretsmanager_secret.apple_private_key.arn,
             aws_secretsmanager_secret.apns_private_key.arn

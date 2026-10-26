@@ -5,7 +5,7 @@
 # - vpc.tf: VPC, public subnets, IGW, DB subnet group
 # - security-groups.tf: RDS security group
 # - iam.tf: App Runner ECR-access and instance roles
-# - secrets.tf: Secrets Manager (DATABASE url, BETTER_AUTH_SECRET)
+# - secrets.tf: Secrets Manager (DATABASE url, BETTER_AUTH_SECRETS)
 # - rds.tf: RDS PostgreSQL instance (public endpoint, manual migrations)
 # - apprunner.tf: App Runner service (default egress), autoscaling, its log groups
 # - attachments.tf: attachments S3 bucket, attachment-processor Lambda, S3 notification, CD deploy policy

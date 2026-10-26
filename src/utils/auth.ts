@@ -89,6 +89,12 @@ export const auth = betterAuth({
     provider: "pg",
     schema,
   }),
+  // Versioned so a rotation keeps the previous key for decryption. See "The
+  // auth secret rotates by version" in `docs/invariants.md`.
+  ...(config.authSecrets && {
+    secrets: config.authSecrets.secrets,
+    secret: config.authSecrets.legacySecret,
+  }),
   socialProviders,
   account: {
     accountLinking: buildAccountLinking(socialProviders),
