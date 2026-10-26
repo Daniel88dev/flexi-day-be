@@ -565,10 +565,12 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   with no transaction of its own gets one: `ensureOrganizationForUser` opens it, because an
   organization and its owner's Employment are a single fact and checkout creates one outside any
   boundary.
-- **Reading an Employment is wider than belonging to one.** `attendanceAccess.ts` is the only
-  statement of who may read and correct one, and it deliberately leaves the Employment of anybody
-  who belongs to no group to org admins alone, because a group admin's scope reaches only people
-  who hold a `group_users` row.
+- **Reading an Employment is wider than belonging to one.** For attendance, `attendanceAccess.ts`
+  is the only statement of who may read and correct one, and it deliberately leaves the Employment
+  of anybody who belongs to no group to org admins alone, because a group admin's scope reaches
+  only people who hold a `group_users` row. Who reads an Employment's Profile is the Permission
+  table's business instead (`permissionResolver.ts`, see [`directory.md`](directory.md)), and the
+  two never stand in for each other.
 - **A group's manager is not one of its members for attendance.** Creating a group gives the
   manager a full `group_users` row, so `administersGroupOfMember` and `getMemberIdsExcludingManagers`
   skip a row whose user manages that row's group, as the visibility table in
@@ -610,10 +612,13 @@ The policy is in [`account-deletion.md`](account-deletion.md). Two things it lea
 - **The Employment is stamped before the user row is stripped.** The `employments_follow_user`
   trigger copies `user.name` and `user.email` onto open Employments, and since migration 0033 it
   skips those with `account_deleted_at`. Stripping first would blank the organization's copy.
-- **Every path that adds someone to an organization takes `lockOrganization`.** Deletion locks the
-  organizations the user owns or manages a group in, then checks its blockers again. A join that
-  skipped the lock could commit between that check and the delete, and the other person's group or
-  organization would go with the account. `src/tests/e2e/accountDeletion.e2e.test.ts` covers the
+- **Every path that adds an account to an organization takes `lockOrganization`.** Deletion locks
+  the organizations the user owns or manages a group in, then checks its blockers again. A join
+  that skipped the lock could commit between that check and the delete, and the other person's
+  group or organization would go with the account. Adding a person without an account
+  (`createDirectoryPerson`) skips it on purpose: the record names no user, so no deletion blocker
+  can depend on it, and the Claim that later binds an account runs inside a join path that holds
+  the lock. `src/tests/e2e/accountDeletion.e2e.test.ts` covers the
   blockers and the all-or-nothing rollback.
 
 ## Calendar direct sync (`src/services/calendarConnection/`)

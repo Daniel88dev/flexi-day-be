@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import request from "supertest";
 import { and, eq, isNull } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
@@ -13,16 +12,12 @@ import { organizationUsers } from "../../db/schema/organization-users-schema.js"
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import {
-  disableDirectory,
-  enableDirectory,
-} from "../../services/directory/directorySettingsServices.js";
+import { disableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import {
   addLeave,
   addMember,
@@ -31,6 +26,7 @@ import {
   resetReportData,
 } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 vi.mock("../../services/email/index.js", () => ({
   emailSender: { sendTemplated: () => Promise.resolve() },
@@ -97,14 +93,7 @@ describe("ending an Employment in a Directory organization", () => {
       .set({ startedAt: new Date("2020-01-01T00:00:00Z") })
       .where(eq(employments.organizationId, organizationId));
 
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     const today = businessDateInZone(new Date(), ZONE);
     const bookings = {
@@ -123,19 +112,7 @@ describe("ending an Employment in a Directory organization", () => {
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-      delete: (path: string) => request(server.url).delete(path).set("Cookie", cookie),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const lapse = (organizationId: string) =>
     upsertSubscription(organizationId, {
@@ -143,8 +120,6 @@ describe("ending an Employment in a Directory organization", () => {
       status: subscriptionStatus.Active,
       graceEndsAt: null,
     });
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
 
   const openEmployment = async (organizationId: string, userId: string) => {
     const [row] = await db

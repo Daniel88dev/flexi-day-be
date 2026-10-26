@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
 import { attachments } from "../../db/schema/attachment-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
@@ -19,7 +19,7 @@ import { organizationTimeZone } from "../organization/attendanceSettingsServices
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
 import { employmentPhotosPrefix, removePhotoObjects } from "../directory/directoryPhotoServices.js";
 import { getPersonContact } from "../person/personName.js";
-import { exportLockKey, exportStorageKey } from "../personExport/personExportBuild.js";
+import { removeExportRows } from "../personExport/personExportBuild.js";
 import {
   adminAudience,
   endLockedEmployment,
@@ -69,38 +69,6 @@ const endBeforeErase = async (
 };
 
 /**
- * Deletes the person's own exports and every Organization export, which holds
- * them too. A build in progress holds the export's lock for its whole run;
- * waiting on it means no ZIP lands after the row is gone.
- */
-const removeExportsHolding = async (
-  organizationId: string,
-  subject: SQL,
-  tx: DbTransaction
-): Promise<string[]> => {
-  const exportIds = (
-    await tx
-      .select({ id: personExports.id })
-      .from(personExports)
-      .where(
-        and(
-          eq(personExports.organizationId, organizationId),
-          or(subject, eq(personExports.scope, personExportScope.Organization))
-        )
-      )
-  ).map((row) => row.id);
-  for (const exportId of exportIds) {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${exportLockKey(exportId)}, 0))`
-    );
-  }
-  if (exportIds.length > 0) {
-    await tx.delete(personExports).where(inArray(personExports.id, exportIds));
-  }
-  return exportIds;
-};
-
-/**
  * A person without an account is that one Employment: Erase deletes it, and
  * its profile, sealed Sections, photos and history go with it through the
  * cascade. They hold no bookings, quotas, memberships or attachments.
@@ -118,9 +86,12 @@ const eraseAccountlessEmployment = async (
     });
   }
   await endBeforeErase(employment, input.actorUserId, tx);
-  const exportIds = await removeExportsHolding(
+  const exportKeys = await removeExportRows(
     organizationId,
-    eq(personExports.subjectEmploymentId, employment.id),
+    or(
+      eq(personExports.subjectEmploymentId, employment.id),
+      eq(personExports.scope, personExportScope.Organization)
+    ),
     tx
   );
   await tx.delete(employments).where(eq(employments.id, employment.id));
@@ -129,7 +100,7 @@ const eraseAccountlessEmployment = async (
     userId: null,
     employmentIds: [employment.id],
     attachments: [],
-    exportKeys: exportIds.map((exportId) => exportStorageKey(organizationId, exportId)),
+    exportKeys,
     notices: 0,
   };
 };
@@ -196,9 +167,13 @@ export const eraseEmployment = async (
       status: attachments.status,
     });
 
-  const exportIds = await removeExportsHolding(
+  // Every Organization export holds the person too.
+  const exportKeys = await removeExportRows(
     organizationId,
-    eq(personExports.subjectUserId, userId),
+    or(
+      eq(personExports.subjectUserId, userId),
+      eq(personExports.scope, personExportScope.Organization)
+    ),
     tx
   );
 
@@ -261,7 +236,7 @@ export const eraseEmployment = async (
     userId,
     employmentIds: removedEmployments.map((row) => row.id),
     attachments: removedAttachments,
-    exportKeys: exportIds.map((exportId) => exportStorageKey(organizationId, exportId)),
+    exportKeys,
     notices,
   };
 };

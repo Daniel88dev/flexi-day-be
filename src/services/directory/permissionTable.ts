@@ -60,8 +60,8 @@ export const checkCellChange = (
 
 /**
  * The organization's cells with every cell its stored copy lacks filled in
- * from the product default. A row the product adds later reaches every copy
- * this way; a stored cell always wins.
+ * from the product default, a safety net for a row whose migration has not
+ * run. A stored cell always wins.
  */
 export const withDefaultCells = (stored: readonly PermissionCell[]): PermissionCell[] => {
   const byKey = new Map(stored.map((cell) => [`${cell.row}/${cell.audience}`, cell.value]));

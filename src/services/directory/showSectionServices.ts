@@ -1,14 +1,14 @@
-import { and, eq } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
 import {
+  directoryAudience as A,
   directoryPermissionRow as R,
   directoryPermissionValue as V,
 } from "../../db/schema/directory-schema.js";
-import { employments, workerType } from "../../db/schema/employment-schema.js";
+import { workerType } from "../../db/schema/employment-schema.js";
 import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
 import {
   contactValuesView,
   personalValuesView,
@@ -17,6 +17,17 @@ import {
 import type { SensitiveSectionName, ShownSection } from "./types.js";
 
 const ROW = { contact: R.Contact, personal: R.Personal } as const;
+
+const READ_AUDIENCE: Record<A, readLogAudience> = {
+  [A.Owner]: readLogAudience.Owner,
+  [A.Self]: readLogAudience.Self,
+  [A.Colleague]: readLogAudience.Colleague,
+  [A.ExternalWorker]: readLogAudience.ExternalWorker,
+  [A.GroupAdmin]: readLogAudience.GroupAdmin,
+  [A.Hr]: readLogAudience.Hr,
+  [A.Leadership]: readLogAudience.Leadership,
+  [A.OrganizationAdmin]: readLogAudience.OrganizationAdmin,
+};
 
 /**
  * Show: one Sensitive section of one profile, opened. Anyone but the person
@@ -30,31 +41,13 @@ export const showSensitiveSection = async (
   section: SensitiveSectionName,
   tx: DbTransaction
 ): Promise<ShownSection> => {
-  const context = {
-    organizationId: viewer.organizationId,
-    employmentId,
-    viewerUserId: viewer.standing.userId,
-    section,
-  };
-  const [record] = await tx
-    .select({
-      id: employments.id,
-      userId: employments.userId,
-      type: employments.type,
-      endedAt: employments.endedAt,
-    })
-    .from(employments)
-    .where(
-      and(eq(employments.organizationId, viewer.organizationId), eq(employments.id, employmentId))
-    );
-  const access =
-    record && viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null });
-  if (!record || !access?.inReach) {
-    throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
-  }
+  const found = await lockRecordInReach(viewer, employmentId, tx, { lock: false });
+  const { record, access } = found;
+  const context = { ...found.context, section };
   const row = ROW[section];
   const level = access.sections[row];
-  if (level === V.None) {
+  const grantedBy = access.grantedBy[row];
+  if (level === V.None || grantedBy === null) {
     throw refuse(403, "SECTION_NOT_READABLE", "You can't read this Section", context);
   }
   if (section === "personal" && record.type === workerType.External) {
@@ -72,7 +65,7 @@ export const showSensitiveSection = async (
       subjectUserId: record.userId,
       employmentIds: [employmentId],
       sections: [row],
-      audience: access.grantedBy[row] as unknown as readLogAudience,
+      audience: READ_AUDIENCE[grantedBy],
     });
   }
 

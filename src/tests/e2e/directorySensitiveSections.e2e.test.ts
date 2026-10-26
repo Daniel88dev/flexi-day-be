@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import request from "supertest";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
@@ -20,13 +19,13 @@ import { requestOrganizationExport } from "../../services/personExport/organizat
 import { collectPersonExport } from "../../services/personExport/personExportData.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { enableDirectory } from "../../services/directory/directorySettingsServices.js";
+import { claimEmployment } from "../../services/employment/claimEmployment.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 const CONTACT = {
   privatePhone: "+420 777 123 456",
@@ -97,14 +96,7 @@ describe("The Sensitive sections, Contact and Personal", () => {
       .update(employments)
       .set({ type: workerType.External })
       .where(eq(employments.userId, eli.id));
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
     const employmentOf = async (userId: string) => {
       const [row] = await db
         .select({ id: employments.id })
@@ -139,20 +131,7 @@ describe("The Sensitive sections, Contact and Personal", () => {
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      post: (path: string, body: object = {}) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-    };
-  };
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const setCell = async (organizationId: string, row: string, audience: string, value: string) =>
     db
@@ -187,7 +166,8 @@ describe("The Sensitive sections, Contact and Personal", () => {
       );
       expect(profile.body.sections.personal).toEqual({ level: "WRITE" });
       for (const body of [JSON.stringify(saved.body), JSON.stringify(profile.body)]) {
-        expect(body).not.toContain("777");
+        expect(body).not.toContain("777 123 456");
+        expect(body).not.toContain("777123456");
         expect(body).not.toContain("jana.home");
         expect(body).not.toContain("Vinohradsk");
         expect(body).not.toContain("1990-04-17");
@@ -227,7 +207,8 @@ describe("The Sensitive sections, Contact and Personal", () => {
         sections: ["CONTACT"],
         audience: "OWNER",
       });
-      expect(JSON.stringify(rows[0])).not.toContain("777");
+      expect(JSON.stringify(rows[0])).not.toContain("777123456");
+      expect(JSON.stringify(rows[0])).not.toContain("777 123 456");
 
       const personal = await owner.post(`${path(employment.jana)}/show/personal`);
       expect(personal.body).toEqual({
@@ -354,7 +335,15 @@ describe("The Sensitive sections, Contact and Personal", () => {
       expect(stored!.contact).toMatch(/^fe1:1:/);
       expect(stored!.personal).toMatch(/^fe1:1:/);
       const raw = JSON.stringify(stored);
-      for (const plain of ["777", "jana.home", "Karel", "Vinohradsk", "1990"]) {
+      // Whole values: a short digit run turns up in random base64 now and then.
+      for (const plain of [
+        "777 123 456",
+        "777123456",
+        "jana.home",
+        "Karel",
+        "Vinohradsk",
+        "1990-04-17",
+      ]) {
         expect(raw).not.toContain(plain);
       }
     });
@@ -440,7 +429,8 @@ describe("The Sensitive sections, Contact and Personal", () => {
           ["PERSONAL", ["homeAddress", "dateOfBirth"]],
         ])
       );
-      expect(JSON.stringify(history.body)).not.toContain("603");
+      expect(JSON.stringify(history.body)).not.toContain("603 333 444");
+      expect(JSON.stringify(history.body)).not.toContain("603333444");
     });
 
     it("needs the directory plan to set a value, and clears on any plan", async () => {
@@ -506,7 +496,8 @@ describe("The Sensitive sections, Contact and Personal", () => {
         "Olga Owner",
       ]);
       expect(res.body.people).toEqual([{ employmentId: employment.jana, name: "Jana Member" }]);
-      expect(JSON.stringify(res.body)).not.toContain("777");
+      expect(JSON.stringify(res.body)).not.toContain("777 123 456");
+      expect(JSON.stringify(res.body)).not.toContain("777123456");
       expect((await (await as(users.owner.id)).get(logPath)).status).toBe(200);
     });
 
@@ -533,6 +524,43 @@ describe("The Sensitive sections, Contact and Personal", () => {
         `${logPath}?readerUserId=${users.dana.id}&employmentId=${employment.jana}`
       );
       expect(both.body.entries).toEqual([]);
+    });
+
+    it("finds a person's reads across every spell from any one of them", async () => {
+      const { organizationId, users, employment, path } = await setUp();
+      const earlier = generateRandomUUID();
+      await db.insert(employments).values({
+        id: earlier,
+        organizationId,
+        userId: null,
+        name: "Nora Noaccount",
+        email: "nora@example.test",
+        startedAt: new Date("2020-01-01T00:00:00Z"),
+        endedAt: new Date("2021-01-01T00:00:00Z"),
+      });
+      await db.insert(readLog).values({
+        id: generateRandomUUID(),
+        organizationId,
+        kind: readLogKind.Read,
+        readerUserId: users.owner.id,
+        subjectUserId: null,
+        employmentIds: [earlier],
+        sections: [directoryPermissionRow.Contact],
+        audience: readLogAudience.Owner,
+      });
+      await (await as(users.hana.id)).post(`${path(employment.accountless)}/show/contact`);
+      await (await as(users.hana.id)).post(`${path(employment.jana)}/show/contact`);
+
+      const res = await (
+        await as(users.owner.id)
+      ).get(`/api/directory/${organizationId}/read-log?employmentId=${employment.accountless}`);
+
+      expect(res.status).toBe(200);
+      expect(
+        res.body.entries.map(
+          (entry: { person: { employmentId: string } }) => entry.person.employmentId
+        )
+      ).toEqual([employment.accountless, earlier]);
     });
 
     it("is closed to HR, group admins and colleagues", async () => {
@@ -677,6 +705,79 @@ describe("The Sensitive sections, Contact and Personal", () => {
           { kind: "export", sections: null, purpose: "owner" },
         ],
       });
+    });
+
+    it("keeps the reads from before a Claim in the person's export", async () => {
+      const { organizationId, users, employment, path } = await setUp();
+      await (
+        await as(users.owner.id)
+      ).patch(path(employment.accountless), { contact: { privateEmail: "nora@home.test" } });
+      await (await as(users.hana.id)).post(`${path(employment.accountless)}/show/contact`);
+      const nora = await makeUser("Nora Claimer");
+      const noraEmail = `${nora.id.toLowerCase()}@report-e2e.test`;
+      await db
+        .update(employments)
+        .set({ email: noraEmail })
+        .where(eq(employments.id, employment.accountless));
+
+      await db.transaction((tx) =>
+        claimEmployment(
+          {
+            organizationId,
+            userId: nora.id,
+            email: noraEmail,
+            targetEmploymentId: employment.accountless,
+          },
+          tx
+        )
+      );
+
+      const { person } = await collectPersonExport(organizationId, nora.id);
+      expect(person.readLog).toEqual([
+        { at: expect.any(Date), kind: "read", sections: ["CONTACT"], purpose: "HR administration" },
+      ]);
+    });
+
+    it("covers every spell of the person: the same account, or the same email without one", async () => {
+      const { organizationId, users, employment } = await setUp();
+      const ended = async (email: string) => {
+        const id = generateRandomUUID();
+        await db.insert(employments).values({
+          id,
+          organizationId,
+          userId: null,
+          name: "Earlier spell",
+          email,
+          startedAt: new Date("2020-01-01T00:00:00Z"),
+          endedAt: new Date("2021-01-01T00:00:00Z"),
+        });
+        return id;
+      };
+      const noraBefore = await ended("NORA@example.test");
+      const [jana] = await db
+        .select({ email: employments.email })
+        .from(employments)
+        .where(eq(employments.id, employment.jana));
+      const janaBefore = await ended(jana!.email!);
+      await ended("someone.else@example.test");
+
+      const accountless = await collectPersonExport(organizationId, {
+        employmentId: employment.accountless,
+      });
+      expect(accountless.employmentIds).toEqual([noraBefore, employment.accountless]);
+      const bound = await collectPersonExport(organizationId, users.jana.id);
+      expect(bound.employmentIds).toEqual([janaBefore, employment.jana]);
+    });
+
+    it("lists the person's Directory roles and their history", async () => {
+      const { organizationId, users } = await setUp();
+
+      const { person } = await collectPersonExport(organizationId, users.hana.id);
+
+      expect(person.directoryRoles).toEqual([
+        expect.objectContaining({ role: "HR", assignedAt: expect.any(Date) }),
+      ]);
+      expect(Array.isArray(person.directoryRoleHistory)).toBe(true);
     });
 
     it("goes with Erase", async () => {

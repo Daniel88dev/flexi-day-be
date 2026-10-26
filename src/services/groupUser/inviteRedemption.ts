@@ -86,8 +86,8 @@ const organizationOf = async (invite: InviteLink, tx: DbTransaction): Promise<st
 };
 
 /**
- * What redeeming an open invite does, whichever way it arrived — by code, by
- * link or by sign-up: first the Claim, binding the account to the open
+ * What redeeming an open invite does, whichever way it arrived (by code, by
+ * link or by sign-up): first the Claim, binding the account to the open
  * account-less Employment the invite targets or whose address it was issued
  * to; then, when the invite names a group, the membership with the default
  * flags, the seat-cap check and this year's quota; and the single use. The

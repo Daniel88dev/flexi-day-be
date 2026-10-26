@@ -1,11 +1,7 @@
 import { and, eq, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
-import {
-  directoryProfileHistory,
-  directoryProfiles,
-  profileHistoryActor,
-} from "../../db/schema/directory-profile-schema.js";
+import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import {
   directoryRetentionHolds,
   directoryRetentionPeriods,
@@ -15,7 +11,6 @@ import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js
 import { directorySensitiveProfiles } from "../../db/schema/directory-sensitive-profile-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { logger } from "../../middleware/logger.js";
-import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
 import { employmentPhotosPrefix } from "./directoryPhotoServices.js";
 import { SECTION_ROWS, type SectionRow } from "./permissionResolver.js";
@@ -27,6 +22,7 @@ import {
   PHOTO_FIELDS,
   WORK_CONTACT_COLUMNS,
 } from "./profileSectionFields.js";
+import { recordProfileHistory, type ProfileHistoryInput } from "./profileHistory.js";
 import { RETENTION_DEFAULTS, withDefaultPeriods } from "./retentionPeriods.js";
 
 type Client = typeof db | DbTransaction;
@@ -97,16 +93,13 @@ const photoHoldsData = sql`exists (select 1 from ${directoryPhotos} where ${dire
 export const holdsData = (section: SectionRow): SQL =>
   section === R.Photo ? photoHoldsData : COLUMN_SECTIONS[section].holdsData;
 
-const retentionHistory = (section: SectionRow, cleared: Cleared[]) =>
+const retentionHistory = (section: SectionRow, cleared: Cleared[]): ProfileHistoryInput[] =>
   cleared.map((row) => ({
-    id: generateRandomUUID(),
     organizationId: row.organizationId,
     employmentId: row.employmentId,
-    actor: profileHistoryActor.Retention,
-    actorUserId: null,
     section,
-    fields: [...(section === R.Photo ? PHOTO_FIELDS : COLUMN_SECTIONS[section].fields)],
-    audience: null,
+    fields: section === R.Photo ? PHOTO_FIELDS : COLUMN_SECTIONS[section].fields,
+    retention: true,
   }));
 
 /** The later of the end date and the moment the ending was written. */
@@ -133,7 +126,12 @@ const notHeld = sql`not exists (select 1 from ${directoryRetentionHolds} where $
 
 const dueEmployments = (client: Client, section: SectionRow, period: SQL, at: Date, where?: SQL) =>
   client
-    .select({ employmentId: employments.id, organizationId: employments.organizationId })
+    .select({
+      employmentId: employments.id,
+      organizationId: employments.organizationId,
+      userId: employments.userId,
+      email: employments.email,
+    })
     .from(employments)
     .where(
       and(isNotNull(employments.endedAt), notHeld, holdsData(section), dueBy(period, at), where)
@@ -141,7 +139,8 @@ const dueEmployments = (client: Client, section: SectionRow, period: SQL, at: Da
 
 /**
  * How many people a Retention period would remove at the run at `at`: ended
- * Employments that still hold the Section and are past the period by then.
+ * Employments that still hold the Section and are past the period by then,
+ * counted once per account, or per email for spells without one.
  */
 export const countDueUnder = async (
   input: { organizationId: string; section: SectionRow; period: P; at: Date },
@@ -154,7 +153,9 @@ export const countDueUnder = async (
     input.at,
     eq(employments.organizationId, input.organizationId)
   );
-  return due.length;
+  return new Set(
+    due.map((row) => row.userId ?? `email:${row.email?.toLowerCase() ?? row.employmentId}`)
+  ).size;
 };
 
 const purgePhotos = async (due: Cleared[]): Promise<number> => {
@@ -178,7 +179,7 @@ const purgePhotos = async (due: Cleared[]): Promise<number> => {
         .where(eq(directoryPhotos.employmentId, row.employmentId))
         .returning({ status: directoryPhotos.status });
       if (!removed.some((photo) => photo.status === directoryPhotoStatus.Ready)) return 0;
-      await tx.insert(directoryProfileHistory).values(retentionHistory(R.Photo, [row]));
+      await recordProfileHistory(retentionHistory(R.Photo, [row]), tx);
       return 1;
     });
   }
@@ -207,7 +208,7 @@ export const purgeRetention = async (now = new Date()): Promise<number> => {
         tx
       );
       if (cleared.length > 0) {
-        await tx.insert(directoryProfileHistory).values(retentionHistory(section, cleared));
+        await recordProfileHistory(retentionHistory(section, cleared), tx);
       }
       return cleared.length;
     });
@@ -248,11 +249,14 @@ export const atEndSectionsHeld = async (
 
 /**
  * Empties the Sections set to "at end", inside the transaction that ends the
- * Employment. Returns the photo folders to delete after the commit.
+ * Employment. Returns the photo folders to delete after the commit. A caller
+ * that can't delete them after its commit passes `keepPhoto`, and the next
+ * nightly run takes the photo, bytes first.
  */
 export const clearAtEndSections = async (
   employment: { id: string; organizationId: string },
-  tx: DbTransaction
+  tx: DbTransaction,
+  options: { keepPhoto?: boolean } = {}
 ): Promise<{ sections: SectionRow[]; photoPrefixes: string[] }> => {
   const periods = await readRetentionPeriods(employment.organizationId, tx);
   const sections: SectionRow[] = [];
@@ -261,6 +265,7 @@ export const clearAtEndSections = async (
   for (const section of SECTION_ROWS) {
     if (periods[section] !== P.AtEnd) continue;
     if (section === R.Photo) {
+      if (options.keepPhoto) continue;
       const removed = await tx
         .delete(directoryPhotos)
         .where(eq(directoryPhotos.employmentId, employment.id))
@@ -269,13 +274,13 @@ export const clearAtEndSections = async (
         photoPrefixes.push(employmentPhotosPrefix(employment.organizationId, employment.id));
       }
       if (!removed.some((photo) => photo.status === directoryPhotoStatus.Ready)) continue;
-      await tx.insert(directoryProfileHistory).values(retentionHistory(section, [row]));
+      await recordProfileHistory(retentionHistory(section, [row]), tx);
       sections.push(section);
       continue;
     }
     const cleared = await COLUMN_SECTIONS[section].clear([employment.id], tx);
     if (cleared.length === 0) continue;
-    await tx.insert(directoryProfileHistory).values(retentionHistory(section, cleared));
+    await recordProfileHistory(retentionHistory(section, cleared), tx);
     sections.push(section);
   }
   return { sections, photoPrefixes };

@@ -209,7 +209,10 @@ export const authExtRouter = (): Router => {
    *           Already a member (`errors[0].context.code` is `ALREADY_MEMBER`,
    *           with `groupId`), `ALREADY_EMPLOYED` when the account already has
    *           an open Employment in the organization while the invite would
-   *           claim another, or a concurrent redemption used the invite first.
+   *           claim another, `ACCOUNTLESS_EMPLOYMENT_EMAIL` when a group invite
+   *           would open an Employment for an address an open record without an
+   *           account already holds, or a concurrent redemption used the invite
+   *           first.
    *       '410':
    *         description: >-
    *           The invite can no longer be redeemed. `errors[0].context.code` is

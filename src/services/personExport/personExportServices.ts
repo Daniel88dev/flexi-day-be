@@ -9,6 +9,7 @@ import {
 } from "../../db/schema/person-export-schema.js";
 import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import { refuse } from "../../utils/appError.js";
+import { personSpellIds } from "../employment/personSpells.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { isOrganizationAdmin, lockOrganization } from "../organization/organizationServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
@@ -37,22 +38,6 @@ export const assertExportStoreConfigured = (): void => {
   if (!organizationDataStore) {
     throw refuse(503, "EXPORT_UNAVAILABLE", "Person exports are not available yet", {});
   }
-};
-
-/** Every spell the organization holds for the person, oldest first. */
-export const employmentIdsOf = async (
-  organizationId: string,
-  subjectUserId: string,
-  tx?: DbTransaction
-): Promise<string[]> => {
-  const rows = await (tx ?? db)
-    .select({ id: employments.id })
-    .from(employments)
-    .where(
-      and(eq(employments.organizationId, organizationId), eq(employments.userId, subjectUserId))
-    )
-    .orderBy(asc(employments.startedAt));
-  return rows.map((row) => row.id);
 };
 
 /** Who a Person export is about: an account, or the one Employment of a person without one. */
@@ -92,10 +77,11 @@ export const requestPersonExport = async (
     .limit(1);
   if (pending) return { row: pending, created: false };
 
-  const employmentIds =
-    subjectUserId !== null
-      ? await employmentIdsOf(input.organizationId, subjectUserId, tx)
-      : [subjectEmploymentId!];
+  const employmentIds = await personSpellIds(
+    input.organizationId,
+    subjectUserId !== null ? { userId: subjectUserId } : { employmentId: subjectEmploymentId! },
+    tx
+  );
   if (employmentIds.length === 0) {
     throw refuse(404, "NOT_FOUND", "No employment for that person", { ...input });
   }
@@ -239,7 +225,7 @@ export const hasEmployment = async (
   organizationId: string,
   userId: string,
   tx?: DbTransaction
-): Promise<boolean> => (await employmentIdsOf(organizationId, userId, tx)).length > 0;
+): Promise<boolean> => (await personSpellIds(organizationId, { userId }, tx)).length > 0;
 
 export const exportFileName = (
   row: Pick<PersonExportRow, "id" | "scope" | "readyAt" | "createdAt">

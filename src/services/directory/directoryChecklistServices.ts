@@ -6,7 +6,7 @@ import { directoryRole, directoryRoleAssignments } from "../../db/schema/directo
 import { organizationDirectorySettings } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
-import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
+import { administersPeople, type DirectoryViewer } from "./directoryViewer.js";
 import { getDirectorySettings } from "./directorySettingsServices.js";
 
 export type ChecklistItemKey = "departments" | "locations" | "hr" | "jobTitles";
@@ -20,7 +20,7 @@ export type DirectoryChecklist = {
 };
 
 const assertChecklistViewer = (viewer: DirectoryViewer) => {
-  if (!canReadPermissionTable(viewer)) {
+  if (!administersPeople(viewer)) {
     throw refuse(403, "CHECKLIST_DENIED", "Only the owner, org admins and HR see the checklist", {
       organizationId: viewer.organizationId,
     });

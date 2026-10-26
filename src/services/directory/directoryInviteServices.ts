@@ -1,7 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
 import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
-import { employments } from "../../db/schema/employment-schema.js";
 import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import AppError, { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -20,7 +19,7 @@ import {
   revokeOpenInviteForEmail,
 } from "../groupUser/inviteLinkServices.js";
 import { getOrganizationById, lockOrganization } from "../organization/organizationServices.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryInviteView, PostDirectoryInvite } from "./types.js";
 
 /** The audience whose Send directory invite cell credits the viewer, on an open record without an account. */
@@ -60,26 +59,8 @@ export const sendDirectoryInvite = async (
   tx: DbTransaction
 ): Promise<SentDirectoryInvite> => {
   const { organizationId } = viewer;
-  const context = { organizationId, employmentId, viewerUserId: viewer.standing.userId };
-
   await lockOrganization(organizationId, tx);
-  const [record] = await tx
-    .select({
-      id: employments.id,
-      userId: employments.userId,
-      endedAt: employments.endedAt,
-      name: employments.name,
-      email: employments.email,
-    })
-    .from(employments)
-    .where(and(eq(employments.id, employmentId), eq(employments.organizationId, organizationId)))
-    .for("update");
-  if (
-    !record ||
-    !viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null }).inReach
-  ) {
-    throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
-  }
+  const { record, context } = await lockRecordInReach(viewer, employmentId, tx);
   if (sendInviteGrantor(viewer) === null) {
     throw refuse(403, "INVITE_DENIED", "You can't send directory invites", context);
   }

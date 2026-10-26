@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import request from "supertest";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
@@ -15,17 +14,13 @@ import { organizationUsers } from "../../db/schema/organization-users-schema.js"
 import { balanceMode } from "../../db/schema/organization-attendance-settings-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import {
-  disableDirectory,
-  enableDirectory,
-} from "../../services/directory/directorySettingsServices.js";
+import { disableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import {
   addLeave,
   addMember,
@@ -37,6 +32,7 @@ import {
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { rolloverQuotasForYear } from "../../services/quotaRollover/quotaRolloverServices.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 vi.mock("../../services/email/index.js", () => ({
   emailSender: { sendTemplated: () => Promise.resolve() },
@@ -107,32 +103,12 @@ describe("Change worker type", () => {
       .set({ startedAt: new Date("2020-01-01T00:00:00Z") })
       .where(eq(employments.organizationId, organizationId));
 
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     return { organizationId, support, users: { owner, erik, bob, gina, dana } };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object = {}) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-    };
-  };
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const employmentOf = async (organizationId: string, userId: string) => {
     const [row] = await db
@@ -540,8 +516,8 @@ describe("Change worker type", () => {
       ).toBeNull();
 
       const res = await owner.patch(`/api/employment/${before.id}`, { requiredMinutesPerDay: 240 });
-      expect(res.status).toBe(422);
-      expect(code(res)).toBe("EXTERNAL_WORKER");
+      expect(res.status).toBe(403);
+      expect(res.body.errors[0].context.reason).toBe("EXTERNAL_WORKER");
       await owner
         .patch(`/api/employment/${before.id}`, { requiredMinutesPerDay: null })
         .expect(200);

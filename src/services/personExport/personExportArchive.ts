@@ -1,6 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
 import { ZipArchive } from "archiver";
+import type { OrganizationExportDocument } from "./organizationExportData.js";
 import type { ExportAttachmentFile, PersonExportContent } from "./personExportData.js";
 
 type Cell = string | number | boolean | Date | null | undefined;
@@ -156,14 +157,15 @@ const appendAndWait = (archive: ZipArchive, data: Buffer | string, name: string)
  * held attachment's bytes and each spell's Profile photo. `readFile` returns
  * undefined for a file whose object is gone, and its `file` becomes null.
  */
-const appendPersonEntries = async (
+/** Appends each file's bytes under `prefix` and returns the paths whose object is gone. */
+const appendFiles = async (
   archive: ZipArchive,
   prefix: string,
-  content: PersonExportContent,
+  files: ExportAttachmentFile[],
   readFile: ReadFile
-): Promise<void> => {
+): Promise<Set<string>> => {
   const missing = new Set<string>();
-  for (const file of content.files) {
+  for (const file of files) {
     const bytes = await readFile(file);
     if (!bytes) {
       missing.add(file.path);
@@ -171,6 +173,16 @@ const appendPersonEntries = async (
     }
     await appendAndWait(archive, bytes, `${prefix}${file.path}`);
   }
+  return missing;
+};
+
+const appendPersonEntries = async (
+  archive: ZipArchive,
+  prefix: string,
+  content: PersonExportContent,
+  readFile: ReadFile
+): Promise<void> => {
+  const missing = await appendFiles(archive, prefix, content.files, readFile);
   const person = {
     ...content.person,
     employments: content.person.employments.map((spell) =>
@@ -216,20 +228,29 @@ export const writePersonExportZip = (
   writeZip(filePath, (archive) => appendPersonEntries(archive, "", content, readFile));
 
 /**
- * Writes an Organization export ZIP to `filePath`: `organization.json`, then
- * one Person export folder per person. Each person is read only when their
- * folder is written, so one person's data is in memory at a time.
+ * Writes an Organization export ZIP to `filePath`: the Profile photos of the
+ * people without an account, `organization.json`, then one Person export
+ * folder per person. Each person is read only when their folder is written,
+ * so one person's data is in memory at a time.
  */
 export const writeOrganizationExportZip = (
   filePath: string,
   content: {
-    document: unknown;
+    document: OrganizationExportDocument;
+    files: ExportAttachmentFile[];
     people: { folder: string; collect: () => Promise<PersonExportContent> }[];
   },
   readFile: ReadFile
 ): Promise<void> =>
   writeZip(filePath, async (archive) => {
-    await appendAndWait(archive, JSON.stringify(content.document, null, 2), "organization.json");
+    const missing = await appendFiles(archive, "", content.files, readFile);
+    const document = {
+      ...content.document,
+      peopleWithoutAccount: content.document.peopleWithoutAccount.map((person) =>
+        person.photo && missing.has(person.photo.file) ? { ...person, photo: null } : person
+      ),
+    };
+    await appendAndWait(archive, JSON.stringify(document, null, 2), "organization.json");
     for (const person of content.people) {
       await appendPersonEntries(archive, `${person.folder}/`, await person.collect(), readFile);
     }

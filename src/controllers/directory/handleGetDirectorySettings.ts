@@ -4,5 +4,10 @@ import { readDirectoryState } from "../../services/directory/directorySettingsSe
 
 export const handleGetDirectorySettings = async (req: Request, res: Response) => {
   const { organization, isOwner } = await resolveAdministeredOrganization(req);
-  return res.status(200).json({ ...(await readDirectoryState(organization.id)), isOwner });
+  const state = await readDirectoryState(organization.id);
+  return res.status(200).json({
+    ...state,
+    agreement: { ...state.agreement, newVersionReady: isOwner && state.agreement.newVersionReady },
+    isOwner,
+  });
 };

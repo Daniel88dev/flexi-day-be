@@ -3,7 +3,7 @@ import { db } from "../../db/db.js";
 import { refuse } from "../../utils/appError.js";
 import { showSensitiveSection } from "../../services/directory/showSectionServices.js";
 import type { SensitiveSectionName } from "../../services/directory/types.js";
-import { requirePathParam } from "../attendance/utils.js";
+import { requirePathParam } from "../pathParams.js";
 import { directoryViewerFor } from "./directoryViewerFor.js";
 
 const SECTIONS = new Set<string>(["contact", "personal"]);

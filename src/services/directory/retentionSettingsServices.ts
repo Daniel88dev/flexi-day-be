@@ -1,12 +1,14 @@
-import { Cron } from "croner";
 import type { DbTransaction } from "../../db/db.js";
 import { config } from "../../config.js";
 import { directoryRetentionPeriods } from "../../db/schema/directory-retention-schema.js";
 import { refuse } from "../../utils/appError.js";
-import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
-import { canEditGeneralSettings } from "./emergencyContactNotice.js";
+import {
+  administersOrganization,
+  administersPeople,
+  type DirectoryViewer,
+} from "./directoryViewer.js";
 import { countDueUnder, readRetentionPeriods } from "./retentionPurge.js";
-import { RETENTION_DEFAULTS } from "./retentionPeriods.js";
+import { nightlyRunAfter, RETENTION_DEFAULTS } from "./retentionPeriods.js";
 import type { PutRetentionPeriod, RetentionPreview, RetentionSettings } from "./types.js";
 
 const contextOf = (viewer: DirectoryViewer) => ({
@@ -15,7 +17,7 @@ const contextOf = (viewer: DirectoryViewer) => ({
 });
 
 const requireEditor = (viewer: DirectoryViewer) => {
-  if (!canEditGeneralSettings(viewer)) {
+  if (!administersOrganization(viewer)) {
     throw refuse(
       403,
       "SETTINGS_NOT_EDITABLE",
@@ -27,17 +29,14 @@ const requireEditor = (viewer: DirectoryViewer) => {
 
 /** When the nightly tick runs next, which is when a shortened period takes effect. */
 export const nextNightlyRun = (now = new Date()): Date =>
-  new Cron(config.quotaRollover.cron, {
-    timezone: config.quotaRollover.timezone,
-    paused: true,
-  }).nextRun(now) ?? now;
+  nightlyRunAfter(now, config.quotaRollover);
 
 /** The owner, org admins and HR read the Retention periods. */
 export const readRetentionSettings = async (
   viewer: DirectoryViewer,
   tx?: DbTransaction
 ): Promise<RetentionSettings> => {
-  if (!canReadPermissionTable(viewer)) {
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "SETTINGS_DENIED",
@@ -46,7 +45,7 @@ export const readRetentionSettings = async (
     );
   }
   return {
-    editable: canEditGeneralSettings(viewer),
+    editable: administersOrganization(viewer),
     periods: await readRetentionPeriods(viewer.organizationId, tx),
     defaults: { ...RETENTION_DEFAULTS },
   };

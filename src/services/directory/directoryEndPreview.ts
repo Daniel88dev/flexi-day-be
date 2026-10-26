@@ -3,6 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
+import { directoryRole } from "../../db/schema/directory-role-schema.js";
 import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
@@ -36,7 +37,7 @@ export type EndPreview = {
   cancelledBookings: number;
   /** A delegated org-admin row End drops. */
   organizationAdmin: boolean;
-  directoryRoles: ("HR" | "LEADERSHIP")[];
+  directoryRoles: directoryRole[];
   /** Sections whose Retention period is "at end" and that hold something End empties. */
   atEndSections: SectionRow[];
 };

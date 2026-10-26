@@ -9,10 +9,11 @@ import { organizationAttendanceSettings } from "../../db/schema/organization-att
 import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { readLog } from "../../db/schema/read-log-schema.js";
+import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
 import { collectProfileExport } from "../directory/directoryProfileServices.js";
 import { collectSensitiveExport } from "../directory/sensitiveSections.js";
 import { getPersonContacts } from "../person/personName.js";
-import { readLogExportEntry, safeFileName } from "./personExportData.js";
+import { readLogExportEntry, safeFileName, type ExportAttachmentFile } from "./personExportData.js";
 
 export type OrganizationExportPerson = { userId: string; name: string; folder: string };
 
@@ -129,6 +130,19 @@ export const collectOrganizationExport = async (organizationId: string) => {
   const accountlessIds = accountless.map((spell) => spell.id);
   const accountlessProfiles = await collectProfileExport(organizationId, accountlessIds);
   const accountlessSensitive = await collectSensitiveExport(organizationId, accountlessIds);
+  const accountlessPhotos = await readyPhotoIds(accountlessIds);
+  const files: ExportAttachmentFile[] = [];
+  const accountlessPhoto = (employmentId: string) => {
+    const photo = accountlessPhotos.get(employmentId);
+    if (!photo) return null;
+    const path = `people-without-account/profile-photos/${employmentId}.jpg`;
+    files.push({
+      path,
+      storageKey: photoKeys(photoPrefix({ ...photo, employmentId })).full,
+      store: "organizationData",
+    });
+    return { file: path, uploadedAt: photo.readyAt };
+  };
   const accountlessReads =
     accountlessIds.length === 0
       ? []
@@ -269,6 +283,7 @@ export const collectOrganizationExport = async (organizationId: string) => {
       startedAt: spell.startedAt,
       endedAt: spell.endedAt,
       profile: accountlessProfiles.profiles.get(spell.id) ?? null,
+      photo: accountlessPhoto(spell.id),
       profileHistory: accountlessProfiles.history.filter(
         (entry) => entry.employmentId === spell.id
       ),
@@ -280,5 +295,9 @@ export const collectOrganizationExport = async (organizationId: string) => {
     })),
   };
 
-  return { document, people };
+  return { document, files, people };
 };
+
+export type OrganizationExportDocument = Awaited<
+  ReturnType<typeof collectOrganizationExport>
+>["document"];

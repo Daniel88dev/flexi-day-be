@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { getPhotoUploadStatus } from "../../services/directory/directoryPhotoServices.js";
-import { requirePathParam } from "../attendance/utils.js";
+import { requirePathParam } from "../pathParams.js";
 import { directoryViewerFor } from "./directoryViewerFor.js";
 
 export const handleGetProfilePhotoStatus = async (req: Request, res: Response) => {

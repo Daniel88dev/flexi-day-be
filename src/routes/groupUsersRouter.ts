@@ -104,7 +104,11 @@ export const groupUsersRouter = (): Router => {
    *           `{ code: "ALREADY_MEMBER", groupId }`), the code was just
    *           redeemed, or the account already has an open Employment in the
    *           organization while the invite would claim another
-   *           (`ALREADY_EMPLOYED`; the admin resolves the duplicate).
+   *           (`ALREADY_EMPLOYED`; the admin resolves the duplicate). Also
+   *           `ACCOUNTLESS_EMPLOYMENT_EMAIL` when the account has no open
+   *           Employment there and an open record without an account holds its
+   *           email (`errors[0].context.employmentId`): the admin sends that
+   *           record a directory invite or erases it.
    *       '410':
    *         description: >-
    *           A directory invite whose person has ended, been bound or changed

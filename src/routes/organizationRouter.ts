@@ -265,7 +265,9 @@ export const organizationRouter = (): Router => {
    *       The owner's copy of everything the organization holds: one folder
    *       per person in the Person export layout under `people/`, plus
    *       `organization.json` with the organization, its settings, groups,
-   *       memberships, administrators and group events. Works on every plan,
+   *       memberships, administrators, group events and the people without an
+   *       account, whose Profile photos sit under
+   *       `people-without-account/profile-photos/`. Works on every plan,
    *       at any time. The ZIP is built in the background on the Person
    *       export queue; the answer is the `PENDING` export. Each request
    *       writes one `export` row to the Read log for every person in it. A
@@ -628,7 +630,10 @@ export const organizationRouter = (): Router => {
    *               nullable: true
    *             newVersionReady:
    *               type: boolean
-   *               description: On, and the latest acceptance is older than the current version.
+   *               description: |
+   *                 On, and the latest acceptance is older than the current
+   *                 version. Always false for an org admin: only the owner
+   *                 accepts.
    *         people:
    *           type: object
    *           description: Live Employment counts for the enable dialog's summary.
@@ -798,8 +803,10 @@ export const organizationRouter = (): Router => {
    *       rows, the Department and Location lists, the Directory roles, the
    *       Permission table and its history, the retention periods and holds,
    *       the organization's own emergency-contact notice text, every Person
-   *       and Organization export, and every Employment without an account,
-   *       open or ended (their invites and profile history go with them).
+   *       export, and every Employment without an account, open or ended
+   *       (their invites and profile history go with them). Organization
+   *       exports stay: they are the owner's return copy and expire on their
+   *       own.
    *       Employments with an account keep their name and email copy, type
    *       and dates; the agreement acceptances, the Read log and the profile
    *       history of those Employments stay. Photo and export files are

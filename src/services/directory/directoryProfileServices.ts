@@ -22,18 +22,15 @@ import { buildUserSummary } from "../../utils/userPresentation.js";
 import { getPersonContacts, personName, type PersonColumns } from "../person/personName.js";
 import { countryView, phoneCountryDefault, phoneView } from "./contactFormat.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
-import {
-  administersOrganization,
-  groupedUserIds,
-  profileActions,
-} from "./directoryEndingServices.js";
+import { groupedUserIds, profileActions } from "./directoryEndingServices.js";
 import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
 import { emergencyContactNotice } from "./emergencyContactNotice.js";
 import { copyFromPreviousSpellOffered } from "./previousSpellServices.js";
 import { nextRemoval, profileRetention, readRetentionSchedules } from "./retentionSchedule.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
 import {
-  canReadPermissionTable,
+  administersOrganization,
+  administersPeople,
   createPersonGrantor,
   type DirectoryViewer,
 } from "./directoryViewer.js";
@@ -136,12 +133,6 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
 
 type RecordRow = Awaited<ReturnType<ReturnType<typeof selectRecords>["query"]["execute"]>>[number];
 
-/** The owner, org admins and HR read a profile's history. */
-export const canReadHistory = (viewer: DirectoryViewer) =>
-  viewer.standing.owner ||
-  viewer.standing.organizationAdmin ||
-  viewer.standing.roles.includes("HR");
-
 const accessFor = (viewer: DirectoryViewer, row: RecordRow) =>
   viewer.accessTo({ userId: row.userId, ended: row.endedAt !== null });
 
@@ -196,7 +187,7 @@ const toPerson = (
   location: locationOf(row),
   image: row.image ?? null,
   photoUrl: photo?.smallUrl ?? null,
-  user: buildUserSummary({ id: row.userId ?? row.id, name: row.name }),
+  user: { ...buildUserSummary({ id: row.userId ?? row.id, name: row.name }), id: row.userId },
   markers: markersOf(row, access),
 });
 
@@ -222,8 +213,8 @@ export const listDirectoryPeople = async (
   }
   return {
     people,
-    formerList: viewer.formerList,
-    settings: canReadPermissionTable(viewer),
+    formerList: administersPeople(viewer),
+    settings: administersPeople(viewer),
     noGroupFilter,
     addPerson: createPersonGrantor(viewer) !== null,
   };
@@ -234,7 +225,7 @@ export const listFormerDirectoryPeople = async (
   viewer: DirectoryViewer,
   tx?: DbTransaction
 ): Promise<FormerDirectoryPerson[]> => {
-  if (!viewer.formerList) {
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "FORMER_LIST_DENIED",
@@ -262,10 +253,11 @@ export const listFormerDirectoryPeople = async (
     const access = accessFor(viewer, row);
     if (!access.inReach) continue;
     const schedule = schedules.get(row.id);
+    const readsJob = access.sections[R.Job] !== V.None;
     former.push({
       ...toPerson(row, access, await photoOf(viewer, row, access)),
-      startedAt: row.startedAt,
-      endedAt: row.endedAt!,
+      startedAt: readsJob ? row.startedAt : null,
+      endedAt: readsJob ? row.endedAt : null,
       nextRemoval: schedule
         ? nextRemoval(schedule, access, row.type === workerType.External)
         : null,
@@ -395,7 +387,7 @@ export const getDirectoryProfile = async (
     self: row.userId !== null && row.userId === viewer.standing.userId,
     ended: row.endedAt !== null,
     sections: sectionsOf(viewer, row, access, photo),
-    canReadHistory: canReadHistory(viewer),
+    canReadHistory: administersPeople(viewer),
     actions: profileActions(
       viewer,
       row,
@@ -441,7 +433,6 @@ export const getDirectoryProfile = async (
  */
 export type ExportedProfile = {
   jobTitle: string | null;
-  /** The entry names. */
   department: string | null;
   location: string | null;
   reportsTo: { employmentId: string; name: string | null } | null;
@@ -453,7 +444,6 @@ export type ExportedProfile = {
   contractType: contractType | null;
   workingTime: workingTime | null;
   workEmail: string | null;
-  /** E.164. */
   workPhone: string | null;
 };
 

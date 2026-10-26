@@ -3,7 +3,7 @@ import { z } from "zod";
 import { completeLocalPhotoUpload } from "../../services/directory/directoryPhotoServices.js";
 import { verifyLocalPhotoUpload } from "../../services/organizationData/organizationDataStore.js";
 import AppError from "../../utils/appError.js";
-import { requirePathParam } from "../attendance/utils.js";
+import { requirePathParam } from "../pathParams.js";
 
 const signedQuery = z.object({
   expires: z.coerce.number().int(),

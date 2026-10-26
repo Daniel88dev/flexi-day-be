@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
@@ -27,13 +27,12 @@ const ownProfileHref = (organizationId: string, employmentId: string) =>
 
 /**
  * The members' notice for a directory just turned on: one per bound open
- * Employment, each in its reader's language and linked to their own profile.
- * The owner who turned it on and Deleted accounts get none. Runs inside the
+ * Employment, the owner's included, each in its reader's language and linked
+ * to their own profile. Deleted accounts get none. Runs inside the
  * enable's transaction, so it sees what the enable committed.
  */
 export const planDirectoryEnabledNotices = async (
   organizationId: string,
-  actorUserId: string,
   tx: DbTransaction
 ): Promise<DirectoryEnabledNotice[]> => {
   const rows = await tx
@@ -53,8 +52,7 @@ export const planDirectoryEnabledNotices = async (
         isNull(employments.endedAt),
         isNotNull(employments.userId),
         isNull(employments.accountDeletedAt),
-        isNull(user.deletedAt),
-        ne(employments.userId, actorUserId)
+        isNull(user.deletedAt)
       )
     );
 

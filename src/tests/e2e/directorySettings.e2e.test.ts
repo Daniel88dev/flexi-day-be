@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import request from "supertest";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
@@ -24,9 +23,9 @@ import { syncEmployment } from "../../services/employment/employmentServices.js"
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { getOrganizationDetailForSupport } from "../../services/support/supportServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs } from "./helpers/directoryWorld.js";
 
 const agreement = vi.hoisted(() => ({ version: 1 }));
 vi.mock("../../services/directory/directoryAgreement.js", () => ({
@@ -148,14 +147,7 @@ describe("Turning the people directory on", () => {
     return { owner, member, delegate, organizationId };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object = {}) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const enablePath = (organizationId: string) =>
     `/api/organization/directory/enable?organizationId=${organizationId}`;
@@ -401,6 +393,16 @@ describe("Turning the people directory on", () => {
       expect(ownerOrgs.body).toEqual([
         expect.objectContaining({ organizationId, role: "OWNER", newAgreementVersionReady: true }),
       ]);
+      const delegateState = await (
+        await as(delegate.id)
+      ).get(`/api/organization/directory?organizationId=${organizationId}`);
+      expect(delegateState.status).toBe(200);
+      expect(delegateState.body.agreement).toMatchObject({
+        currentVersion: 2,
+        acceptedVersion: 1,
+        newVersionReady: false,
+      });
+
       for (const viewer of [delegate, member]) {
         const orgs = await (await as(viewer.id)).get("/api/directory/organizations");
         expect(orgs.body).toEqual([

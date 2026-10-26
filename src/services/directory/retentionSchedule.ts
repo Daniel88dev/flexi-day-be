@@ -13,7 +13,8 @@ import {
 import { employments } from "../../db/schema/employment-schema.js";
 import { SECTION_ROWS, type DirectoryAccess, type SectionRow } from "./permissionResolver.js";
 import { readRetentionHolds } from "./retentionHoldServices.js";
-import { dayIn, removalDay } from "./retentionPeriods.js";
+import { businessDateInZone } from "../../utils/dateFunc.js";
+import { removalDay } from "./retentionPeriods.js";
 import {
   clockStart,
   holdsData,
@@ -112,7 +113,7 @@ export const readRetentionSchedules = async (
               holds: row[`holds_${section}`] === true,
               dueAt: asDate(row[`due_${section}`]),
               untilErased: periods[section] === P.UntilErased,
-              removedOn: removedAt && dayIn(removedAt, timezone),
+              removedOn: removedAt && businessDateInZone(removedAt, timezone),
             },
           ];
         })

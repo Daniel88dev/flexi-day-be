@@ -17,8 +17,8 @@ import { lockOrganization } from "../organization/organizationServices.js";
 import { getPersonContacts } from "../person/personName.js";
 import { recordName } from "./directoryProfileServices.js";
 import { readDirectoryRoles, sortRoles } from "./directoryRoleServices.js";
-import { readPermissionCells } from "./directorySettingsServices.js";
-import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
+import { readPermissionCells, storeMissingCells } from "./directorySettingsServices.js";
+import { administersPeople, type DirectoryViewer } from "./directoryViewer.js";
 import { cellRule, checkCellChange } from "./permissionTable.js";
 import type {
   DirectoryRoles,
@@ -33,7 +33,7 @@ const contextOf = (viewer: DirectoryViewer) => ({
 });
 
 const assertCanRead = (viewer: DirectoryViewer) => {
-  if (!canReadPermissionTable(viewer)) {
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "PERMISSIONS_DENIED",
@@ -81,6 +81,7 @@ export const changePermissionCell = async (
   assertOwner(viewer);
   const { organizationId } = viewer;
   await lockOrganization(organizationId, tx);
+  await storeMissingCells(organizationId, tx);
 
   const current = (await readPermissionCells(organizationId, tx)).find(
     (cell) => cell.row === change.row && cell.audience === change.audience

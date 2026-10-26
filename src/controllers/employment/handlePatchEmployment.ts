@@ -2,7 +2,8 @@ import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { presentEmployment } from "./utils.js";
 import { db } from "../../db/db.js";
-import AppError, { refuse } from "../../utils/appError.js";
+import AppError from "../../utils/appError.js";
+import { assertKeepsAttendance } from "../../services/attendance/attendanceServices.js";
 import { workerType } from "../../db/schema/employment-schema.js";
 import {
   getEmploymentById,
@@ -48,10 +49,7 @@ export const handlePatchEmployment = async (req: Request, res: Response) => {
     }
 
     if (existing.type === workerType.External && requiredMinutesPerDay !== null) {
-      throw refuse(422, "EXTERNAL_WORKER", "External workers owe no required time", {
-        userId: auth.userId,
-        employmentId,
-      });
+      assertKeepsAttendance(existing);
     }
 
     return setEmploymentRequiredMinutes(employmentId, requiredMinutesPerDay, tx);

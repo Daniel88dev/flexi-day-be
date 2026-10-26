@@ -1,9 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
-import {
-  directoryProfileHistory,
-  directoryProfiles,
-} from "../../db/schema/directory-profile-schema.js";
+import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
@@ -14,6 +11,7 @@ import { assertAssignableEntry } from "./directoryListServices.js";
 import { assertReportsTo } from "./directoryProfileEditServices.js";
 import { getDirectoryProfile } from "./directoryProfileServices.js";
 import { createPersonGrantor, type DirectoryViewer } from "./directoryViewer.js";
+import { recordProfileHistory } from "./profileHistory.js";
 import { CARD_COLUMNS } from "./profileSectionFields.js";
 import type { DirectoryProfile, PostDirectoryPerson } from "./types.js";
 
@@ -114,15 +112,19 @@ export const createDirectoryPerson = async (
       .filter(([column]) => column in card)
       .map(([, field]) => field),
   ];
-  await tx.insert(directoryProfileHistory).values({
-    id: generateRandomUUID(),
-    organizationId,
-    employmentId,
-    actorUserId: viewer.standing.userId,
-    section: R.Card,
-    fields,
-    audience: grantor,
-  });
+  await recordProfileHistory(
+    [
+      {
+        organizationId,
+        employmentId,
+        actorUserId: viewer.standing.userId,
+        section: R.Card,
+        fields,
+        audience: grantor,
+      },
+    ],
+    tx
+  );
 
   return getDirectoryProfile(viewer, employmentId, tx);
 };

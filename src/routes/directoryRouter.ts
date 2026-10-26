@@ -147,9 +147,12 @@ export const directoryRouter = (): Router => {
    *             to initials.
    *         user:
    *           type: object
-   *           description: Initials and avatar colour, keyed on the user or, without an account, the Employment.
+   *           description: |
+   *             Initials and avatar colour, keyed on the user or, without an
+   *             account, the Employment. `id` is null on a record without an
+   *             account, for every caller.
    *           properties:
-   *             id: { type: string }
+   *             id: { type: string, nullable: true }
    *             name: { type: string }
    *             initials: { type: string }
    *             avatarColor: { type: string }
@@ -401,10 +404,10 @@ export const directoryRouter = (): Router => {
    *                     the record is open and it isn't the owner's.
    *                 export:
    *                   type: boolean
-   *                   description: The Person export. The owner and org admins, for a person with an account.
+   *                   description: The Person export. The owner and org admins, for any record.
    *                 erase:
    *                   type: boolean
-   *                   description: Erase. The owner and org admins, for a Deleted account.
+   *                   description: Erase. The owner and org admins, for a Deleted account or a person without an account.
    *                 hold:
    *                   type: boolean
    *                   description: Set or lift the Retention hold. The owner and org admins, on an ended record.
@@ -1059,9 +1062,15 @@ export const directoryRouter = (): Router => {
    *                       startedAt:
    *                         type: string
    *                         format: date-time
+   *                         nullable: true
+   *                         description: Null when the caller doesn't read Job.
    *                       endedAt:
    *                         type: string
    *                         format: date-time
+   *                         nullable: true
+   *                         description: |
+   *                           Null when the caller doesn't read Job. The list
+   *                           is sorted by it either way, latest first.
    *                       nextRemoval:
    *                         type: object
    *                         nullable: true
@@ -1597,7 +1606,8 @@ export const directoryRouter = (): Router => {
    *       the nightly step empties none of its Sections, and the shortening
    *       count leaves it out. Erase still works. The hold records who set it
    *       and when, and has no reason. Setting it again keeps the first
-   *       setter and time. The owner and org admins only, on every plan.
+   *       setter and time. The owner and org admins only, on every plan, with
+   *       the directory on or off.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -1629,7 +1639,7 @@ export const directoryRouter = (): Router => {
    *       '404':
    *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND` when the Employment is elsewhere"
    *       '409':
-   *         description: "`DIRECTORY_OFF`"
+   *         description: "`DIRECTORY_OFF` for a caller other than the owner or an org admin: they reach this while the directory is off too"
    *       '422':
    *         description: "`EMPLOYMENT_OPEN`: a hold applies to an ended Employment"
    *   delete:
@@ -1673,7 +1683,7 @@ export const directoryRouter = (): Router => {
    *       '404':
    *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND`"
    *       '409':
-   *         description: "`DIRECTORY_OFF`"
+   *         description: "`DIRECTORY_OFF` for a caller other than the owner or an org admin: they reach this while the directory is off too"
    *       '422':
    *         description: "`EMPLOYMENT_OPEN`"
    */
@@ -1843,7 +1853,8 @@ export const directoryRouter = (): Router => {
    *       included; values never are, because the rows hold none. The owner and
    *       org admins only; HR reads it only by also being an org admin. Rows are
    *       kept 12 months. `people` and `readers` list everyone the log holds,
-   *       for the filters. A lapsed plan keeps this readable.
+   *       for the filters. A lapsed plan keeps this readable, and the owner and
+   *       org admins read it while the directory is off too.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -1855,7 +1866,9 @@ export const directoryRouter = (): Router => {
    *       - in: query
    *         name: employmentId
    *         required: false
-   *         description: Only rows about this Employment.
+   *         description: |
+   *           Only rows about this person: this Employment and every other
+   *           spell of the same account, or of the same email without one.
    *         schema:
    *           type: string
    *       - in: query
@@ -1948,7 +1961,7 @@ export const directoryRouter = (): Router => {
    *       '404':
    *         description: "`ORGANIZATION_NOT_FOUND`"
    *       '409':
-   *         description: "`DIRECTORY_OFF`"
+   *         description: "`DIRECTORY_OFF` for a caller other than the owner or an org admin: they reach this while the directory is off too"
    *       '422':
    *         description: A malformed query
    */
@@ -2128,7 +2141,8 @@ export const directoryRouter = (): Router => {
    *       Employment ends, counted from the later of the end date and the
    *       moment the ending was recorded. A Section the organization never
    *       set reads as the product default. The owner, org admins and HR read
-   *       them.
+   *       them; while the directory is off, the owner and org admins still read
+   *       and change them, because the purges keep running.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -2151,7 +2165,7 @@ export const directoryRouter = (): Router => {
    *       '404':
    *         description: "`ORGANIZATION_NOT_FOUND`"
    *       '409':
-   *         description: "`DIRECTORY_OFF`"
+   *         description: "`DIRECTORY_OFF` for a caller other than the owner or an org admin: they reach this while the directory is off too"
    *   put:
    *     tags:
    *       - Directory
@@ -2197,7 +2211,7 @@ export const directoryRouter = (): Router => {
    *       '404':
    *         description: "`ORGANIZATION_NOT_FOUND`"
    *       '409':
-   *         description: "`DIRECTORY_OFF`"
+   *         description: "`DIRECTORY_OFF` for a caller other than the owner or an org admin: they reach this while the directory is off too"
    *       '422':
    *         description: A malformed body, a period off the list, or a row that is not a Section
    */
@@ -2218,7 +2232,9 @@ export const directoryRouter = (): Router => {
    *     description: |
    *       Counts the ended Employments that still hold the Section and would
    *       be past the given period at the next nightly run, for the dialog that
-   *       confirms a shortening. Changes nothing. The owner and org admins only.
+   *       confirms a shortening, once per person: per account, or per email for
+   *       spells without one. Changes nothing. The owner and org admins only,
+   *       with the directory on or off.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -2261,7 +2277,7 @@ export const directoryRouter = (): Router => {
    *       '404':
    *         description: "`ORGANIZATION_NOT_FOUND`"
    *       '409':
-   *         description: "`DIRECTORY_OFF`"
+   *         description: "`DIRECTORY_OFF` for a caller other than the owner or an org admin: they reach this while the directory is off too"
    *       '422':
    *         description: A missing or unknown section or period
    */

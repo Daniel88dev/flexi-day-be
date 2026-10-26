@@ -1,4 +1,4 @@
-import { and, arrayContains, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, arrayOverlaps, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { attachments, AttachmentStatus } from "../../db/schema/attachment-schema.js";
 import {
@@ -19,10 +19,12 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { downloadFileName } from "../attachment/attachmentServices.js";
 import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
 import { collectProfileExport } from "../directory/directoryProfileServices.js";
+import { collectRoleExport } from "../directory/directoryRoleServices.js";
 import { collectSensitiveExport } from "../directory/sensitiveSections.js";
+import { personSpellIds } from "../employment/personSpells.js";
 import { getPersonContacts } from "../person/personName.js";
 
-/** The fixed purpose labels the person sees in place of reader names (C-579/21). */
+/** The fixed purpose labels the person sees in place of reader names. */
 export const READ_PURPOSE: Record<readLogAudience, string> = {
   [readLogAudience.Owner]: "owner",
   [readLogAudience.OrganizationAdmin]: "organization administration",
@@ -75,8 +77,9 @@ export type ExportAttachmentFile = {
  * Everything one organization holds about one person, across every spell:
  * Organization data only. Account data (login, settings, notifications,
  * Birthday, the account's own name and email) stays out; the person's name
- * and email here are the Employment's own copies. A person without an account
- * is one Employment, and holds nothing keyed by a user.
+ * and email here are the Employment's own copies. The spells are the ones
+ * `personSpellIds` links, so a person without an account covers every spell
+ * with their email, and holds nothing keyed by a user.
  */
 export const collectPersonExport = async (
   organizationId: string,
@@ -88,6 +91,10 @@ export const collectPersonExport = async (
     .from(organizations)
     .where(eq(organizations.id, organizationId));
 
+  const spellIds = await personSpellIds(
+    organizationId,
+    typeof subject === "string" ? { userId: subject } : subject
+  );
   const spells = await db
     .select({
       id: employments.id,
@@ -102,16 +109,15 @@ export const collectPersonExport = async (
     .where(
       and(
         eq(employments.organizationId, organizationId),
-        typeof subject === "string"
-          ? eq(employments.userId, subject)
-          : and(eq(employments.id, subject.employmentId), isNull(employments.userId))
+        spellIds.length === 0 ? sql`false` : inArray(employments.id, spellIds)
       )
     )
-    .orderBy(asc(employments.startedAt));
+    .orderBy(asc(employments.startedAt), asc(employments.id));
   const employmentIds = spells.map((spell) => spell.id);
   const profile = await collectProfileExport(organizationId, employmentIds);
   const photos = await readyPhotoIds(employmentIds);
   const sensitive = await collectSensitiveExport(organizationId, employmentIds);
+  const roles = await collectRoleExport(organizationId, employmentIds);
 
   const organizationGroups = await db
     .select({
@@ -240,14 +246,12 @@ export const collectPersonExport = async (
     .where(
       and(
         eq(readLog.organizationId, organizationId),
-        subjectUserId !== null
-          ? eq(readLog.subjectUserId, subjectUserId)
-          : employmentIds.length === 0
-            ? sql`false`
-            : and(
-                isNull(readLog.subjectUserId),
-                arrayContains(readLog.employmentIds, employmentIds)
-              )
+        or(
+          subjectUserId === null ? undefined : eq(readLog.subjectUserId, subjectUserId),
+          employmentIds.length === 0
+            ? undefined
+            : arrayOverlaps(readLog.employmentIds, employmentIds)
+        ) ?? sql`false`
       )
     )
     .orderBy(asc(readLog.createdAt));
@@ -405,6 +409,8 @@ export const collectPersonExport = async (
       by: nameOf(row.changingUserId),
     })),
     profileHistory: profile.history,
+    directoryRoles: roles.assigned,
+    directoryRoleHistory: roles.history,
     readLog: reads.map(readLogExportEntry),
   };
 

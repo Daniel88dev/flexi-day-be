@@ -1,20 +1,17 @@
-import { and, arrayContains, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, arrayOverlaps, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { readLog } from "../../db/schema/read-log-schema.js";
 import { refuse } from "../../utils/appError.js";
+import { personSpellIds } from "../employment/personSpells.js";
 import { getPersonContacts } from "../person/personName.js";
 import { recordName } from "./directoryProfileServices.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { administersOrganization, type DirectoryViewer } from "./directoryViewer.js";
 import type { ReadLogEntry, ReadLogPage } from "./types.js";
 
-/** Rows older than this go on the nightly tick. Fixed, not configurable (fenro T-477). */
+/** Rows older than this go on the nightly tick. Fixed, not configurable. */
 export const READ_LOG_RETENTION_MONTHS = 12;
-
-/** The owner and org admins read the Read log. HR reads it only by also being an org admin. */
-export const canReadReadLog = (viewer: DirectoryViewer) =>
-  viewer.standing.owner || viewer.standing.organizationAdmin;
 
 export type ReadLogQuery = {
   employmentId?: string;
@@ -47,13 +44,16 @@ export const listReadLog = async (
   tx?: DbTransaction
 ): Promise<ReadLogPage> => {
   const { organizationId } = viewer;
-  if (!canReadReadLog(viewer)) {
+  if (!administersOrganization(viewer)) {
     throw refuse(403, "READ_LOG_DENIED", "Only the owner and org admins read the read log", {
       organizationId,
       viewerUserId: viewer.standing.userId,
     });
   }
   const client = tx ?? db;
+  const personSpells = query.employmentId
+    ? await personSpellIds(organizationId, { employmentId: query.employmentId }, tx)
+    : null;
 
   const [cursor] = query.before
     ? await client
@@ -68,7 +68,9 @@ export const listReadLog = async (
     .where(
       and(
         eq(readLog.organizationId, organizationId),
-        query.employmentId ? arrayContains(readLog.employmentIds, [query.employmentId]) : undefined,
+        personSpells
+          ? arrayOverlaps(readLog.employmentIds, personSpells.length > 0 ? personSpells : [""])
+          : undefined,
         query.readerUserId ? eq(readLog.readerUserId, query.readerUserId) : undefined,
         cursor
           ? or(

@@ -119,7 +119,7 @@ export type DirectoryOrganization = {
 export type DirectoryMarker =
   "EXTERNAL_WORKER" | "NO_ACCOUNT" | "ACCOUNT_DELETED" | "REJOINED" | "INVITE_SENT";
 
-/** A Section the viewer reads, at their level. Later tickets add the Section's fields beside `level`. */
+/** A Section the viewer reads, at their level. */
 export type DirectorySectionView = { level: "READ" | "WRITE" };
 
 export type DirectoryPerson = {
@@ -134,18 +134,19 @@ export type DirectoryPerson = {
   image: string | null;
   /** The small Profile photo; null without one or without a read on the Photo Section. */
   photoUrl: string | null;
-  user: UserSummary;
+  /** `id` is null on a record without an account, so it can't tell who has one. */
+  user: Omit<UserSummary, "id"> & { id: string | null };
   markers: DirectoryMarker[];
   /** In no group of the organization; sent to the owner and org admins only. */
   noGroup?: boolean;
 };
 
 export type FormerDirectoryPerson = DirectoryPerson & {
-  startedAt: Date;
-  endedAt: Date;
+  /** The spell dates; null when the viewer doesn't read Job. */
+  startedAt: Date | null;
+  endedAt: Date | null;
   /** The earliest coming Retention purge among the Sections the viewer reads; null under a hold. */
   nextRemoval: { section: ProfileSectionKey; date: string } | null;
-  /** A Retention hold is on. */
   hold: boolean;
 };
 
@@ -284,7 +285,7 @@ export type DirectoryProfile = DirectoryPerson & {
   account?: {
     status: DirectoryAccountStatus;
     signInEmail: string | null;
-    directoryRoles: ("HR" | "LEADERSHIP")[];
+    directoryRoles: directoryRole[];
   };
 };
 
@@ -360,7 +361,6 @@ export const validatePatchDirectoryProfile = z
             postalCode: optionalLine(16),
             city: z.string().trim().min(1).max(100),
             region: optionalLine(100),
-            /** ISO 3166-1 alpha-2. */
             country: z.string().trim().toUpperCase().length(2),
           })
           .strict()
@@ -623,7 +623,7 @@ export type RetentionSettings = {
 };
 
 export type RetentionPreview = PutRetentionPeriod & {
-  /** Ended Employments whose Section the period would remove at the next nightly run. */
+  /** People whose Section the period would remove at the next nightly run, once each. */
   affected: number;
 };
 

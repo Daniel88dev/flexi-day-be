@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { db } from "../../db/db.js";
 import { readPreviousSpell } from "../../services/directory/previousSpellServices.js";
-import { requirePathParam } from "../attendance/utils.js";
+import { requirePathParam } from "../pathParams.js";
 import { directoryViewerFor } from "./directoryViewerFor.js";
 
 export const handleGetPreviousSpell = async (req: Request, res: Response) => {

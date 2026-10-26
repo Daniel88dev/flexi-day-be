@@ -4,8 +4,7 @@ import { directoryRetentionHolds } from "../../db/schema/directory-retention-sch
 import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { getPersonContacts } from "../person/personName.js";
-import { administersOrganization } from "./directoryEndingServices.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { administersOrganization, type DirectoryViewer } from "./directoryViewer.js";
 import type { RetentionHoldView } from "./types.js";
 
 /** The holds on the given Employments, with who set them, keyed by Employment id. */

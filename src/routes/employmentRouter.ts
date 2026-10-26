@@ -167,14 +167,15 @@ export const employmentRouter = (): Router => {
    *           `{ id, organizationId, userId, startedAt, endedAt, ended,
    *           requiredMinutesPerDay }`
    *       '403':
-   *         description: The caller does not administer that organization
+   *         description: |
+   *           The caller does not administer that organization, or
+   *           `context.reason` `EXTERNAL_WORKER` for a value on an External
+   *           worker, who owes no required time. Clearing it with null always
+   *           works.
    *       '404':
    *         description: No such Employment
    *       '422':
-   *         description: |
-   *           Missing or out-of-range requiredMinutesPerDay, or
-   *           `EXTERNAL_WORKER` for a value on an External worker, who owes no
-   *           required time. Clearing it with null always works.
+   *         description: Missing or out-of-range requiredMinutesPerDay
    */
   app.patch(
     "/:employmentId",
@@ -388,16 +389,18 @@ export const employmentRouter = (): Router => {
    *     summary: Request a Person export
    *     description: |
    *       Starts a Person export: everything the organization holds about the
-   *       Employment's person across every spell, as a ZIP of `person.json`,
+   *       Employment's person across every spell (the same account, or the
+   *       same email on a spell without one), as a ZIP of `person.json`,
    *       four CSVs (bookings, attendance sessions, quotas, changes) and the
    *       attachments. Account data stays out. The ZIP is built in the
    *       background; the answer is the export row in `PENDING`, and the
    *       caller gets an `export_ready` notification once it is `READY`.
    *
    *       The owner and org admins only, on every plan, for any Employment:
-   *       open or ended, account bound, deleted or never there. A person
-   *       without an account is that one Employment, and the export row
-   *       names it in `subjectEmploymentId`. Group managers and members
+   *       open or ended, account bound, deleted or never there. For a person
+   *       without an account the export row names the Employment in
+   *       `subjectEmploymentId`, and the export covers every spell with its
+   *       email. Group managers and members
    *       get 403. Each new request writes one `export` row to the Read log.
    *       While an earlier request by the same caller for the same person is
    *       still `PENDING`, that one is returned and nothing new is written.

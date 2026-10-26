@@ -4,7 +4,7 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
-import { refuse } from "../../utils/appError.js";
+import AppError, { refuse } from "../../utils/appError.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { isOrganizationAdmin, lockOrganization } from "../organization/organizationServices.js";
@@ -18,14 +18,11 @@ import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
 import { isDirectoryOrganization } from "../directory/directorySettingsServices.js";
 import { loadDirectoryViewer } from "../directory/directoryViewer.js";
-import {
-  directoryProfileHistory,
-  directoryProfiles,
-} from "../../db/schema/directory-profile-schema.js";
+import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import { directoryAudience, directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
-import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { clearAtEndSections } from "../directory/retentionPurge.js";
+import { recordProfileHistory } from "../directory/profileHistory.js";
 
 /**
  * The shared opening of End employment and Erase: 404 for no such row, 403
@@ -75,9 +72,11 @@ const authorizeEnd = async (
   const forbidden = () => refuse(403, "FORBIDDEN", "No permission to end this employment", context);
 
   if (await isDirectoryOrganization(organizationId, tx)) {
-    const viewer = await loadDirectoryViewer(actorUserId, organizationId, tx).catch(() => {
-      throw forbidden();
-    });
+    const viewer = await loadDirectoryViewer(actorUserId, organizationId, tx).catch(
+      (error: unknown) => {
+        throw error instanceof AppError && error.code < 500 ? forbidden() : error;
+      }
+    );
     const access = viewer.accessTo({
       userId: employment.userId,
       ended: employment.endedAt !== null,
@@ -300,15 +299,15 @@ const clearReportsTo = async (
       organizationId: directoryProfiles.organizationId,
     });
   if (cleared.length === 0) return;
-  await tx.insert(directoryProfileHistory).values(
+  await recordProfileHistory(
     cleared.map((row) => ({
-      id: generateRandomUUID(),
       organizationId: row.organizationId,
       employmentId: row.employmentId,
       actorUserId: input.actorUserId,
       section: directoryPermissionRow.Card,
       fields: ["reportsTo"],
       audience: input.audience,
-    }))
+    })),
+    tx
   );
 };

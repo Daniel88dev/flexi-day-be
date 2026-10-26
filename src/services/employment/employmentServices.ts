@@ -15,6 +15,7 @@ import { personName } from "../person/personName.js";
 import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
 import { isDirectoryOrganization } from "../directory/directorySettingsServices.js";
+import { clearAtEndSections } from "../directory/retentionPurge.js";
 
 /**
  * Whether the person is still reachable from the organization by any of the
@@ -93,7 +94,8 @@ const hasOrganizationLink = async (
  *
  * In a Directory organization it opens and never ends: only End employment
  * does, whatever the plan, so losing the last link leaves the person in no
- * group.
+ * group. Elsewhere an end empties the Sections set to "at end" in the same
+ * transaction, except the Profile photo, which the next nightly run removes.
  *
  * Runs in the caller's transaction: the row that decides the answer is usually
  * one the caller just wrote and has not committed.
@@ -143,7 +145,7 @@ export const syncEmployment = async (
         isNull(employments.endedAt)
       )
     )
-    .returning({ id: employments.id });
+    .returning({ id: employments.id, organizationId: employments.organizationId });
   await endDirectoryRoles(
     {
       employmentIds: ended.map((row) => row.id),
@@ -152,6 +154,11 @@ export const syncEmployment = async (
     },
     tx
   );
+  if (ended.length === 0) return;
+  const clear = async (transaction: DbTransaction) => {
+    for (const row of ended) await clearAtEndSections(row, transaction, { keepPhoto: true });
+  };
+  await (tx ? clear(tx) : db.transaction(clear));
 };
 
 /** {@link syncEmployment} for everyone a single change touches — group deletion. */

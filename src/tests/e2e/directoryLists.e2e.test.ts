@@ -21,9 +21,9 @@ import { enableDirectory } from "../../services/directory/directorySettingsServi
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 describe("Departments and Locations", () => {
   let server: LoopbackServer;
@@ -73,14 +73,7 @@ describe("Departments and Locations", () => {
       .update(employments)
       .set({ type: workerType.External })
       .where(eq(employments.userId, eli.id));
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     const employmentOf = async (userId: string) => {
       const [row] = await db
@@ -112,19 +105,7 @@ describe("Departments and Locations", () => {
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-      delete: (path: string) => request(server.url).delete(path).set("Cookie", cookie),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const setCell = async (organizationId: string, row: string, audience: string, value: string) =>
     db
@@ -145,7 +126,6 @@ describe("Departments and Locations", () => {
       graceEndsAt: null,
     });
 
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
   const entryNamed = (res: request.Response, name: string) =>
     res.body.entries.find((entry: { name: string }) => entry.name === name);
 

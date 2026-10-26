@@ -54,13 +54,13 @@ const previousRow = (candidate: RolloverCandidate): QuotaFigures | undefined =>
 /**
  * Derives the new year's allowance for one membership.
  *
- * The member's own allowance carries forward — a manually raised quota stays
+ * The member's own allowance carries forward: a manually raised quota stays
  * raised next year rather than snapping back to the group default. Unused days
  * land in `carriedOverDays`, floored to a whole day because the column is an
  * integer and half-day bookings can leave a fractional remainder, and clamped
  * at zero so an overdrawn member starts the year level rather than in debt.
  * The sick day allocation carries forward too; only its unused balance
- * expires — sick days never contribute to `carriedOverDays`. An External
+ * expires, so sick days never contribute to `carriedOverDays`. An External
  * worker's year opens at zero with nothing carried over.
  */
 export const computeRolloverRow = (candidate: RolloverCandidate): RolloverRow => {
