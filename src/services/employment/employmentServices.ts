@@ -165,7 +165,7 @@ const syncEmployments = async (
   }
 };
 
-const getOpenEmployment = async (
+export const getOpenEmployment = async (
   organizationId: string,
   userId: string,
   tx?: DbTransaction

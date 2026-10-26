@@ -101,7 +101,8 @@ export type DirectoryOrganization = {
 };
 
 /** Badges on a directory row. Everyone in reach sees `EXTERNAL_WORKER`; the rest go to the owner, org admins and HR only. */
-export type DirectoryMarker = "EXTERNAL_WORKER" | "NO_ACCOUNT" | "ACCOUNT_DELETED" | "REJOINED";
+export type DirectoryMarker =
+  "EXTERNAL_WORKER" | "NO_ACCOUNT" | "ACCOUNT_DELETED" | "REJOINED" | "INVITE_SENT";
 
 /** A Section the viewer reads, at their level. Later tickets add the Section's fields beside `level`. */
 export type DirectorySectionView = { level: "READ" | "WRITE" };
@@ -231,6 +232,8 @@ export type ProfileActions = {
   erase: boolean;
   /** Set or lift the Retention hold: the owner and org admins, on an ended record. */
   hold: boolean;
+  /** Send directory invite, by its act cell, on an open record without an account. */
+  invite: boolean;
 };
 
 export type DirectoryAccountStatus = "ACTIVE" | "NO_ACCOUNT" | "DELETED";
@@ -279,6 +282,8 @@ export const validatePatchDirectoryProfile = z
     card: z
       .object({
         name: z.string().trim().min(1).max(200).optional(),
+        /** Only on an open record without an account. */
+        email: z.string().trim().toLowerCase().pipe(z.email().max(254)).nullable().optional(),
         jobTitle: text(100),
         reportsToEmploymentId: z.string().min(1).nullable().optional(),
         departmentId: z.string().min(1).nullable().optional(),
@@ -373,6 +378,25 @@ export type PostDirectoryPerson = z.infer<typeof validatePostDirectoryPerson>;
 export const validateDirectoryEmailCheck = z.object({ email: directoryEmail }).strict();
 
 export type DirectoryEmailCheck = z.infer<typeof validateDirectoryEmailCheck>;
+
+export const validatePostDirectoryInvite = z
+  .object({ groupId: z.uuid().nullable().optional() })
+  .strict()
+  .optional()
+  .transform((body) => body ?? {});
+
+export type PostDirectoryInvite = z.infer<typeof validatePostDirectoryInvite>;
+
+/** A directory invite as its sender sees it. The code and the link secret stay out. */
+export type DirectoryInviteView = {
+  id: string;
+  employmentId: string;
+  groupId: string | null;
+  email: string;
+  status: "open" | "used" | "expired" | "revoked";
+  expiresAt: Date;
+  createdAt: Date;
+};
 
 export type ProfileHistoryEntry = {
   id: string;

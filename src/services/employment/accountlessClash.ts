@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
@@ -62,4 +62,42 @@ export const assertNoAccountlessClash = async (
     "This email belongs to a person in the organization's directory who has no account yet. Send them a directory invite or erase that record, then try again.",
     { organizationId, ...context, employmentId: clash.id }
   );
+};
+
+export const EMPLOYMENT_EMAIL_TAKEN = "EMPLOYMENT_EMAIL_TAKEN";
+
+/**
+ * Refuses an address an open Employment of the organization already holds,
+ * bound or not, ignoring case: 409 `EMPLOYMENT_EMAIL_TAKEN`. For whatever
+ * gives an account-less Employment its email. Takes {@link lockEmploymentEmail}
+ * itself; `exceptEmploymentId` is the record being edited.
+ */
+export const assertEmploymentEmailFree = async (
+  organizationId: string,
+  email: string,
+  context: Record<string, unknown>,
+  tx: DbTransaction,
+  exceptEmploymentId?: string
+): Promise<void> => {
+  await lockEmploymentEmail(organizationId, email, tx);
+  const [held] = await tx
+    .select({ id: employments.id })
+    .from(employments)
+    .where(
+      and(
+        eq(employments.organizationId, organizationId),
+        isNull(employments.endedAt),
+        sql`lower(${employments.email}) = ${email.trim().toLowerCase()}`,
+        exceptEmploymentId === undefined ? undefined : ne(employments.id, exceptEmploymentId)
+      )
+    )
+    .limit(1);
+  if (held) {
+    throw refuse(
+      409,
+      EMPLOYMENT_EMAIL_TAKEN,
+      "Another open Employment in the organization holds this email",
+      context
+    );
+  }
 };

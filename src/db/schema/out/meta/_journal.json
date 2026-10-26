@@ -344,6 +344,13 @@
       "when": 1793016465223,
       "tag": "0048_accountless_person_export",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793017465763,
+      "tag": "0049_directory_invites",
+      "breakpoints": true
     }
   ]
 }

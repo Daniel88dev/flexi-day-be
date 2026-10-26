@@ -1,5 +1,5 @@
 import { db, type DbTransaction } from "../../db/db.js";
-import { and, count, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type {
   InviteLink,
@@ -11,13 +11,16 @@ import type {
 import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
-import { personName } from "../person/personName.js";
+import { employments } from "../../db/schema/employment-schema.js";
+import { organizations } from "../../db/schema/organization-schema.js";
+import { getPersonContact, personName } from "../person/personName.js";
 
 // Every column but `linkSecretHash`, which no reader outside the link lookup
 // has any use for and no response may carry.
 const inviteColumns = {
   id: inviteLink.id,
   groupId: inviteLink.groupId,
+  employmentId: inviteLink.employmentId,
   code: inviteLink.code,
   email: inviteLink.email,
   invitedByUserId: inviteLink.invitedByUserId,
@@ -152,32 +155,66 @@ export const getInviteLinkBySecretHash = async (
 export const getInvitePreviewBySecretHash = async (
   linkSecretHash: string
 ): Promise<InvitePreview | undefined> => {
-  const inviter = alias(user, "invitedByUser");
+  const target = alias(employments, "target_employment");
 
   const [row] = await db
     .select({
       groupId: inviteLink.groupId,
       groupName: groups.groupName,
-      inviterName: personName(inviter, { groupId: inviteLink.groupId }),
+      organizationId: sql<
+        string | null
+      >`coalesce(${groups.organizationId}, ${target.organizationId})`,
+      targetName: target.name,
+      invitedByUserId: inviteLink.invitedByUserId,
       invitedEmail: inviteLink.email,
       usedAt: inviteLink.usedAt,
       revokedAt: inviteLink.revokedAt,
       expiresAt: inviteLink.expiresAt,
     })
     .from(inviteLink)
-    .innerJoin(groups, eq(inviteLink.groupId, groups.id))
-    .leftJoin(inviter, eq(inviteLink.invitedByUserId, inviter.id))
+    .leftJoin(groups, eq(inviteLink.groupId, groups.id))
+    .leftJoin(target, eq(inviteLink.employmentId, target.id))
     .where(eq(inviteLink.linkSecretHash, linkSecretHash))
     .limit(1);
 
   // Only email-bound invites carry a link, so a null address cannot occur;
   // the check keeps the type honest.
-  if (!row?.invitedEmail) return undefined;
+  if (!row?.invitedEmail || !row.organizationId) return undefined;
+  const organizationId = row.organizationId;
+
+  const [organization] = await db
+    .select({ name: organizations.name })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  const inviter = row.invitedByUserId
+    ? await getPersonContact(row.invitedByUserId, { organizationId })
+    : undefined;
+  // The sign-up form fills in the name the organization holds for the person
+  // the invite would claim.
+  let personName = row.targetName;
+  if (personName === null) {
+    const [match] = await db
+      .select({ name: employments.name })
+      .from(employments)
+      .where(
+        and(
+          eq(employments.organizationId, organizationId),
+          isNull(employments.userId),
+          isNull(employments.endedAt),
+          sql`lower(${employments.email}) = ${row.invitedEmail}`
+        )
+      )
+      .limit(1);
+    personName = match?.name ?? null;
+  }
 
   return {
     groupId: row.groupId,
     groupName: row.groupName,
-    inviterName: row.inviterName,
+    organizationName: organization?.name ?? "",
+    personName,
+    inviterName: inviter?.name ?? null,
     invitedEmail: row.invitedEmail,
     status: inviteStatus(row),
     expiresAt: row.expiresAt,

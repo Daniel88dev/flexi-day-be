@@ -5,6 +5,7 @@ import { emailSender } from "../email/index.js";
 /** Matches the invite's `expiresAt`; SES needs it as a human-readable string. */
 export const INVITE_EXPIRES_IN = "14 days";
 export const INVITE_TTL_DAYS = 14;
+export const INVITE_EXPIRES_IN_CS = "14 dní";
 
 export const inviteExpiryFrom = (now: Date): Date =>
   new Date(now.getTime() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -55,6 +56,39 @@ export const notifyGroupInvited = async (input: {
     logger.error("Failed to send group invite email", {
       email: input.email,
       groupName: input.groupName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+};
+
+/** Sends the directory invite email. Returns whether it went out, like {@link notifyGroupInvited}. */
+export const notifyDirectoryInvited = async (input: {
+  email: string;
+  organizationName: string;
+  inviterName: string;
+  personName: string;
+  linkSecret: string;
+}): Promise<boolean> => {
+  try {
+    await emailSender.sendTemplated({
+      to: input.email,
+      template: "directory-invite",
+      data: {
+        organizationName: input.organizationName,
+        inviterName: input.inviterName,
+        personName: input.personName,
+        inviteUrl: buildInviteUrl(input.linkSecret),
+        invitedEmail: input.email,
+        expiresIn: INVITE_EXPIRES_IN,
+        expiresInCs: INVITE_EXPIRES_IN_CS,
+      },
+    });
+    return true;
+  } catch (error) {
+    logger.error("Failed to send directory invite email", {
+      email: input.email,
+      organizationName: input.organizationName,
       error: error instanceof Error ? error.message : String(error),
     });
     return false;

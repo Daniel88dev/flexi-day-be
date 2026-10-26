@@ -5,7 +5,7 @@ import { db } from "../../db/db.js";
 import { normalizeInviteCode } from "../../utils/inviteCode.js";
 import AppError from "../../utils/appError.js";
 import { getInviteLinkByCode, inviteStatus } from "../../services/groupUser/inviteLinkServices.js";
-import { redeemInvite } from "../../services/groupUser/inviteRedemption.js";
+import { redeemInvite, redemptionBody } from "../../services/groupUser/inviteRedemption.js";
 import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
 
 export const handlePostGroupUser = async (req: Request, res: Response) => {
@@ -86,5 +86,5 @@ export const handlePostGroupUser = async (req: Request, res: Response) => {
   });
   await markMemberGroupEventTargetsDirty(auth.userId);
 
-  return res.status(201).json(result);
+  return res.status(201).json(redemptionBody(result));
 };

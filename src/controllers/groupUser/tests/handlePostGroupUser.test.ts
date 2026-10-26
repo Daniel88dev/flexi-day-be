@@ -45,6 +45,15 @@ vi.mock("../../../services/groupUser/inviteLinkServices.js", async (importOrigin
   useInviteLink: mockUseInviteLink,
 }));
 
+vi.mock("../../../services/organization/organizationServices.js", () => ({
+  lockOrganization: vi.fn(),
+}));
+
+// The Claim has its own e2e suite; here no account-less record matches.
+vi.mock("../../../services/employment/claimEmployment.js", () => ({
+  claimEmployment: vi.fn(() => Promise.resolve(null)),
+}));
+
 vi.mock("../../../services/userYearQuotas/userYearQuotasServices.js", () => ({
   openQuotaFromGroupDefaults: mockOpenQuotaFromGroupDefaults,
 }));
@@ -80,6 +89,7 @@ describe("handlePostGroupUser", () => {
     mockUseInviteLink.mockResolvedValue(openInvite({ usedAt: new Date() }));
     mockGetGroup.mockResolvedValue({
       id: GROUP_ID,
+      organizationId: "organization-1",
       defaultVacationDays: 20,
       defaultHomeOfficeDays: 5,
     });

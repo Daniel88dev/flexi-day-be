@@ -1,15 +1,20 @@
-import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { groups } from "./group-schema.js";
 import { user } from "./auth-schema.js";
+import { employments } from "./employment-schema.js";
 
 export const inviteLink = pgTable(
   "invite_link",
   {
     id: text("id").primaryKey(),
-    groupId: text("group_id")
-      .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
+    // Null on a directory invite that names no group.
+    groupId: text("group_id").references(() => groups.id, { onDelete: "cascade" }),
+    // The account-less Employment a directory invite claims. Redeeming binds the
+    // account to it.
+    employmentId: text("employment_id").references(() => employments.id, {
+      onDelete: "cascade",
+    }),
     code: text("code").unique().notNull(),
     // Lower-cased address the invite was issued to. Redeeming is restricted to
     // an account with this email, so a forwarded code is useless to a stranger.
@@ -31,6 +36,13 @@ export const inviteLink = pgTable(
   (table) => ({
     idxInviteLinkCode: index("idx_invite_link_code").on(table.code),
     idxInviteLinkGroupId: index("idx_invite_link_group_id").on(table.groupId),
+    uniqOpenEmploymentInvite: uniqueIndex("invite_link_employment_open_uniq")
+      .on(table.employmentId)
+      .where(sql`${table.usedAt} IS NULL AND ${table.revokedAt} IS NULL`),
+    targetCheck: check(
+      "invite_link_target_chk",
+      sql`${table.groupId} IS NOT NULL OR ${table.employmentId} IS NOT NULL`
+    ),
     // At most one live invite per (group, email); re-inviting the same address
     // reuses that row instead of leaving several codes that all still work.
     uniqOpenInvite: uniqueIndex("invite_link_group_email_open_uniq")

@@ -257,9 +257,54 @@ above. The answer is the new profile, which the web opens.
   the act.
 - **Afterwards:** the person is in no group, so nobody books for them, gives them a quota or enters
   attendance, and they get no notifications and never count toward a seat cap. A join path whose
-  account email matches is refused with 409 `ACCOUNTLESS_EMPLOYMENT_EMAIL`; only the directory
-  invite binds. "No account" shows to the owner, org admins and HR only. End, Erase and the
+  account email matches is refused with 409 `ACCOUNTLESS_EMPLOYMENT_EMAIL`; only an invite binds
+  (see below). "No account" shows to the owner, org admins and HR only. End, Erase and the
   Person export all take the record; Erase deletes that one Employment.
+
+### The directory invite and the Claim
+
+Decisions: fenro T-470, T-471, T-483, T-509 (this build) and T-529.
+
+**Email.** `card.email` in `PATCH .../people/{employmentId}` sets, changes or clears the address of
+an open record without an account, for whoever writes the Card. Same rule as Add person: unique
+among the open Employments, ignoring case, under `lockEmploymentEmail`, 409
+`EMPLOYMENT_EMAIL_TAKEN`. Setting needs the plan, clearing doesn't. A bound or ended record answers
+422 `EMAIL_FROM_ACCOUNT`. The change writes a Card history entry with the field `email` and revokes
+the record's open directory invite, because that went to the old address.
+
+**Sending.** `POST .../people/{employmentId}/invite` with an optional `groupId`:
+
+- **Who:** the Send directory invite act cell (Owner fixed, HR and Org admin by default), 403
+  `INVITE_DENIED` otherwise. It resolves on the record, open and without an account, so Group admin
+  never credits. The profile says `actions.invite`.
+- **When:** an open record (409 `EMPLOYMENT_ENDED`) without an account (422 `HAS_ACCOUNT`) that has
+  an email (422 `NO_EMAIL`), on the directory plan (402). A named group must be a live group of the
+  organization (422 `GROUP_NOT_FOUND`), writable and with a free seat.
+- **What:** an `invite_link` row with `employment_id` set and `group_id` null unless a group was
+  named, bound to the address, valid 14 days. Sending again revokes the open one. The
+  `directory-invite` email names the organization, never a group, and carries the link only.
+- **Marker:** `INVITE_SENT` while the invite is open, to the owner, org admins and HR.
+
+**Claiming.** Every redemption, by code, link or sign-up with invite, runs the Claim inside
+`redeemInvite` before any group join (`claimEmployment` in
+`src/services/employment/claimEmployment.ts`):
+
+- The target is the directory invite's Employment, or for any other invite the open account-less
+  Employment holding the invited address. An invite with no address (older than email invites)
+  never claims.
+- The account is written onto the row with its name and email; from then on the copy follows the
+  account (the `employments_follow_user` trigger), and the record shows the account's name.
+- An account that already has an open Employment in the organization is refused with 409
+  `ALREADY_EMPLOYED`, and nothing is written. The admin resolves the duplicate.
+- A directory invite whose person has ended, been bound or changed address answers 410
+  `INVITE_REVOKED`.
+- Signing up with a matching email and no invite never binds. Org-admin grants and new managers
+  still get 409 `ACCOUNTLESS_EMPLOYMENT_EMAIL`.
+- The Claim is never plan-gated and works while the directory is off. Turning the directory off
+  revokes open directory invites that name no group (T-514).
+- The invite preview answers `organizationName` and `personName`, so the sign-up form fills the name
+  in. A directory invite that names no group answers `groupId: null` everywhere, and its join
+  responses are `{ groupId: null, claimed }`.
 
 ### Departments and Locations
 
