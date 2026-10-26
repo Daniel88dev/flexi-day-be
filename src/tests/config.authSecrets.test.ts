@@ -21,6 +21,7 @@ const BASE = {
   DATABASE: "postgres://localhost:5432/flexi-day",
   BETTER_AUTH_SECRET: "",
   BETTER_AUTH_SECRETS: "",
+  BETTER_AUTH_SECRET_VERSION: "",
   BETTER_AUTH_URL: "http://localhost:8080",
   DEV_TOOLS_ENABLED: "false",
   SUPPORT_ADMIN_USER_IDS: "",
@@ -76,6 +77,22 @@ describe("config auth secrets", () => {
     await expect(loadConfig({ ...BASE, BETTER_AUTH_SECRETS: value })).rejects.toThrow(
       /BETTER_AUTH_SECRETS/
     );
+  });
+
+  it("boots when BETTER_AUTH_SECRET_VERSION names the newest version", async () => {
+    const config = await loadConfig({
+      ...BASE,
+      BETTER_AUTH_SECRETS: "2:second,1:first",
+      BETTER_AUTH_SECRET_VERSION: "2",
+    });
+
+    expect(config.auth?.secret).toBe("second");
+  });
+
+  it("refuses to boot on a list older than BETTER_AUTH_SECRET_VERSION", async () => {
+    await expect(
+      loadConfig({ ...BASE, BETTER_AUTH_SECRETS: "1:first", BETTER_AUTH_SECRET_VERSION: "2" })
+    ).rejects.toThrow(/BETTER_AUTH_SECRET_VERSION is 2 but the newest version .* is 1/);
   });
 
   it("never echoes a secret in its error", async () => {

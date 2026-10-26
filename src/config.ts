@@ -184,6 +184,8 @@ const SECRET_ENTRY = /^([1-9]\d*):(.+)$/;
 
 // `BETTER_AUTH_SECRETS` is `<version>:<secret>` pairs, newest first. A lone
 // `BETTER_AUTH_SECRET` is version 1, which is what it was before versioning.
+// Terraform also sets `BETTER_AUTH_SECRET_VERSION` to the newest version, so a
+// deployment that resolved a stale list fails here instead of running on it.
 const parseAuthSecrets = (): AuthSecretsConfig | undefined => {
   const raw = process.env.BETTER_AUTH_SECRETS?.trim();
   if (!raw) {
@@ -208,6 +210,12 @@ const parseAuthSecrets = (): AuthSecretsConfig | undefined => {
     }
     return older;
   });
+  const expected = process.env.BETTER_AUTH_SECRET_VERSION;
+  if (expected && Number(expected) !== secrets[0]?.version) {
+    throw new Error(
+      `BETTER_AUTH_SECRET_VERSION is ${expected} but the newest version in BETTER_AUTH_SECRETS is ${secrets[0]?.version}`
+    );
+  }
   return { secrets, legacySecret: secrets.find((s) => s.version === 1)?.value };
 };
 

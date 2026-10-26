@@ -88,10 +88,10 @@ resource "aws_secretsmanager_secret_version" "database_url" {
   secret_string = "postgresql://${var.db_username}:${urlencode(random_password.db_password.result)}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${var.db_name}"
 }
 
-# The single-secret slot from before versioning, no longer injected into the
-# service. It keeps its value so a rollback to an image that still reads
-# BETTER_AUTH_SECRET boots with the right key. Remove it once versioning has
-# been through a rotation in production.
+# The single-secret slot from before versioning. It keeps version 1's value and
+# is still injected as BETTER_AUTH_SECRET, so a rollback to an image that reads
+# only that variable boots with the right key. Remove it, and its line in
+# apprunner.tf and iam.tf, once versioning has been through a rotation.
 resource "aws_secretsmanager_secret" "better_auth_secret" {
   name                    = "${var.project_name}-${var.environment}-better-auth-secret"
   description             = "Better Auth signing secret for ${var.project_name}"

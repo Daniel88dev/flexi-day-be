@@ -335,7 +335,10 @@ from before versioning, which is `better_auth_secret` from `terraform.tfvars` wh
 Nothing rotates on its own. Once the newest version is older than `better_auth_rotation_days` (90),
 the plan prints a warning from the `better_auth_secret_age` check. To rotate, raise
 `better_auth_secret_version` by one in `terraform.tfvars`, plan, and hand the apply to the user. The
-apply generates the new version, drops the one before the previous, and redeploys App Runner. When
+apply generates the new version and drops the one before the previous. App Runner reads a secret
+only at deployment, and the slot's ARN stays the same, so the version also goes into the plain
+variable `BETTER_AUTH_SECRET_VERSION`: changing it is what redeploys the service, and `config.ts`
+refuses to boot a deployment whose list does not end there. When
 the new instance boots it deletes every session, because cookies are signed with the newest version
 only, and it re-encrypts TOTP secrets, backup codes, account OAuth tokens and calendar tokens onto
 the newest version. `docs/invariants.md` has both.
@@ -351,15 +354,18 @@ the newest version. `docs/invariants.md` has both.
 ### Moving to versions
 
 The first apply after versioning landed lists only version 1, the existing secret, so nobody is
-signed out. It starts injecting `BETTER_AUTH_SECRETS` and stops injecting `BETTER_AUTH_SECRET`, so
-the backend image that reads `BETTER_AUTH_SECRETS` has to be live before it. That image runs fine on
+signed out. It starts injecting `BETTER_AUTH_SECRETS` and `BETTER_AUTH_SECRET_VERSION` beside
+`BETTER_AUTH_SECRET`. Deploy the backend image that reads them first: an older image ignores both,
+but the version variable makes the apply redeploy whatever image is current. That image runs fine on
 `BETTER_AUTH_SECRET` alone, as version 1.
 
 The first boot of that image moves every encrypted row into a `$ba$1$` envelope, which no image from
 before versioning can read. Roll forward from then on: an older image boots, but two-factor sign-in
-and calendar sync fail for everyone. The old `-better-auth-secret` slot stays in Secrets Manager,
-unchanged and readable by the service, only so such an image can boot at all. Delete it, with its
-resources in `secrets.tf` and its line in `iam.tf`, after the first rotation.
+and calendar sync fail for everyone, and after a rotation it also signs everyone out. The old
+`-better-auth-secret` slot stays in Secrets Manager with version 1's value, still injected as
+`BETTER_AUTH_SECRET`, only so such an image can boot at all. Delete it after the first rotation,
+with its resources in `secrets.tf` and its lines in `apprunner.tf` and `iam.tf`. Until then,
+version 1 survives as better-auth's fallback key even after it leaves `BETTER_AUTH_SECRETS`.
 
 ## Before you plan
 

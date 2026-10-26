@@ -44,6 +44,11 @@ resource "aws_apprunner_service" "main" {
             PORT            = tostring(var.app_port)
             BETTER_AUTH_URL = "https://${var.api_domain_name}"
             FEED_BASE_URL   = "https://${var.api_domain_name}"
+            # App Runner reads secrets only at deployment, and a rotation
+            # changes the secret's value but not its ARN. This variable is what
+            # makes a rotation redeploy; config.ts refuses to boot when it
+            # disagrees with the newest version in BETTER_AUTH_SECRETS.
+            BETTER_AUTH_SECRET_VERSION = tostring(var.better_auth_secret_version)
             # Apple POSTs the web callback from appleid.apple.com, and
             # better-auth refuses a non-GET from an untrusted origin. Derived
             # here rather than listed in trusted_origins so it stays out of the
@@ -135,8 +140,12 @@ resource "aws_apprunner_service" "main" {
         # receives the referenced secret's full string value.
         runtime_environment_secrets = merge(
           {
-            DATABASE                    = aws_secretsmanager_secret.database_url.arn
-            BETTER_AUTH_SECRETS         = aws_secretsmanager_secret.better_auth_secrets.arn
+            DATABASE            = aws_secretsmanager_secret.database_url.arn
+            BETTER_AUTH_SECRETS = aws_secretsmanager_secret.better_auth_secrets.arn
+            # Only for rolling back to an image from before versioning, which
+            # reads nothing else. BETTER_AUTH_SECRETS wins when both are set.
+            # Goes with the slot itself after the first rotation.
+            BETTER_AUTH_SECRET          = aws_secretsmanager_secret.better_auth_secret.arn
             ATTACHMENTS_CALLBACK_SECRET = aws_secretsmanager_secret.attachments_callback_secret.arn
           },
           var.google_client_id != "" ? {
@@ -181,6 +190,7 @@ resource "aws_apprunner_service" "main" {
   # the schema must be migrated manually before the app can serve traffic.
   depends_on = [
     aws_secretsmanager_secret_version.database_url,
+    aws_secretsmanager_secret_version.better_auth_secret,
     aws_secretsmanager_secret_version.better_auth_secrets,
     aws_secretsmanager_secret_version.google_client_secret,
     aws_secretsmanager_secret_version.microsoft_client_secret,
