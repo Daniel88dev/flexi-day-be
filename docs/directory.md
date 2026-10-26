@@ -432,3 +432,22 @@ touches the Employment row, its frozen name and email, its dates or its type.
 **At end** Sections are emptied inside `endLockedEmployment` (End and Erase). An Employment ended
 by `syncEmployment`, which happens only while the directory is off, is caught by the next nightly
 run, where "at end" counts as no time at all.
+
+### Retention hold
+
+`PUT|DELETE /api/directory/{organizationId}/people/{employmentId}/hold` sets and lifts a hold on
+one ended Employment (422 `EMPLOYMENT_OPEN` on an open one), owner and org admins only (403
+`HOLD_DENIED`), on every plan. The row in `directory_retention_holds` records who set it and when,
+with no reason, and lifting deletes it. While it exists, `dueEmployments` skips the Employment, so
+neither the nightly purge nor the shortening count touches it; the next run after lifting purges
+what is due. Erase still works and takes the hold with the Employment.
+
+### Removal dates
+
+Nothing is stored: `readRetentionSchedules` (`retentionSchedule.ts`) works out, per Section of an
+ended Employment, whether it holds data, when the current period runs out, and when a purge last
+emptied it. A removal date is the day, in the nightly tick's zone, of the first run at or after the
+period runs out, and never before the next run (`removalDay` in `retentionPeriods.ts`). The profile
+of an ended record carries `retention`: the hold and, for each Section the viewer reads,
+`REMOVES_ON` with a date, `REMOVED_ON` with the purge's day, `KEPT_UNTIL_ERASED`, or `ON_HOLD`.
+Former list rows carry `nextRemoval` (the earliest `REMOVES_ON`, null under a hold) and `hold`.

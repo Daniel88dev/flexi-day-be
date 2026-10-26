@@ -7,6 +7,7 @@ import {
   profileHistoryActor,
 } from "../../db/schema/directory-profile-schema.js";
 import {
+  directoryRetentionHolds,
   directoryRetentionPeriods,
   retentionPeriod as P,
 } from "../../db/schema/directory-retention-schema.js";
@@ -93,7 +94,7 @@ const COLUMN_SECTIONS: Record<Exclude<SectionRow, typeof R.Photo>, ColumnSection
 
 const photoHoldsData = sql`exists (select 1 from ${directoryPhotos} where ${directoryPhotos.employmentId} = ${employments.id})`;
 
-const holdsData = (section: SectionRow): SQL =>
+export const holdsData = (section: SectionRow): SQL =>
   section === R.Photo ? photoHoldsData : COLUMN_SECTIONS[section].holdsData;
 
 const retentionHistory = (section: SectionRow, cleared: Cleared[]) =>
@@ -109,9 +110,9 @@ const retentionHistory = (section: SectionRow, cleared: Cleared[]) =>
   }));
 
 /** The later of the end date and the moment the ending was written. */
-const clockStart = sql`greatest(${employments.endedAt}, coalesce(${employments.endRecordedAt}, ${employments.endedAt}))`;
+export const clockStart = sql`greatest(${employments.endedAt}, coalesce(${employments.endRecordedAt}, ${employments.endedAt}))`;
 
-const intervalOf = (period: SQL) => sql`(case ${period}
+export const intervalOf = (period: SQL) => sql`(case ${period}
   when ${P.AtEnd} then interval '0'
   when ${P.Days30} then interval '30 days'
   when ${P.Months6} then interval '6 months'
@@ -125,14 +126,18 @@ end)`;
 const dueBy = (period: SQL, at: Date) =>
   sql`${clockStart} + ${intervalOf(period)} <= ${at.toISOString()}::timestamptz`;
 
-const storedPeriod = (section: SectionRow) =>
+export const storedPeriod = (section: SectionRow) =>
   sql`coalesce((select ${directoryRetentionPeriods.period} from ${directoryRetentionPeriods} where ${directoryRetentionPeriods.organizationId} = ${employments.organizationId} and ${directoryRetentionPeriods.section} = ${section}), ${RETENTION_DEFAULTS[section]}::directory_retention_period)::text`;
+
+const notHeld = sql`not exists (select 1 from ${directoryRetentionHolds} where ${directoryRetentionHolds.employmentId} = ${employments.id})`;
 
 const dueEmployments = (client: Client, section: SectionRow, period: SQL, at: Date, where?: SQL) =>
   client
     .select({ employmentId: employments.id, organizationId: employments.organizationId })
     .from(employments)
-    .where(and(isNotNull(employments.endedAt), holdsData(section), dueBy(period, at), where));
+    .where(
+      and(isNotNull(employments.endedAt), notHeld, holdsData(section), dueBy(period, at), where)
+    );
 
 /**
  * How many people a Retention period would remove at the run at `at`: ended

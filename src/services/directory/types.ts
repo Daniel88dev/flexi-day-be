@@ -123,7 +123,14 @@ export type DirectoryPerson = {
   noGroup?: boolean;
 };
 
-export type FormerDirectoryPerson = DirectoryPerson & { startedAt: Date; endedAt: Date };
+export type FormerDirectoryPerson = DirectoryPerson & {
+  startedAt: Date;
+  endedAt: Date;
+  /** The earliest coming Retention purge among the Sections the viewer reads; null under a hold. */
+  nextRemoval: { section: ProfileSectionKey; date: string } | null;
+  /** A Retention hold is on. */
+  hold: boolean;
+};
 
 export type DirectoryCardView = DirectorySectionView & {
   jobTitle: string | null;
@@ -219,6 +226,8 @@ export type ProfileActions = {
   export: boolean;
   /** Erase: the owner and org admins, for a Deleted account. */
   erase: boolean;
+  /** Set or lift the Retention hold: the owner and org admins, on an ended record. */
+  hold: boolean;
 };
 
 export type DirectoryAccountStatus = "ACTIVE" | "NO_ACCOUNT" | "DELETED";
@@ -241,6 +250,8 @@ export type DirectoryProfile = DirectoryPerson & {
   canReadHistory: boolean;
   /** What the viewer may do to this record from its profile. */
   actions: ProfileActions;
+  /** On an ended record only: the Retention hold and when each Section goes or went. */
+  retention?: ProfileRetention;
   /** For the owner, org admins, HR and the person. */
   account?: {
     status: DirectoryAccountStatus;
@@ -507,6 +518,31 @@ export type RetentionSettings = {
 export type RetentionPreview = PutRetentionPeriod & {
   /** Ended Employments whose Section the period would remove at the next nightly run. */
   affected: number;
+};
+
+/** Where the Section keys are those of `DirectoryProfile.sections`. */
+export type ProfileSectionKey = "card" | "photo" | "workContact" | "job" | "contact" | "personal";
+
+/**
+ * One Section's retention on an ended record. `REMOVES_ON`: the nightly run of
+ * that day empties it. `REMOVED_ON`: a Retention purge emptied it that day.
+ * `KEPT_UNTIL_ERASED`: its period is until erased. `ON_HOLD`: it holds data
+ * that a hold keeps.
+ */
+export type SectionRetention =
+  | { status: "REMOVES_ON" | "REMOVED_ON"; date: string }
+  | { status: "KEPT_UNTIL_ERASED" | "ON_HOLD" };
+
+export type ProfileRetention = {
+  hold: RetentionHoldView | null;
+  /** Only Sections the viewer reads; a Section with nothing to say is absent. */
+  sections: Partial<Record<ProfileSectionKey, SectionRetention>>;
+};
+
+export type RetentionHoldView = {
+  setAt: Date;
+  /** Null once the setter's account is gone; `name` is null when it can't be read. */
+  setBy: { userId: string; name: string | null } | null;
 };
 
 export type DirectoryGeneralSettings = {

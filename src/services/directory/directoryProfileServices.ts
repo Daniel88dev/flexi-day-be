@@ -29,6 +29,7 @@ import {
 } from "./directoryEndingServices.js";
 import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
 import { emergencyContactNotice } from "./emergencyContactNotice.js";
+import { nextRemoval, profileRetention, readRetentionSchedules } from "./retentionSchedule.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
 import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
@@ -240,14 +241,24 @@ export const listFormerDirectoryPeople = async (
     )
     .orderBy(desc(employments.endedAt), asc(employments.id));
 
+  const schedules = await readRetentionSchedules(
+    viewer.organizationId,
+    rows.map((row) => row.id),
+    tx
+  );
   const former: FormerDirectoryPerson[] = [];
   for (const row of rows) {
     const access = accessFor(viewer, row);
     if (!access.inReach) continue;
+    const schedule = schedules.get(row.id);
     former.push({
       ...toPerson(row, access, await photoOf(viewer, row, access)),
       startedAt: row.startedAt,
       endedAt: row.endedAt!,
+      nextRemoval: schedule
+        ? nextRemoval(schedule, access, row.type === workerType.External)
+        : null,
+      hold: schedule?.hold != null,
     });
   }
   return former;
@@ -376,6 +387,14 @@ export const getDirectoryProfile = async (
     canReadHistory: canReadHistory(viewer),
     actions: profileActions(viewer, row, access),
   };
+  if (row.endedAt !== null) {
+    const schedule = (await readRetentionSchedules(viewer.organizationId, [row.id], tx)).get(
+      row.id
+    );
+    if (schedule) {
+      profile.retention = profileRetention(schedule, access, row.type === workerType.External);
+    }
+  }
   if (profile.sections.contact?.level === V.Write) {
     const organization = await getOrganizationById(viewer.organizationId, tx);
     profile.sections.contact = {

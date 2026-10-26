@@ -26,6 +26,8 @@ import { handlePutDirectoryGeneralSettings } from "../controllers/directory/hand
 import { handleGetRetentionPreview } from "../controllers/directory/handleGetRetentionPreview.js";
 import { handleGetRetentionSettings } from "../controllers/directory/handleGetRetentionSettings.js";
 import { handlePutRetentionPeriod } from "../controllers/directory/handlePutRetentionPeriod.js";
+import { handlePutRetentionHold } from "../controllers/directory/handlePutRetentionHold.js";
+import { handleDeleteRetentionHold } from "../controllers/directory/handleDeleteRetentionHold.js";
 import { handlePatchDirectoryProfile } from "../controllers/directory/handlePatchDirectoryProfile.js";
 import { handleGetDirectoryOrganizations } from "../controllers/directory/handleGetDirectoryOrganizations.js";
 import { handleGetDirectoryPeople } from "../controllers/directory/handleGetDirectoryPeople.js";
@@ -319,6 +321,47 @@ export const directoryRouter = (): Router => {
    *               type: string
    *               nullable: true
    *               enum: [FULL_TIME, PART_TIME]
+   *     DirectorySectionKey:
+   *       type: string
+   *       enum: [card, photo, workContact, job, contact, personal]
+   *       description: A Section, named as the keys of a profile's `sections`.
+   *     DirectorySectionRetention:
+   *       type: object
+   *       required: [status]
+   *       description: |
+   *         One Section's retention on an ended record. REMOVES_ON: the
+   *         nightly run of `date` empties it (the day of the first run at or
+   *         after its period runs out, in the nightly tick's zone, never
+   *         before the next run). REMOVED_ON: a Retention purge emptied it on
+   *         `date`. KEPT_UNTIL_ERASED: its period is until erased. ON_HOLD: it
+   *         holds data that a Retention hold keeps.
+   *       properties:
+   *         status:
+   *           type: string
+   *           enum: [REMOVES_ON, REMOVED_ON, KEPT_UNTIL_ERASED, ON_HOLD]
+   *         date:
+   *           type: string
+   *           format: date
+   *           description: With REMOVES_ON and REMOVED_ON only.
+   *     DirectoryProfileRetention:
+   *       type: object
+   *       description: |
+   *         On an ended record only. Worked out from the clock and the
+   *         organization's current Retention periods on every read.
+   *       required: [hold, sections]
+   *       properties:
+   *         hold:
+   *           nullable: true
+   *           allOf:
+   *             - $ref: '#/components/schemas/DirectoryRetentionHold'
+   *         sections:
+   *           type: object
+   *           description: |
+   *             Keyed like `sections`, only for Sections the caller reads. A
+   *             Section that holds nothing, was never purged and has a finite
+   *             period is absent.
+   *           additionalProperties:
+   *             $ref: '#/components/schemas/DirectorySectionRetention'
    *     DirectoryProfile:
    *       allOf:
    *         - $ref: '#/components/schemas/DirectoryPerson'
@@ -335,7 +378,7 @@ export const directoryRouter = (): Router => {
    *             actions:
    *               type: object
    *               description: What the caller may do to this record from its profile.
-   *               required: [end, export, erase]
+   *               required: [end, export, erase, hold]
    *               properties:
    *                 end:
    *                   type: boolean
@@ -348,9 +391,14 @@ export const directoryRouter = (): Router => {
    *                 erase:
    *                   type: boolean
    *                   description: Erase. The owner and org admins, for a Deleted account.
+   *                 hold:
+   *                   type: boolean
+   *                   description: Set or lift the Retention hold. The owner and org admins, on an ended record.
    *             canReadHistory:
    *               type: boolean
    *               description: The caller is the owner, an org admin or HR.
+   *             retention:
+   *               $ref: '#/components/schemas/DirectoryProfileRetention'
    *             sections:
    *               type: object
    *               properties:
@@ -448,7 +496,9 @@ export const directoryRouter = (): Router => {
    *     description: |
    *       One row per ended Employment spell whose Card the caller reads,
    *       latest end first. Only the owner, org admins and HR see it. A lapsed
-   *       plan keeps this readable.
+   *       plan keeps this readable. Each row carries the next Retention purge
+   *       and whether a Retention hold is on; ACCOUNT_DELETED and REJOINED
+   *       come in `markers`.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -468,7 +518,7 @@ export const directoryRouter = (): Router => {
    *                 allOf:
    *                   - $ref: '#/components/schemas/DirectoryPerson'
    *                   - type: object
-   *                     required: [startedAt, endedAt]
+   *                     required: [startedAt, endedAt, nextRemoval, hold]
    *                     properties:
    *                       startedAt:
    *                         type: string
@@ -476,6 +526,23 @@ export const directoryRouter = (): Router => {
    *                       endedAt:
    *                         type: string
    *                         format: date-time
+   *                       nextRemoval:
+   *                         type: object
+   *                         nullable: true
+   *                         description: |
+   *                           The earliest coming Retention purge among the
+   *                           Sections the caller reads, ties in Section order.
+   *                           Null when nothing is due to go or a hold is on.
+   *                         required: [section, date]
+   *                         properties:
+   *                           section:
+   *                             $ref: '#/components/schemas/DirectorySectionKey'
+   *                           date:
+   *                             type: string
+   *                             format: date
+   *                       hold:
+   *                         type: boolean
+   *                         description: A Retention hold is on.
    *       '401':
    *         description: Not signed in
    *       '403':
@@ -505,7 +572,8 @@ export const directoryRouter = (): Router => {
    *       `account` (status, sign-in email, directory roles) is present for
    *       the owner, org admins, HR and the person. An ended record is reached
    *       only by the owner, org admins and HR. A lapsed plan keeps this
-   *       readable.
+   *       readable. An ended record also carries `retention`: its Retention
+   *       hold and when each Section goes or went.
    *
    *       Every phone carries its display form and every country its name in
    *       the caller's language, because the iPhone app formats neither.
@@ -951,6 +1019,118 @@ export const directoryRouter = (): Router => {
    *         description: "`DIRECTORY_OFF`, or `EMPLOYMENT_ENDED`"
    */
   app.get("/:organizationId/people/:employmentId/end-preview", tryCatch(handleGetEndPreview));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     DirectoryRetentionHold:
+   *       type: object
+   *       required: [setAt, setBy]
+   *       properties:
+   *         setAt:
+   *           type: string
+   *           format: date-time
+   *         setBy:
+   *           type: object
+   *           nullable: true
+   *           description: Null once the setter's account is gone.
+   *           required: [userId, name]
+   *           properties:
+   *             userId: { type: string }
+   *             name: { type: string, nullable: true }
+   * /api/directory/{organizationId}/people/{employmentId}/hold:
+   *   put:
+   *     tags:
+   *       - Directory
+   *     summary: Put a Retention hold on an ended Employment
+   *     description: |
+   *       While the hold is on, every Retention purge skips the Employment:
+   *       the nightly step empties none of its Sections, and the shortening
+   *       count leaves it out. Erase still works. The hold records who set it
+   *       and when, and has no reason. Setting it again keeps the first
+   *       setter and time. The owner and org admins only, on every plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The hold
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [hold]
+   *               properties:
+   *                 hold:
+   *                   $ref: '#/components/schemas/DirectoryRetentionHold'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `HOLD_DENIED` for anyone but the owner and org admins"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND` when the Employment is elsewhere"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: "`EMPLOYMENT_OPEN`: a hold applies to an ended Employment"
+   *   delete:
+   *     tags:
+   *       - Directory
+   *     summary: Lift the Retention hold
+   *     description: |
+   *       The next nightly run purges whatever is past its Retention period.
+   *       Lifting a hold that isn't there succeeds. The owner and org admins
+   *       only, on every plan.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The hold is off
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [hold]
+   *               properties:
+   *                 hold:
+   *                   type: object
+   *                   nullable: true
+   *                   description: Always null.
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `HOLD_DENIED`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: "`EMPLOYMENT_OPEN`"
+   */
+  app.put("/:organizationId/people/:employmentId/hold", tryCatch(handlePutRetentionHold));
+  app.delete("/:organizationId/people/:employmentId/hold", tryCatch(handleDeleteRetentionHold));
 
   /**
    * @openapi

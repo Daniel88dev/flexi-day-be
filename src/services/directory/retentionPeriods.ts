@@ -1,3 +1,4 @@
+import { Cron } from "croner";
 import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
 import { retentionPeriod as P } from "../../db/schema/directory-retention-schema.js";
 import { appLanguage } from "../../db/schema/user-settings-schema.js";
@@ -62,3 +63,26 @@ const LABELS: Record<appLanguage, Record<P, string>> = {
 /** A period as the Art. 14 notice's `{period}` reads it. */
 export const retentionPeriodLabel = (period: P, language: appLanguage): string =>
   LABELS[language][period];
+
+/**
+ * The day, in the nightly tick's zone, of the first nightly run at or after a
+ * Section falls due, never earlier than the next run: the run that empties it.
+ */
+export const removalDay = (
+  dueAt: Date,
+  now: Date,
+  nightly: { cron: string; timezone: string }
+): string => {
+  const from = new Date(Math.max(dueAt.getTime() - 1, now.getTime()));
+  const run = new Cron(nightly.cron, { timezone: nightly.timezone, paused: true }).nextRun(from);
+  return dayIn(run ?? from, nightly.timezone);
+};
+
+/** `YYYY-MM-DD` of an instant in a time zone. */
+export const dayIn = (at: Date, timezone: string): string =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
