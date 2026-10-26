@@ -17,7 +17,8 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { getPersonContacts, personName, type PersonColumns } from "../person/personName.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { readDirectoryRoles } from "./directoryRoleServices.js";
+import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
 import type {
   DirectoryMarker,
@@ -35,7 +36,7 @@ const reportsToUser = alias(user, "reports_to_user");
  * The name a record shows: the account's while it is bound, open and not
  * deleted, otherwise the Employment's own copy, which Card writers may edit.
  */
-const recordName = (
+export const recordName = (
   employment: Record<"userId" | "endedAt" | "accountDeletedAt" | "name", AnyPgColumn>,
   person: PersonColumns,
   organizationId: string
@@ -136,7 +137,7 @@ export const listDirectoryPeople = async (
     const access = accessFor(viewer, row);
     if (access.inReach) people.push(toPerson(row, access));
   }
-  return { people, formerList: viewer.formerList };
+  return { people, formerList: viewer.formerList, settings: canReadPermissionTable(viewer) };
 };
 
 /** One row per ended spell, latest end first. Owner, org admins and HR only. */
@@ -265,7 +266,7 @@ export const getDirectoryProfile = async (
       status:
         row.userId === null ? "NO_ACCOUNT" : row.accountDeletedAt !== null ? "DELETED" : "ACTIVE",
       signInEmail: row.email,
-      directoryRoles: [],
+      directoryRoles: (await readDirectoryRoles([row.id], tx)).get(row.id) ?? [],
     };
   }
   return profile;

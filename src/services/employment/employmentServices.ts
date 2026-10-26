@@ -12,6 +12,8 @@ import { buildUserSummary } from "../../utils/userPresentation.js";
 import type { BoundEmploymentType, EmploymentListItem, EmploymentType } from "./types.js";
 import { assertNoAccountlessClash, lockEmploymentEmail } from "./accountlessClash.js";
 import { personName } from "../person/personName.js";
+import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
+import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
 
 /**
  * Whether the person is still reachable from the organization by any of the
@@ -123,7 +125,7 @@ export const syncEmployment = async (
     return;
   }
 
-  await client
+  const ended = await client
     .update(employments)
     .set({ endedAt: new Date() })
     .where(
@@ -132,7 +134,16 @@ export const syncEmployment = async (
         eq(employments.userId, userId),
         isNull(employments.endedAt)
       )
-    );
+    )
+    .returning({ id: employments.id });
+  await endDirectoryRoles(
+    {
+      employmentIds: ended.map((row) => row.id),
+      reason: roleChangeReason.EmploymentEnded,
+      actorUserId: null,
+    },
+    tx
+  );
 };
 
 /** {@link syncEmployment} for everyone a single change touches — group deletion. */

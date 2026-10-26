@@ -7,6 +7,7 @@ import { filterGroupIdsByOrganization, getManagedGroupIdsForUser } from "../grou
 import { getMemberIdsExcludingManagers } from "../groupUser/groupAccess.js";
 import { getAdminGroupIdsForUser } from "../groupUser/groupUserServices.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
+import { readDirectoryRoles } from "./directoryRoleServices.js";
 import { isDirectoryOrganization, readPermissionCells } from "./directorySettingsServices.js";
 import {
   resolveAccess,
@@ -23,6 +24,12 @@ export type DirectoryViewer = {
   /** Owner, Org admin and HR see the Former list. */
   formerList: boolean;
 };
+
+/** The owner, org admins and HR read the Permission table, its roles and its history. */
+export const canReadPermissionTable = (viewer: DirectoryViewer) =>
+  viewer.standing.owner ||
+  viewer.standing.organizationAdmin ||
+  viewer.standing.roles.includes("HR");
 
 /** User ids the viewer reaches as a Group admin: the plain members of the groups they manage or hold admin access in. */
 const readGroupAdminReach = async (
@@ -70,7 +77,7 @@ export const loadDirectoryViewer = async (
     )
     .limit(1);
   const [employment] = await client
-    .select({ type: employments.type })
+    .select({ id: employments.id, type: employments.type })
     .from(employments)
     .where(
       and(
@@ -87,8 +94,9 @@ export const loadDirectoryViewer = async (
     owner,
     organizationAdmin: !owner && grant !== undefined,
     employmentType: employment?.type ?? null,
-    // HR and Leadership are held on the viewer's open Employment once T-506 stores them.
-    roles: [],
+    roles: employment
+      ? ((await readDirectoryRoles([employment.id], tx)).get(employment.id) ?? [])
+      : [],
     groupAdminReach: await readGroupAdminReach(viewerUserId, organizationId, tx),
   };
 

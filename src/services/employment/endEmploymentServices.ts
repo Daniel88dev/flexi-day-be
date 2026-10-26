@@ -14,6 +14,8 @@ import {
 } from "../vacation/departureCancellation.js";
 import type { VacationType } from "../vacation/types.js";
 import type { EmploymentType } from "./types.js";
+import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
+import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
 
 /**
  * The shared opening of End employment and Erase: 404 for no such row, 403
@@ -161,6 +163,14 @@ export const endEmployment = async (
     .set({ endedAt, updatedAt: now })
     .where(eq(employments.id, employment.id))
     .returning();
+  await endDirectoryRoles(
+    {
+      employmentIds: [employment.id],
+      reason: roleChangeReason.EmploymentEnded,
+      actorUserId: input.actorUserId,
+    },
+    tx
+  );
 
   return { employment: ended!, cancelled };
 };

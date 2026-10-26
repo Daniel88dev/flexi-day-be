@@ -301,3 +301,29 @@ describe("resolveAccess, the granting audience", () => {
     expect(resolveAccess(defaults, colleague(), openRecord).grantedBy.JOB).toBeNull();
   });
 });
+
+describe("resolveAccess, both Directory roles on one person", () => {
+  it("credits HR and Leadership together, and the wider cell wins per Section", () => {
+    const cells = tableWith({ "CONTACT/HR": "READ", "CONTACT/LEADERSHIP": "WRITE" });
+    const viewer = colleague({ roles: ["HR", "LEADERSHIP"] });
+    const access = resolveAccess(cells, viewer, openRecord);
+    expect(access.audiences).toEqual(["COLLEAGUE", "HR", "LEADERSHIP"]);
+    expect(levels(cells, viewer)).toBe("WRITE WRITE WRITE WRITE WRITE WRITE");
+    expect(access.grantedBy.CONTACT).toBe("LEADERSHIP");
+    expect(access.grantedBy.CARD).toBe("HR");
+  });
+
+  it("keeps only the HR column on an ended record", () => {
+    const cells = tableWith({ "JOB/HR": "READ", "JOB/LEADERSHIP": "WRITE" });
+    const access = resolveAccess(cells, colleague({ roles: ["HR", "LEADERSHIP"] }), endedRecord);
+    expect(access.audiences).toEqual(["HR"]);
+    expect(access.sections.JOB).toBe("READ");
+  });
+
+  it("follows a stored allowed on Leadership for an act", () => {
+    const cells = tableWith({ "END_EMPLOYMENT/LEADERSHIP": "ALLOWED" });
+    const viewer = colleague({ roles: ["LEADERSHIP"] });
+    expect(resolveAccess(cells, viewer, openRecord).acts.END_EMPLOYMENT).toBe(true);
+    expect(resolveAccess(defaults, viewer, openRecord).acts.END_EMPLOYMENT).toBe(false);
+  });
+});
