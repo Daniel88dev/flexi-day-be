@@ -1,5 +1,10 @@
 /** Field names as the API and the profile history spell them, per Section. */
-export const CARD_COLUMNS = { jobTitle: "jobTitle", reportsToEmploymentId: "reportsTo" } as const;
+export const CARD_COLUMNS = {
+  jobTitle: "jobTitle",
+  departmentId: "department",
+  locationId: "location",
+  reportsToEmploymentId: "reportsTo",
+} as const;
 export const WORK_CONTACT_COLUMNS = { workEmail: "workEmail", workPhone: "workPhone" } as const;
 export const JOB_COLUMNS = {
   legalName: "legalName",

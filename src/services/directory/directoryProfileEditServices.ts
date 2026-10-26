@@ -24,6 +24,7 @@ import {
 } from "./sensitiveSections.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
+import { assertAssignableEntry } from "./directoryListServices.js";
 import { getPersonContacts } from "../person/personName.js";
 import {
   canReadHistory,
@@ -44,6 +45,8 @@ type ProfileColumns = Omit<
 const EMPTY: ProfileColumns = {
   jobTitle: null,
   reportsToEmploymentId: null,
+  departmentId: null,
+  locationId: null,
   legalName: null,
   employeeNumber: null,
   startDate: null,
@@ -267,6 +270,16 @@ export const updateDirectoryProfile = async (
   }
   if (after.startDate && after.probationEndDate && after.probationEndDate < after.startDate) {
     throw refuse(422, "PROBATION_BEFORE_START", "Probation can't end before the start", context);
+  }
+
+  for (const [kind, key] of [
+    ["departments", "departmentId"],
+    ["locations", "locationId"],
+  ] as const) {
+    const entryId = after[key];
+    if (entryId && entryId !== before[key]) {
+      await assertAssignableEntry(kind, organizationId, entryId, context, tx);
+    }
   }
 
   if (after.reportsToEmploymentId && after.reportsToEmploymentId !== before.reportsToEmploymentId) {

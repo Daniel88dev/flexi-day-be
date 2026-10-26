@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, date, index, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
+import { directoryDepartments, directoryLocations } from "./directory-list-schema.js";
 import { directoryAudienceEnum, directoryPermissionRowEnum } from "./directory-schema.js";
 import { employments } from "./employment-schema.js";
 import { organizations } from "./organization-schema.js";
@@ -53,6 +54,9 @@ export const directoryProfiles = pgTable(
     reportsToEmploymentId: text("reports_to_employment_id").references(() => employments.id, {
       onDelete: "set null",
     }),
+    // No action on delete: an entry in use is archived, never deleted.
+    departmentId: text("department_id").references(() => directoryDepartments.id),
+    locationId: text("location_id").references(() => directoryLocations.id),
     legalName: text("legal_name"),
     employeeNumber: text("employee_number"),
     startDate: date("start_date", { mode: "string" }),
@@ -73,6 +77,8 @@ export const directoryProfiles = pgTable(
   (table) => [
     index("idx_directory_profiles_organization_id").on(table.organizationId),
     index("idx_directory_profiles_reports_to").on(table.reportsToEmploymentId),
+    index("idx_directory_profiles_department").on(table.departmentId),
+    index("idx_directory_profiles_location").on(table.locationId),
   ]
 );
 

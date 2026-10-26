@@ -19,6 +19,7 @@ import {
   directoryProfiles,
   workingTime,
 } from "../../db/schema/directory-profile-schema.js";
+import { directoryDepartments, directoryLocations } from "../../db/schema/directory-list-schema.js";
 import { directoryAudience, directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { notifications, notificationType } from "../../db/schema/notification-schema.js";
@@ -468,7 +469,7 @@ describe("Person export", () => {
       if (ownSession) expect(everything).not.toContain(ownSession.token);
     });
 
-    it("carries the Card, Work contact and Job fields of every spell and the profile history, without values in the history", async () => {
+    it("carries the Card, Work contact and Job fields of every spell, with the Department and Location names, and the profile history, without values in the history", async () => {
       const world = await setUp();
       const [ownerEmployment] = await db
         .select({ id: employments.id })
@@ -479,10 +480,23 @@ describe("Person export", () => {
             eq(employments.userId, world.owner.id)
           )
         );
+      const departmentId = uuidv4();
+      const locationId = uuidv4();
+      await db
+        .insert(directoryDepartments)
+        .values({ id: departmentId, organizationId: world.organizationId, name: "Support" });
+      await db.insert(directoryLocations).values({
+        id: locationId,
+        organizationId: world.organizationId,
+        name: "Prague",
+        country: "CZ",
+      });
       await db.insert(directoryProfiles).values({
         employmentId: world.employment.id,
         organizationId: world.organizationId,
         jobTitle: "Support specialist",
+        departmentId,
+        locationId,
         reportsToEmploymentId: ownerEmployment!.id,
         legalName: "Jana Marie Nováková",
         employeeNumber: "A-0044",
@@ -512,6 +526,8 @@ describe("Person export", () => {
 
       expect(person.employments[0].profile).toEqual({
         jobTitle: "Support specialist",
+        department: "Support",
+        location: "Prague",
         reportsTo: { employmentId: ownerEmployment!.id, name: "Olga Owner" },
         legalName: "Jana Marie Nováková",
         employeeNumber: "A-0044",
