@@ -39,12 +39,20 @@ export type DirectoryState = {
   enabled: boolean;
   enabledAt: Date | null;
   disabledAt: Date | null;
+  /** The owner's last Delete all directory data. */
+  dataDeletedAt: Date | null;
   /** Enterprise or Custom right now: turning on and adding data are open. */
   writable: boolean;
   agreement: DirectoryAgreementState;
   /** Live counts for the enable dialog's summary. */
   people: { open: number; former: number };
 };
+
+export const validateDirectoryDeleteAllBody = z
+  .object({ confirmName: z.string().max(200) })
+  .strict();
+
+export type DirectoryDeleteAllBody = z.infer<typeof validateDirectoryDeleteAllBody>;
 
 export type DirectoryListKind = "departments" | "locations";
 

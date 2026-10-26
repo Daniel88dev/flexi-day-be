@@ -23,9 +23,48 @@ DIRECTORY_PLAN_REQUIRED`) when the plan fails the gate, 409 `DIRECTORY_ALREADY_O
 ## Turning it off
 
 `POST /api/organization/directory/disable`, owner only, on every plan. It updates the settings row
-and keeps every other directory row. It ends nobody: people left in no group stay employed until
-someone ends them. The turn-off dialog and Delete all directory
-data are T-514.
+and keeps every other directory row, Permission table and Directory roles included. Decisions:
+fenro T-483 and T-514.
+
+- It ends nobody. From then on each person's next link change follows the derived rule again.
+- Open Employments that no link holds stay open until an admin ends them: people without an
+  account, and account holders in no group with no admin grant. `GET /api/employment/list` marks
+  them `noLink: true` for org admins (`unlinkedOpenEmploymentIds` in `employmentServices.ts`). The
+  web's turn-off dialog lists them, and the People card on `/organization` offers End employment
+  on those rows and Erase on rows without an account.
+- It revokes open directory invites that name no group. Invites that name a group stay valid and
+  still claim.
+- Directory roles stay stored and grant nothing, since every directory route answers 409
+  `DIRECTORY_OFF`. The External worker type keeps its effects. Retention keeps running.
+
+## Delete all directory data
+
+`POST /api/organization/directory/delete-all` `{ confirmName }`, owner only, on every plan, only
+while the directory is off (409 `DIRECTORY_ON`), and only with the organization's name typed (422
+`NAME_MISMATCH`, compared like Erase compares a person's name). One transaction in
+`deleteAllDirectoryData` (`directoryDeleteAllServices.ts`):
+
+| Removed                                                                                    | Kept                                                          |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `directory_profiles`, `directory_sensitive_profiles`                                       | Employments with an account: name and email copy, type, dates |
+| `directory_photos` rows, then `photos/<org>/` after the commit                             | `directory_agreement_acceptances`                             |
+| `directory_departments`, `directory_locations`                                             | `read_log`, until its own 12-month purge                      |
+| `directory_role_assignments`, `directory_permission_cells`, `directory_permission_history` | `directory_profile_history` of Employments with an account    |
+| `directory_retention_periods`, `directory_retention_holds`                                 | the settings row, stamped `data_deleted_at` and `_by_user_id` |
+| the notice texts on the settings row                                                       |                                                               |
+| every `person_exports` row of the organization and its file                                |                                                               |
+| every Employment without an account, open or ended, with its invites and history           |                                                               |
+
+Retention settings, holds, the notice text and exports are not named in T-483. They go because
+they are directory configuration or copies of Profile fields, and a later enable starts from the
+product defaults for all of them, as it does for the Permission table.
+
+## Turning it back on
+
+The enable route above. The plan gate applies and a new acceptance row is stored each time. The
+stored Permission table comes back as it was, cells the product added since land with their
+defaults, and after a Delete all the default is copied fresh. Directory roles come back. Retention
+clocks are untouched, and open Employments fall under the admin-only ending again.
 
 ## Who ends an Employment
 
@@ -301,7 +340,7 @@ the record's open directory invite, because that went to the old address.
 - Signing up with a matching email and no invite never binds. Org-admin grants and new managers
   still get 409 `ACCOUNTLESS_EMPLOYMENT_EMAIL`.
 - The Claim is never plan-gated and works while the directory is off. Turning the directory off
-  revokes open directory invites that name no group (T-514).
+  revokes open directory invites that name no group.
 - The invite preview answers `organizationName` and `personName`, so the sign-up form fills the name
   in. A directory invite that names no group answers `groupId: null` everywhere, and its join
   responses are `{ groupId: null, claimed }`.

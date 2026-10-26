@@ -1,0 +1,3 @@
+ALTER TABLE "organization_directory_settings" ADD COLUMN "data_deleted_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "organization_directory_settings" ADD COLUMN "data_deleted_by_user_id" text;--> statement-breakpoint
+ALTER TABLE "organization_directory_settings" ADD CONSTRAINT "organization_directory_settings_data_deleted_by_user_id_user_id_fk" FOREIGN KEY ("data_deleted_by_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;

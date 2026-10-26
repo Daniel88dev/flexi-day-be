@@ -351,6 +351,13 @@
       "when": 1793017465763,
       "tag": "0049_directory_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793027461080,
+      "tag": "0050_directory_delete_all",
+      "breakpoints": true
     }
   ]
 }

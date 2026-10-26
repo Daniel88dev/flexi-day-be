@@ -105,7 +105,12 @@ export const employmentRouter = (): Router => {
    *           `accountDeletedAt` is when the person deleted their account, and
    *           `accountDeleted` says whether they did: the row then names them
    *           by the copy the organization kept and carries the "Account
-   *           deleted" label.
+   *           deleted" label. For organization admins every row also carries
+   *           `noLink`: true on an open Employment that no group membership,
+   *           managed group, admin grant or ownership holds (people without an
+   *           account included). With the directory off only End employment
+   *           ends those; the People card and the directory's turn-off dialog
+   *           list them.
    *       '422':
    *         description: Missing or malformed organizationId
    *       '403':

@@ -309,6 +309,47 @@ export const listEmployments = async (
   }));
 };
 
+/**
+ * Open Employments none of the four links holds: people without an account and
+ * account holders who belong to nothing. A Directory organization keeps them
+ * open; with the directory off only End employment ends them.
+ */
+export const unlinkedOpenEmploymentIds = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<Set<string>> => {
+  const rows = await (tx ?? db)
+    .select({ id: employments.id })
+    .from(employments)
+    .innerJoin(organizations, eq(organizations.id, employments.organizationId))
+    .where(
+      and(
+        eq(employments.organizationId, organizationId),
+        isNull(employments.endedAt),
+        sql`(${employments.userId} is null or (
+          ${employments.userId} <> ${organizations.ownerUserId}
+          and not exists (
+            select 1 from ${organizationUsers}
+            where ${organizationUsers.organizationId} = ${employments.organizationId}
+              and ${organizationUsers.userId} = ${employments.userId}
+              and ${organizationUsers.deletedAt} is null)
+          and not exists (
+            select 1 from ${groups}
+            where ${groups.organizationId} = ${employments.organizationId}
+              and ${groups.managerUserId} = ${employments.userId}
+              and ${groups.deletedAt} is null)
+          and not exists (
+            select 1 from ${groupUsers}
+            inner join ${groups} on ${groups.id} = ${groupUsers.groupId}
+            where ${groups.organizationId} = ${employments.organizationId}
+              and ${groupUsers.userId} = ${employments.userId}
+              and ${groupUsers.deletedAt} is null
+              and ${groups.deletedAt} is null)))`
+      )
+    );
+  return new Set(rows.map((row) => row.id));
+};
+
 /** Headcount for the billing screen: people currently employed, not rows. */
 export const countActiveEmployments = async (
   organizationId: string,

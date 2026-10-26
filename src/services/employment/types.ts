@@ -38,6 +38,8 @@ export type EmploymentListItem = {
   accountDeletedAt: Date | null;
   accountDeleted: boolean;
   user: UserSummary;
+  /** Org admins only: an open Employment no group, admin grant or ownership holds. */
+  noLink?: boolean;
 };
 
 /**
