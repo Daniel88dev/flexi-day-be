@@ -546,7 +546,7 @@ export const usersRouter = (): Router => {
    *   schemas:
    *     AccountDeletionStatus:
    *       type: object
-   *       required: [canDelete, blockers, confirmation]
+   *       required: [canDelete, blockers, confirmation, ownedOrganizations]
    *       properties:
    *         canDelete:
    *           type: boolean
@@ -558,6 +558,31 @@ export const usersRouter = (): Router => {
    *         confirmation:
    *           type: string
    *           enum: [password, recent-sign-in]
+   *         ownedOrganizations:
+   *           type: array
+   *           description: |
+   *             The organizations the caller owns, which go with the account,
+   *             each with the Deleted accounts whose Employments go with it,
+   *             under the organization's own copy of the name. The delete
+   *             dialog lists them and links to the Organization export.
+   *           items:
+   *             type: object
+   *             required: [organizationId, organizationName, deletedAccounts]
+   *             properties:
+   *               organizationId:
+   *                 type: string
+   *               organizationName:
+   *                 type: string
+   *               deletedAccounts:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   required: [userId, name]
+   *                   properties:
+   *                     userId:
+   *                       type: string
+   *                     name:
+   *                       type: string
    *     DeletionBlocker:
    *       description: |
    *         One reason the account cannot be deleted yet, told apart by `kind`.

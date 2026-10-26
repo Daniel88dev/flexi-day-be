@@ -228,7 +228,12 @@ describe("account deletion", () => {
       const res = await status(id);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ canDelete: true, blockers: [], confirmation: "password" });
+      expect(res.body).toEqual({
+        canDelete: true,
+        blockers: [],
+        confirmation: "password",
+        ownedOrganizations: [],
+      });
     });
 
     it("asks a social-only user for a recent sign-in", async () => {
@@ -237,7 +242,12 @@ describe("account deletion", () => {
       const res = await status(id);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ canDelete: true, blockers: [], confirmation: "recent-sign-in" });
+      expect(res.body).toEqual({
+        canDelete: true,
+        blockers: [],
+        confirmation: "recent-sign-in",
+        ownedOrganizations: [],
+      });
     });
 
     it("answers 401 without a session", async () => {

@@ -12,7 +12,7 @@ export const personExportRouter = (): Router => {
    *   post:
    *     tags:
    *       - Person export
-   *     summary: Sign a download link for a ready Person export
+   *     summary: Sign a download link for a ready Person or Organization export
    *     description: |
    *       A fresh signed link to the ZIP, valid for one hour. It can be signed
    *       again as often as needed while the file lives, which is 7 days from
@@ -60,16 +60,21 @@ export const personExportRouter = (): Router => {
    *   schemas:
    *     PersonExport:
    *       type: object
-   *       required: [id, organizationId, subjectUserId, status, createdAt, readyAt, expiresAt]
+   *       required: [id, organizationId, scope, subjectUserId, status, createdAt, readyAt, expiresAt]
    *       properties:
    *         id:
    *           type: string
    *           format: uuid
    *         organizationId:
    *           type: string
+   *         scope:
+   *           type: string
+   *           enum: [PERSON, ORGANIZATION]
+   *           description: A Person export or the owner's Organization export.
    *         subjectUserId:
    *           type: string
-   *           description: The person the export is about.
+   *           nullable: true
+   *           description: The person the export is about; null for an Organization export.
    *         status:
    *           type: string
    *           enum: [PENDING, READY, FAILED]

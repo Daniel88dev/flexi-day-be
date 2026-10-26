@@ -85,6 +85,22 @@ export const assertOrganizationOwner = (organization: OrganizationType, userId: 
   }
 };
 
+/** The Organization export is the owner's alone; `context.code` tells a delegated admin why. */
+export const assertOrganizationExportOwner = (
+  organization: OrganizationType,
+  userId: string
+): void => {
+  if (organization.ownerUserId !== userId) {
+    throw new AppError({
+      message: "Only the organization owner can export the organization",
+      logging: true,
+      code: 403,
+      context: { userId, organizationId: organization.id },
+      publicContext: { code: "OWNER_ONLY" },
+    });
+  }
+};
+
 /**
  * The wire shape of the attendance settings, shared by the get and the put so
  * a save answers exactly what a re-read would.

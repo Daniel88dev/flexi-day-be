@@ -14,6 +14,8 @@ import { handlePostOrganizationAdmin } from "../controllers/organization/handleP
 import { handleDeleteOrganizationAdmin } from "../controllers/organization/handleDeleteOrganizationAdmin.js";
 import { handleGetAttendanceSettings } from "../controllers/organization/handleGetAttendanceSettings.js";
 import { handlePutAttendanceSettings } from "../controllers/organization/handlePutAttendanceSettings.js";
+import { handlePostOrganizationExport } from "../controllers/organization/handlePostOrganizationExport.js";
+import { handleGetOrganizationExport } from "../controllers/organization/handleGetOrganizationExport.js";
 
 export const organizationRouter = (): Router => {
   const app = Router();
@@ -236,6 +238,89 @@ export const organizationRouter = (): Router => {
    *         description: The target is not an administrator of this organization
    */
   app.delete("/admins/:userId", tryCatch(handleDeleteOrganizationAdmin));
+
+  /**
+   * @openapi
+   * /api/organization/export:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Request the Organization export (owner only)
+   *     description: |
+   *       The owner's copy of everything the organization holds: one folder
+   *       per person in the Person export layout under `people/`, plus
+   *       `organization.json` with the organization, its settings, groups,
+   *       memberships, administrators and group events. Works on every plan,
+   *       at any time. The ZIP is built in the background on the Person
+   *       export queue; the answer is the `PENDING` export. Each request
+   *       writes one `export` row to the Read log for every person in it. A
+   *       second request while one is still preparing returns that one and
+   *       logs nothing. When it is ready the owner gets an `export_ready`
+   *       notification and signs links with
+   *       `POST /api/person-exports/{exportId}/download`. Deleting the
+   *       organization deletes its exports. Rules in `docs/person-export.md`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *         description: Defaults to the caller's own organization.
+   *     responses:
+   *       '202':
+   *         description: The export, `PENDING` until its ZIP is ready
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/PersonExport'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           Not an admin of the organization, or a delegated admin, for whom
+   *           `context.code` is `OWNER_ONLY`.
+   *       '404':
+   *         description: No such organization
+   *       '503':
+   *         description: "`context.code` is `EXPORT_UNAVAILABLE`: no organization-data store is configured"
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: The owner's newest Organization export (owner only)
+   *     description: |
+   *       The newest Organization export the caller requested that has not
+   *       expired, or null. The Organization page polls it while it is
+   *       `PENDING`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The newest export, or null
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [export]
+   *               properties:
+   *                 export:
+   *                   nullable: true
+   *                   allOf:
+   *                     - $ref: '#/components/schemas/PersonExport'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "Not the owner; `context.code` is `OWNER_ONLY` for a delegated admin"
+   *       '404':
+   *         description: No such organization
+   */
+  app.post("/export", tryCatch(handlePostOrganizationExport));
+  app.get("/export", tryCatch(handleGetOrganizationExport));
 
   /**
    * @openapi

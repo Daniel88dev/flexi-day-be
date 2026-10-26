@@ -2,7 +2,11 @@ import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
-import { personExports, personExportStatus } from "../../db/schema/person-export-schema.js";
+import {
+  personExports,
+  personExportScope,
+  personExportStatus,
+} from "../../db/schema/person-export-schema.js";
 import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -21,6 +25,7 @@ const refuse = (code: number, publicCode: string, message: string, context: obje
 export const presentPersonExport = (row: PersonExportRow): PersonExportView => ({
   id: row.id,
   organizationId: row.organizationId,
+  scope: row.scope,
   subjectUserId: row.subjectUserId,
   status: row.status,
   createdAt: row.createdAt,
@@ -71,6 +76,7 @@ export const requestPersonExport = async (
     .where(
       and(
         eq(personExports.organizationId, input.organizationId),
+        eq(personExports.scope, personExportScope.Person),
         eq(personExports.subjectUserId, input.subjectUserId),
         eq(personExports.requestedByUserId, input.requestedByUserId),
         eq(personExports.status, personExportStatus.Pending)
@@ -120,6 +126,7 @@ export const listRequestedExports = async (
       and(
         eq(personExports.requestedByUserId, requestedByUserId),
         eq(personExports.organizationId, organizationId),
+        eq(personExports.scope, personExportScope.Person),
         or(isNull(personExports.expiresAt), gt(personExports.expiresAt, new Date()))
       )
     )
@@ -127,7 +134,7 @@ export const listRequestedExports = async (
 
   const newest = new Map<string, PersonExportRow>();
   for (const row of rows) {
-    if (!newest.has(row.subjectUserId)) newest.set(row.subjectUserId, row);
+    if (row.subjectUserId && !newest.has(row.subjectUserId)) newest.set(row.subjectUserId, row);
   }
   return [...newest.values()].map(presentPersonExport);
 };
@@ -183,8 +190,10 @@ export const hasEmployment = async (
   tx?: DbTransaction
 ): Promise<boolean> => (await employmentIdsOf(organizationId, userId, tx)).length > 0;
 
-export const exportFileName = (row: Pick<PersonExportRow, "id" | "readyAt" | "createdAt">) =>
-  `flexi-day-person-export-${(row.readyAt ?? row.createdAt).toISOString().slice(0, 10)}-${row.id.slice(0, 8)}.zip`;
+export const exportFileName = (
+  row: Pick<PersonExportRow, "id" | "scope" | "readyAt" | "createdAt">
+) =>
+  `flexi-day-${row.scope === personExportScope.Organization ? "organization" : "person"}-export-${(row.readyAt ?? row.createdAt).toISOString().slice(0, 10)}-${row.id.slice(0, 8)}.zip`;
 
 /** A fresh one-hour link for the requester, while the file lives. */
 export const signExportDownload = async (

@@ -51,6 +51,32 @@ gets a leading `'`. Employment type and the profile sections join the file when 
 - `POST /api/person-exports/{exportId}/download` signs a link for one hour, for the requester only.
   It signs again as often as asked until `expiresAt`, then answers 410 `EXPORT_EXPIRED`.
 
+## Organization export
+
+The owner's copy of everything the organization holds, and the return option at the end of the
+service (Art. 28(3)(g)). Only the owner can request it, from the Organization page, at any time and
+on every plan: `POST /api/organization/export`, and `GET` for the newest one. A delegated admin gets
+403 `OWNER_ONLY`. The delete dialog links to it but never waits for it.
+
+| Path                   | Contents                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `organization.json`    | The organization, its settings and attendance settings history, administrators, groups, memberships, group events, a people index |
+| `people/<name>-<id8>/` | One Person export folder per person with an Employment there, open or ended, Deleted accounts included                            |
+
+It is a `person_exports` row with `scope` `ORGANIZATION` and no subject, so it shares the queue,
+the lock, the store key, the signed link and the `export_ready` Notification. The request writes one
+`export` row in the Read log for every person in it, under the `OWNER` audience. The build reads
+one person at a time into the ZIP.
+
+## Deleting the organization
+
+Every export of an organization, Person and Organization alike, lives under
+`exports/{organizationId}/`. When the owner's Account deletion takes the organization, the rows
+cascade, and after the commit `removeOrganizationExports` deletes every object under that prefix
+rather than waiting for the 7-day lifecycle rule. On S3 the bucket keeps the old versions behind a
+delete marker until its 7-day noncurrent rule removes them. A build that finishes after its row went
+deletes its own file.
+
 ## The Read log
 
 `read_log` is append-only. No route updates or deletes a row, and a trigger refuses every UPDATE.
