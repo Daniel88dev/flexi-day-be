@@ -1,4 +1,4 @@
-import { eq, inArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { eq, getTableName, inArray, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -14,6 +14,14 @@ export type PersonScope =
 type PersonColumns = { id: AnyPgColumn; name: AnyPgColumn; deletedAt: AnyPgColumn };
 
 export const DELETED_ACCOUNT_NAME = "Deleted account";
+
+/**
+ * The person's id, always table-qualified: drizzle leaves columns bare in a
+ * select from one table, and a bare `"id"` inside the employments subquery
+ * would bind to `pn_e.id`.
+ */
+const personId = (person: PersonColumns): SQL =>
+  sql`${sql.identifier(getTableName(person.id.table))}.${sql.identifier(person.id.name)}`;
 
 const scopeOrganization = (scope: PersonScope): SQL =>
   "organizationId" in scope
@@ -33,9 +41,28 @@ const scopeOrganization = (scope: PersonScope): SQL =>
 export const personName = (person: PersonColumns, scope: PersonScope): SQL<string> =>
   sql<string>`case when ${person.deletedAt} is null then ${person.name} else coalesce(
     (select "pn_e"."name" from "employments" "pn_e"
-      where "pn_e"."user_id" = ${person.id}
+      where "pn_e"."user_id" = ${personId(person)}
         and "pn_e"."organization_id" = ${scopeOrganization(scope)}
       order by "pn_e"."started_at" desc limit 1),
+    ${DELETED_ACCOUNT_NAME}) end`;
+
+/**
+ * {@link personName} for a reader that spans organizations, the sync pull's
+ * `users`: a Deleted account reads the copy of the most recently updated
+ * Employment among `organizationIds`, the ones the reader shares with them.
+ */
+export const personNameAcross = (person: PersonColumns, organizationIds: string[]): SQL<string> =>
+  organizationIds.length === 0
+    ? sql<string>`case when ${person.deletedAt} is null then ${person.name} else ${DELETED_ACCOUNT_NAME} end`
+    : sql<string>`case when ${person.deletedAt} is null then ${person.name} else coalesce(
+    (select "pn_e"."name" from "employments" "pn_e"
+      where "pn_e"."user_id" = ${personId(person)}
+        and "pn_e"."organization_id" in (${sql.join(
+          organizationIds.map((id) => sql`${id}`),
+          sql`, `
+        )})
+        and "pn_e"."name" is not null
+      order by "pn_e"."updated_at" desc limit 1),
     ${DELETED_ACCOUNT_NAME}) end`;
 
 /** Whether the person deleted their account, for the readers that show the label. */

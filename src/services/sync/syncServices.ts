@@ -23,6 +23,7 @@ import { groupEvents } from "../../db/schema/group-event-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
+import { isDeletedAccount, personNameAcross } from "../person/personName.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptions } from "../../db/schema/subscription-schema.js";
@@ -597,12 +598,19 @@ const getSyncUserIds = async (
 const readUsersPage = async (
   context: SyncReadContext,
   ids: SyncUserIds,
+  organizationIds: string[],
   after: SyncKeyset | null,
   limit: number
 ) => {
   const changed = inWindow(user.updatedAt, context.window);
   const rows = await db
-    .select({ id: user.id, name: user.name, image: user.image, updatedAt: user.updatedAt })
+    .select({
+      id: user.id,
+      name: personNameAcross(user, organizationIds),
+      image: user.image,
+      accountDeleted: isDeletedAccount(user),
+      updatedAt: user.updatedAt,
+    })
     .from(user)
     .where(
       and(
@@ -619,7 +627,8 @@ const readUsersPage = async (
     row: {
       id: row.id,
       name: row.name,
-      image: row.image,
+      image: row.accountDeleted ? null : row.image,
+      accountDeleted: row.accountDeleted,
       updatedAt: row.updatedAt.toISOString(),
     } satisfies SyncUserRow,
   }));
@@ -1050,7 +1059,14 @@ const buildReaders = (
     },
     {
       table: "users",
-      read: async (after, limit) => readUsersPage(context, await userIds(), after, limit),
+      read: async (after, limit) =>
+        readUsersPage(
+          context,
+          await userIds(),
+          [...new Set((await organizationIdByGroupId()).values())],
+          after,
+          limit
+        ),
     },
     {
       table: "groups",

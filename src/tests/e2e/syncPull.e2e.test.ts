@@ -93,6 +93,7 @@ type UserRow = {
   id: string;
   name: string;
   image: string | null;
+  accountDeleted: boolean;
   updatedAt: string;
 };
 
@@ -1228,7 +1229,7 @@ describe("Sync pull E2E", () => {
       expect(ids).not.toContain(stranger.id);
     });
 
-    it("carries exactly id, name, image and updatedAt on a users row", async () => {
+    it("carries exactly id, name, image, accountDeleted and updatedAt on a users row", async () => {
       const manager = await makeUser("Manager");
       const groupId = await makeGroup("Engineering", manager.id);
       await addMember(groupId, manager.id, { adminAccess: true });
@@ -1244,6 +1245,7 @@ describe("Sync pull E2E", () => {
           id: manager.id,
           name: "Manager",
           image: null,
+          accountDeleted: false,
           updatedAt: stored!.updatedAt.toISOString(),
         },
       ]);

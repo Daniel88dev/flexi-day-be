@@ -24,6 +24,7 @@ import { userSettings } from "../../db/schema/user-settings-schema.js";
 import { userBirthdays } from "../../db/schema/user-birthday-schema.js";
 import { calendarSync } from "../../db/schema/calendar-sync-schema.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
+import { getPersonContacts } from "../../services/person/personName.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { hashPassword } from "better-auth/crypto";
@@ -556,6 +557,15 @@ describe("a deleted account", () => {
       expect(
         (report.body.changes as { actor: { id: string; name: string } | null }[])[0]?.actor
       ).toMatchObject({ id: world.member.id, name: "Deleted account" });
+    });
+
+    it("shows the frozen name to the readers that start from ids", async () => {
+      const world = await setUp();
+      expect((await deleteAccount(world.member.email)).status).toBe(204);
+
+      expect(
+        await getPersonContacts([world.member.id], { organizationId: world.organizationId })
+      ).toEqual([expect.objectContaining({ id: world.member.id, name: MEMBER })]);
     });
 
     it("keeps the frozen copy when another organization's name differs", async () => {
