@@ -7,6 +7,7 @@ import {
   directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
+import type { CountryView, PhoneView } from "./contactFormat.js";
 
 export const validateDirectoryAgreementBody = z.object({
   /** The agreement version the owner was shown and accepted. */
@@ -75,6 +76,14 @@ export type DirectoryCardView = DirectorySectionView & {
   nameFromAccount: boolean;
 };
 
+export type DirectoryWorkContactView = DirectorySectionView & {
+  /** Lowercase. Never the sign-in email unless someone copied it in. */
+  workEmail: string | null;
+  workPhone: PhoneView | null;
+  /** Only for viewers who write Work contact: where the edit form's phone country starts. */
+  phoneCountryDefault?: CountryView | null;
+};
+
 export type DirectoryJobView = DirectorySectionView & {
   spell: { startedAt: Date; endedAt: Date | null };
   legalName: string | null;
@@ -104,7 +113,7 @@ export type DirectoryProfile = DirectoryPerson & {
   sections: {
     card?: DirectoryCardView;
     photo?: DirectorySectionView;
-    workContact?: DirectorySectionView;
+    workContact?: DirectoryWorkContactView;
     job?: DirectoryJobView;
     contact?: DirectorySectionView;
     personal?: DirectorySectionView;
@@ -130,6 +139,14 @@ export const validatePatchDirectoryProfile = z
         name: z.string().trim().min(1).max(200).optional(),
         jobTitle: text(100),
         reportsToEmploymentId: z.string().min(1).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+    workContact: z
+      .object({
+        workEmail: z.string().trim().toLowerCase().pipe(z.email().max(254)).nullable().optional(),
+        /** International form; the service parses it and stores E.164. */
+        workPhone: z.string().trim().min(1).max(40).nullable().optional(),
       })
       .strict()
       .optional(),

@@ -291,7 +291,7 @@ describe("Reading the people directory through the Permission table", () => {
       expect(colleague.body.sections).toEqual({
         card: expect.objectContaining({ level: "READ" }),
         photo: { level: "READ" },
-        workContact: { level: "READ" },
+        workContact: { level: "READ", workEmail: null, workPhone: null },
       });
       expect(colleague.body).not.toHaveProperty("account");
       expect(JSON.stringify(colleague.body)).not.toContain("startedAt");
@@ -321,7 +321,7 @@ describe("Reading the people directory through the Permission table", () => {
       expect(res.body.sections).toEqual({
         card: expect.objectContaining({ level: "READ" }),
         photo: { level: "WRITE" },
-        workContact: { level: "READ" },
+        workContact: { level: "READ", workEmail: null, workPhone: null },
         job: expect.objectContaining({
           level: "READ",
           spell: { startedAt: expect.any(String), endedAt: null },

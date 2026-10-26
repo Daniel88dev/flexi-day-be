@@ -2,11 +2,13 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
+import { appLanguage } from "../../db/schema/user-settings-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { filterGroupIdsByOrganization, getManagedGroupIdsForUser } from "../group/groupServices.js";
 import { getMemberIdsExcludingManagers } from "../groupUser/groupAccess.js";
 import { getAdminGroupIdsForUser } from "../groupUser/groupUserServices.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
+import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
 import { isDirectoryOrganization, readPermissionCells } from "./directorySettingsServices.js";
 import {
@@ -23,6 +25,8 @@ export type DirectoryViewer = {
   accessTo: (record: DirectoryRecord) => DirectoryAccess;
   /** Owner, Org admin and HR see the Former list. */
   formerList: boolean;
+  /** Country names and other server-made strings come in this language. */
+  language: appLanguage;
 };
 
 /** The owner, org admins and HR read the Permission table, its roles and its history. */
@@ -50,12 +54,14 @@ const readGroupAdminReach = async (
  * table once, so every record of a request resolves without another query.
  * 404 for an unknown organization, 409 `DIRECTORY_OFF` while the directory is
  * off, 403 `NOT_IN_DIRECTORY` for a viewer with no standing there. A lapsed
- * plan changes nothing here: reads keep working.
+ * plan changes nothing here: reads keep working. The language is the one the
+ * request asks for, else the viewer's stored setting, else English.
  */
 export const loadDirectoryViewer = async (
   viewerUserId: string,
   organizationId: string,
-  tx?: DbTransaction
+  tx?: DbTransaction,
+  options: { language?: appLanguage } = {}
 ): Promise<DirectoryViewer> => {
   const context = { viewerUserId, organizationId };
   const organization = await getOrganizationById(organizationId, tx);
@@ -110,5 +116,6 @@ export const loadDirectoryViewer = async (
     standing,
     accessTo: (record) => resolveAccess(cells, standing, record),
     formerList: standing.owner || standing.organizationAdmin || standing.roles.includes("HR"),
+    language: options.language ?? (await getUserLanguage(viewerUserId)) ?? appLanguage.English,
   };
 };

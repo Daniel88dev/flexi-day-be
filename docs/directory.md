@@ -155,27 +155,29 @@ who is not the owner, an org admin or one of the organization's open people, and
 
 ## Editing a profile
 
-Decisions: fenro T-473 (the fields), T-477 (profile history), T-483 (start date) and T-500 (this
-build).
+Decisions: fenro T-473 (the fields), T-477 (profile history), T-483 (start date), T-479 (display
+strings for the phone), T-500 and T-502 (these builds).
 
-`PATCH /api/directory/{organizationId}/people/{employmentId}` writes the Card and Job fields of one
-Employment, open or ended. In the body, a value sets a field, `null` clears it and a missing key
-leaves it alone. Each Section in the body needs a write cell for the caller, resolved the same way
-reads are. The profile lives in `directory_profiles`, one row per Employment, created on the first
-write; a missing row reads as an empty profile.
+`PATCH /api/directory/{organizationId}/people/{employmentId}` writes the Card, Work contact and Job
+fields of one Employment, open or ended. In the body, a value sets a field, `null` clears it and a
+missing key leaves it alone. Each Section in the body needs a write cell for the caller, resolved
+the same way reads are. The profile lives in `directory_profiles`, one row per Employment, created
+on the first write; a missing row reads as an empty profile.
 
-| Section | Field              | Rule                                                                                |
-| ------- | ------------------ | ----------------------------------------------------------------------------------- |
-| Card    | Name               | Only without a bound, open account: no account, an ended spell or a Deleted account |
-| Card    | Job title          | 1 to 100 characters, trimmed                                                        |
-| Card    | Reports to         | Another open Employment of the organization, never the person's own                 |
-| Job     | Legal name         | 1 to 200 characters                                                                 |
-| Job     | Employee number    | 1 to 50 characters, unique ignoring case among the open Employments                 |
-| Job     | Start date         | Never filled in from the spell; the web shows the spell start as a hint             |
-| Job     | Leaving date       | Informational, ends nothing                                                         |
-| Job     | Probation end date | Not before the start date; employees only                                           |
-| Job     | Contract type      | Permanent, fixed-term, apprenticeship, internship, other; employees only            |
-| Job     | Working time       | Full-time or part-time; employees only                                              |
+| Section      | Field              | Rule                                                                                |
+| ------------ | ------------------ | ----------------------------------------------------------------------------------- |
+| Card         | Name               | Only without a bound, open account: no account, an ended spell or a Deleted account |
+| Card         | Job title          | 1 to 100 characters, trimmed                                                        |
+| Card         | Reports to         | Another open Employment of the organization, never the person's own                 |
+| Work contact | Work email         | Up to 254 characters, stored lowercase, never synced with the sign-in email         |
+| Work contact | Work phone         | One number in international form, no extension, stored in E.164                     |
+| Job          | Legal name         | 1 to 200 characters                                                                 |
+| Job          | Employee number    | 1 to 50 characters, unique ignoring case among the open Employments                 |
+| Job          | Start date         | Never filled in from the spell; the web shows the spell start as a hint             |
+| Job          | Leaving date       | Informational, ends nothing                                                         |
+| Job          | Probation end date | Not before the start date; employees only                                           |
+| Job          | Contract type      | Permanent, fixed-term, apprenticeship, internship, other; employees only            |
+| Job          | Working time       | Full-time or part-time; employees only                                              |
 
 The name writes the Employment's own copy. The directory shows that copy on every record except
 an open one whose account is bound and not deleted, and the name helper shows a Deleted account's
@@ -189,8 +191,22 @@ Reports to grants nothing. Erasing the person it names clears it everywhere, thr
 key. Ending that Employment clears it on open records (T-507).
 
 Refusals: 404 `PERSON_NOT_FOUND`, 403 `SECTION_NOT_WRITABLE`, 403 `NAME_FROM_ACCOUNT`, 402,
-422 `EMPLOYEES_ONLY`, `PROBATION_BEFORE_START`, `REPORTS_TO_NOT_FOUND`, `REPORTS_TO_SELF`, and 409
-`EMPLOYEE_NUMBER_TAKEN`.
+422 `EMPLOYEES_ONLY`, `PROBATION_BEFORE_START`, `REPORTS_TO_NOT_FOUND`, `REPORTS_TO_SELF`,
+`INVALID_PHONE`, and 409 `EMPLOYEE_NUMBER_TAKEN`.
+
+### Phones and countries
+
+The API parses phones with `libphonenumber-js` and refuses an invalid one (422 `INVALID_PHONE`).
+Every phone in a response is `{ e164, display, country }`, and every country is `{ code, name }`,
+named in the caller's language: `?language=en|cs`, else the stored setting, else English. The iPhone
+app has no phone library and Hermes no `Intl.DisplayNames`, so it shows these strings as sent.
+
+A caller who writes Work contact also gets `phoneCountryDefault`, where the edit form's phone
+country starts: the Location's country, then the interface language (Czech gives CZ, English
+none). `phoneCountryDefault` in `src/services/directory/contactFormat.ts` holds the rule.
+
+Colleagues read Work contact and never the sign-in email; External workers read neither under the
+product default.
 
 ### Profile history
 
@@ -203,6 +219,6 @@ nothing adds nothing.
 owner, org admins and HR (403 `HISTORY_DENIED` otherwise). Rows go with their Employment, so Erase
 removes them.
 
-The Person export carries each spell's Card and Job fields under `employments[].profile` and the
-history under `profileHistory`; the Organization export does the same for people without an
-account.
+The Person export carries each spell's Card, Work contact and Job fields under
+`employments[].profile` and the history under `profileHistory`; the Organization export does the
+same for people without an account.

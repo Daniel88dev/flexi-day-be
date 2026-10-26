@@ -13,6 +13,7 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
+import { parsePhone } from "./contactFormat.js";
 import { getPersonContacts } from "../person/personName.js";
 import {
   canReadHistory,
@@ -31,6 +32,7 @@ type ProfileColumns = Omit<
 
 /** Field names as the API and the profile history spell them, per Section. */
 const CARD_COLUMNS = { jobTitle: "jobTitle", reportsToEmploymentId: "reportsTo" } as const;
+const WORK_CONTACT_COLUMNS = { workEmail: "workEmail", workPhone: "workPhone" } as const;
 const JOB_COLUMNS = {
   legalName: "legalName",
   employeeNumber: "employeeNumber",
@@ -51,17 +53,19 @@ const EMPTY: ProfileColumns = {
   probationEndDate: null,
   contractType: null,
   workingTime: null,
+  workEmail: null,
+  workPhone: null,
 };
 
 const setsAValue = (patch: PatchDirectoryProfile) =>
-  [patch.card, patch.job].some(
+  [patch.card, patch.workContact, patch.job].some(
     (section) =>
       section !== undefined &&
       Object.values(section).some((value) => value !== null && value !== undefined)
   );
 
 /**
- * Writes the Card and Job fields of one profile, and the frozen or
+ * Writes the Card, Work contact and Job fields of one profile, and the frozen or
  * account-less name, then records one profile history row per Section it
  * changed. A value needs the directory plan; a clear never does. Former
  * records stay editable for correction.
@@ -95,6 +99,7 @@ export const updateDirectoryProfile = async (
 
   const touched: [SectionRow, object | undefined][] = [
     [R.Card, patch.card],
+    [R.WorkContact, patch.workContact],
     [R.Job, patch.job],
   ];
   for (const [row, section] of touched) {
@@ -106,6 +111,15 @@ export const updateDirectoryProfile = async (
     throw refuse(403, "NAME_FROM_ACCOUNT", "The name follows the person's account", context);
   }
 
+  const workContact = { ...patch.workContact };
+  if (workContact.workPhone) {
+    const e164 = parsePhone(workContact.workPhone);
+    if (e164 === null) {
+      throw refuse(422, "INVALID_PHONE", "That isn't a valid phone number", context);
+    }
+    workContact.workPhone = e164;
+  }
+
   if (setsAValue(patch)) await assertDirectoryWritable(organizationId, tx);
 
   const [stored] = await tx
@@ -115,7 +129,7 @@ export const updateDirectoryProfile = async (
   const before: ProfileColumns = stored ?? EMPTY;
   const { name, ...cardFields } = patch.card ?? {};
   const after: ProfileColumns = { ...before };
-  for (const [key, value] of Object.entries({ ...cardFields, ...patch.job })) {
+  for (const [key, value] of Object.entries({ ...cardFields, ...workContact, ...patch.job })) {
     if (value !== undefined) (after as Record<string, unknown>)[key] = value;
   }
 
@@ -193,9 +207,10 @@ export const updateDirectoryProfile = async (
       })
       .map(([, field]) => field);
   const cardChanges = changed(CARD_COLUMNS);
+  const workContactChanges = changed(WORK_CONTACT_COLUMNS);
   const jobChanges = changed(JOB_COLUMNS);
 
-  if (cardChanges.length + jobChanges.length > 0) {
+  if (cardChanges.length + workContactChanges.length + jobChanges.length > 0) {
     await tx
       .insert(directoryProfiles)
       .values({ employmentId, organizationId, ...after })
@@ -214,6 +229,7 @@ export const updateDirectoryProfile = async (
   const history = (
     [
       [R.Card, cardChanges],
+      [R.WorkContact, workContactChanges],
       [R.Job, jobChanges],
     ] as const
   )
