@@ -76,6 +76,13 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
       groupDefaultVacationDays: groups.defaultVacationDays,
       groupDefaultHomeOfficeDays: groups.defaultHomeOfficeDays,
       groupDefaultSickDays: groups.defaultSickDays,
+      externalWorker: sql<boolean>`EXISTS (
+        SELECT 1 FROM ${employments}
+        WHERE ${employments.userId} = ${groupUsers.userId}
+          AND ${employments.organizationId} = ${groups.organizationId}
+          AND ${employments.endedAt} IS NULL
+          AND ${employments.type} = 'external'
+      )`,
     })
     .from(groupUsers)
     .innerJoin(groups, eq(groupUsers.groupId, groups.id))
@@ -124,6 +131,7 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
     groupDefaultVacationDays: row.groupDefaultVacationDays,
     groupDefaultHomeOfficeDays: row.groupDefaultHomeOfficeDays,
     groupDefaultSickDays: row.groupDefaultSickDays,
+    externalWorker: row.externalWorker,
   }));
 };
 

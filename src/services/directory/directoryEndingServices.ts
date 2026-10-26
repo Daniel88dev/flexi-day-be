@@ -51,4 +51,5 @@ export const profileActions = (
     administersOrganization(viewer) && (record.userId === null || record.accountDeletedAt !== null),
   hold: administersOrganization(viewer) && record.endedAt !== null,
   invite: record.userId === null && record.endedAt === null && access.acts[R.SendDirectoryInvite],
+  changeType: record.endedAt === null && access.acts[R.ChangeWorkerType],
 });

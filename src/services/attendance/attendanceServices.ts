@@ -22,7 +22,7 @@ import {
   attendanceEvents,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
-import { employments } from "../../db/schema/employment-schema.js";
+import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
 import { subscriptions } from "../../db/schema/subscription-schema.js";
 import AppError from "../../utils/appError.js";
@@ -195,6 +195,18 @@ const listSubjects = async (
   }));
 };
 
+/** External workers keep no attendance: nobody clocks in or enters a session for one. */
+export const assertKeepsAttendance = (employment: { id: string; type: workerType }): void => {
+  if (employment.type !== workerType.External) return;
+  throw new AppError({
+    message: "External workers don't record attendance",
+    logging: true,
+    code: 403,
+    context: { employmentId: employment.id },
+    publicContext: { reason: "EXTERNAL_WORKER" },
+  });
+};
+
 /** {@link resolveAttendanceSubject}, 404 when the caller has no Employment to clock against. */
 const requireSubject = async (
   userId: string,
@@ -249,6 +261,9 @@ export const beginAttendanceWrite = async (
       publicContext: { reason: "EMPLOYMENT_ENDED" },
     });
   }
+
+  // Closing stays open, so a session running when the type changed can still end.
+  if (kind === "OPEN") assertKeepsAttendance(subject.employment);
 
   // Attendance cannot be switched on without a zone, so this is unreachable
   // short of a hand-edited row — and guessing one would pick a day boundary
@@ -723,7 +738,8 @@ export const getAttendanceState = async (
     organizationId: subject.organizationId,
     employmentId: subject.employment.id,
     employmentEnded: subject.employment.endedAt !== null,
-    active: subject.active,
+    active: subject.active && subject.employment.type !== workerType.External,
+    externalWorker: subject.employment.type === workerType.External,
     locationEnabled: subject.settings?.locationEnabled ?? false,
     selfService: selfServiceWindowOf(subject.settings),
     administersOwnAttendance,
@@ -989,6 +1005,7 @@ export const getAttendanceMonth = async (
 ): Promise<AttendanceMonthType> => {
   const subject = await requireSubject(userId, query.organizationId, tx);
   const settings = { ...ATTENDANCE_SETTINGS_DEFAULTS, ...subject.settings };
+  if (subject.employment.type === workerType.External) settings.requiredMinutesPerDay = 0;
 
   const from = monthStart(query.year, query.month);
   const to = monthEnd(query.year, query.month);

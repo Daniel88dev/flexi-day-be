@@ -234,6 +234,8 @@ export type ProfileActions = {
   hold: boolean;
   /** Send directory invite, by its act cell, on an open record without an account. */
   invite: boolean;
+  /** Change worker type, by its act cell, on an open record. */
+  changeType: boolean;
 };
 
 export type DirectoryAccountStatus = "ACTIVE" | "NO_ACCOUNT" | "DELETED";
@@ -386,6 +388,10 @@ export const validatePostDirectoryInvite = z
   .transform((body) => body ?? {});
 
 export type PostDirectoryInvite = z.infer<typeof validatePostDirectoryInvite>;
+
+export const validatePutWorkerType = z.object({ type: z.enum(workerType) }).strict();
+
+export type PutWorkerType = z.infer<typeof validatePutWorkerType>;
 
 /** A directory invite as its sender sees it. The code and the link secret stay out. */
 export type DirectoryInviteView = {

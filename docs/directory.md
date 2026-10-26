@@ -306,6 +306,40 @@ the record's open directory invite, because that went to the old address.
   in. A directory invite that names no group answers `groupId: null` everywhere, and its join
   responses are `{ groupId: null, claimed }`.
 
+### Change worker type
+
+Decisions: fenro T-470 (what applies to an External worker), T-473 (what the change clears), T-483
+(it waits for the directory), T-510 (this build).
+
+`PUT /api/directory/{org}/people/{employmentId}/worker-type` with `{ type }`. The Change worker
+type act cell decides, resolved on the record, and only open records change. It waits for the
+directory (409 `DIRECTORY_OFF`) and is never plan-gated. Setting the type a record already has
+changes nothing.
+
+Changing to `external`, in one transaction:
+
+- clears Contract type, Working time and Probation end date, and the whole Personal section;
+- drops the required-time override;
+- sets the person's allowances in the organization's groups to zero from this year on, creating
+  the year's row where it is missing so the group defaults stop applying.
+
+Profile history gets a JOB row and a PERSONAL row for what went, and a `CHANGE_WORKER_TYPE` row
+with the field `type`. Changing back to `employee` restores nothing: the cleared fields start
+empty and the allowances stay at zero until an admin sets them.
+
+What follows from the type, whether the directory is on or off:
+
+- Attendance: the clock read answers `active: false` and `externalWorker: true`. Clock-in, start
+  break and entering a session answer 403 `reason: EXTERNAL_WORKER`; clock-out and end break still
+  work, so a session open at the change can close. The month counts no required time, Team
+  attendance leaves External workers out, and a required-time override is 422 `EXTERNAL_WORKER`.
+- Allowances: joining a group and the yearly rollover open the year at zero with nothing carried
+  over.
+- Bookings: a booking, edit or approval of a type that draws on an allowance (Vacation, Home office,
+  Sick day while the benefit is on) is 422 `EXTERNAL_WORKER_ALLOWANCE`, whatever the stored quota.
+  Types that draw on none book as for employees.
+- Group membership, calendars, reports, notifications, Birthday and seat caps work as for employees.
+
 ### Departments and Locations
 
 Decisions: fenro T-473 (the lists and the act row), T-478 (archived entries), T-501 (this build).

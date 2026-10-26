@@ -166,7 +166,10 @@ export const employmentRouter = (): Router => {
    *       '404':
    *         description: No such Employment
    *       '422':
-   *         description: Missing or out-of-range requiredMinutesPerDay
+   *         description: |
+   *           Missing or out-of-range requiredMinutesPerDay, or
+   *           `EXTERNAL_WORKER` for a value on an External worker, who owes no
+   *           required time. Clearing it with null always works.
    */
   app.patch(
     "/:employmentId",

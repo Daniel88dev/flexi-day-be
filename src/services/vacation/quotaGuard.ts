@@ -13,6 +13,7 @@ import {
 } from "../userYearQuotas/yearAllocation.js";
 import { sumCountedDaysForQuota } from "./vacationServices.js";
 import { dayWeightOf } from "./dayWeight.js";
+import { externalWorkerPairKey, externalWorkerPairs } from "../employment/externalWorkers.js";
 
 type QuotaRow = {
   userId: string;
@@ -85,10 +86,24 @@ const assertOne = async (
   check: QuotaCheck,
   { allocation, policy }: MemberYearAllocation,
   countPending: boolean,
+  externalWorker: boolean,
   tx: DbTransaction
 ): Promise<void> => {
   const allowance = allowanceFor(allocation, check.calendarRecordType, policy);
   if (!allowance) return;
+
+  if (externalWorker) {
+    throw new AppError({
+      code: 422,
+      message: "External workers book only leave that draws on no allowance",
+      logging: true,
+      context: { ...check },
+      publicContext: {
+        code: "EXTERNAL_WORKER_ALLOWANCE",
+        vacationType: check.calendarRecordType,
+      },
+    });
+  }
   const allocated = totalAllowance(allowance);
 
   const { approved, pending } = await sumCountedDaysForQuota(
@@ -153,9 +168,16 @@ const assertGrouped = async (
 
   for (const bucket of ordered) await lockAllowance(bucket, tx);
   const allocationOf = await loadAllocations(ordered, tx);
+  const external = await externalWorkerPairs(ordered, tx);
 
   for (const bucket of ordered) {
-    await assertOne(bucket, allocationOf(bucket), countPending, tx);
+    await assertOne(
+      bucket,
+      allocationOf(bucket),
+      countPending,
+      external.has(externalWorkerPairKey(bucket.userId, bucket.groupId)),
+      tx
+    );
   }
 };
 
