@@ -25,6 +25,7 @@ import {
 import { directoryAudience, directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { clearAtEndSections } from "../directory/retentionPurge.js";
 
 /**
  * The shared opening of End employment and Erase: 404 for no such row, 403
@@ -105,11 +106,19 @@ export const adminAudience = async (
     : directoryAudience.OrganizationAdmin;
 };
 
+export type EndedEmployment = {
+  employment: EmploymentType;
+  cancelled: VacationType[];
+  /** Photo folders an "at end" Photo Section left behind, to delete after the commit. */
+  photoPrefixes: string[];
+};
+
 /**
  * End employment: the person leaves every group of the organization, loses a
  * delegated admin row and their Directory roles, has pending requests and
  * bookings after today cancelled, open records stop naming them in Reports
- * to, and the Employment ends on `endedOn` (today or earlier, in the
+ * to, Sections whose Retention period is "at end" are emptied, and the
+ * Employment ends on `endedOn` (today or earlier, in the
  * organization's time zone). Never plan-gated. A live account, a Deleted
  * account and a person without an account end the same way; the owner's own
  * Employment can't, because owning the organization is a link End can't
@@ -121,7 +130,7 @@ export const adminAudience = async (
 export const endEmployment = async (
   input: { employmentId: string; endedOn: DateString; actorUserId: string },
   tx: DbTransaction
-): Promise<{ employment: EmploymentType; cancelled: VacationType[] }> => {
+): Promise<EndedEmployment> => {
   const context = { userId: input.actorUserId, employmentId: input.employmentId };
   const [found] = await tx.select().from(employments).where(eq(employments.id, input.employmentId));
   if (!found) throw refuse(404, "NOT_FOUND", "Employment not found", context);
@@ -151,7 +160,7 @@ export const endLockedEmployment = async (
   employment: EmploymentType,
   input: { endedOn: DateString; actorUserId: string; audience: directoryAudience },
   tx: DbTransaction
-): Promise<{ employment: EmploymentType; cancelled: VacationType[] }> => {
+): Promise<EndedEmployment> => {
   const context = { userId: input.actorUserId, employmentId: employment.id };
   const { organizationId, userId } = employment;
 
@@ -246,7 +255,7 @@ export const endLockedEmployment = async (
 
   const [ended] = await tx
     .update(employments)
-    .set({ endedAt, updatedAt: now })
+    .set({ endedAt, endRecordedAt: now, updatedAt: now })
     .where(eq(employments.id, employment.id))
     .returning();
   await endDirectoryRoles(
@@ -261,9 +270,9 @@ export const endLockedEmployment = async (
     { employmentId: employment.id, actorUserId: input.actorUserId, audience: input.audience },
     tx
   );
-  // Sections whose retention is "at end" are cleared here too (T-511).
+  const atEnd = await clearAtEndSections(employment, tx);
 
-  return { employment: ended!, cancelled };
+  return { employment: ended!, cancelled, photoPrefixes: atEnd.photoPrefixes };
 };
 
 /**

@@ -52,12 +52,13 @@ One transaction (`endLockedEmployment` in `src/services/employment/endEmployment
 leaves every group, clears approver slots, drops the admin row, cancels bookings, stamps the end,
 ends Directory roles and clears Reports to on every open record that names the person, writing a
 Card history entry (`fields: ["reportsTo"]`) per record with the Audience the End cell credited.
-Ended records keep theirs. Erase runs the same ending first.
+Ended records keep theirs. It then empties every Section whose [Retention period](#retention) is
+"at end", and the photo folder goes after the commit. Erase runs the same ending first.
 
 `GET /api/directory/{organizationId}/people/{employmentId}/end-preview` feeds the dialog: today,
 the spell start, the suggested date (a Leaving date of today or earlier, else today), the people
-whose Reports to is cleared, the groups left and managed, the booked days cancelled, the admin row
-and the roles. The profile's `actions` says which of End, Export and Erase the viewer gets; Export
+whose Reports to is cleared, the groups left and managed, the booked days cancelled, the admin row,
+the roles, and `atEndSections`, the "at end" Sections that hold something. The profile's `actions` says which of End, Export and Erase the viewer gets; Export
 and Erase stay with the owner and org admins.
 
 ## The plan gate
@@ -248,7 +249,8 @@ product default.
 Each write adds one `directory_profile_history` row per Section it changed: the actor, the
 Employment, the Section, the names of the fields whose value changed and the Audience whose cell
 granted the write. A rename counts as a Card change. No row ever holds a value. A write that changes
-nothing adds nothing.
+nothing adds nothing. A [Retention purge](#retention) writes `actor` RETENTION, with no person, no
+Audience and every field of its Section.
 
 `GET /api/directory/{organizationId}/people/{employmentId}/history` serves it, newest first, to the
 owner, org admins and HR (403 `HISTORY_DENIED` otherwise). Rows go with their Employment, so Erase
@@ -353,5 +355,46 @@ Whoever writes Contact gets `sections.contact.notice` on the profile, shown unde
 contacts. The product default text is in `emergencyContactNotice.ts`, in English and Czech; the
 legal wording is the owner's (T-496). The owner and org admins replace it per language through
 `PUT /api/directory/{organizationId}/settings/general`; HR reads it. `{organization}` becomes the
-organization's name and `{period}` how long Contact is kept after the end: 30 days until retention
-periods become editable (T-511).
+organization's name and `{period}` names the organization's [Retention period](#retention) for
+Contact (`retentionPeriodLabel` in `retentionPeriods.ts`).
+
+## Retention
+
+Each Section has a Retention period per organization, kept in `directory_retention_periods` (one
+row per Section the owner or an org admin changed; a missing row reads as the product default in
+`RETENTION_DEFAULTS`, `src/services/directory/retentionPeriods.ts`):
+
+| Section      | Default      |
+| ------------ | ------------ |
+| Card         | until erased |
+| Job          | until erased |
+| Work contact | 30 days      |
+| Contact      | 30 days      |
+| Personal     | 3 years      |
+| Photo        | 1 year       |
+
+The list is at end, 30 days, 6 months, 1 year, 3 years, 5 years, 10 years, until erased, with no
+caps and on every plan. `GET|PUT /api/directory/{organizationId}/settings/retention` reads (owner,
+org admins, HR) and sets one Section (owner and org admins, 403 `SETTINGS_NOT_EDITABLE`).
+`GET .../settings/retention/preview?section=&period=` counts the ended Employments the next nightly
+run would empty under a period, for the dialog that confirms a shortening.
+
+**The clock** starts at the later of `employments.ended_at` and `end_recorded_at`, the moment the
+ending was written, so a backdated ending never purges on the spot. Every end path stamps
+`end_recorded_at`; migration 0045 backfilled older endings with `greatest(ended_at, updated_at)`,
+which is never earlier than the real moment. Account deletion ends nothing, so it starts no clock.
+
+**The purge** (`purgeRetention(now)` in `src/services/directory/retentionPurge.ts`, job
+`runRetentionPurge` on the nightly tick) works out what is due from the clock start and the current
+period. No due date is stored, so a change applies to Employments that already ended: a shorter
+period removes what is past it at the next run, a longer one brings nothing back. It empties the
+Section's fields and keeps the rows (Contact and Personal: the sealed column goes null, no key
+needed), and for Photo deletes the Employment's photo folder, both sizes, before its rows, so a
+store failure leaves the rows for the next night. Each emptied Section writes one Profile history
+row. Every statement clears only rows that still hold data, so a second run, or a second instance,
+finds nothing. It never asks the plan or the directory toggle, and notifies nobody. It never
+touches the Employment row, its frozen name and email, its dates or its type.
+
+**At end** Sections are emptied inside `endLockedEmployment` (End and Erase). An Employment ended
+by `syncEmployment`, which happens only while the directory is off, is caught by the next nightly
+run, where "at end" counts as no time at all.

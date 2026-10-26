@@ -16,6 +16,8 @@ import { profileActions } from "./directoryEndingServices.js";
 import { recordName } from "./directoryProfileServices.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
 import type { DirectoryViewer } from "./directoryViewer.js";
+import type { SectionRow } from "./permissionResolver.js";
+import { atEndSectionsHeld } from "./retentionPurge.js";
 
 export type EndPreview = {
   employmentId: string;
@@ -35,6 +37,8 @@ export type EndPreview = {
   /** A delegated org-admin row End drops. */
   organizationAdmin: boolean;
   directoryRoles: ("HR" | "LEADERSHIP")[];
+  /** Sections whose Retention period is "at end" and that hold something End empties. */
+  atEndSections: SectionRow[];
 };
 
 const reportee = alias(employments, "reportee");
@@ -96,6 +100,7 @@ export const endPreview = async (
     cancelledBookings: 0,
     organizationAdmin: false,
     directoryRoles: (await readDirectoryRoles([employmentId], tx)).get(employmentId) ?? [],
+    atEndSections: await atEndSectionsHeld(record, tx),
   };
   const { userId } = record;
   if (userId === null) return preview;

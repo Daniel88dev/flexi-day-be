@@ -31,6 +31,7 @@ import {
   nameFromAccount,
 } from "./directoryProfileServices.js";
 import type { DirectoryViewer } from "./directoryViewer.js";
+import { CARD_COLUMNS, JOB_COLUMNS, WORK_CONTACT_COLUMNS } from "./profileSectionFields.js";
 import type { SectionRow } from "./permissionResolver.js";
 import type { DirectoryProfile, PatchDirectoryProfile, ProfileHistoryEntry } from "./types.js";
 
@@ -39,19 +40,6 @@ type ProfileColumns = Omit<
   ProfileRow,
   "employmentId" | "organizationId" | "createdAt" | "updatedAt"
 >;
-
-/** Field names as the API and the profile history spell them, per Section. */
-const CARD_COLUMNS = { jobTitle: "jobTitle", reportsToEmploymentId: "reportsTo" } as const;
-const WORK_CONTACT_COLUMNS = { workEmail: "workEmail", workPhone: "workPhone" } as const;
-const JOB_COLUMNS = {
-  legalName: "legalName",
-  employeeNumber: "employeeNumber",
-  startDate: "startDate",
-  leavingDate: "leavingDate",
-  probationEndDate: "probationEndDate",
-  contractType: "contractType",
-  workingTime: "workingTime",
-} as const;
 
 const EMPTY: ProfileColumns = {
   jobTitle: null,
@@ -434,6 +422,7 @@ export const listProfileHistory = async (
     actorName: row.actorUserId ? (names.get(row.actorUserId) ?? null) : null,
     section: row.section,
     fields: row.fields,
+    actor: row.actor,
     audience: row.audience,
   }));
 };

@@ -6,6 +6,7 @@ import {
   contractType,
   directoryProfileHistory,
   directoryProfiles,
+  profileHistoryActor,
   workingTime,
 } from "../../db/schema/directory-profile-schema.js";
 import {
@@ -385,7 +386,8 @@ export type ExportedProfileHistoryEntry = {
   section: R;
   fields: string[];
   by: string | null;
-  audience: directoryAudience;
+  actor: profileHistoryActor;
+  audience: directoryAudience | null;
 };
 
 export const collectProfileExport = async (
@@ -468,6 +470,7 @@ export const collectProfileExport = async (
     section: row.section,
     fields: row.fields,
     by: row.actorUserId ? (names.get(row.actorUserId) ?? null) : null,
+    actor: row.actor,
     audience: row.audience,
   }));
   return { profiles, history };
