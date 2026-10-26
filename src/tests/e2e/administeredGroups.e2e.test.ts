@@ -211,6 +211,7 @@ describe("GET /api/group/administered", () => {
       canAdmin: true,
       viaOrgAdmin: true,
       isMember: false,
+      canChangeManager: true,
     });
   });
 

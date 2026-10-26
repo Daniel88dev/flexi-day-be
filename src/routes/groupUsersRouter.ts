@@ -259,8 +259,8 @@ export const groupUsersRouter = (): Router => {
    *     summary: Remove a member from a group
    *     description: |
    *       Soft-deletes the membership. Requires group admin access, being the group's manager, or admin of the group's organization. The
-   *       group's manager cannot be removed; there is no manager-transfer route
-   *       yet, so a manager can only leave by deleting the group. If the
+   *       group's manager cannot be removed; an org admin names a new one
+   *       first with `PUT /api/group/{groupId}/manager`. If the
    *       removed member was the main approver, approvals fall back to the
    *       manager; a temp approver slot is cleared. The member's pending
    *       requests in the group, and their approved bookings there after

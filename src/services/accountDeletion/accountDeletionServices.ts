@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { account, session, twoFactor, user, verification } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
@@ -30,9 +30,12 @@ import { logger } from "../../middleware/logger.js";
 import AppError from "../../utils/appError.js";
 import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import { lockOrganization } from "../organization/organizationServices.js";
+import { updateGroupManager } from "../group/groupServices.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { DeletionRefusal, type DeletionBlocker, type DeletionConfirmation } from "./types.js";
 
+// A group in someone else's organization passes to that organization's owner,
+// so only the caller's own organizations can block.
 const groupsWithOtherMembers = async (
   userId: string,
   executor: DbTransaction | typeof db
@@ -41,6 +44,10 @@ const groupsWithOtherMembers = async (
     .select({ id: groups.id, name: groups.groupName, others: count(groupUsers.id) })
     .from(groups)
     .innerJoin(
+      organizations,
+      and(eq(organizations.id, groups.organizationId), eq(organizations.ownerUserId, userId))
+    )
+    .innerJoin(
       groupUsers,
       and(
         eq(groupUsers.groupId, groups.id),
@@ -48,6 +55,7 @@ const groupsWithOtherMembers = async (
         ne(groupUsers.userId, userId)
       )
     )
+    .innerJoin(user, and(eq(user.id, groupUsers.userId), isNull(user.deletedAt)))
     .where(and(eq(groups.managerUserId, userId), isNull(groups.deletedAt)))
     .groupBy(groups.id, groups.groupName)
     .orderBy(asc(groups.groupName), asc(groups.id));
@@ -171,8 +179,17 @@ export const getSessionCreatedAt = async (sessionId: string): Promise<Date | und
 
 type StoredAttachment = Pick<AttachmentType, "id" | "storageKey" | "status">;
 
+export type HandedOverGroup = {
+  groupId: string;
+  groupName: string;
+  organizationId: string;
+  ownerUserId: string;
+};
+
 export type DeletedAccountRows = {
   groups: number;
+  /** Live groups the person managed in other people's organizations, now managed by the owner. */
+  handedOverGroups: HandedOverGroup[];
   organizations: number;
   /** Pending days cancelled with the reason {@link ACCOUNT_DELETED_REASON}. */
   cancelledRequests: number;
@@ -260,6 +277,39 @@ const cancelPendingRequests = async (userId: string, at: Date, tx: DbTransaction
     tx
   );
   return cancelled.length;
+};
+
+/**
+ * The owner takes over every live group the person managed in someone else's
+ * organization. The owner gets no membership, so no quota and no seat, and the
+ * outgoing manager's Employment is left open: no `syncEmployment` for them.
+ */
+const handManagedGroupsToOwners = async (
+  userId: string,
+  tx: DbTransaction
+): Promise<HandedOverGroup[]> => {
+  const managed = await tx
+    .select({
+      groupId: groups.id,
+      groupName: groups.groupName,
+      organizationId: groups.organizationId,
+      ownerUserId: organizations.ownerUserId,
+    })
+    .from(groups)
+    .innerJoin(organizations, eq(organizations.id, groups.organizationId))
+    .where(
+      and(
+        eq(groups.managerUserId, userId),
+        isNull(groups.deletedAt),
+        ne(organizations.ownerUserId, userId)
+      )
+    )
+    .orderBy(asc(groups.id));
+
+  for (const group of managed) {
+    await updateGroupManager(group.groupId, group.ownerUserId, tx, { syncOutgoing: false });
+  }
+  return managed;
 };
 
 /** Account data: everything Flexi Day holds for the person themselves. */
@@ -380,16 +430,16 @@ export const deleteAccountRows = async (
     .set({ accountDeletedAt: now })
     .where(and(eq(employments.userId, userId), isNull(employments.accountDeletedAt)));
 
-  const deletedGroups = await tx
-    .delete(groups)
-    .where(
-      ownedIds.length > 0
-        ? or(eq(groups.managerUserId, userId), inArray(groups.organizationId, ownedIds))
-        : eq(groups.managerUserId, userId)
-    )
-    .returning({ id: groups.id });
+  const handedOverGroups = await handManagedGroupsToOwners(userId, tx);
 
+  let deletedGroups = 0;
   if (ownedIds.length > 0) {
+    deletedGroups = (
+      await tx
+        .delete(groups)
+        .where(inArray(groups.organizationId, ownedIds))
+        .returning({ id: groups.id })
+    ).length;
     await tx.delete(subscriptions).where(inArray(subscriptions.organizationId, ownedIds));
     await tx.delete(organizations).where(inArray(organizations.id, ownedIds));
   }
@@ -410,7 +460,8 @@ export const deleteAccountRows = async (
     .where(eq(user.id, userId));
 
   return {
-    groups: deletedGroups.length,
+    groups: deletedGroups,
+    handedOverGroups,
     organizations: ownedIds.length,
     cancelledRequests,
     attachments: removedAttachments,

@@ -11,10 +11,12 @@ import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js"
 import {
   validatePutGroupApprovers,
   validatePutGroupHolidayCountry,
+  validatePutGroupManager,
   validatePutGroupQuotas,
   validatePutGroupWorkingDays,
 } from "../services/group/types.js";
 import { handlePutGroupApprovers } from "../controllers/group/handlePutGroupApprovers.js";
+import { handlePutGroupManager } from "../controllers/group/handlePutGroupManager.js";
 import { validatePutGroupMirrors } from "../services/groupMirror/types.js";
 import { handleGetGroupMirrors } from "../controllers/group/handleGetGroupMirrors.js";
 import { handlePutGroupMirrors } from "../controllers/group/handlePutGroupMirrors.js";
@@ -231,7 +233,10 @@ export const groupRouter = (): Router => {
    *       caller manages or administers through the organization. `access` reports exactly
    *       what the mutation endpoints will allow, and `access.viaOrgAdmin`
    *       marks authority that came from the organization rather than a
-   *       membership. `uploadsAvailable` says whether members may attach files
+   *       membership. `access.canChangeManager` is true for the owner and the
+   *       delegated admins of the group's organization, who alone may call
+   *       `PUT /api/group/{groupId}/manager`. `managerName` is the manager's
+   *       name through the name helper. `uploadsAvailable` says whether members may attach files
    *       to their requests right now: a paid plan, grace included, the same
    *       rule as the Sick day benefit.
    *     security:
@@ -251,6 +256,24 @@ export const groupRouter = (): Router => {
    *             schema:
    *               type: object
    *               properties:
+   *                 managerName:
+   *                   type: string
+   *                   nullable: true
+   *                   description: The manager's name, the frozen copy for a Deleted account.
+   *                 access:
+   *                   type: object
+   *                   properties:
+   *                     canView:
+   *                       type: boolean
+   *                     canAdmin:
+   *                       type: boolean
+   *                     viaOrgAdmin:
+   *                       type: boolean
+   *                     isMember:
+   *                       type: boolean
+   *                     canChangeManager:
+   *                       type: boolean
+   *                       description: Whether the caller may change the group's manager.
    *                 uploadsAvailable:
    *                   type: boolean
    *                   description: Whether attachments can be uploaded in this group's organization right now.
@@ -571,6 +594,98 @@ export const groupRouter = (): Router => {
     "/:groupId/approvers",
     bodyValidationMiddleware(validatePutGroupApprovers),
     tryCatch(handlePutGroupApprovers)
+  );
+
+  /**
+   * @openapi
+   * /api/group/{groupId}/manager:
+   *   put:
+   *     tags:
+   *       - Groups
+   *     summary: Change the group's manager
+   *     description: |
+   *       Names a new manager for the group. Open to the owner and the
+   *       delegated admins of the group's organization only; the manager
+   *       themselves and group admins by flag cannot hand the group on. The
+   *       new manager must hold a live membership in the group and must not
+   *       be a Deleted account. A caller cannot name themselves, because the
+   *       manager approves the group's requests. Managing a group links the
+   *       new manager to the organization, and the outgoing manager's
+   *       Employment ends if it was their last link. Approver slots and
+   *       membership flags are left as they are. The change is written to the
+   *       group's change log.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: groupId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - managerUserId
+   *             properties:
+   *               managerUserId:
+   *                 type: string
+   *                 minLength: 1
+   *                 description: User id of a live member of the group
+   *     responses:
+   *       '200':
+   *         description: The updated group
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 id:
+   *                   type: string
+   *                   format: uuid
+   *                 organizationId:
+   *                   type: string
+   *                   format: uuid
+   *                 groupName:
+   *                   type: string
+   *                 managerUserId:
+   *                   type: string
+   *                 mainApprovalUser:
+   *                   type: string
+   *                   nullable: true
+   *                 tempApprovalUser:
+   *                   type: string
+   *                   nullable: true
+   *                 updatedAt:
+   *                   type: string
+   *                   format: date-time
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: |
+   *           The group is read-only because the plan lapsed. `errors[].context`
+   *           carries `{ reason: "READ_ONLY", limit, current }`.
+   *       '403':
+   *         description: |
+   *           The caller is not an admin of the group's organization, or named
+   *           themselves (`errors[].context.code` is `CANNOT_NAME_SELF`).
+   *       '404':
+   *         description: Group not found
+   *       '422':
+   *         description: |
+   *           The group id is not a UUID, `managerUserId` is missing or empty, or
+   *           `errors[].context.code` is `NOT_A_MEMBER` when the named person
+   *           holds no live membership in the group, or `ACCOUNT_DELETED` when
+   *           they deleted their account.
+   */
+  app.put(
+    "/:groupId/manager",
+    bodyValidationMiddleware(validatePutGroupManager),
+    tryCatch(handlePutGroupManager)
   );
 
   app.get("/:groupId/mirrors", tryCatch(handleGetGroupMirrors));

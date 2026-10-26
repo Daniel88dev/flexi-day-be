@@ -69,3 +69,9 @@ export const validatePutGroupApprovers = z.object({
 });
 
 export type ValidatedPutGroupApproversType = z.infer<typeof validatePutGroupApprovers>;
+
+export const validatePutGroupManager = z.object({
+  managerUserId: z.string().min(1),
+});
+
+export type ValidatedPutGroupManagerType = z.infer<typeof validatePutGroupManager>;

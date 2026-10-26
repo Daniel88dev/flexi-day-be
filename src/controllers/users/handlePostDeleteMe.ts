@@ -91,6 +91,7 @@ export const handlePostDeleteMe = async (req: Request, res: Response) => {
   logger.info("account deleted", {
     userId: session.userId,
     groups: deleted.groups,
+    handedOverGroups: deleted.handedOverGroups.length,
     organizations: deleted.organizations,
     cancelledRequests: deleted.cancelledRequests,
     attachments: deleted.attachments.length,

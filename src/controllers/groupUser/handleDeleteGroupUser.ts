@@ -56,7 +56,7 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
 
   if (group.managerUserId === userId) {
     throw new AppError({
-      message: "The group manager cannot be removed — transfer the group first",
+      message: "The group manager cannot be removed. Change the manager first",
       logging: true,
       code: 409,
       context: { url: req.url, userId: auth.userId, groupId },

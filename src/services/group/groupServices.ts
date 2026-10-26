@@ -96,12 +96,14 @@ export const createGroup = async (
  * Hands the group to a new manager. Managing a group is one of the four links
  * to an organization, so this joins the incoming manager and may be the
  * outgoing one's last link. `tx` is required rather than optional because
- * those three writes have to commit together.
+ * those three writes have to commit together. Account deletion passes
+ * `syncOutgoing: false`, because a Deleted account's Employment stays open.
  */
 export const updateGroupManager = async (
   groupId: string,
   newManagerId: string,
-  tx: DbTransaction
+  tx: DbTransaction,
+  options: { syncOutgoing?: boolean } = {}
 ): Promise<GroupType | undefined> => {
   const previous = await lockGroup(groupId, tx);
   if (!previous) return undefined;
@@ -117,7 +119,7 @@ export const updateGroupManager = async (
   if (!row) return undefined;
 
   await syncEmployment(row.organizationId, newManagerId, tx);
-  if (previous.managerUserId !== newManagerId) {
+  if (previous.managerUserId !== newManagerId && options.syncOutgoing !== false) {
     await syncEmployment(row.organizationId, previous.managerUserId, tx);
   }
 

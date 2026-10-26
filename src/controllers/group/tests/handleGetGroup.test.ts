@@ -25,6 +25,10 @@ vi.mock("../../../services/organization/organizationServices.js", () => ({
   getAdminOrganizationsForUser: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("../../../services/person/personName.js", () => ({
+  getPersonContact: vi.fn().mockResolvedValue({ id: "manager_1", name: "Mia Manager" }),
+}));
+
 vi.mock("../../../services/organization/organizationBadge.js", () => ({
   resolveOrganizationBadges: mockResolveOrganizationBadges,
 }));
@@ -58,7 +62,14 @@ describe("handleGetGroup", () => {
     await handleGetGroup(req, res);
     return vi.mocked(res.json).mock.calls[0]?.[0] as {
       organization: unknown;
-      access: { canView: boolean; canAdmin: boolean; viaOrgAdmin: boolean; isMember: boolean };
+      managerName: string | null;
+      access: {
+        canView: boolean;
+        canAdmin: boolean;
+        viaOrgAdmin: boolean;
+        isMember: boolean;
+        canChangeManager: boolean;
+      };
     };
   };
 
@@ -84,6 +95,7 @@ describe("handleGetGroup", () => {
       canAdmin: false,
       viaOrgAdmin: false,
       isMember: true,
+      canChangeManager: false,
     });
   });
 
@@ -95,6 +107,7 @@ describe("handleGetGroup", () => {
       canAdmin: true,
       viaOrgAdmin: false,
       isMember: true,
+      canChangeManager: false,
     });
   });
 
@@ -107,6 +120,7 @@ describe("handleGetGroup", () => {
       canAdmin: true,
       viaOrgAdmin: false,
       isMember: false,
+      canChangeManager: false,
     });
   });
 
@@ -119,6 +133,7 @@ describe("handleGetGroup", () => {
       canAdmin: true,
       viaOrgAdmin: false,
       isMember: true,
+      canChangeManager: false,
     });
   });
 
@@ -131,7 +146,14 @@ describe("handleGetGroup", () => {
       canAdmin: true,
       viaOrgAdmin: true,
       isMember: false,
+      canChangeManager: true,
     });
+  });
+
+  it("names the manager", async () => {
+    mockGetGroupUser.mockResolvedValue({ viewAccess: true, adminAccess: false });
+
+    expect((await call()).managerName).toBe("Mia Manager");
   });
 
   it("carries the organization badge", async () => {
