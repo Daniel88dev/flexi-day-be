@@ -32,6 +32,7 @@ import { pushRegistrations } from "./push-registration-schema.js";
 import { authSecretFingerprint } from "./auth-secret-schema.js";
 import { personExports } from "./person-export-schema.js";
 import { readLog } from "./read-log-schema.js";
+import { organizationDataKeys } from "./organization-data-key-schema.js";
 
 export const schema = {
   account,
@@ -74,4 +75,5 @@ export const schema = {
   authSecretFingerprint,
   personExports,
   readLog,
+  organizationDataKeys,
 };

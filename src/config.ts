@@ -96,7 +96,10 @@ type OrganizationDataConfig = {
    * under `localDir`, except in production, where nothing is stored until it is set.
    */
   bucket?: string;
-  /** Read for field encryption later; the bucket's default SSE-KMS key covers the store. */
+  /**
+   * Wraps each organization's Data key in production (`docs/field-encryption.md`).
+   * The bucket's default SSE-KMS covers the store without it.
+   */
   kmsKeyArn?: string;
   region: string;
   localDir: string;

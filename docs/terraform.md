@@ -271,8 +271,8 @@ delete objects, and `kms:GenerateDataKey` and `kms:Decrypt` on the key. S3 makes
 the role's behalf for every presigned upload and download, and field encryption makes them
 directly. A delete under versioning leaves an old version, which the lifecycle rule removes, so the
 role has no `DeleteObjectVersion`. App Runner receives `ORGANIZATION_DATA_BUCKET` and
-`ORGANIZATION_DATA_KMS_KEY_ARN`; `config.ts` does not read them until the code that uses them
-lands.
+`ORGANIZATION_DATA_KMS_KEY_ARN`. Field encryption wraps each organization's Data key with the
+second ([`field-encryption.md`](field-encryption.md)).
 
 Two log settings keep Profile values out of CloudWatch:
 
