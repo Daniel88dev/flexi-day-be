@@ -53,6 +53,7 @@ export const presentAttendanceState = (state: AttendanceStateType) => ({
   employmentId: state.employmentId,
   employmentEnded: state.employmentEnded,
   active: state.active,
+  externalWorker: state.externalWorker,
   locationEnabled: state.locationEnabled,
   selfService: state.selfService,
   administersOwnAttendance: state.administersOwnAttendance,

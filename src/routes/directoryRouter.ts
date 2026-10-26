@@ -11,7 +11,9 @@ import {
   validatePutRetentionPeriod,
   validatePutDirectoryRoles,
   validatePostProfilePhoto,
+  validatePutWorkerType,
 } from "../services/directory/types.js";
+import { handlePutWorkerType } from "../controllers/directory/handlePutWorkerType.js";
 import { handleDeleteProfilePhoto } from "../controllers/directory/handleDeleteProfilePhoto.js";
 import { handleGetProfilePhotoStatus } from "../controllers/directory/handleGetProfilePhotoStatus.js";
 import { handlePostProfilePhoto } from "../controllers/directory/handlePostProfilePhoto.js";
@@ -385,7 +387,7 @@ export const directoryRouter = (): Router => {
    *             actions:
    *               type: object
    *               description: What the caller may do to this record from its profile.
-   *               required: [end, export, erase, hold, invite]
+   *               required: [end, export, erase, hold, invite, changeType]
    *               properties:
    *                 end:
    *                   type: boolean
@@ -407,6 +409,9 @@ export const directoryRouter = (): Router => {
    *                     Send directory invite: the act cell allows the caller
    *                     and the record is open and without an account. The
    *                     record may still lack the email it needs.
+   *                 changeType:
+   *                   type: boolean
+   *                   description: Change worker type. The act cell allows the caller and the record is open.
    *             canReadHistory:
    *               type: boolean
    *               description: The caller is the owner, an org admin or HR.
@@ -765,6 +770,79 @@ export const directoryRouter = (): Router => {
     "/:organizationId/people/:employmentId/invite",
     bodyValidationMiddleware(validatePostDirectoryInvite),
     tryCatch(handlePostDirectoryInvite)
+  );
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/people/{employmentId}/worker-type:
+   *   put:
+   *     tags:
+   *       - Directory
+   *     summary: Change worker type between employee and External worker
+   *     description: |
+   *       Sets the Employment's type. Changing to `external` clears Contract
+   *       type, Working time, Probation end date and the whole Personal
+   *       section, drops the required-time override, and sets the person's
+   *       allowances in the organization's groups to zero from the current
+   *       year on, all in one transaction. Profile history gets a JOB row and
+   *       a PERSONAL row for what was cleared, and a `CHANGE_WORKER_TYPE` row
+   *       with the field `type`, never values. Changing back to `employee`
+   *       restores nothing: the cleared fields start empty.
+   *
+   *       An External worker can't clock in, owes no required time, is left
+   *       out of Team attendance, and books only record types that draw on no
+   *       allowance.
+   *
+   *       Needs the Change worker type act cell (Owner, HR and Org admin by
+   *       default), resolved on the record. Works on a lapsed plan. Setting the
+   *       type the record already has changes nothing and answers 200.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [type]
+   *             properties:
+   *               type:
+   *                 type: string
+   *                 enum: [employee, external]
+   *     responses:
+   *       '200':
+   *         description: The profile after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryProfile'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `WORKER_TYPE_DENIED` without the Change worker type act"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND` when the record is elsewhere or out of reach"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`, or `EMPLOYMENT_ENDED`"
+   *       '422':
+   *         description: A malformed body
+   */
+  app.put(
+    "/:organizationId/people/:employmentId/worker-type",
+    bodyValidationMiddleware(validatePutWorkerType),
+    tryCatch(handlePutWorkerType)
   );
 
   /**

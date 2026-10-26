@@ -12,6 +12,7 @@ import { getEmployment } from "../employment/employmentServices.js";
 import { authorizeAttendanceWrite, recordAddedBreak } from "./attendanceCorrections.js";
 import {
   appendAttendanceEvent,
+  assertKeepsAttendance,
   assertNoSessionOverlap,
   getSessionById,
   lockEmployment,
@@ -125,6 +126,7 @@ export const enterAttendanceSession = async (
     }
   };
   assertEntryFits(employment);
+  assertKeepsAttendance(employment);
 
   // A membership change may have ended or restarted the Employment while this
   // waited for the lock, so the owner's right and the spell are decided again on
@@ -140,6 +142,7 @@ export const enterAttendanceSession = async (
     );
   }
   assertEntryFits(locked);
+  assertKeepsAttendance(locked);
 
   await assertNoSessionOverlap(employment.id, { startedAt, endedAt }, {}, tx);
 

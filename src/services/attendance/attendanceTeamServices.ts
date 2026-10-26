@@ -1,4 +1,5 @@
 import type { DbTransaction } from "../../db/db.js";
+import { workerType } from "../../db/schema/employment-schema.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import {
   businessDateInZone,
@@ -40,10 +41,12 @@ export const getTeamAttendance = async (
     ...(await getAttendanceSettings(organizationId, tx)),
   };
 
-  // Nobody owes attendance without an account, so account-less Employments stay off the board.
+  // Nobody owes attendance without an account, and External workers keep none.
   const employments = (
     await listEmployments(organizationId, { userIds: audience.userIds, active: true }, tx)
-  ).flatMap(({ userId, ...employment }) => (userId ? [{ ...employment, userId }] : []));
+  ).flatMap(({ userId, ...employment }) =>
+    userId && employment.type !== workerType.External ? [{ ...employment, userId }] : []
+  );
   const userIds = employments.map((employment) => employment.userId);
   const employmentIds = employments.map((employment) => employment.id);
 

@@ -64,9 +64,11 @@ export const attendanceRouter = (): Router => {
    *       '200':
    *         description: |
    *           `{ organizationId, employmentId, employmentEnded, active,
-   *           locationEnabled, selfService, administersOwnAttendance, timezone,
-   *           businessDate, openSession, openBreak, sessions,
-   *           autoClosedSession }`. `administersOwnAttendance` is true when the
+   *           externalWorker, locationEnabled, selfService,
+   *           administersOwnAttendance, timezone, businessDate, openSession,
+   *           openBreak, sessions, autoClosedSession }`. `active` is false for
+   *           an External worker, who keeps no attendance, and
+   *           `externalWorker` says so. `administersOwnAttendance` is true when the
    *           caller is an organization admin, or a group admin of a group they
    *           belong to without managing it: their own corrections are then an
    *           admin's, outside the window and never flagged `changedAfterDay`.
@@ -391,8 +393,9 @@ export const attendanceRouter = (): Router => {
    *           the plan lapsed. `context.reason` is `PLAN_LIMIT`.
    *       '403':
    *         description: |
-   *           The caller's Employment has ended. `context.reason` is
-   *           `EMPLOYMENT_ENDED`.
+   *           The caller's Employment has ended (`context.reason`
+   *           `EMPLOYMENT_ENDED`), or the caller is an External worker
+   *           (`EXTERNAL_WORKER`).
    *       '404':
    *         description: The caller holds no Employment in that organization
    *       '409':
@@ -472,7 +475,9 @@ export const attendanceRouter = (): Router => {
    *       '402':
    *         description: Attendance is not active. `context.reason` is `PLAN_LIMIT`.
    *       '403':
-   *         description: The caller's Employment has ended (`EMPLOYMENT_ENDED`)
+   *         description: |
+   *           The caller's Employment has ended (`EMPLOYMENT_ENDED`), or the
+   *           caller is an External worker (`EXTERNAL_WORKER`)
    *       '404':
    *         description: The caller holds no Employment in that organization
    *       '409':
@@ -706,8 +711,9 @@ export const attendanceRouter = (): Router => {
    *           No standing over this Employment, or the employee may not enter
    *           it themselves. `context.reason` says why: `SELF_SERVICE_OFF` when
    *           the organization has self-service off, `SELF_SERVICE_WINDOW` when
-   *           the business date is outside the window, and `EMPLOYMENT_ENDED`
-   *           when their Employment has ended.
+   *           the business date is outside the window, `EMPLOYMENT_ENDED`
+   *           when their Employment has ended, and `EXTERNAL_WORKER` when the
+   *           person is an External worker, who keeps no attendance.
    *       '404':
    *         description: That person holds no Employment in that organization
    *       '409':
