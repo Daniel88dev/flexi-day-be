@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { contractType, workingTime } from "../../db/schema/directory-profile-schema.js";
-import type {
+import { directoryRole, roleChangeReason } from "../../db/schema/directory-role-schema.js";
+import {
   directoryAudience,
   directoryPermissionRow,
+  directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 
@@ -85,7 +87,12 @@ export type DirectoryJobView = DirectorySectionView & {
   workingTime: workingTime | null;
 };
 
-export type DirectoryPeople = { people: DirectoryPerson[]; formerList: boolean };
+export type DirectoryPeople = {
+  people: DirectoryPerson[];
+  formerList: boolean;
+  /** The viewer opens Directory settings: the owner, org admins and HR. */
+  settings: boolean;
+};
 
 export type DirectoryAccountStatus = "ACTIVE" | "NO_ACCOUNT" | "DELETED";
 
@@ -152,3 +159,75 @@ export type ProfileHistoryEntry = {
   fields: string[];
   audience: directoryAudience;
 };
+
+export const validatePatchPermissionCell = z
+  .object({
+    row: z.enum(directoryPermissionRow),
+    audience: z.enum(directoryAudience),
+    value: z.enum(directoryPermissionValue),
+  })
+  .strict();
+
+export type PatchPermissionCell = z.infer<typeof validatePatchPermissionCell>;
+
+export type PermissionTableCell = {
+  row: directoryPermissionRow;
+  audience: directoryAudience;
+  value: directoryPermissionValue;
+  /** The owner can't change it. */
+  fixed: boolean;
+  /** The values the owner may set; a fixed cell offers only its own. */
+  options: directoryPermissionValue[];
+};
+
+export type PermissionTable = {
+  /** Only the owner edits the table and assigns roles. */
+  editable: boolean;
+  /** The plan passes the directory gate; while lapsed the owner may only narrow. */
+  writable: boolean;
+  cells: PermissionTableCell[];
+};
+
+export const validatePutDirectoryRoles = z
+  .object({ roles: z.array(z.enum(directoryRole)).max(2) })
+  .strict();
+
+export type PutDirectoryRoles = z.infer<typeof validatePutDirectoryRoles>;
+
+export type DirectoryRoleHolder = {
+  employmentId: string;
+  name: string;
+  roles: directoryRole[];
+};
+
+export type DirectoryRoles = {
+  editable: boolean;
+  writable: boolean;
+  /** Every open Employment with a live account, the only ones that may hold a role. */
+  people: DirectoryRoleHolder[];
+};
+
+export type PermissionHistoryEntry =
+  | {
+      kind: "CELL";
+      id: string;
+      at: Date;
+      actorName: string | null;
+      row: directoryPermissionRow;
+      audience: directoryAudience;
+      before: directoryPermissionValue | null;
+      after: directoryPermissionValue;
+    }
+  | {
+      kind: "ROLE";
+      id: string;
+      at: Date;
+      actorName: string | null;
+      role: directoryRole;
+      /** Null once the person was erased. */
+      employmentId: string | null;
+      personName: string | null;
+      before: boolean;
+      after: boolean;
+      reason: roleChangeReason;
+    };

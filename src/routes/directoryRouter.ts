@@ -1,7 +1,16 @@
 import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
-import { validatePatchDirectoryProfile } from "../services/directory/types.js";
+import {
+  validatePatchDirectoryProfile,
+  validatePatchPermissionCell,
+  validatePutDirectoryRoles,
+} from "../services/directory/types.js";
+import { handleGetDirectoryRoles } from "../controllers/directory/handleGetDirectoryRoles.js";
+import { handleGetPermissionHistory } from "../controllers/directory/handleGetPermissionHistory.js";
+import { handleGetPermissionTable } from "../controllers/directory/handleGetPermissionTable.js";
+import { handlePatchPermissionCell } from "../controllers/directory/handlePatchPermissionCell.js";
+import { handlePutDirectoryRoles } from "../controllers/directory/handlePutDirectoryRoles.js";
 import { handleGetProfileHistory } from "../controllers/directory/handleGetProfileHistory.js";
 import { handlePatchDirectoryProfile } from "../controllers/directory/handlePatchDirectoryProfile.js";
 import { handleGetDirectoryOrganizations } from "../controllers/directory/handleGetDirectoryOrganizations.js";
@@ -235,7 +244,8 @@ export const directoryRouter = (): Router => {
    *       through the organization's Permission table, sorted by name. People
    *       without an account and External workers are included. A lapsed plan
    *       keeps this readable. `formerList` says whether the caller may open
-   *       the Former list (the owner, org admins and HR).
+   *       the Former list (the owner, org admins and HR), and `settings`
+   *       whether they may open Directory settings (the same three).
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -251,13 +261,15 @@ export const directoryRouter = (): Router => {
    *           application/json:
    *             schema:
    *               type: object
-   *               required: [people, formerList]
+   *               required: [people, formerList, settings]
    *               properties:
    *                 people:
    *                   type: array
    *                   items:
    *                     $ref: '#/components/schemas/DirectoryPerson'
    *                 formerList:
+   *                   type: boolean
+   *                 settings:
    *                   type: boolean
    *       '401':
    *         description: Not signed in
@@ -568,6 +580,369 @@ export const directoryRouter = (): Router => {
    *         description: "`DIRECTORY_OFF`"
    */
   app.get("/:organizationId/people/:employmentId/history", tryCatch(handleGetProfileHistory));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     PermissionTable:
+   *       type: object
+   *       required: [editable, writable, cells]
+   *       properties:
+   *         editable:
+   *           type: boolean
+   *           description: The caller is the owner, the only one who changes cells and roles.
+   *         writable:
+   *           type: boolean
+   *           description: The plan passes the directory gate. While it doesn't, the owner may only narrow cells.
+   *         cells:
+   *           type: array
+   *           description: |
+   *             Every cell the table has. Act rows have no Self, Colleague or
+   *             External worker cell, and End has no Group admin cell. A cell
+   *             the organization's copy lacks reads as the product default.
+   *           items:
+   *             type: object
+   *             required: [row, audience, value, fixed, options]
+   *             properties:
+   *               row:
+   *                 type: string
+   *                 enum: [CARD, PHOTO, WORK_CONTACT, JOB, CONTACT, PERSONAL, CREATE_ACCOUNTLESS_PERSON, SEND_DIRECTORY_INVITE, CHANGE_WORKER_TYPE, END_EMPLOYMENT, MANAGE_DEPARTMENTS_AND_LOCATIONS]
+   *               audience:
+   *                 type: string
+   *                 enum: [OWNER, SELF, COLLEAGUE, EXTERNAL_WORKER, GROUP_ADMIN, HR, LEADERSHIP, ORGANIZATION_ADMIN]
+   *               value:
+   *                 type: string
+   *                 enum: [NONE, READ, WRITE, ALLOWED, NO]
+   *               fixed:
+   *                 type: boolean
+   *                 description: The Owner column, and Self on Card and Job.
+   *               options:
+   *                 type: array
+   *                 description: The values the owner may set. Colleague and External worker offer NONE and READ, Self READ and WRITE, act cells NO and ALLOWED.
+   *                 items:
+   *                   type: string
+   *                   enum: [NONE, READ, WRITE, ALLOWED, NO]
+   *     DirectoryRoles:
+   *       type: object
+   *       required: [editable, writable, people]
+   *       properties:
+   *         editable:
+   *           type: boolean
+   *           description: The caller is the owner.
+   *         writable:
+   *           type: boolean
+   *           description: The plan passes the directory gate. While it doesn't, roles can only be removed.
+   *         people:
+   *           type: array
+   *           description: Every open Employment with a live account, by name, the only ones that may hold a role.
+   *           items:
+   *             type: object
+   *             required: [employmentId, name, roles]
+   *             properties:
+   *               employmentId:
+   *                 type: string
+   *               name:
+   *                 type: string
+   *               roles:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                   enum: [HR, LEADERSHIP]
+   */
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/permissions:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: The organization's Permission table
+   *     description: |
+   *       Every cell with its value, whether it is fixed and which values the
+   *       owner may set. The owner, org admins and HR read it; only the owner
+   *       edits it. A lapsed plan keeps it readable.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The table
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/PermissionTable'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `PERMISSIONS_DENIED` for anyone but the owner, org admins and HR"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *   patch:
+   *     tags:
+   *       - Directory
+   *     summary: Change one cell of the Permission table
+   *     description: |
+   *       Owner only. The change applies at once, with no approval step, and
+   *       writes one Permission history entry with the value before and after.
+   *       Setting a cell to the value it holds changes nothing and writes no
+   *       entry. While the plan is lapsed, a change that narrows the cell (a
+   *       lower level, or allowed to no) goes through and one that widens it is
+   *       refused.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [row, audience, value]
+   *             properties:
+   *               row:
+   *                 type: string
+   *                 enum: [CARD, PHOTO, WORK_CONTACT, JOB, CONTACT, PERSONAL, CREATE_ACCOUNTLESS_PERSON, SEND_DIRECTORY_INVITE, CHANGE_WORKER_TYPE, END_EMPLOYMENT, MANAGE_DEPARTMENTS_AND_LOCATIONS]
+   *               audience:
+   *                 type: string
+   *                 enum: [OWNER, SELF, COLLEAGUE, EXTERNAL_WORKER, GROUP_ADMIN, HR, LEADERSHIP, ORGANIZATION_ADMIN]
+   *               value:
+   *                 type: string
+   *                 enum: [NONE, READ, WRITE, ALLOWED, NO]
+   *     responses:
+   *       '200':
+   *         description: The table after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/PermissionTable'
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: "`reason: PLAN_LIMIT`, `code: DIRECTORY_PLAN_REQUIRED`: the change widens a cell and the plan is not Enterprise or Custom"
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `OWNER_ONLY` for anyone but the owner"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: |
+   *           A malformed body, `NO_SUCH_CELL` (the table has no cell there),
+   *           `CELL_FIXED` (the Owner column, Self on Card and Job) or
+   *           `VALUE_NOT_OFFERED` (write for Colleague or External worker,
+   *           none for Self, an act value on a Section or the reverse).
+   */
+  app.get("/:organizationId/permissions", tryCatch(handleGetPermissionTable));
+  app.patch(
+    "/:organizationId/permissions",
+    bodyValidationMiddleware(validatePatchPermissionCell),
+    tryCatch(handlePatchPermissionCell)
+  );
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/permissions/history:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: The Permission history
+   *     description: |
+   *       Every change to the Permission table and to Directory roles, newest
+   *       first. A `CELL` entry names the row, audience and the value before
+   *       and after. A `ROLE` entry names the role, the person and whether
+   *       they held it before and after, with the reason: the owner changed
+   *       it, the Employment ended or the account was deleted. Kept for the
+   *       organization's life; an erased person's entries stay with
+   *       `employmentId` and `personName` null. The owner, org admins and HR.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The entries
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 required: [kind, id, at, actorName, before, after]
+   *                 properties:
+   *                   kind:
+   *                     type: string
+   *                     enum: [CELL, ROLE]
+   *                   id:
+   *                     type: string
+   *                   at:
+   *                     type: string
+   *                     format: date-time
+   *                   actorName:
+   *                     type: string
+   *                     nullable: true
+   *                     description: Null for a change nobody made by hand or once the actor's user row is gone.
+   *                   row:
+   *                     type: string
+   *                     description: CELL only.
+   *                   audience:
+   *                     type: string
+   *                     description: CELL only.
+   *                   role:
+   *                     type: string
+   *                     enum: [HR, LEADERSHIP]
+   *                     description: ROLE only.
+   *                   employmentId:
+   *                     type: string
+   *                     nullable: true
+   *                     description: ROLE only.
+   *                   personName:
+   *                     type: string
+   *                     nullable: true
+   *                     description: ROLE only.
+   *                   before:
+   *                     description: A cell value (CELL) or whether the role was held (ROLE).
+   *                     oneOf:
+   *                       - type: string
+   *                       - type: boolean
+   *                   after:
+   *                     oneOf:
+   *                       - type: string
+   *                       - type: boolean
+   *                   reason:
+   *                     type: string
+   *                     enum: [OWNER, EMPLOYMENT_ENDED, ACCOUNT_DELETED]
+   *                     description: ROLE only.
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `PERMISSIONS_DENIED`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   */
+  app.get("/:organizationId/permissions/history", tryCatch(handleGetPermissionHistory));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/roles:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: Who holds the Directory roles
+   *     description: |
+   *       Every open Employment with a live account and the roles HR and
+   *       Leadership it holds. The owner, org admins and HR.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The people and their roles
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryRoles'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `PERMISSIONS_DENIED`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   */
+  app.get("/:organizationId/roles", tryCatch(handleGetDirectoryRoles));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/roles/{employmentId}:
+   *   put:
+   *     tags:
+   *       - Directory
+   *     summary: Set the Directory roles one person holds
+   *     description: |
+   *       Owner only. `roles` is the full set the Employment holds afterwards;
+   *       one person may hold both. Only an open Employment with a live
+   *       account may hold a role, and being an org admin brings none. Adding
+   *       a role needs the directory plan; removing one works on every plan.
+   *       Each role added or removed writes a Permission history entry.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             additionalProperties: false
+   *             required: [roles]
+   *             properties:
+   *               roles:
+   *                 type: array
+   *                 maxItems: 2
+   *                 items:
+   *                   type: string
+   *                   enum: [HR, LEADERSHIP]
+   *     responses:
+   *       '200':
+   *         description: The people and their roles after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryRoles'
+   *       '401':
+   *         description: Not signed in
+   *       '402':
+   *         description: "`reason: PLAN_LIMIT`, `code: DIRECTORY_PLAN_REQUIRED`: a role is added and the plan is not Enterprise or Custom"
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `OWNER_ONLY`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`, or `PERSON_NOT_FOUND` for an Employment of another organization"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   *       '422':
+   *         description: "A malformed body, or a role added to `NO_ACCOUNT`, `EMPLOYMENT_ENDED` or `ACCOUNT_DELETED` records"
+   */
+  app.put(
+    "/:organizationId/roles/:employmentId",
+    bodyValidationMiddleware(validatePutDirectoryRoles),
+    tryCatch(handlePutDirectoryRoles)
+  );
 
   return app;
 };

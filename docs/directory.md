@@ -51,8 +51,48 @@ Contact, Personal) and five act rows (Create account-less person, Send directory
 worker type, End an Employment, Manage departments and locations), against eight Audiences. A cell
 the table has no entry for has no row. Which cells are fixed is part of the default, not stored.
 
-A row added to the default later lands in every stored copy through a migration that inserts its
-cells for each organization that has a copy, and in later enables through the copy itself.
+A row added to the default later lands in every stored copy with its default value without a
+migration: `readPermissionCells` fills any cell a copy lacks from the default, and the first change
+to that cell stores it. A stored cell always wins, so changing an existing default cell leaves every
+copy alone.
+
+### Editing the table
+
+Decisions: fenro T-472 (floors, roles) and T-477 (Permission history). Rules in
+`src/services/directory/permissionTable.ts`, routes in `directoryPermissionServices.ts`.
+
+- `GET /api/directory/{organizationId}/permissions` returns every cell with `fixed` and the
+  `options` the owner may set. The owner, org admins and HR read it (403 `PERMISSIONS_DENIED`).
+- `PATCH` the same path with `{ row, audience, value }` changes one cell. Owner only (403
+  `OWNER_ONLY`). 422 `CELL_FIXED` for the Owner column and Self on Card and Job, 422
+  `VALUE_NOT_OFFERED` for write on Colleague or External worker, none on Self, or a value of the
+  other kind, 422 `NO_SUCH_CELL` where the table has no cell.
+- While the plan is lapsed, a narrowing (a lower level, or allowed to no) goes through and a
+  widening is 402 `PLAN_LIMIT`.
+
+### Directory roles
+
+HR and Leadership live in `directory_role_assignments`, one row per Employment and role. Only an
+open Employment with a live account holds one: setting a role on an account-less, ended or Deleted
+account's Employment is 422 `NO_ACCOUNT`, `EMPLOYMENT_ENDED` or `ACCOUNT_DELETED`. Being an org
+admin brings neither.
+
+- `GET /api/directory/{organizationId}/roles` lists every eligible person with their roles, for the
+  owner, org admins and HR. `PUT .../roles/{employmentId}` with `{ roles }` sets them, owner only.
+  Adding a role needs the directory plan; removing one never does.
+- Ending an Employment (`syncEmployment`, End employment) and deleting an account remove its roles
+  in the same transaction. A rejoin is a new Employment, so it starts without them.
+- `loadDirectoryViewer` reads the viewer's roles from their open Employment, so the resolver credits
+  the HR and Leadership Audiences, and the profile's `account.directoryRoles` shows them.
+
+### Permission history
+
+`directory_permission_history` records every cell change (row, Audience, value before and after)
+and every role assigned, removed or ended (role, Employment, held before and after, and the reason:
+`OWNER`, `EMPLOYMENT_ENDED` or `ACCOUNT_DELETED`), with the actor and time. Setting a cell to its
+own value adds nothing. Rows go only with the organization; erasing a person sets their Employment
+reference to null. `GET /api/directory/{organizationId}/permissions/history` serves it newest first
+to the owner, org admins and HR.
 
 ## Who learns what
 

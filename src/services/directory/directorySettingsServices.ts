@@ -18,6 +18,7 @@ import {
 import { personName } from "../person/personName.js";
 import { DIRECTORY_AGREEMENT_VERSION } from "./directoryAgreement.js";
 import { DIRECTORY_PERMISSION_DEFAULTS } from "./permissionDefaults.js";
+import { withDefaultCells } from "./permissionTable.js";
 import type {
   DirectoryAgreementState,
   DirectoryOrganization,
@@ -192,15 +193,18 @@ export const acceptDirectoryAgreement = async (
   await recordAcceptance(input, tx);
 };
 
+/** The organization's Permission table, a cell its copy lacks read as the product default. */
 export const readPermissionCells = async (organizationId: string, tx?: DbTransaction) =>
-  (tx ?? db)
-    .select({
-      row: directoryPermissionCells.row,
-      audience: directoryPermissionCells.audience,
-      value: directoryPermissionCells.value,
-    })
-    .from(directoryPermissionCells)
-    .where(eq(directoryPermissionCells.organizationId, organizationId));
+  withDefaultCells(
+    await (tx ?? db)
+      .select({
+        row: directoryPermissionCells.row,
+        audience: directoryPermissionCells.audience,
+        value: directoryPermissionCells.value,
+      })
+      .from(directoryPermissionCells)
+      .where(eq(directoryPermissionCells.organizationId, organizationId))
+  );
 
 /**
  * The organizations whose directory concerns the caller: every one they own or

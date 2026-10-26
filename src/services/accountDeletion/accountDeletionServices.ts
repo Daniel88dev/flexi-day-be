@@ -5,6 +5,8 @@ import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
+import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
+import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
 import { subscriptions, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { supportAccess } from "../../db/schema/support-access-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
@@ -429,10 +431,19 @@ export const deleteAccountRows = async (
 
   // Before the strip: the `employments_follow_user` trigger skips stamped rows,
   // so the copy keeps the name the organization knew.
-  await tx
+  const stamped = await tx
     .update(employments)
     .set({ accountDeletedAt: now })
-    .where(and(eq(employments.userId, userId), isNull(employments.accountDeletedAt)));
+    .where(and(eq(employments.userId, userId), isNull(employments.accountDeletedAt)))
+    .returning({ id: employments.id });
+  await endDirectoryRoles(
+    {
+      employmentIds: stamped.map((row) => row.id),
+      reason: roleChangeReason.AccountDeleted,
+      actorUserId: null,
+    },
+    tx
+  );
 
   const handedOverGroups = await handManagedGroupsToOwners(userId, tx);
 
