@@ -146,8 +146,9 @@ What else a viewer learns:
   go to the owner, org admins and HR.
 - `account` (status, sign-in email, directory roles) goes to the owner, org admins, HR and the
   person.
-- `image` is the Account picture, so the web falls back from the Profile photo to it, then to
-  initials. No leave or attendance status appears on any directory route.
+- `image` is the Account picture and `photoUrl` the small Profile photo. The web shows the Profile
+  photo, then the Account picture, then initials. No leave or attendance status appears on any
+  directory route.
 
 Refusals: 404 `ORGANIZATION_NOT_FOUND`, 409 `DIRECTORY_OFF`, 403 `NOT_IN_DIRECTORY` for a viewer
 who is not the owner, an org admin or one of the organization's open people, and 404
@@ -222,3 +223,46 @@ removes them.
 The Person export carries each spell's Card, Work contact and Job fields under
 `employments[].profile` and the history under `profileHistory`; the Organization export does the
 same for people without an account.
+
+## Profile photo
+
+Decisions: fenro T-471 (where it shows), T-476 (storage and serving), T-477 (the Lambda's KMS
+rights, no biometrics) and T-505 (this build).
+
+The Profile photo is the organization's own picture of one Employment. It comes from an upload only,
+never from the Account picture, and shows on directory pages only: the card and the profile. Every
+other screen (calendars, reports, Team attendance, the phone's `users` sync) keeps the Account
+picture. A viewer whose Photo cell is none gets the Account picture, then initials.
+
+Writing it follows the Photo row: by default the person, HR and org admins, and only the admin
+columns while no account is bound. Setting a photo needs the directory plan (402); removing works on
+every plan.
+
+1. `POST /api/directory/{organizationId}/people/{employmentId}/photo` with `{ contentType, size }`
+   (PNG, JPEG, WebP or HEIC, at most 10 MB) adds a `directory_photos` row in `UPLOADING` and
+   answers where the bytes go: a presigned POST to `incoming/<photoId>` of the organization-data
+   bucket, or the disk store's signed PUT. Any earlier upload of the same Employment that has not
+   settled is dropped.
+2. The `attachment-processor` Lambda (or the disk store, in-process) decodes the image and writes a
+   small (256 px on the long edge) and a full (1024 px) JPEG without EXIF or GPS metadata under
+   `photos/<organizationId>/<employmentId>/<photoId>/`. It only decodes and resizes; no image is
+   ever matched, recognised or sent to a vision service.
+3. The Lambda reports to `POST /api/directory/photos/processed`, signed like its attachment
+   reports. A `READY` photo replaces the previous one in the same transaction, and the old folder is
+   deleted after the commit. The web polls
+   `GET /api/directory/{organizationId}/people/{employmentId}/photo/{photoId}` meanwhile.
+
+`DELETE /api/directory/{organizationId}/people/{employmentId}/photo` removes the photo and both
+sizes. Erase deletes every photo folder of the person's Employments, and deleting the organization
+deletes `photos/<organizationId>/`. Versioning keeps the old objects 7 days, like the backups.
+Setting and removing each add a Photo row to the profile history, with the field `photo`.
+
+Serving: list rows carry `photoUrl` (small) and the profile `sections.photo.photo` (`smallUrl`,
+`fullUrl`), both only for viewers who read Photo. The links are presigned with the start of the
+current hour as their signing date and live two hours, so every response in an hour hands out the
+same URL and browsers and the phone can cache the image. On S3 the link is also bound to the App
+Runner role's temporary credentials and stops working when they expire, so a cached link can die
+early; the next response signs a fresh one.
+
+The Person export carries each spell's full photo as `profile-photos/<employmentId>.jpg`, named in
+`employments[].photo`.

@@ -302,6 +302,13 @@
       "when": 1793005621972,
       "tag": "0042_directory_work_contact",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793007227270,
+      "tag": "0043_directory_photos",
+      "breakpoints": true
     }
   ]
 }

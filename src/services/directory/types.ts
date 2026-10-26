@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { contractType, workingTime } from "../../db/schema/directory-profile-schema.js";
 import { directoryRole, roleChangeReason } from "../../db/schema/directory-role-schema.js";
+import { AttachmentRejectionReason } from "../attachment/processor.js";
 import {
   directoryAudience,
   directoryPermissionRow,
@@ -60,8 +61,10 @@ export type DirectoryPerson = {
   name: string;
   /** A Card field, so everyone who reaches the person reads it. */
   jobTitle: string | null;
-  /** The Account picture; the Profile photo arrives with the Photo Section. */
+  /** The Account picture: the avatar when there is no Profile photo. */
   image: string | null;
+  /** The small Profile photo; null without one or without a read on the Photo Section. */
+  photoUrl: string | null;
   user: UserSummary;
   markers: DirectoryMarker[];
 };
@@ -96,6 +99,11 @@ export type DirectoryJobView = DirectorySectionView & {
   workingTime: workingTime | null;
 };
 
+export type DirectoryPhotoView = DirectorySectionView & {
+  /** Signed links, each the same for an hour. Null without a photo. */
+  photo: { smallUrl: string; fullUrl: string } | null;
+};
+
 export type DirectoryPeople = {
   people: DirectoryPerson[];
   formerList: boolean;
@@ -112,7 +120,7 @@ export type DirectoryProfile = DirectoryPerson & {
   /** Only the Sections the viewer reads are present. */
   sections: {
     card?: DirectoryCardView;
-    photo?: DirectorySectionView;
+    photo?: DirectoryPhotoView;
     workContact?: DirectoryWorkContactView;
     job?: DirectoryJobView;
     contact?: DirectorySectionView;
@@ -248,3 +256,30 @@ export type PermissionHistoryEntry =
       after: boolean;
       reason: roleChangeReason;
     };
+
+export const validatePostProfilePhoto = z.object({
+  // Free-form on purpose: an unsupported type answers 422 with a reason the
+  // client can show, not a schema error.
+  contentType: z.string().min(1).max(100),
+  size: z.number().int().positive(),
+});
+
+export type PostProfilePhoto = z.infer<typeof validatePostProfilePhoto>;
+
+const photoReady = z.object({ status: z.literal("READY") });
+const photoRejected = z.object({
+  status: z.literal("REJECTED"),
+  rejectionReason: z.enum(AttachmentRejectionReason),
+});
+
+export const validatePhotoOutcome = z.discriminatedUnion("status", [photoReady, photoRejected]);
+
+export type PhotoProcessedOutcome = z.infer<typeof validatePhotoOutcome>;
+
+/** What the Lambda reports once a Profile photo's bytes are checked and both sizes stored. */
+export const validatePhotoProcessed = z.discriminatedUnion("status", [
+  photoReady.extend({ photoId: z.uuid() }),
+  photoRejected.extend({ photoId: z.uuid() }),
+]);
+
+export type PhotoProcessedPayload = z.infer<typeof validatePhotoProcessed>;

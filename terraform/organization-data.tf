@@ -1,4 +1,4 @@
-# Organization data: Profile photos, Person and Organization exports under
+# Organization data: Profile photos under photos/, Person and Organization exports under
 # exports/, and later per-person documents. One customer managed KMS key
 # encrypts the bucket and wraps each organization's data key for the Sensitive
 # section fields. docs/terraform.md has the reasoning behind every rule here.
@@ -171,4 +171,76 @@ resource "aws_s3_bucket_cors_configuration" "organization_data" {
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }
+}
+
+# --- Profile photos: the attachment-processor's second trigger ----------------
+
+# The browser posts a Profile photo to incoming/ under a presigned POST the API
+# issues; this event hands it to the same Lambda as attachments, which tells
+# the two apart by the event's bucket (docs/adr/0003).
+resource "aws_lambda_permission" "organization_data_bucket" {
+  statement_id   = "AllowOrganizationDataBucketInvoke"
+  action         = "lambda:InvokeFunction"
+  function_name  = aws_lambda_function.attachment_processor.function_name
+  principal      = "s3.amazonaws.com"
+  source_arn     = aws_s3_bucket.organization_data.arn
+  source_account = data.aws_caller_identity.current.account_id
+}
+
+resource "aws_s3_bucket_notification" "organization_data" {
+  bucket = aws_s3_bucket.organization_data.id
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.attachment_processor.arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "incoming/"
+  }
+
+  depends_on = [aws_lambda_permission.organization_data_bucket]
+}
+
+# Read the upload, write both sizes under photos/, delete either (the incoming
+# object once handled, the sizes when the API reports the photo gone), list so
+# a missing key reads as NoSuchKey. exports/ stays out of reach.
+#
+# The bucket is SSE-KMS under the key that also wraps every organization's
+# data key. The KMS rights hold only while S3 asks on the Lambda's behalf for
+# this bucket: with S3 Bucket Keys the encryption context is the bucket ARN,
+# and field encryption's context carries no aws:s3:arn at all, so the Lambda
+# can never unwrap a data key.
+resource "aws_iam_role_policy" "attachment_processor_organization_data" {
+  name = "${local.attachment_processor_name}-organization-data"
+  role = aws_iam_role.attachment_processor.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.organization_data.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.organization_data.arn}/incoming/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:DeleteObject"]
+        Resource = "${aws_s3_bucket.organization_data.arn}/photos/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = aws_kms_key.organization_data.arn
+        Condition = {
+          StringEquals = {
+            "kms:EncryptionContext:aws:s3:arn" = aws_s3_bucket.organization_data.arn
+            "kms:ViaService"                   = "s3.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
 }

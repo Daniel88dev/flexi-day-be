@@ -27,6 +27,7 @@ the Employment's own copies.
 | `quotas.csv`              | Each year's allowance per group                                                                                                                                 |
 | `changes.csv`             | The change log entries about the person                                                                                                                         |
 | `attachments/`            | The bytes of every attachment still held                                                                                                                        |
+| `profile-photos/`         | Each spell's Profile photo in its full size, named in `employments[].photo`                                                                                     |
 
 Account data stays out: login, the account's own name and email, Account picture, sessions,
 settings, notifications, Birthday. Reader names never appear in the Read log section, only the

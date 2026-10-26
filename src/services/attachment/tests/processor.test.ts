@@ -7,6 +7,7 @@ import {
   AttachmentRejectionReason,
   MAX_IMAGE_EDGE_PX,
   processAttachment,
+  processProfilePhoto,
   sniffContentType,
 } from "../processor.js";
 
@@ -180,5 +181,69 @@ describe("processAttachment", () => {
       ok: false,
       reason: AttachmentRejectionReason.ImageUnreadable,
     });
+  });
+});
+
+describe("processProfilePhoto", () => {
+  const withGps = () =>
+    sharp({ create: { width: 3000, height: 2000, channels: 3, background: "#3366aa" } })
+      .jpeg()
+      .withExif({
+        IFD0: { Make: "Fixture camera" },
+        IFD3: { GPSLatitudeRef: "N", GPSLatitude: "50/1 5/1 0/1" },
+      })
+      .toBuffer();
+
+  it("stores a small and a full JPEG with the EXIF and GPS metadata dropped", async () => {
+    const input = await withGps();
+    const before = await sharp(input).metadata();
+    expect(before.exif).toBeDefined();
+    expect(input.includes("GPS") || input.includes("Fixture camera")).toBe(true);
+
+    const result = await processProfilePhoto(input, "image/jpeg");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const small = await sharp(result.small).metadata();
+    const full = await sharp(result.full).metadata();
+    expect([small.format, full.format]).toEqual(["jpeg", "jpeg"]);
+    expect([small.width, small.height]).toEqual([256, 171]);
+    expect([full.width, full.height]).toEqual([1024, 683]);
+    for (const bytes of [result.small, result.full]) {
+      expect((await sharp(bytes).metadata()).exif).toBeUndefined();
+      expect(bytes.includes("Fixture camera")).toBe(false);
+    }
+  });
+
+  it("never enlarges a small picture", async () => {
+    const result = await processProfilePhoto(fixture("small.png"), "image/png");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect((await sharp(result.small).metadata()).width).toBe(64);
+    expect((await sharp(result.full).metadata()).width).toBe(64);
+  });
+
+  it("decodes a HEIC", async () => {
+    const result = await processProfilePhoto(fixture("oversized-exif.heic"), "image/heic");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(sniffContentType(result.full)).toBe("image/jpeg");
+    expect(result.full.includes("Exif")).toBe(false);
+  });
+
+  it("refuses a PDF and bytes that are not the claimed type", async () => {
+    await expect(processProfilePhoto(fixture("clean.pdf"), "application/pdf")).resolves.toEqual({
+      ok: false,
+      reason: AttachmentRejectionReason.TypeMismatch,
+    });
+    await expect(processProfilePhoto(fixture("small.png"), "image/jpeg")).resolves.toEqual({
+      ok: false,
+      reason: AttachmentRejectionReason.TypeMismatch,
+    });
+    await expect(
+      processProfilePhoto(fixture("oversized-exif.jpg").subarray(0, 64), "image/jpeg")
+    ).resolves.toEqual({ ok: false, reason: AttachmentRejectionReason.ImageUnreadable });
   });
 });

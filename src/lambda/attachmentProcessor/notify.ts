@@ -2,10 +2,7 @@ import {
   ATTACHMENT_SIGNATURE_HEADER,
   signAttachmentCallback,
 } from "../../services/attachment/callbackSignature.js";
-import {
-  ATTACHMENT_GONE_REASON,
-  type AttachmentProcessedPayload,
-} from "../../services/attachment/types.js";
+import { ATTACHMENT_GONE_REASON } from "../../services/attachment/types.js";
 import type { NotifyResult, SettledRow } from "./handler.js";
 
 export type NotifyDeps = {
@@ -13,6 +10,10 @@ export type NotifyDeps = {
   /** Fetches the callback secret; called once per container, and again after a refusal. */
   readSecret: () => Promise<string>;
   fetch?: typeof globalThis.fetch;
+  /** The callback route: attachments by default, Profile photos at `/api/directory/photos/processed`. */
+  path?: string;
+  /** The `reason` the route's 404 carries when the row was deleted in flight. */
+  goneReason?: string;
 };
 
 /**
@@ -21,7 +22,13 @@ export type NotifyDeps = {
  * the report once more, so a rotated secret reaches a warm Lambda through
  * the refusal rather than only through its next cold start.
  */
-export const createNotify = ({ apiUrl, readSecret, fetch = globalThis.fetch }: NotifyDeps) => {
+export const createNotify = ({
+  apiUrl,
+  readSecret,
+  fetch = globalThis.fetch,
+  path = "/api/attachments/processed",
+  goneReason = ATTACHMENT_GONE_REASON,
+}: NotifyDeps) => {
   let secret: Promise<string> | undefined;
   // A failed read is not cached, so the next report retries it.
   const getSecret = () =>
@@ -31,7 +38,7 @@ export const createNotify = ({ apiUrl, readSecret, fetch = globalThis.fetch }: N
     }));
 
   const post = async (body: string) =>
-    fetch(new URL("/api/attachments/processed", apiUrl), {
+    fetch(new URL(path, apiUrl), {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -40,7 +47,7 @@ export const createNotify = ({ apiUrl, readSecret, fetch = globalThis.fetch }: N
       body,
     });
 
-  return async (payload: AttachmentProcessedPayload): Promise<NotifyResult> => {
+  return async (payload: object): Promise<NotifyResult> => {
     const body = JSON.stringify(payload);
     let response = await post(body);
     if (response.status === 401) {
@@ -54,7 +61,7 @@ export const createNotify = ({ apiUrl, readSecret, fetch = globalThis.fetch }: N
     const text = await response.text();
     const context = errorContext(text);
     if (response.status === 409) return { result: "already", row: settledRow(context) };
-    if (response.status === 404 && context?.reason === ATTACHMENT_GONE_REASON) {
+    if (response.status === 404 && context?.reason === goneReason) {
       return { result: "gone" };
     }
     throw new Error(`Attachment callback failed: ${response.status.toString()} ${text}`);

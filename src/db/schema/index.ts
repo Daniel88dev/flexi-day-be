@@ -40,6 +40,7 @@ import {
 } from "./directory-schema.js";
 import { directoryProfileHistory, directoryProfiles } from "./directory-profile-schema.js";
 import { directoryPermissionHistory, directoryRoleAssignments } from "./directory-role-schema.js";
+import { directoryPhotos } from "./directory-photo-schema.js";
 
 export const schema = {
   account,
@@ -90,4 +91,5 @@ export const schema = {
   directoryProfileHistory,
   directoryRoleAssignments,
   directoryPermissionHistory,
+  directoryPhotos,
 };

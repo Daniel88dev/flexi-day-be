@@ -16,7 +16,7 @@ import {
 } from "../organizationData/organizationDataStore.js";
 import { writeOrganizationExportZip, writePersonExportZip } from "./personExportArchive.js";
 import { collectOrganizationExport } from "./organizationExportData.js";
-import { collectPersonExport } from "./personExportData.js";
+import { collectPersonExport, type ExportAttachmentFile } from "./personExportData.js";
 import { notifyExportReady } from "./personExportNotifier.js";
 import { EXPORT_FILE_TTL_MS, ZIP_CONTENT_TYPE } from "./types.js";
 
@@ -76,7 +76,11 @@ export const buildPersonExport = async (
     try {
       if (!store) throw new Error("No organization data store is configured");
       const file = path.join(directory, "export.zip");
-      await writeExportZip(file, claimed, readAttachment);
+      await writeExportZip(file, claimed, (entry) =>
+        entry.store === "organizationData"
+          ? store.getObject(entry.storageKey)
+          : readAttachment(entry.storageKey)
+      );
       const key = exportStorageKey(claimed.organizationId, claimed.id);
       await store.putFile(key, file, ZIP_CONTENT_TYPE);
       const { size } = await stat(file);
@@ -133,7 +137,7 @@ export const buildPersonExport = async (
 const writeExportZip = async (
   file: string,
   row: { organizationId: string; scope: personExportScope; subjectUserId: string | null },
-  readAttachment: (storageKey: string) => Promise<Buffer | undefined>
+  readFile: (file: ExportAttachmentFile) => Promise<Buffer | undefined>
 ): Promise<void> => {
   if (row.scope === personExportScope.Organization) {
     const { document, people } = await collectOrganizationExport(row.organizationId);
@@ -146,7 +150,7 @@ const writeExportZip = async (
           collect: () => collectPersonExport(row.organizationId, person.userId),
         })),
       },
-      readAttachment
+      readFile
     );
     return;
   }
@@ -154,7 +158,7 @@ const writeExportZip = async (
   await writePersonExportZip(
     file,
     await collectPersonExport(row.organizationId, row.subjectUserId),
-    readAttachment
+    readFile
   );
 };
 
