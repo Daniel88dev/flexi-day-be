@@ -145,6 +145,42 @@ delegated admin grant, cancels pending requests and approved bookings after toda
 It refuses a live account for now, because the Employment is one row per organization and re-adding
 an ended person would reopen it and overwrite the spell.
 
+### Erase
+
+**Erase** (`POST /api/employment/{employmentId}/erase`, the People card on `/organization`) removes
+everything one organization holds about a Deleted account, across every spell, on any plan. The
+owner and org admins call it, and only after typing the person's name as the People card shows it
+(case and extra spaces don't count). A wrong name answers 422 `NAME_MISMATCH`, a live account 422
+`ACCOUNT_NOT_DELETED`.
+
+One transaction, under the organization lock. An open Employment is ended today first, through
+End employment, so it refuses the same way while the person manages a group. Then it deletes, in
+the organization's groups (soft-deleted ones too) and the organization itself:
+
+- every Employment of the person, and with them the attendance sessions, breaks and events;
+- their bookings in any state, with timelines, and their attachment rows;
+- quotas, group memberships, delegated org-admin rows, mirrors with either end in the
+  organization, and the `changes` rows about them;
+- their Person exports, and the organization's Organization exports, which hold them too. A
+  build in progress holds an advisory lock the erase waits on, so no ZIP lands after its row is
+  gone.
+
+After the commit the attachment files and export ZIPs are deleted from their stores. A store
+failure is logged and the erase stands. On S3 the old versions stay behind a delete marker until
+the bucket's 7-day noncurrent rule removes them.
+
+What stays:
+
+- The person's records in every other organization.
+- The stripped user row, for good. Deleting it would need new `ON DELETE` rules for
+  `groups.manager_user_id`, the approver slots, `changes.changing_user_id` and `support_access`.
+- The Read log rows about the person. They hold no values, and they record who read or exported
+  the person's data, which the organization still has to answer for.
+- Other people's records the person approved, created, cancelled or changed. With no Employment
+  left in the organization, `personName` names them "Deleted account".
+- Notifications that already went to other people, such as the `account_deleted` notice. They are
+  the recipients' account data.
+
 ### A deleted group manager
 
 Every live group the user manages in someone else's organization passes to that organization's

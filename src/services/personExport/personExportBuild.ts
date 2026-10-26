@@ -32,7 +32,7 @@ export const organizationExportsPrefix = (organizationId: string) => `exports/${
 export const exportStorageKey = (organizationId: string, exportId: string) =>
   `${organizationExportsPrefix(organizationId)}${exportId}.zip`;
 
-const lockKey = (exportId: string) => `person-export:${exportId}`;
+export const exportLockKey = (exportId: string) => `person-export:${exportId}`;
 
 type BuildDependencies = {
   store?: OrganizationDataStore;
@@ -58,7 +58,7 @@ export const buildPersonExport = async (
   try {
     const lock = await client.query<{ locked: boolean }>(
       "select pg_try_advisory_lock(hashtextextended($1, 0)) as locked",
-      [lockKey(exportId)]
+      [exportLockKey(exportId)]
     );
     if (!lock.rows[0]?.locked) return { status: "busy" };
     locked = true;
@@ -123,7 +123,7 @@ export const buildPersonExport = async (
   } finally {
     if (locked) {
       await client
-        .query("select pg_advisory_unlock(hashtextextended($1, 0))", [lockKey(exportId)])
+        .query("select pg_advisory_unlock(hashtextextended($1, 0))", [exportLockKey(exportId)])
         .catch(() => undefined);
     }
     client.release();

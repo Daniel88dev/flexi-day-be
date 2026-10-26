@@ -1,11 +1,16 @@
 import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
-import { validateEndEmployment, validatePatchEmployment } from "../services/employment/types.js";
+import {
+  validateEndEmployment,
+  validateEraseEmployment,
+  validatePatchEmployment,
+} from "../services/employment/types.js";
 import { handleGetEmployment } from "../controllers/employment/handleGetEmployment.js";
 import { handleGetEmployments } from "../controllers/employment/handleGetEmployments.js";
 import { handlePatchEmployment } from "../controllers/employment/handlePatchEmployment.js";
 import { handlePostEndEmployment } from "../controllers/employment/handlePostEndEmployment.js";
+import { handlePostEraseEmployment } from "../controllers/employment/handlePostEraseEmployment.js";
 import { handlePostEmploymentExport } from "../controllers/personExport/handlePostEmploymentExport.js";
 import { handleGetRequestedExports } from "../controllers/personExport/handleGetRequestedExports.js";
 
@@ -233,6 +238,79 @@ export const employmentRouter = (): Router => {
     "/:employmentId/end",
     bodyValidationMiddleware(validateEndEmployment),
     tryCatch(handlePostEndEmployment)
+  );
+
+  /**
+   * @openapi
+   * /api/employment/{employmentId}/erase:
+   *   post:
+   *     tags:
+   *       - Employment
+   *     summary: Erase a person's organization data
+   *     description: |
+   *       Removes everything the organization holds about the Employment's
+   *       person, across every spell, in one transaction: their Employments
+   *       with attendance sessions, breaks and events, bookings in any state
+   *       with their timelines and attachments, quotas, group memberships,
+   *       delegated org-admin rows, mirrors, the change log entries about them,
+   *       their Person exports, and the organization's Organization exports,
+   *       which hold them too. An open Employment is ended today first,
+   *       as End employment does. Attachment files and export ZIPs are deleted
+   *       after the commit; a store failure is logged and the erase stands.
+   *
+   *       What stays: the person's records in other organizations, the
+   *       stripped user row, the Read log rows about the person, and other
+   *       people's records the person approved, created or changed, which then
+   *       name them "Deleted account".
+   *
+   *       The owner and org admins only, never plan-gated, and only for a
+   *       Deleted account. `confirmName` must match the name the People card
+   *       shows, ignoring case and extra spaces.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: employmentId
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - confirmName
+   *             properties:
+   *               confirmName:
+   *                 type: string
+   *                 minLength: 1
+   *                 maxLength: 200
+   *                 description: The person's name, typed by the admin.
+   *     responses:
+   *       '204':
+   *         description: Erased
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: The caller is not the owner or an org admin of the organization
+   *       '404':
+   *         description: No such Employment
+   *       '409':
+   *         description: |
+   *           `context.code` is `MANAGES_GROUP` while the person manages one
+   *           of the organization's groups, so the open Employment can't end.
+   *       '422':
+   *         description: |
+   *           A malformed id or body, or `context.code` is `NAME_MISMATCH`
+   *           (the typed name is not the person's) or `ACCOUNT_NOT_DELETED`.
+   */
+  app.post(
+    "/:employmentId/erase",
+    bodyValidationMiddleware(validateEraseEmployment),
+    tryCatch(handlePostEraseEmployment)
   );
 
   /**
