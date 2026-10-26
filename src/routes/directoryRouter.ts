@@ -14,6 +14,8 @@ import {
   validatePutWorkerType,
   validatePostCopyPreviousSpell,
 } from "../services/directory/types.js";
+import { handleGetDirectoryChecklist } from "../controllers/directory/handleGetDirectoryChecklist.js";
+import { handlePostHideDirectoryChecklist } from "../controllers/directory/handlePostHideDirectoryChecklist.js";
 import { handleGetPreviousSpell } from "../controllers/directory/handleGetPreviousSpell.js";
 import { handlePostCopyPreviousSpell } from "../controllers/directory/handlePostCopyPreviousSpell.js";
 import { handlePutWorkerType } from "../controllers/directory/handlePutWorkerType.js";
@@ -2524,6 +2526,105 @@ export const directoryRouter = (): Router => {
    *         description: "`DIRECTORY_OFF`"
    */
   app.get("/:organizationId/permissions/history", tryCatch(handleGetPermissionHistory));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/checklist:
+   *   get:
+   *     tags:
+   *       - Directory
+   *     summary: The directory setup checklist
+   *     description: |
+   *       For the owner, org admins and HR. Each item ticks itself from the
+   *       data: a Department that is not archived, a Location that is not
+   *       archived, HR held on an open Employment, a job title on an open
+   *       Profile. Assign HR and the "Review who sees what" link are the
+   *       owner's only. `hidden` is true once someone clicked Hide since the
+   *       latest enable, or once every item the viewer sees is done.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The checklist
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryChecklist'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `CHECKLIST_DENIED`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   * components:
+   *   schemas:
+   *     DirectoryChecklist:
+   *       type: object
+   *       required: [hidden, items, reviewPermissions]
+   *       properties:
+   *         hidden:
+   *           type: boolean
+   *         items:
+   *           type: array
+   *           description: In this order; `hr` only for the owner.
+   *           items:
+   *             type: object
+   *             required: [key, done]
+   *             properties:
+   *               key:
+   *                 type: string
+   *                 enum: [departments, locations, hr, jobTitles]
+   *               done:
+   *                 type: boolean
+   *         reviewPermissions:
+   *           type: boolean
+   *           description: Show the owner's link to the Permission table.
+   */
+  app.get("/:organizationId/checklist", tryCatch(handleGetDirectoryChecklist));
+
+  /**
+   * @openapi
+   * /api/directory/{organizationId}/checklist/hide:
+   *   post:
+   *     tags:
+   *       - Directory
+   *     summary: Hide the setup checklist for the organization
+   *     description: |
+   *       Anyone who sees the checklist hides it for everyone until the next
+   *       enable. Never plan-gated.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: organizationId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The checklist, now hidden
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryChecklist'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: "`NOT_IN_DIRECTORY`, or `CHECKLIST_DENIED`"
+   *       '404':
+   *         description: "`ORGANIZATION_NOT_FOUND`"
+   *       '409':
+   *         description: "`DIRECTORY_OFF`"
+   */
+  app.post("/:organizationId/checklist/hide", tryCatch(handlePostHideDirectoryChecklist));
 
   /**
    * @openapi

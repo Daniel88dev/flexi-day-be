@@ -25,6 +25,13 @@ export const validateDirectoryAgreementBody = z.object({
 
 export type DirectoryAgreementBody = z.infer<typeof validateDirectoryAgreementBody>;
 
+export const validateEnableDirectoryBody = validateDirectoryAgreementBody.extend({
+  /** Send the members' notice after the enable commits. Absent reads as false. */
+  tellMembers: z.boolean().optional(),
+});
+
+export type EnableDirectoryBody = z.infer<typeof validateEnableDirectoryBody>;
+
 export type DirectoryAgreementState = {
   currentVersion: number;
   acceptedVersion: number | null;
