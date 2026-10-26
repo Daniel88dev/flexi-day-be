@@ -31,7 +31,8 @@
     "db:migrate:local": "./scripts/db-migrate.sh local",
     "db:migrate:prod": "./scripts/db-migrate.sh prod",
     "db:baseline:prod": "./scripts/db-migrate.sh prod --baseline",
-    "db:status:prod": "./scripts/db-migrate.sh prod --status"
+    "db:status:prod": "./scripts/db-migrate.sh prod --status",
+    "rekey:organization": "tsx src/scripts/rekeyOrganization.ts"
   },
   "repository": {
     "type": "git",
@@ -44,6 +45,7 @@
   },
   "homepage": "https://github.com/Daniel88dev/flexi-day-be#readme",
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.1152.0",
     "@aws-sdk/client-s3": "^3.1152.0",
     "@aws-sdk/client-sesv2": "^3.1152.0",
     "@aws-sdk/s3-presigned-post": "^3.1152.0",
