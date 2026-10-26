@@ -10,6 +10,7 @@ import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import type { EmploymentListItem, EmploymentType } from "./types.js";
+import { personName } from "../person/personName.js";
 
 /**
  * Whether the person is still reachable from the organization by any of the
@@ -95,10 +96,22 @@ export const syncEmployment = async (
   if (await hasOrganizationLink(userId, organizationId, tx)) {
     await client
       .insert(employments)
-      .values({ id: generateRandomUUID(), organizationId, userId })
+      .values({
+        id: generateRandomUUID(),
+        organizationId,
+        userId,
+        name: sql`(select ${user.name} from ${user} where ${user.id} = ${userId})`,
+        email: sql`(select ${user.email} from ${user} where ${user.id} = ${userId})`,
+      })
       .onConflictDoUpdate({
         target: [employments.organizationId, employments.userId],
-        set: { startedAt: sql`now()`, endedAt: null, updatedAt: sql`now()` },
+        set: {
+          startedAt: sql`now()`,
+          endedAt: null,
+          name: sql`excluded.name`,
+          email: sql`excluded.email`,
+          updatedAt: sql`now()`,
+        },
         // An Employment that is already open is left alone: a member joining a
         // second group must not restart the spell attendance is measured from.
         setWhere: sql`${employments.endedAt} is not null`,
@@ -203,7 +216,7 @@ export const listEmployments = async (
       startedAt: employments.startedAt,
       endedAt: employments.endedAt,
       requiredMinutesPerDay: employments.requiredMinutesPerDay,
-      userName: user.name,
+      userName: personName(user, { organizationId }),
       email: user.email,
     })
     .from(employments)
@@ -215,7 +228,7 @@ export const listEmployments = async (
         options?.active ? isNull(employments.endedAt) : undefined
       )
     )
-    .orderBy(asc(user.name));
+    .orderBy(asc(personName(user, { organizationId })));
 
   return rows.map(({ userName, ...row }) => ({
     ...row,

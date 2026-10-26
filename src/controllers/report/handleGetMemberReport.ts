@@ -16,7 +16,7 @@ import {
   getReportScopeEntries,
 } from "../../services/report/reportServices.js";
 import { resolveVacationViewer } from "../../services/vacation/vacationPermissions.js";
-import { getUserById } from "../../services/user/userServices.js";
+import { getPersonContact } from "../../services/person/personName.js";
 
 /**
  * One member's year: allowances, monthly usage, every booking, and the
@@ -58,7 +58,7 @@ export const handleGetMemberReport = async (req: Request, res: Response) => {
   const filters = { groupIds: sharedGroupIds, userIds: [targetUserId] };
 
   const [member, monthly, usage, quotas, bookings, changes, policies] = await Promise.all([
-    getUserById(targetUserId),
+    getPersonContact(targetUserId, { groupId: sharedGroupIds[0]! }),
     aggregateUsageByUserMonth(scope, viewer, year, filters),
     aggregateUsageSplit(scope, viewer, year, filters),
     getQuotasForScope(scope, auth.userId, year, filters),

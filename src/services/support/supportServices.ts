@@ -17,6 +17,7 @@ import type {
   SupportOrganizationDetail,
   SupportOrganizationListItem,
 } from "./types.js";
+import { personName } from "../person/personName.js";
 
 const SEARCH_LIMIT = 50;
 const VACATION_LIMIT = 200;
@@ -53,7 +54,7 @@ export const searchOrganizationsForSupport = async (
       id: organizations.id,
       name: organizations.name,
       ownerUserId: organizations.ownerUserId,
-      ownerName: user.name,
+      ownerName: personName(user, { organizationId: organizations.id }),
       ownerEmail: user.email,
       createdAt: organizations.createdAt,
     })
@@ -115,7 +116,7 @@ export const getOrganizationDetailForSupport = async (
       paddleCustomerId: organizations.paddleCustomerId,
       createdAt: organizations.createdAt,
       ownerUserId: organizations.ownerUserId,
-      ownerName: user.name,
+      ownerName: personName(user, { organizationId: organizations.id }),
       ownerEmail: user.email,
     })
     .from(organizations)
@@ -202,7 +203,7 @@ export const getGroupDetailForSupport = async (
   const members = await db
     .select({
       userId: groupUsers.userId,
-      name: user.name,
+      name: personName(user, { groupId }),
       email: user.email,
       viewAccess: groupUsers.viewAccess,
       adminAccess: groupUsers.adminAccess,
@@ -213,7 +214,7 @@ export const getGroupDetailForSupport = async (
     .from(groupUsers)
     .innerJoin(user, eq(groupUsers.userId, user.id))
     .where(eq(groupUsers.groupId, groupId))
-    .orderBy(user.name);
+    .orderBy(personName(user, { groupId }));
 
   const quotas = await db
     .select({
@@ -232,7 +233,7 @@ export const getGroupDetailForSupport = async (
     .select({
       id: vacation.id,
       userId: vacation.userId,
-      userName: user.name,
+      userName: personName(user, { groupId }),
       requestedDay: vacation.requestedDay,
       vacationType: vacation.vacationType,
       halfDay: vacation.halfDay,

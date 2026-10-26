@@ -15,6 +15,7 @@ import type {
   OrganizationCandidate,
   OrganizationType,
 } from "./types.js";
+import { getPersonContact, personName } from "../person/personName.js";
 
 export const getOrganizationById = async (
   organizationId: string,
@@ -223,13 +224,13 @@ export const listOrganizationAdmins = async (
 
   if (!organization) return [];
 
-  const owner = await getUserById(organization.ownerUserId);
+  const owner = await getPersonContact(organization.ownerUserId, { organizationId });
 
   const rows = await db
     .select({
       userId: organizationUsers.userId,
       grantedAt: organizationUsers.createdAt,
-      userName: user.name,
+      userName: personName(user, { organizationId }),
       email: user.email,
     })
     .from(organizationUsers)
@@ -237,7 +238,7 @@ export const listOrganizationAdmins = async (
     .where(
       and(eq(organizationUsers.organizationId, organizationId), isNull(organizationUsers.deletedAt))
     )
-    .orderBy(asc(user.name));
+    .orderBy(asc(personName(user, { organizationId })));
 
   return [
     ...(owner
@@ -272,7 +273,7 @@ export const listOrganizationAdminCandidates = async (
   const rows = await db
     .selectDistinct({
       userId: groupUsers.userId,
-      userName: user.name,
+      userName: personName(user, { organizationId }),
       email: user.email,
       groupName: groups.groupName,
     })
@@ -286,7 +287,7 @@ export const listOrganizationAdminCandidates = async (
         isNull(groupUsers.deletedAt)
       )
     )
-    .orderBy(asc(user.name));
+    .orderBy(asc(personName(user, { organizationId })));
 
   const admins = await listOrganizationAdmins(organizationId);
   const excluded = new Set(admins.map((admin) => admin.userId));

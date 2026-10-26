@@ -15,6 +15,7 @@ import {
   type GroupEventRecord,
   type GroupEventView,
 } from "./types.js";
+import { personName, optionalPersonName } from "../person/personName.js";
 
 const FREQ_TO_DB = {
   daily: groupEventRepeatFreq.Daily,
@@ -139,7 +140,11 @@ export const listGroupEventsInWindow = async (
 ): Promise<GroupEventWithCreator[]> => {
   if (groupIds.length === 0) return [];
   const rows = await (tx ?? db)
-    .select({ event: groupEvents, creatorId: user.id, creatorName: user.name })
+    .select({
+      event: groupEvents,
+      creatorId: user.id,
+      creatorName: optionalPersonName(user, { groupId: groupEvents.groupId }),
+    })
     .from(groupEvents)
     .leftJoin(user, eq(user.id, groupEvents.createdByUserId))
     .where(
@@ -241,6 +246,7 @@ export const applyGroupEventPlan = async (
 /** Creator names for the views of `rows`. */
 export const creatorsOf = async (
   rows: GroupEventRecord[],
+  groupId: string,
   tx?: DbTransaction
 ): Promise<Map<string, { id: string; name: string }>> => {
   const creatorIds = [
@@ -248,7 +254,7 @@ export const creatorsOf = async (
   ];
   if (creatorIds.length === 0) return new Map();
   const found = await (tx ?? db)
-    .select({ id: user.id, name: user.name })
+    .select({ id: user.id, name: personName(user, { groupId }) })
     .from(user)
     .where(inArray(user.id, creatorIds));
   return new Map(found.map((creator) => [creator.id, creator]));

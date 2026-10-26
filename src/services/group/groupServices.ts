@@ -11,6 +11,7 @@ import {
   syncEmployment,
   syncEmploymentsForDeletedGroup,
 } from "../employment/employmentServices.js";
+import { optionalPersonName } from "../person/personName.js";
 
 export const getGroup = async (
   groupId: string,
@@ -281,13 +282,13 @@ export const getApprovalUsers = async (
       groupId: groups.id,
       groupName: groups.groupName,
       mainApprovalUserId: mainApprovalUser.id,
-      mainApprovalUserName: mainApprovalUser.name,
+      mainApprovalUserName: optionalPersonName(mainApprovalUser, { groupId }),
       mainApprovalUserEmail: mainApprovalUser.email,
       tempApprovalUserId: tempApprovalUser.id,
-      tempApprovalUserName: tempApprovalUser.name,
+      tempApprovalUserName: optionalPersonName(tempApprovalUser, { groupId }),
       tempApprovalUserEmail: tempApprovalUser.email,
       managerUserId: managerUser.id,
-      managerUserName: managerUser.name,
+      managerUserName: optionalPersonName(managerUser, { groupId }),
       managerUserEmail: managerUser.email,
     })
     .from(groups)

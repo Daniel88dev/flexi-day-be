@@ -1,6 +1,7 @@
 import { db, type DbTransaction } from "../../db/db.js";
 import { vacationEvents } from "../../db/schema/vacation-event-schema.js";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
+import { vacation } from "../../db/schema/vacation-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import type {
@@ -8,6 +9,7 @@ import type {
   VacationEventListItem,
   VacationEventRecord,
 } from "./types.js";
+import { optionalPersonName } from "../person/personName.js";
 
 /**
  * Appends one timeline entry. Callers pass the same transaction that performs
@@ -47,7 +49,9 @@ export const getVacationEvents = async (
       vacationId: vacationEvents.vacationId,
       eventType: vacationEvents.eventType,
       actorUserId: vacationEvents.actorUserId,
-      actorName: user.name,
+      actorName: optionalPersonName(user, {
+        groupId: sql`(select ${vacation.groupId} from ${vacation} where ${vacation.id} = ${vacationEvents.vacationId})`,
+      }),
       reason: vacationEvents.reason,
       createdAt: vacationEvents.createdAt,
     })

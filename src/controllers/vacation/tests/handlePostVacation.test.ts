@@ -23,7 +23,7 @@ const {
   mockMarkTargetsDirty,
   mockAssertRequestWithinQuota,
   mockAssertGroupAdmin,
-  mockGetUserById,
+  mockGetPersonContact,
   mockAssertSickDayRequestable,
   mockEnsureBankHolidays,
 } = vi.hoisted(() => ({
@@ -39,7 +39,7 @@ const {
   mockMarkTargetsDirty: vi.fn(),
   mockAssertRequestWithinQuota: vi.fn(),
   mockAssertGroupAdmin: vi.fn(),
-  mockGetUserById: vi.fn(),
+  mockGetPersonContact: vi.fn(),
   mockAssertSickDayRequestable: vi.fn(),
   mockEnsureBankHolidays: vi.fn(),
 }));
@@ -89,8 +89,8 @@ vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
 }));
 
-vi.mock("../../../services/user/userServices.js", () => ({
-  getUserById: mockGetUserById,
+vi.mock("../../../services/person/personName.js", () => ({
+  getPersonContact: mockGetPersonContact,
 }));
 
 vi.mock("../../../services/vacation/vacationServices.js", () => ({
@@ -564,7 +564,7 @@ describe("handlePostVacation", () => {
         groupId: "group_123",
         controlledUser: true,
       });
-      mockGetUserById.mockResolvedValue({
+      mockGetPersonContact.mockResolvedValue({
         id: "member_456",
         name: "Member Name",
         email: "member@example.com",

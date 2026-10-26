@@ -202,7 +202,10 @@ reserved-domain address there is bad data, and bouncing it helps nobody.
 - `user-settings-schema.ts` — a missing row means defaults, not opt-out.
 - `employment-schema.ts` — unique on `(organization_id, user_id)`, so the row is the person's
   **current** spell in that organization, not a history: a rejoin reopens it with a new
-  `started_at` and the earlier spell is gone.
+  `started_at` and the earlier spell is gone. `name` and `email` are the organization's own copy:
+  written on open, rewritten on open rows by the `employments_follow_user` trigger whenever the
+  account's name or email changes, and frozen once the row ends. Readers show a person's name
+  through `personName` (`src/services/person/personName.ts`), never `user.name` directly.
 - `attendance-schema.ts` — "one open session per Employment" and "one open break per session" are
   partial unique indexes on the null `ended_at`, not handler checks; the reads that precede an
   insert are for the error message. The six location columns are null unless the organization
