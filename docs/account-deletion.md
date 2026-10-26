@@ -142,8 +142,8 @@ today or earlier in the organization's zone and not before the spell started, an
 removes the person from every group of the organization, clears their approver slots, revokes a
 delegated admin grant, cancels pending requests and approved bookings after today with the reason
 `employment ended`, and sets `ended_at` on that date. It refuses while the person manages a group.
-It refuses a live account and an Employment without an account for now; later directory tickets
-open both.
+Since the directory tickets it also ends a live account and an Employment without an account
+([`directory.md`](directory.md#end-employment)).
 
 ### Erase
 
@@ -151,7 +151,9 @@ open both.
 everything one organization holds about a Deleted account, across every spell, on any plan. The
 owner and org admins call it, and only after typing the person's name as the People card shows it
 (case and extra spaces don't count). A wrong name answers 422 `NAME_MISMATCH`, a live account 422
-`ACCOUNT_NOT_DELETED`.
+`ACCOUNT_NOT_DELETED`. A person without an account is erased too: that one Employment is deleted
+with everything that cascades from it, and the organization's Organization exports and the
+person's Person exports go as below ([`directory.md`](directory.md#adding-a-person-without-an-account)).
 
 One transaction, under the organization lock. A Person or Organization export requested meanwhile
 takes the same lock, so it waits for the erase and then finds no Employment of the person. An open Employment is ended today first, through

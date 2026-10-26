@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, arrayContains, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { attachments, AttachmentStatus } from "../../db/schema/attachment-schema.js";
 import {
@@ -75,9 +75,14 @@ export type ExportAttachmentFile = {
  * Everything one organization holds about one person, across every spell:
  * Organization data only. Account data (login, settings, notifications,
  * Birthday, the account's own name and email) stays out; the person's name
- * and email here are the Employment's own copies.
+ * and email here are the Employment's own copies. A person without an account
+ * is one Employment, and holds nothing keyed by a user.
  */
-export const collectPersonExport = async (organizationId: string, subjectUserId: string) => {
+export const collectPersonExport = async (
+  organizationId: string,
+  subject: string | { employmentId: string }
+) => {
+  const subjectUserId = typeof subject === "string" ? subject : null;
   const [organization] = await db
     .select({ id: organizations.id, name: organizations.name })
     .from(organizations)
@@ -95,7 +100,12 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
     })
     .from(employments)
     .where(
-      and(eq(employments.organizationId, organizationId), eq(employments.userId, subjectUserId))
+      and(
+        eq(employments.organizationId, organizationId),
+        typeof subject === "string"
+          ? eq(employments.userId, subject)
+          : and(eq(employments.id, subject.employmentId), isNull(employments.userId))
+      )
     )
     .orderBy(asc(employments.startedAt));
   const employmentIds = spells.map((spell) => spell.id);
@@ -115,10 +125,12 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
   const groupIds = organizationGroups.map((group) => group.id);
   const groupName = new Map(organizationGroups.map((group) => [group.id, group.name]));
 
-  const inGroups = <T>(rows: () => Promise<T[]>) =>
-    groupIds.length === 0 ? Promise.resolve([] as T[]) : rows();
+  const inGroups = <T>(rows: (userId: string) => Promise<T[]>) =>
+    groupIds.length === 0 || subjectUserId === null
+      ? Promise.resolve([] as T[])
+      : rows(subjectUserId);
 
-  const memberships = await inGroups(() =>
+  const memberships = await inGroups((subjectUserId) =>
     db
       .select({
         groupId: groupUsers.groupId,
@@ -134,7 +146,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       .orderBy(asc(groupUsers.createdAt))
   );
 
-  const quotas = await inGroups(() =>
+  const quotas = await inGroups((subjectUserId) =>
     db
       .select({
         groupId: userYearQuotas.groupId,
@@ -152,7 +164,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       .orderBy(asc(userYearQuotas.relatedYear))
   );
 
-  const bookingRows = await inGroups(() =>
+  const bookingRows = await inGroups((subjectUserId) =>
     db
       .select()
       .from(vacation)
@@ -169,16 +181,19 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
           .where(inArray(vacationEvents.vacationId, bookingIds))
           .orderBy(asc(vacationEvents.createdAt));
 
-  const attachmentRows = await db
-    .select()
-    .from(attachments)
-    .where(
-      and(
-        eq(attachments.organizationId, organizationId),
-        eq(attachments.ownerUserId, subjectUserId)
-      )
-    )
-    .orderBy(asc(attachments.createdAt));
+  const attachmentRows =
+    subjectUserId === null
+      ? []
+      : await db
+          .select()
+          .from(attachments)
+          .where(
+            and(
+              eq(attachments.organizationId, organizationId),
+              eq(attachments.ownerUserId, subjectUserId)
+            )
+          )
+          .orderBy(asc(attachments.createdAt));
 
   const sessions =
     employmentIds.length === 0
@@ -206,7 +221,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
           .where(inArray(attendanceEvents.sessionId, sessionIds))
           .orderBy(asc(attendanceEvents.createdAt));
 
-  const changeRows = await inGroups(() =>
+  const changeRows = await inGroups((subjectUserId) =>
     db
       .select()
       .from(changesSchema)
@@ -223,7 +238,17 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
     })
     .from(readLog)
     .where(
-      and(eq(readLog.organizationId, organizationId), eq(readLog.subjectUserId, subjectUserId))
+      and(
+        eq(readLog.organizationId, organizationId),
+        subjectUserId !== null
+          ? eq(readLog.subjectUserId, subjectUserId)
+          : employmentIds.length === 0
+            ? sql`false`
+            : and(
+                isNull(readLog.subjectUserId),
+                arrayContains(readLog.employmentIds, employmentIds)
+              )
+      )
     )
     .orderBy(asc(readLog.createdAt));
 
@@ -364,7 +389,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       controlledUser: row.controlledUser,
     })),
     managedGroups: organizationGroups
-      .filter((group) => group.managerUserId === subjectUserId)
+      .filter((group) => subjectUserId !== null && group.managerUserId === subjectUserId)
       .map((group) => ({ groupId: group.id, groupName: group.name, deletedAt: group.deletedAt })),
     quotas: quotas.map((row) => ({ ...row, groupName: groupName.get(row.groupId) ?? null })),
     bookings,

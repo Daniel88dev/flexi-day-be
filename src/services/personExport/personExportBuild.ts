@@ -136,7 +136,12 @@ export const buildPersonExport = async (
 
 const writeExportZip = async (
   file: string,
-  row: { organizationId: string; scope: personExportScope; subjectUserId: string | null },
+  row: {
+    organizationId: string;
+    scope: personExportScope;
+    subjectUserId: string | null;
+    subjectEmploymentId: string | null;
+  },
   readFile: (file: ExportAttachmentFile) => Promise<Buffer | undefined>
 ): Promise<void> => {
   if (row.scope === personExportScope.Organization) {
@@ -154,10 +159,13 @@ const writeExportZip = async (
     );
     return;
   }
-  if (!row.subjectUserId) throw new Error("A Person export has no subject");
+  const subject =
+    row.subjectUserId ??
+    (row.subjectEmploymentId ? { employmentId: row.subjectEmploymentId } : null);
+  if (!subject) throw new Error("A Person export has no subject");
   await writePersonExportZip(
     file,
-    await collectPersonExport(row.organizationId, row.subjectUserId),
+    await collectPersonExport(row.organizationId, subject),
     readFile
   );
 };

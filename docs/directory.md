@@ -232,6 +232,35 @@ Refusals: 404 `PERSON_NOT_FOUND`, 403 `SECTION_NOT_WRITABLE`, 403 `NAME_FROM_ACC
 422 `EMPLOYEES_ONLY`, `PROBATION_BEFORE_START`, `REPORTS_TO_NOT_FOUND`, `REPORTS_TO_SELF`,
 `INVALID_PHONE`, `ENTRY_NOT_FOUND`, `ENTRY_ARCHIVED`, and 409 `EMPLOYEE_NUMBER_TAKEN`.
 
+### Adding a person without an account
+
+Decisions: fenro T-470, T-471, T-472, T-478 and T-508 (this build).
+
+`POST /api/directory/{organizationId}/people` opens an Employment with no account bound, holding
+the person's name (required), worker type (`employee` or `external`), an optional email and the
+Card fields job title, Department, Location and Reports to, under the same rules as the table
+above. The answer is the new profile, which the web opens.
+
+- **Who:** the Create account-less person act cell (Owner fixed, HR and Org admin by default),
+  403 `CREATE_DENIED` otherwise. The act covers the name and the Card fields; it needs no Card
+  write cell. It resolves on the record it creates, open and without an account, and no group
+  admin reaches such a record, so the Group admin cell never credits. The list says
+  `addPerson: true` to whoever holds the act.
+- **Plan:** needs the directory plan, 402 `PLAN_LIMIT` on a lapsed organization.
+- **Email:** unique among the organization's open Employments, bound, account-less and Deleted
+  account copies alike, ignoring case: 409 `EMPLOYMENT_EMAIL_TAKEN`. The check runs under
+  `lockEmploymentEmail`, the lock join paths take before their own clash check, so the two can't
+  both find the address free. An ended Employment frees its address. The dialog's blur check is
+  `POST .../people/email-check` with the email in the body, answering `{ available }` to act
+  holders only.
+- **History:** one Card entry with `name` and every Card field set, and the Audience that credited
+  the act.
+- **Afterwards:** the person is in no group, so nobody books for them, gives them a quota or enters
+  attendance, and they get no notifications and never count toward a seat cap. A join path whose
+  account email matches is refused with 409 `ACCOUNTLESS_EMPLOYMENT_EMAIL`; only the directory
+  invite binds. "No account" shows to the owner, org admins and HR only. End, Erase and the
+  Person export all take the record; Erase deletes that one Employment.
+
 ### Departments and Locations
 
 Decisions: fenro T-473 (the lists and the act row), T-478 (archived entries), T-501 (this build).

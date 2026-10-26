@@ -31,7 +31,11 @@ import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
 import { emergencyContactNotice } from "./emergencyContactNotice.js";
 import { nextRemoval, profileRetention, readRetentionSchedules } from "./retentionSchedule.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
-import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
+import {
+  canReadPermissionTable,
+  createPersonGrantor,
+  type DirectoryViewer,
+} from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
 import type {
   DirectoryEntryRef,
@@ -215,6 +219,7 @@ export const listDirectoryPeople = async (
     formerList: viewer.formerList,
     settings: canReadPermissionTable(viewer),
     noGroupFilter,
+    addPerson: createPersonGrantor(viewer) !== null,
   };
 };
 

@@ -6,9 +6,12 @@ organization holds about one person. The work is in `src/services/personExport/`
 
 ## Who can request one
 
-- The owner and org admins, for any Employment from its People card row: open or ended, account
-  bound or deleted, on every plan. `POST /api/employment/{employmentId}/export`. Group managers and
-  members get 403.
+- The owner and org admins, for any Employment from its People card row or its profile: open or
+  ended, account bound, deleted or never there, on every plan.
+  `POST /api/employment/{employmentId}/export`. Group managers and members get 403. A person
+  without an account is that one Employment: the row names it in `subject_employment_id` instead
+  of a user, and the export holds no bookings, quotas, memberships or attachments, which only an
+  account can have.
 - The person, for each organization where their account is bound to an Employment, open or ended,
   from the "Your data" card in Settings. `GET` and `POST /api/users/me/person-exports`.
 - A second request by the same person for the same subject while one is still `PENDING` returns

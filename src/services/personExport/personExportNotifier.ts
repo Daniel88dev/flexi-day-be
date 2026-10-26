@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
+import { employments } from "../../db/schema/employment-schema.js";
 import { notificationType } from "../../db/schema/notification-schema.js";
 import { personExportScope } from "../../db/schema/person-export-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
@@ -15,11 +16,24 @@ import type { PersonExportRow } from "./types.js";
 export const personExportNoticeOpening = (personName: string, organizationName: string): string =>
   `The export of ${personName}'s data from ${organizationName} `;
 
+const accountlessName = async (employmentId: string) => {
+  const [row] = await db
+    .select({ name: employments.name })
+    .from(employments)
+    .where(eq(employments.id, employmentId));
+  return row?.name ? { name: row.name } : undefined;
+};
+
 /** In-app and pushed, never emailed. Swallows its own failure: the export is already ready. */
 export const notifyExportReady = async (
   row: Pick<
     PersonExportRow,
-    "id" | "organizationId" | "scope" | "subjectUserId" | "requestedByUserId"
+    | "id"
+    | "organizationId"
+    | "scope"
+    | "subjectUserId"
+    | "subjectEmploymentId"
+    | "requestedByUserId"
   >
 ): Promise<void> => {
   try {
@@ -29,8 +43,9 @@ export const notifyExportReady = async (
       .where(eq(organizations.id, row.organizationId));
     const whole = row.scope === personExportScope.Organization;
     const own = row.subjectUserId === row.requestedByUserId;
-    const subject =
-      own || !row.subjectUserId
+    const subject = row.subjectEmploymentId
+      ? await accountlessName(row.subjectEmploymentId)
+      : own || !row.subjectUserId
         ? undefined
         : await getPersonContact(row.subjectUserId, { organizationId: row.organizationId });
     const organizationName = organization?.name ?? "your organization";

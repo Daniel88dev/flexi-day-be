@@ -177,6 +177,32 @@ const writeSensitivePatch = async (
   return changes;
 };
 
+/** Reports to names another open Employment of the organization, never another spell of the person. */
+export const assertReportsTo = async (
+  organizationId: string,
+  record: { id: string; userId: string | null },
+  reportsToEmploymentId: string,
+  context: Record<string, unknown>,
+  tx: DbTransaction
+): Promise<void> => {
+  const [manager] = await tx
+    .select({ id: employments.id, userId: employments.userId })
+    .from(employments)
+    .where(
+      and(
+        eq(employments.organizationId, organizationId),
+        eq(employments.id, reportsToEmploymentId),
+        isNull(employments.endedAt)
+      )
+    );
+  if (!manager) {
+    throw refuse(422, "REPORTS_TO_NOT_FOUND", "Reports to must be an open Employment", context);
+  }
+  if (manager.id === record.id || (record.userId !== null && manager.userId === record.userId)) {
+    throw refuse(422, "REPORTS_TO_SELF", "Nobody reports to themself", context);
+  }
+};
+
 /**
  * Writes the Card, Work contact and Job fields of one profile, and the frozen or
  * account-less name, then records one profile history row per Section it
@@ -283,22 +309,7 @@ export const updateDirectoryProfile = async (
   }
 
   if (after.reportsToEmploymentId && after.reportsToEmploymentId !== before.reportsToEmploymentId) {
-    const [manager] = await tx
-      .select({ id: employments.id, userId: employments.userId })
-      .from(employments)
-      .where(
-        and(
-          eq(employments.organizationId, organizationId),
-          eq(employments.id, after.reportsToEmploymentId),
-          isNull(employments.endedAt)
-        )
-      );
-    if (!manager) {
-      throw refuse(422, "REPORTS_TO_NOT_FOUND", "Reports to must be an open Employment", context);
-    }
-    if (manager.id === record.id || (record.userId !== null && manager.userId === record.userId)) {
-      throw refuse(422, "REPORTS_TO_SELF", "Nobody reports to themself", context);
-    }
+    await assertReportsTo(organizationId, record, after.reportsToEmploymentId, context, tx);
   }
 
   if (
