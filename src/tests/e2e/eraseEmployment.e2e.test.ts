@@ -22,6 +22,8 @@ import { groupEvents } from "../../db/schema/group-event-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
+import { notifications, notificationType } from "../../db/schema/notification-schema.js";
+import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import {
   personExports,
@@ -34,9 +36,12 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { attachmentStore } from "../../services/attachment/attachmentStore.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
+import { eraseEmployment } from "../../services/employment/eraseEmploymentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { organizationDataStore } from "../../services/organizationData/organizationDataStore.js";
 import { exportStorageKey } from "../../services/personExport/personExportBuild.js";
+import { encodeSyncCursor } from "../../services/sync/syncCursor.js";
+import { buildRequestUrl } from "../../services/vacation/vacationNotifier.js";
 import {
   WEB_TEST_PASSWORD,
   authCookieFor,
@@ -49,6 +54,7 @@ import {
   addMember,
   addMirror,
   addQuota,
+  ageEverything,
   makeGroup,
   makeUser,
   resetReportData,
@@ -536,6 +542,175 @@ describe("erasing a person's organization data", () => {
           (event) => event.id === world.groupEventId
         )?.createdBy
       ).toMatchObject({ id: world.member.id, name: "Deleted account" });
+    });
+  });
+
+  describe("what other people keep", () => {
+    type Row = { id: string; userId?: string; groupId?: string; name?: string };
+    const pull = async (callerId: string, cursor?: string) =>
+      (
+        await request(server.url)
+          .get("/api/sync/pull")
+          .query(cursor ? { cursor } : {})
+          .set("Cookie", await authCookieFor(callerId))
+          .expect(200)
+      ).body as {
+        reset: boolean;
+        users: Row[];
+        groupUsers: Row[];
+        userYearQuotas: Row[];
+        vacations: Row[];
+      };
+
+    it("resets a colleague's phone, so its next pull drops the erased rows", async () => {
+      const world = await setUp();
+      const before = await pull(world.owner.id);
+      expect(before.vacations.map((row) => row.id)).toContain(world.ownBooking);
+      expect(before.groupUsers.some((row) => row.userId === world.member.id)).toBe(true);
+      expect(before.userYearQuotas.some((row) => row.userId === world.member.id)).toBe(true);
+      expect(before.users.find((row) => row.id === world.member.id)?.name).toBe(MEMBER);
+
+      await ageEverything();
+      const cursor = encodeSyncCursor(new Date(Date.now() - 60 * 1000));
+      expect((await erase(world.owner.id, world.employment.id, MEMBER)).status).toBe(204);
+
+      const after = await pull(world.owner.id, cursor);
+      expect(after.reset).toBe(true);
+      expect(after.vacations.filter((row) => row.userId === world.member.id)).toEqual([]);
+      expect(after.groupUsers.filter((row) => row.userId === world.member.id)).toEqual([]);
+      expect(after.userYearQuotas.filter((row) => row.userId === world.member.id)).toEqual([]);
+      expect(after.vacations.map((row) => row.id)).toContain(world.colleagueBooking);
+      expect(after.users.find((row) => row.id === world.member.id)?.name).toBe("Deleted account");
+    });
+
+    it("deletes other people's notices that name the person here, and keeps the rest", async () => {
+      const world = await setUp();
+      const [organization] = await db
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, world.organizationId));
+      const notice = async (
+        userId: string,
+        type: notificationType,
+        title: string,
+        body: string,
+        href: string
+      ) => {
+        const id = uuidv4();
+        await db.insert(notifications).values({ id, userId, type, title, body, href });
+        return id;
+      };
+      const removed = [
+        await notice(
+          world.owner.id,
+          notificationType.ApprovalRequested,
+          `${MEMBER} requested time off`,
+          "Vacation",
+          buildRequestUrl(world.ownBooking)
+        ),
+        await notice(
+          world.colleague.id,
+          notificationType.ApprovalDecided,
+          `${MEMBER} updated your time off`,
+          "Vacation",
+          buildRequestUrl(world.colleagueBooking)
+        ),
+        await notice(
+          world.owner.id,
+          notificationType.ExportReady,
+          "Your export is ready",
+          `The export of ${MEMBER}'s data from ${organization!.name} is ready to download for 7 days.`,
+          "/organization/"
+        ),
+      ];
+      const kept = [
+        await notice(
+          world.colleague.id,
+          notificationType.ApprovalDecided,
+          "Time off approved",
+          "Vacation",
+          buildRequestUrl(world.colleagueBooking)
+        ),
+        await notice(
+          world.owner.id,
+          notificationType.ExportReady,
+          "Your export is ready",
+          `The export of ${organization!.name} is ready to download for 7 days.`,
+          "/organization/"
+        ),
+      ];
+      const deletionNotices = await db
+        .select()
+        .from(notifications)
+        .where(eq(notifications.type, notificationType.AccountDeleted));
+      const recipients = (ids: string[]) =>
+        deletionNotices.filter((row) => ids.includes(row.userId)).map((row) => row.id);
+      // The owner and Dana hear as admins, Gina as the manager of Sales, Fiona from her own organization.
+      const here = recipients([world.owner.id, world.delegate.id, world.groupManager.id]);
+      const elsewhere = recipients([world.friend.id]);
+      expect(here).toHaveLength(3);
+      expect(elsewhere).toHaveLength(1);
+
+      expect((await erase(world.owner.id, world.employment.id, MEMBER)).status).toBe(204);
+
+      const left = (await db.select({ id: notifications.id }).from(notifications)).map(
+        (row) => row.id
+      );
+      for (const id of [...removed, ...here]) expect(left).not.toContain(id);
+      for (const id of [...kept, ...elsewhere]) expect(left).toContain(id);
+    });
+  });
+
+  describe("an export requested while the erase runs", () => {
+    it("waits for the erase, then finds no Employment for a Person export and leaves the person out of an Organization export", async () => {
+      const world = await setUp();
+      let erased!: () => void;
+      const started = new Promise<void>((resolve) => (erased = resolve));
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const erasing = db.transaction(async (tx) => {
+        await eraseEmployment(
+          { employmentId: world.employment.id, confirmName: MEMBER, actorUserId: world.owner.id },
+          tx
+        );
+        erased();
+        await gate;
+      });
+      await started;
+
+      const cookie = await authCookieFor(world.owner.id);
+      const personExport = request(server.url)
+        .post(`/api/employment/${world.employment.id}/export`)
+        .set("Cookie", cookie)
+        .then((res) => res);
+      const organizationExport = request(server.url)
+        .post(`/api/organization/export?organizationId=${world.organizationId}`)
+        .set("Cookie", cookie)
+        .then((res) => res);
+      const answeredEarly = await Promise.race([
+        Promise.any([personExport, organizationExport]).then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+      ]);
+      expect(answeredEarly).toBe(false);
+
+      release();
+      await erasing;
+      const person = await personExport;
+      expect(person.status).toBe(404);
+      expect(
+        await countWhere(
+          db.select().from(personExports).where(eq(personExports.subjectUserId, world.member.id))
+        )
+      ).toBe(0);
+
+      const whole = await organizationExport;
+      expect(whole.status).toBe(202);
+      const logged = await db
+        .select()
+        .from(readLog)
+        .where(eq(readLog.personExportId, whole.body.id as string));
+      expect(logged.length).toBeGreaterThan(0);
+      expect(logged.map((row) => row.subjectUserId)).not.toContain(world.member.id);
     });
   });
 

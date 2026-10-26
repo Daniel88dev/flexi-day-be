@@ -68,3 +68,7 @@ export default class AppError extends CustomError {
     return this._logging;
   }
 }
+
+/** A logged refusal whose `context.code` tells the client which one it was. */
+export const refuse = (code: number, publicCode: string, message: string, context: object) =>
+  new AppError({ code, message, logging: true, context, publicContext: { code: publicCode } });

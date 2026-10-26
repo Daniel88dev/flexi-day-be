@@ -8,8 +8,9 @@ import {
   personExportStatus,
 } from "../../db/schema/person-export-schema.js";
 import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
-import AppError from "../../utils/appError.js";
+import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { isOrganizationAdmin, lockOrganization } from "../organization/organizationServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
 import {
   DOWNLOAD_LINK_TTL_MS,
@@ -18,9 +19,6 @@ import {
   type PersonExportRow,
   type PersonExportView,
 } from "./types.js";
-
-const refuse = (code: number, publicCode: string, message: string, context: object) =>
-  new AppError({ code, message, logging: true, context, publicContext: { code: publicCode } });
 
 export const presentPersonExport = (row: PersonExportRow): PersonExportView => ({
   id: row.id,
@@ -70,6 +68,8 @@ export const requestPersonExport = async (
   },
   tx: DbTransaction
 ): Promise<{ row: PersonExportRow; created: boolean }> => {
+  // Erase holds this lock, so a request racing one waits and then finds no Employment.
+  await lockOrganization(input.organizationId, tx);
   const [pending] = await tx
     .select()
     .from(personExports)
@@ -112,6 +112,44 @@ export const requestPersonExport = async (
   });
 
   return { row: row!, created: true };
+};
+
+/**
+ * An admin's Person export of the Employment's person, every spell of theirs
+ * in the organization. The Read log records the owner or an org admin as the
+ * audience.
+ */
+export const requestEmploymentExport = async (
+  input: { employmentId: string; requestedByUserId: string },
+  tx: DbTransaction
+): Promise<{ row: PersonExportRow; created: boolean }> => {
+  const context = { userId: input.requestedByUserId, employmentId: input.employmentId };
+  const [employment] = await tx
+    .select({
+      organizationId: employments.organizationId,
+      userId: employments.userId,
+      ownerUserId: organizations.ownerUserId,
+    })
+    .from(employments)
+    .innerJoin(organizations, eq(organizations.id, employments.organizationId))
+    .where(eq(employments.id, input.employmentId));
+  if (!employment) throw refuse(404, "NOT_FOUND", "Employment not found", context);
+  if (!(await isOrganizationAdmin(input.requestedByUserId, employment.organizationId, tx))) {
+    throw refuse(403, "FORBIDDEN", "No permission for related organization", context);
+  }
+
+  return requestPersonExport(
+    {
+      organizationId: employment.organizationId,
+      subjectUserId: employment.userId,
+      requestedByUserId: input.requestedByUserId,
+      audience:
+        employment.ownerUserId === input.requestedByUserId
+          ? readLogAudience.Owner
+          : readLogAudience.OrganizationAdmin,
+    },
+    tx
+  );
 };
 
 /** The newest export per person that the caller requested in the organization, expired ones left out. */
@@ -195,7 +233,24 @@ export const exportFileName = (
 ) =>
   `flexi-day-${row.scope === personExportScope.Organization ? "organization" : "person"}-export-${(row.readyAt ?? row.createdAt).toISOString().slice(0, 10)}-${row.id.slice(0, 8)}.zip`;
 
-/** A fresh one-hour link for the requester, while the file lives. */
+/**
+ * Whether the requester still holds the standing the export was requested
+ * with: the owner for an Organization export, an org admin for someone
+ * else's Person export. Your own Person export needs nothing more.
+ */
+const stillEntitled = async (row: PersonExportRow, userId: string): Promise<boolean> => {
+  if (row.scope === personExportScope.Organization) {
+    const [organization] = await db
+      .select({ ownerUserId: organizations.ownerUserId })
+      .from(organizations)
+      .where(eq(organizations.id, row.organizationId));
+    return organization?.ownerUserId === userId;
+  }
+  if (row.subjectUserId === userId) return true;
+  return isOrganizationAdmin(userId, row.organizationId);
+};
+
+/** A fresh one-hour link for the requester, while the file lives and they keep their standing. */
 export const signExportDownload = async (
   exportId: string,
   userId: string
@@ -206,6 +261,9 @@ export const signExportDownload = async (
     .from(personExports)
     .where(and(eq(personExports.id, exportId), eq(personExports.requestedByUserId, userId)));
   if (!row) throw refuse(404, "NOT_FOUND", "Export not found", context);
+  if (!(await stillEntitled(row, userId))) {
+    throw refuse(403, "FORBIDDEN", "You no longer administer the export's organization", context);
+  }
 
   if (row.status !== personExportStatus.Ready || !row.storageKey) {
     throw refuse(409, "EXPORT_NOT_READY", "The export is not ready yet", context);

@@ -31,7 +31,7 @@ import type {
   ReportScopeMember,
   ReportUsageSplit,
 } from "./types.js";
-import { personName, optionalPersonName } from "../person/personName.js";
+import { personName } from "../person/personName.js";
 
 const yearBounds = (year: number) => ({
   start: `${year.toString().padStart(4, "0")}-01-01`,
@@ -425,7 +425,7 @@ export const getMemberChanges = async (
       changeDetail: changesSchema.changeDetail,
       createdAt: changesSchema.createdAt,
       actorId: actor.id,
-      actorName: optionalPersonName(actor, { groupId: changesSchema.groupId }),
+      actorName: personName(actor, { groupId: changesSchema.groupId }),
       actorDeleted: changesSchema.changingUserDeleted,
     })
     .from(changesSchema)

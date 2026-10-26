@@ -11,19 +11,16 @@ import { personExports, personExportScope } from "../../db/schema/person-export-
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { logger } from "../../middleware/logger.js";
-import AppError from "../../utils/appError.js";
+import { refuse } from "../../utils/appError.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
-import { isOrganizationAdmin, lockOrganization } from "../organization/organizationServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
 import { getPersonContact } from "../person/personName.js";
 import { exportLockKey, exportStorageKey } from "../personExport/personExportBuild.js";
-import { endEmployment } from "./endEmploymentServices.js";
-
-const refuse = (code: number, publicCode: string, message: string, context: object) =>
-  new AppError({ code, message, logging: true, context, publicContext: { code: publicCode } });
+import { endEmployment, lockEmploymentForAdmin } from "./endEmploymentServices.js";
+import { removeNoticesAboutErasedPerson } from "./erasedNotices.js";
 
 /** Case, accents' composition and runs of spaces don't make a typed name wrong. */
 export const sameName = (typed: string, expected: string): boolean => {
@@ -40,6 +37,7 @@ export type ErasedEmployment = {
   employmentIds: string[];
   attachments: StoredAttachment[];
   exportKeys: string[];
+  notices: number;
 };
 
 /**
@@ -57,25 +55,8 @@ export const eraseEmployment = async (
   tx: DbTransaction
 ): Promise<ErasedEmployment> => {
   const context = { userId: input.actorUserId, employmentId: input.employmentId };
-
-  const [found] = await tx
-    .select({ organizationId: employments.organizationId })
-    .from(employments)
-    .where(eq(employments.id, input.employmentId));
-  if (!found) throw refuse(404, "NOT_FOUND", "Employment not found", context);
-
-  const { organizationId } = found;
-  if (!(await isOrganizationAdmin(input.actorUserId, organizationId, tx))) {
-    throw refuse(403, "FORBIDDEN", "No permission for related organization", context);
-  }
-
-  await lockOrganization(organizationId, tx);
-  const [employment] = await tx
-    .select()
-    .from(employments)
-    .where(eq(employments.id, input.employmentId))
-    .for("update");
-  if (!employment) throw refuse(404, "NOT_FOUND", "Employment not found", context);
+  const employment = await lockEmploymentForAdmin(input, tx);
+  const { organizationId } = employment;
 
   if (employment.accountDeletedAt === null) {
     throw refuse(
@@ -104,6 +85,17 @@ export const eraseEmployment = async (
   const groupIds = (
     await tx.select({ id: groups.id }).from(groups).where(eq(groups.organizationId, organizationId))
   ).map((group) => group.id);
+
+  const employmentIds = (
+    await tx
+      .select({ id: employments.id })
+      .from(employments)
+      .where(and(eq(employments.organizationId, organizationId), eq(employments.userId, userId)))
+  ).map((row) => row.id);
+  const notices = await removeNoticesAboutErasedPerson(
+    { organizationId, userId, name: person.name, groupIds, employmentIds },
+    tx
+  );
 
   const removedAttachments = await tx
     .delete(attachments)
@@ -139,6 +131,7 @@ export const eraseEmployment = async (
     await tx.delete(personExports).where(inArray(personExports.id, exportIds));
   }
 
+  const touchedGroupIds = new Set(groupIds);
   if (groupIds.length > 0) {
     await tx
       .delete(vacation)
@@ -149,7 +142,7 @@ export const eraseEmployment = async (
     await tx
       .delete(changesSchema)
       .where(and(eq(changesSchema.userId, userId), inArray(changesSchema.groupId, groupIds)));
-    await tx
+    const removedMirrors = await tx
       .delete(groupMirrors)
       .where(
         and(
@@ -159,10 +152,22 @@ export const eraseEmployment = async (
             inArray(groupMirrors.targetGroupId, groupIds)
           )
         )
-      );
+      )
+      .returning({ source: groupMirrors.sourceGroupId, target: groupMirrors.targetGroupId });
+    for (const mirror of removedMirrors) {
+      touchedGroupIds.add(mirror.source).add(mirror.target);
+    }
     await tx
       .delete(groupUsers)
       .where(and(eq(groupUsers.userId, userId), inArray(groupUsers.groupId, groupIds)));
+
+    // Hard deletes leave a phone no tombstone. A stamped group is sync reset
+    // trigger 4 (docs/sync-pull.md), so every phone that showed these rows
+    // takes a snapshot on its next pull and sweeps them.
+    await tx
+      .update(groups)
+      .set({ updatedAt: new Date() })
+      .where(inArray(groups.id, [...touchedGroupIds]));
   }
 
   await tx
@@ -186,6 +191,7 @@ export const eraseEmployment = async (
     employmentIds: removedEmployments.map((row) => row.id),
     attachments: removedAttachments,
     exportKeys: exportIds.map((exportId) => exportStorageKey(organizationId, exportId)),
+    notices,
   };
 };
 

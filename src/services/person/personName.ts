@@ -28,6 +28,14 @@ const scopeOrganization = (scope: PersonScope): SQL =>
     ? sql`${scope.organizationId}`
     : sql`(select "pn_g"."organization_id" from "groups" "pn_g" where "pn_g"."id" = ${scope.groupId})`;
 
+/** The account's name, else the copy on the first matching Employment, else "Deleted account". */
+const nameOrCopy = (person: PersonColumns, employmentsMatching: SQL, order: SQL): SQL<string> =>
+  sql<string>`case when ${person.deletedAt} is null then ${person.name} else coalesce(
+    (select "pn_e"."name" from "employments" "pn_e"
+      where "pn_e"."user_id" = ${personId(person)} and ${employmentsMatching}
+      order by ${order} limit 1),
+    ${DELETED_ACCOUNT_NAME}) end`;
+
 /**
  * A person's display name, as an SQL expression over a `user` row. Every
  * reader that shows someone's name to someone else selects it through here
@@ -39,12 +47,11 @@ const scopeOrganization = (scope: PersonScope): SQL =>
  * own columns.
  */
 export const personName = (person: PersonColumns, scope: PersonScope): SQL<string> =>
-  sql<string>`case when ${person.deletedAt} is null then ${person.name} else coalesce(
-    (select "pn_e"."name" from "employments" "pn_e"
-      where "pn_e"."user_id" = ${personId(person)}
-        and "pn_e"."organization_id" = ${scopeOrganization(scope)}
-      order by "pn_e"."started_at" desc limit 1),
-    ${DELETED_ACCOUNT_NAME}) end`;
+  nameOrCopy(
+    person,
+    sql`"pn_e"."organization_id" = ${scopeOrganization(scope)}`,
+    sql`"pn_e"."started_at" desc`
+  );
 
 /**
  * {@link personName} for a reader that spans organizations, the sync pull's
@@ -54,24 +61,18 @@ export const personName = (person: PersonColumns, scope: PersonScope): SQL<strin
 export const personNameAcross = (person: PersonColumns, organizationIds: string[]): SQL<string> =>
   organizationIds.length === 0
     ? sql<string>`case when ${person.deletedAt} is null then ${person.name} else ${DELETED_ACCOUNT_NAME} end`
-    : sql<string>`case when ${person.deletedAt} is null then ${person.name} else coalesce(
-    (select "pn_e"."name" from "employments" "pn_e"
-      where "pn_e"."user_id" = ${personId(person)}
-        and "pn_e"."organization_id" in (${sql.join(
+    : nameOrCopy(
+        person,
+        sql`"pn_e"."organization_id" in (${sql.join(
           organizationIds.map((id) => sql`${id}`),
           sql`, `
-        )})
-        and "pn_e"."name" is not null
-      order by "pn_e"."updated_at" desc limit 1),
-    ${DELETED_ACCOUNT_NAME}) end`;
+        )}) and "pn_e"."name" is not null`,
+        sql`"pn_e"."updated_at" desc`
+      );
 
 /** Whether the person deleted their account, for the readers that show the label. */
-export const isDeletedAccount = (person: Pick<PersonColumns, "deletedAt">): SQL<boolean> =>
+export const deletedAccountColumn = (person: Pick<PersonColumns, "deletedAt">): SQL<boolean> =>
   sql<boolean>`(${person.deletedAt} is not null)`.mapWith(Boolean);
-
-/** {@link personName} for a left-joined alias, which may match no row. */
-export const optionalPersonName = (person: PersonColumns, scope: PersonScope): SQL<string | null> =>
-  personName(person, scope);
 
 export type PersonContact = { id: string; name: string; email: string };
 

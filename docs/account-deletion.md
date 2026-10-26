@@ -153,7 +153,8 @@ owner and org admins call it, and only after typing the person's name as the Peo
 (case and extra spaces don't count). A wrong name answers 422 `NAME_MISMATCH`, a live account 422
 `ACCOUNT_NOT_DELETED`.
 
-One transaction, under the organization lock. An open Employment is ended today first, through
+One transaction, under the organization lock. A Person or Organization export requested meanwhile
+takes the same lock, so it waits for the erase and then finds no Employment of the person. An open Employment is ended today first, through
 End employment, so it refuses the same way while the person manages a group. Then it deletes, in
 the organization's groups (soft-deleted ones too) and the organization itself:
 
@@ -178,8 +179,29 @@ What stays:
   the person's data, which the organization still has to answer for.
 - Other people's records the person approved, created, cancelled or changed. With no Employment
   left in the organization, `personName` names them "Deleted account".
-- Notifications that already went to other people, such as the `account_deleted` notice. They are
-  the recipients' account data.
+- Other people's notifications, except the ones that name the person (below).
+
+Notifications store their text as written, so a name in one would outlive the erase. In the same
+transaction the erase deletes other people's notices about the person in this organization. The
+`notifications` table keeps no subject column, so each kind is matched by what it links to:
+
+- booking notices (`approval_requested`, `approval_decided`, `comment`) whose link names a booking
+  in the organization's groups that is the person's, or whose title opens with the person's name
+  because they acted on someone else's booking;
+- `account_deleted` notices linking to one of the person's Employments, or to a group of the
+  organization with the person's name as the title;
+- `export_ready` notices about the person's Person export, held by the readers the Read log lists.
+
+A notice that links to another organization stays, as does any whose text names the person by a
+copy other than this organization's.
+
+Phones learn of the erase through a sync reset. The rows go by hard delete and leave no tombstone,
+so the erase stamps `updated_at` on every group of the organization and on both ends of each mirror
+it removes. That is reset trigger 4 in [`sync-pull.md`](sync-pull.md#sync-reset-triggers): each
+member's next pull answers a snapshot, and the phone sweeps the erased bookings, quotas,
+memberships and mirrors it did not get again. The person's `users` row comes back only where
+another row still names them, carrying the copy of another shared organization or "Deleted
+account".
 
 ### A deleted group manager
 

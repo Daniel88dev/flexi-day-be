@@ -257,7 +257,9 @@ resuming a paged loop stays in the loop it belongs to. A soft delete counts, bec
    belongs to it. A mirror shows only while its owner is a member, so the owner joining or leaving
    changes what the caller sees without touching the mirror row.
 4. A `groups` row of a group the caller belongs to, or of the source group of a live mirror into
-   one: a manager transfer, an approver change, a rename, a holiday country change or a soft delete.
+   one: a manager transfer, an approver change, a rename, a holiday country change, a soft delete,
+   or an Erase, which stamps the groups it hard-deleted rows from (see
+   [`account-deletion.md`](account-deletion.md#erase)).
    A source group's approvers and manager read its mirrored rows whole without belonging to it, so
    their change touches no row of the caller's own. A rename resets too, accepted as rare admin
    activity.
@@ -301,6 +303,8 @@ whole excepted.
 tombstones at all.
 A person who left, a quota that went and a holiday that fell out of the window stay on the device
 until a sync reset sweeps them.
+An Erase hard-deletes a person's bookings, quotas, memberships and mirrors in one organization,
+and stamps that organization's groups so every member's next pull is the reset that sweeps them.
 
 ## Transport
 

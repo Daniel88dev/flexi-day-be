@@ -215,7 +215,7 @@ reserved-domain address there is bad data, and bouncing it helps nobody.
   account's name or email changes, and frozen once the row ends or `account_deleted_at` is set.
   Readers show a person's name through `personName` (`src/services/person/personName.ts`), never
   `user.name` directly.
-- `auth-schema.ts` — `user.deleted_at` marks a Deleted account. Its `name` is empty and its
+- `auth-schema.ts`: `user.deleted_at` marks a Deleted account. Its `name` is empty and its
   `email` is `<id>@deleted.invalid`, because both columns stay NOT NULL and the email unique.
 - `attendance-schema.ts` — "one open session per Employment" and "one open break per session" are
   partial unique indexes on the null `ended_at`, not handler checks; the reads that precede an

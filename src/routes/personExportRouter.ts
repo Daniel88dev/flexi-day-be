@@ -18,7 +18,10 @@ export const personExportRouter = (): Router => {
    *       again as often as needed while the file lives, which is 7 days from
    *       `readyAt` (the `expiresAt` of the export). Only the person who
    *       requested the export may sign it; for anyone else the export does
-   *       not exist.
+   *       not exist. Every signing checks the requester still holds the
+   *       standing they requested it with: the owner of the organization for
+   *       an Organization export, an org admin of it for someone else's Person
+   *       export.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -46,6 +49,11 @@ export const personExportRouter = (): Router => {
    *                   description: One hour from now.
    *       '401':
    *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           `context.code` is `FORBIDDEN`: the requester no longer owns the
+   *           organization (Organization export) or no longer administers it
+   *           (someone else's Person export)
    *       '404':
    *         description: No such export requested by the caller
    *       '409':

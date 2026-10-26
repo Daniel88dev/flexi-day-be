@@ -42,7 +42,7 @@ import { sumDaysWhere } from "./dayWeight.js";
 import type { DateString } from "../../utils/dateFunc.js";
 import { buildScopePredicate } from "../report/reportScope.js";
 import type { ReportScopeEntry } from "../report/types.js";
-import { personName, optionalPersonName } from "../person/personName.js";
+import { personName } from "../person/personName.js";
 
 type VacationRowWithUser = VacationType & {
   userName: string;
@@ -517,10 +517,10 @@ export const getVacationDetailById = async (
     .select({
       ...baseVacationSelection,
       groupName: groups.groupName,
-      approvedByName: optionalPersonName(approver, { groupId: vacation.groupId }),
-      rejectedByName: optionalPersonName(rejecter, { groupId: vacation.groupId }),
-      createdByName: optionalPersonName(creator, { groupId: vacation.groupId }),
-      deletedByName: optionalPersonName(canceller, { groupId: vacation.groupId }),
+      approvedByName: personName(approver, { groupId: vacation.groupId }),
+      rejectedByName: personName(rejecter, { groupId: vacation.groupId }),
+      createdByName: personName(creator, { groupId: vacation.groupId }),
+      deletedByName: personName(canceller, { groupId: vacation.groupId }),
     })
     .from(vacation)
     .innerJoin(user, eq(vacation.userId, user.id))

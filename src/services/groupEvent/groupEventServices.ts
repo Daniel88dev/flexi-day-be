@@ -15,7 +15,7 @@ import {
   type GroupEventRecord,
   type GroupEventView,
 } from "./types.js";
-import { personName, optionalPersonName } from "../person/personName.js";
+import { personName } from "../person/personName.js";
 
 const FREQ_TO_DB = {
   daily: groupEventRepeatFreq.Daily,
@@ -143,7 +143,7 @@ export const listGroupEventsInWindow = async (
     .select({
       event: groupEvents,
       creatorId: user.id,
-      creatorName: optionalPersonName(user, { groupId: groupEvents.groupId }),
+      creatorName: personName(user, { groupId: groupEvents.groupId }),
     })
     .from(groupEvents)
     .leftJoin(user, eq(user.id, groupEvents.createdByUserId))

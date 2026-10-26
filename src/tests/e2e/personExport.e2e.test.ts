@@ -652,6 +652,24 @@ describe("Person export", () => {
       expect(list.body).toEqual([]);
     });
 
+    it("refuses to sign for an admin whose grant was revoked after the request", async () => {
+      const world = await setUp();
+      const queue = await buildNow();
+      const res = await adminRequest(world.delegate.id, world.employment.id);
+      expect(res.status).toBe(202);
+      await queue.drain();
+      expect((await sign(world.delegate.id, res.body.id)).status).toBe(200);
+
+      await db
+        .update(organizationUsers)
+        .set({ deletedAt: new Date() })
+        .where(eq(organizationUsers.userId, world.delegate.id));
+
+      const refused = await sign(world.delegate.id, res.body.id);
+      expect(refused.status).toBe(403);
+      expect(refused.body.errors[0].context.code).toBe("FORBIDDEN");
+    });
+
     it("refuses a tampered or lapsed local link", async () => {
       const world = await setUp();
       const queue = await buildNow();

@@ -99,7 +99,7 @@ vi.mock("../../../services/vacation/vacationServices.js", () => ({
 
 // A Deleted account is refused end to end in `deletedAccount.e2e.test.ts`.
 vi.mock("../../../services/user/userServices.js", () => ({
-  isDeletedAccount: () => Promise.resolve(false),
+  assertNotDeletedAccount: () => Promise.resolve(),
 }));
 
 vi.mock("../../../services/vacationEvent/vacationEventServices.js", () => ({

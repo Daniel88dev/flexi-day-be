@@ -13,7 +13,7 @@ import { buildUserSummary } from "../../utils/userPresentation.js";
 import { syncEmploymentForGroup } from "../employment/employmentServices.js";
 import { buildScopePredicate } from "../report/reportScope.js";
 import type { ReportScopeEntry } from "../report/types.js";
-import { isDeletedAccount, personName } from "../person/personName.js";
+import { deletedAccountColumn, personName } from "../person/personName.js";
 
 export const getGroupUser = async (
   userId: string,
@@ -246,7 +246,7 @@ export const getGroupUsers = async (groupId: string): Promise<GroupUserListItem[
       updatedAt: groupUsers.updatedAt,
       userName: personName(user, { groupId }),
       email: user.email,
-      accountDeleted: isDeletedAccount(user),
+      accountDeleted: deletedAccountColumn(user),
     })
     .from(groupUsers)
     .innerJoin(user, eq(groupUsers.userId, user.id))
