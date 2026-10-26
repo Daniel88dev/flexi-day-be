@@ -45,6 +45,48 @@ export type DirectoryState = {
   people: { open: number; former: number };
 };
 
+export type DirectoryListKind = "departments" | "locations";
+
+const entryName = z.string().trim().min(1).max(100);
+const entryCountry = z.string().trim().toUpperCase().nullable().optional();
+const atLeastOne = (body: object) => Object.keys(body).length > 0;
+
+export const validatePostDepartment = z.object({ name: entryName }).strict();
+export const validatePostLocation = z.object({ name: entryName, country: entryCountry }).strict();
+export const validatePatchDepartment = z
+  .object({ name: entryName.optional(), archived: z.boolean().optional() })
+  .strict()
+  .refine(atLeastOne, "Nothing to change");
+export const validatePatchLocation = z
+  .object({ name: entryName.optional(), archived: z.boolean().optional(), country: entryCountry })
+  .strict()
+  .refine(atLeastOne, "Nothing to change");
+
+export type PostListEntry = { name: string; country?: string | null };
+export type PatchListEntry = { name?: string; archived?: boolean; country?: string | null };
+
+/** An entry of a Department or Location list. */
+export type DirectoryListEntry = {
+  id: string;
+  name: string;
+  archived: boolean;
+  /** Locations only. */
+  country?: CountryView | null;
+  /** A Profile, open or former, holds it. Sent only to viewers who manage the lists. */
+  inUse?: boolean;
+};
+
+export type DirectoryList = {
+  /** The viewer may add, rename, archive and delete entries. */
+  editable: boolean;
+  /** The plan passes the directory gate; while lapsed nothing can be added. */
+  writable: boolean;
+  entries: DirectoryListEntry[];
+};
+
+/** A Department or Location as a record shows it. */
+export type DirectoryEntryRef = { id: string; name: string; archived: boolean };
+
 export type DirectoryOrganizationRole = "OWNER" | "ORGANIZATION_ADMIN" | "MEMBER";
 
 export type DirectoryOrganization = {
@@ -68,6 +110,9 @@ export type DirectoryPerson = {
   name: string;
   /** A Card field, so everyone who reaches the person reads it. */
   jobTitle: string | null;
+  /** Card fields too; an archived entry still shows on the record that holds it. */
+  department: DirectoryEntryRef | null;
+  location: DirectoryEntryRef | null;
   /** The Account picture: the avatar when there is no Profile photo. */
   image: string | null;
   /** The small Profile photo; null without one or without a read on the Photo Section. */
@@ -86,6 +131,8 @@ export type DirectoryCardView = DirectorySectionView & {
   reportsTo: { employmentId: string; name: string | null } | null;
   /** The name follows a bound, open account and nobody edits it here. */
   nameFromAccount: boolean;
+  department: DirectoryEntryRef | null;
+  location: (DirectoryEntryRef & { country: CountryView | null }) | null;
 };
 
 export type DirectoryWorkContactView = DirectorySectionView & {
@@ -220,6 +267,8 @@ export const validatePatchDirectoryProfile = z
         name: z.string().trim().min(1).max(200).optional(),
         jobTitle: text(100),
         reportsToEmploymentId: z.string().min(1).nullable().optional(),
+        departmentId: z.string().min(1).nullable().optional(),
+        locationId: z.string().min(1).nullable().optional(),
       })
       .strict()
       .optional(),

@@ -15,6 +15,7 @@ import {
   directoryPermissionValue as V,
 } from "../../db/schema/directory-schema.js";
 import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
+import { directoryDepartments, directoryLocations } from "../../db/schema/directory-list-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
@@ -32,6 +33,7 @@ import { getOrganizationById } from "../organization/organizationServices.js";
 import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
 import type {
+  DirectoryEntryRef,
   DirectoryMarker,
   DirectoryPeople,
   DirectoryPerson,
@@ -76,6 +78,13 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
             and later_spell.user_id = ${employments.userId}
             and later_spell.started_at > ${employments.startedAt})`,
         jobTitle: directoryProfiles.jobTitle,
+        departmentId: directoryDepartments.id,
+        departmentName: directoryDepartments.name,
+        departmentArchivedAt: directoryDepartments.archivedAt,
+        locationId: directoryLocations.id,
+        locationName: directoryLocations.name,
+        locationArchivedAt: directoryLocations.archivedAt,
+        locationCountry: directoryLocations.country,
         legalName: directoryProfiles.legalName,
         employeeNumber: directoryProfiles.employeeNumber,
         startDate: directoryProfiles.startDate,
@@ -109,6 +118,8 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
       )
       .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
       .leftJoin(reportsToUser, eq(reportsToUser.id, reportsTo.userId))
+      .leftJoin(directoryDepartments, eq(directoryDepartments.id, directoryProfiles.departmentId))
+      .leftJoin(directoryLocations, eq(directoryLocations.id, directoryProfiles.locationId))
       .$dynamic(),
   };
 };
@@ -150,6 +161,18 @@ const photoOf = async (
   );
 };
 
+const entryRef = (
+  id: string | null,
+  name: string | null,
+  archivedAt: Date | null
+): DirectoryEntryRef | null =>
+  id === null ? null : { id, name: name ?? "", archived: archivedAt !== null };
+
+const departmentOf = (row: RecordRow) =>
+  entryRef(row.departmentId, row.departmentName, row.departmentArchivedAt);
+const locationOf = (row: RecordRow) =>
+  entryRef(row.locationId, row.locationName, row.locationArchivedAt);
+
 const toPerson = (
   row: RecordRow,
   access: DirectoryAccess,
@@ -158,6 +181,8 @@ const toPerson = (
   employmentId: row.id,
   name: row.name,
   jobTitle: row.jobTitle ?? null,
+  department: departmentOf(row),
+  location: locationOf(row),
   image: row.image ?? null,
   photoUrl: photo?.smallUrl ?? null,
   user: buildUserSummary({ id: row.userId ?? row.id, name: row.name }),
@@ -235,9 +260,11 @@ export const nameFromAccount = (record: {
   accountDeletedAt: Date | null;
 }) => record.userId !== null && record.endedAt === null && record.accountDeletedAt === null;
 
-/** Locations (T-501) will pass the record's Location country here. */
-const phoneCountryView = (viewer: DirectoryViewer) => {
-  const code = phoneCountryDefault({ locationCountry: null, language: viewer.language });
+const phoneCountryView = (viewer: DirectoryViewer, record: RecordRow) => {
+  const code = phoneCountryDefault({
+    locationCountry: record.locationCountry ?? null,
+    language: viewer.language,
+  });
   return code === null ? null : countryView(code, viewer.language);
 };
 
@@ -270,6 +297,18 @@ const sectionsOf = (
               name: reachesManager ? record.reportsToName : null,
             },
       nameFromAccount: nameFromAccount(record),
+      department: departmentOf(record),
+      location: (() => {
+        const location = locationOf(record);
+        return (
+          location && {
+            ...location,
+            country: record.locationCountry
+              ? countryView(record.locationCountry, viewer.language)
+              : null,
+          }
+        );
+      })(),
     },
     photo: (() => {
       const section = view(R.Photo);
@@ -280,7 +319,7 @@ const sectionsOf = (
       workEmail: record.workEmail ?? null,
       workPhone: record.workPhone ? phoneView(record.workPhone, viewer.language) : null,
       ...(access.sections[R.WorkContact] === V.Write && {
-        phoneCountryDefault: phoneCountryView(viewer),
+        phoneCountryDefault: phoneCountryView(viewer, record),
       }),
     },
     job: job && {
@@ -346,7 +385,7 @@ export const getDirectoryProfile = async (
         viewer.language,
         tx
       ),
-      phoneCountryDefault: phoneCountryView(viewer),
+      phoneCountryDefault: phoneCountryView(viewer, row),
     };
   }
   if (access.accountFacts) {
@@ -367,6 +406,9 @@ export const getDirectoryProfile = async (
  */
 export type ExportedProfile = {
   jobTitle: string | null;
+  /** The entry names. */
+  department: string | null;
+  location: string | null;
   reportsTo: { employmentId: string; name: string | null } | null;
   legalName: string | null;
   employeeNumber: string | null;
@@ -402,6 +444,8 @@ export const collectProfileExport = async (
     .select({
       employmentId: directoryProfiles.employmentId,
       jobTitle: directoryProfiles.jobTitle,
+      department: directoryDepartments.name,
+      location: directoryLocations.name,
       reportsToId: directoryProfiles.reportsToEmploymentId,
       reportsToName: sql<
         string | null
@@ -423,6 +467,8 @@ export const collectProfileExport = async (
     .from(directoryProfiles)
     .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
     .leftJoin(reportsToUser, eq(reportsToUser.id, reportsTo.userId))
+    .leftJoin(directoryDepartments, eq(directoryDepartments.id, directoryProfiles.departmentId))
+    .leftJoin(directoryLocations, eq(directoryLocations.id, directoryProfiles.locationId))
     .where(
       and(
         eq(directoryProfiles.organizationId, organizationId),
@@ -434,6 +480,8 @@ export const collectProfileExport = async (
       employmentId,
       {
         jobTitle: fields.jobTitle,
+        department: fields.department,
+        location: fields.location,
         reportsTo: reportsToId === null ? null : { employmentId: reportsToId, name: reportsToName },
         legalName: fields.legalName,
         employeeNumber: fields.employeeNumber,

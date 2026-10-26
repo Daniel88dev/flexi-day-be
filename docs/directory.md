@@ -192,7 +192,7 @@ who is not the owner, an org admin or one of the organization's open people, and
 ## Editing a profile
 
 Decisions: fenro T-473 (the fields), T-477 (profile history), T-483 (start date), T-479 (display
-strings for the phone), T-500 and T-502 (these builds).
+strings for the phone), T-500, T-501 and T-502 (these builds).
 
 `PATCH /api/directory/{organizationId}/people/{employmentId}` writes the Card, Work contact and Job
 fields of one Employment, open or ended. In the body, a value sets a field, `null` clears it and a
@@ -204,6 +204,8 @@ on the first write; a missing row reads as an empty profile.
 | ------------ | ------------------ | ----------------------------------------------------------------------------------- |
 | Card         | Name               | Only without a bound, open account: no account, an ended spell or a Deleted account |
 | Card         | Job title          | 1 to 100 characters, trimmed                                                        |
+| Card         | Department         | An entry of the organization's Department list, not archived unless already held    |
+| Card         | Location           | An entry of the organization's Location list, not archived unless already held      |
 | Card         | Reports to         | Another open Employment of the organization, never the person's own                 |
 | Work contact | Work email         | Up to 254 characters, stored lowercase, never synced with the sign-in email         |
 | Work contact | Work phone         | One number in international form, no extension, stored in E.164                     |
@@ -228,7 +230,39 @@ key. Ending that Employment clears it on open records (T-507).
 
 Refusals: 404 `PERSON_NOT_FOUND`, 403 `SECTION_NOT_WRITABLE`, 403 `NAME_FROM_ACCOUNT`, 402,
 422 `EMPLOYEES_ONLY`, `PROBATION_BEFORE_START`, `REPORTS_TO_NOT_FOUND`, `REPORTS_TO_SELF`,
-`INVALID_PHONE`, and 409 `EMPLOYEE_NUMBER_TAKEN`.
+`INVALID_PHONE`, `ENTRY_NOT_FOUND`, `ENTRY_ARCHIVED`, and 409 `EMPLOYEE_NUMBER_TAKEN`.
+
+### Departments and Locations
+
+Decisions: fenro T-473 (the lists and the act row), T-478 (archived entries), T-501 (this build).
+
+Each organization keeps its own Department list (`directory_departments`) and Location list
+(`directory_locations`); a Location may carry an ISO 3166-1 alpha-2 country. A Profile holds at
+most one entry of each, in `directory_profiles.department_id` and `location_id`. Neither list is
+tied to groups, and a Location's country drives no holiday country, working days or attendance. It
+only starts the phone picker, through `phoneCountryDefault`.
+
+| Route                                                 | Who                     | Plan           |
+| ----------------------------------------------------- | ----------------------- | -------------- |
+| `GET /api/directory/{org}/departments\|locations`     | anyone in the directory | every plan     |
+| `POST .../departments\|locations`                     | the act cell            | directory plan |
+| `PATCH .../{entryId}` rename, archive, clear country  | the act cell            | every plan     |
+| `PATCH .../{entryId}` restore, set a country          | the act cell            | directory plan |
+| `DELETE .../{entryId}`, only while no record holds it | the act cell            | every plan     |
+
+The act cell is the Manage departments and locations row of the Permission table: the owner always,
+HR and org admins by default, Group admin and Leadership not. It has no record, so the service
+resolves it on a synthetic open record (`canManageLists` in `directoryListServices.ts`). T-498
+seeded the row in the product default, and a stored copy that lacks it reads it at the default,
+so no organization needed a backfill.
+
+Names are unique within a list, ignoring case, archived entries included (409 `NAME_TAKEN`). An
+entry any record holds, open or former, can't be deleted (409 `ENTRY_IN_USE`), because the Card is
+kept until erased; it is archived instead. An archived entry leaves the pickers and can't be given
+to anyone new (422 `ENTRY_ARCHIVED`), while the records that hold it keep it and show it as "Name
+(archived)". Directory list rows and the Card carry `department` and `location` as
+`{ id, name, archived }`, and the Card's location adds its `country`. The directory filters by
+both on the client, from the list rows. The Person export carries the entry names.
 
 ### Phones and countries
 

@@ -94,7 +94,7 @@ export const directoryRouter = (): Router => {
    *         org admins and HR only.
    *     DirectoryPerson:
    *       type: object
-   *       required: [employmentId, name, jobTitle, image, photoUrl, user, markers]
+   *       required: [employmentId, name, jobTitle, department, location, image, photoUrl, user, markers]
    *       properties:
    *         employmentId:
    *           type: string
@@ -107,6 +107,16 @@ export const directoryRouter = (): Router => {
    *           type: string
    *           nullable: true
    *           description: A Card field.
+   *         department:
+   *           nullable: true
+   *           description: A Card field, the entry of the organization's Department list.
+   *           allOf:
+   *             - $ref: '#/components/schemas/DirectoryEntryRef'
+   *         location:
+   *           nullable: true
+   *           description: A Card field, the entry of the organization's Location list.
+   *           allOf:
+   *             - $ref: '#/components/schemas/DirectoryEntryRef'
    *         image:
    *           type: string
    *           nullable: true
@@ -167,7 +177,7 @@ export const directoryRouter = (): Router => {
    *       allOf:
    *         - $ref: '#/components/schemas/DirectorySectionView'
    *         - type: object
-   *           required: [jobTitle, reportsTo, nameFromAccount]
+   *           required: [jobTitle, reportsTo, nameFromAccount, department, location]
    *           properties:
    *             jobTitle:
    *               type: string
@@ -188,6 +198,21 @@ export const directoryRouter = (): Router => {
    *               description: |
    *                 True while a bound, open account supplies the name, which
    *                 then can't be edited here.
+   *             department:
+   *               nullable: true
+   *               allOf:
+   *                 - $ref: '#/components/schemas/DirectoryEntryRef'
+   *             location:
+   *               nullable: true
+   *               allOf:
+   *                 - $ref: '#/components/schemas/DirectoryEntryRef'
+   *                 - type: object
+   *                   required: [country]
+   *                   properties:
+   *                     country:
+   *                       nullable: true
+   *                       allOf:
+   *                         - $ref: '#/components/schemas/DirectoryCountry'
    *     DirectoryCountry:
    *       type: object
    *       required: [code, name]
@@ -605,6 +630,14 @@ export const directoryRouter = (): Router => {
    *                     type: string
    *                     nullable: true
    *                     description: Another open Employment of the same organization, never the person's own.
+   *                   departmentId:
+   *                     type: string
+   *                     nullable: true
+   *                     description: An entry of the organization's Department list. An archived one only if the record already holds it.
+   *                   locationId:
+   *                     type: string
+   *                     nullable: true
+   *                     description: An entry of the organization's Location list. An archived one only if the record already holds it.
    *               workContact:
    *                 type: object
    *                 additionalProperties: false
@@ -729,8 +762,11 @@ export const directoryRouter = (): Router => {
    *           on an External worker), `PROBATION_BEFORE_START`,
    *           `REPORTS_TO_NOT_FOUND` (not an open Employment of the
    *           organization), `REPORTS_TO_SELF`, `INVALID_PHONE`,
-   *           `INVALID_COUNTRY` or `DATE_OF_BIRTH_OUT_OF_RANGE`.
-   *           `EMPLOYEES_ONLY` also answers Personal on an External worker's record.
+   *           `INVALID_COUNTRY`, `DATE_OF_BIRTH_OUT_OF_RANGE`, `ENTRY_NOT_FOUND`
+   *           (no such Department or Location in the organization) or
+   *           `ENTRY_ARCHIVED` (an archived entry given to a record that
+   *           doesn't hold it). `EMPLOYEES_ONLY` also answers Personal on an
+   *           External worker's record.
    */
   app.patch(
     "/:organizationId/people/:employmentId",
