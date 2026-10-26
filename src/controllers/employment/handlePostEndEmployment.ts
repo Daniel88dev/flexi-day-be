@@ -20,7 +20,7 @@ export const handlePostEndEmployment = async (req: Request, res: Response) => {
   );
 
   await markCalendarTargetsDirty(cancelled);
-  await markMemberGroupEventTargetsDirty(employment.userId);
+  if (employment.userId) await markMemberGroupEventTargetsDirty(employment.userId);
 
   return res
     .status(200)

@@ -14,7 +14,11 @@ import { organizationDataStore } from "../organizationData/organizationDataStore
 import { organizationExportsPrefix } from "./personExportBuild.js";
 import type { PersonExportRow } from "./types.js";
 
-/** Every person the organization holds an Employment for, open or ended, with their spells oldest first. */
+/**
+ * Every person with an account the organization holds an Employment for, open
+ * or ended, with their spells oldest first. Account-less Employments are left
+ * out: the Read log names its subject by user id.
+ */
 export const organizationPeople = async (
   organizationId: string,
   tx?: DbTransaction
@@ -27,6 +31,7 @@ export const organizationPeople = async (
 
   const byUser = new Map<string, string[]>();
   for (const row of rows) {
+    if (row.userId === null) continue;
     const spells = byUser.get(row.userId) ?? [];
     spells.push(row.id);
     byUser.set(row.userId, spells);

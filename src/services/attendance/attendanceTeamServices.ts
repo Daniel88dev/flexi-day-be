@@ -40,11 +40,10 @@ export const getTeamAttendance = async (
     ...(await getAttendanceSettings(organizationId, tx)),
   };
 
-  const employments = await listEmployments(
-    organizationId,
-    { userIds: audience.userIds, active: true },
-    tx
-  );
+  // Nobody owes attendance without an account, so account-less Employments stay off the board.
+  const employments = (
+    await listEmployments(organizationId, { userIds: audience.userIds, active: true }, tx)
+  ).flatMap(({ userId, ...employment }) => (userId ? [{ ...employment, userId }] : []));
   const userIds = employments.map((employment) => employment.userId);
   const employmentIds = employments.map((employment) => employment.id);
 

@@ -26,10 +26,14 @@ import {
 
 const BACKFILL_MIGRATION = "src/db/schema/out/0008_employments.sql";
 
+const PAIR_CONFLICT = 'ON CONFLICT ("organization_id", "user_id") DO NOTHING';
+
 /**
  * The backfill as production ran it. Taken out of the migration rather than
  * reimplemented, so these assertions cannot pass against a second, tidier copy
- * that no database ever executed.
+ * that no database ever executed. Its conflict target was the unique pair that
+ * migration 0038 replaced with a partial index on open rows, so the replay names
+ * that index's predicate; nothing else changes.
  */
 const backfillEmployments = async () => {
   const migration = await readFile(resolve(process.cwd(), BACKFILL_MIGRATION), "utf8");
@@ -37,11 +41,18 @@ const backfillEmployments = async () => {
     .split("--> statement-breakpoint")
     .find((part) => part.includes('INSERT INTO "employments"'));
 
-  if (!statement) {
+  if (!statement?.includes(PAIR_CONFLICT)) {
     throw new Error(`${BACKFILL_MIGRATION} no longer carries the roster backfill`);
   }
 
-  await db.execute(sql.raw(statement));
+  await db.execute(
+    sql.raw(
+      statement.replace(
+        PAIR_CONFLICT,
+        'ON CONFLICT ("organization_id", "user_id") WHERE "ended_at" IS NULL AND "user_id" IS NOT NULL DO NOTHING'
+      )
+    )
+  );
 };
 
 /**
@@ -203,7 +214,7 @@ describe("the employment roster", () => {
       expect(await isEmployed(joiner.id)).toBe(true);
     });
 
-    it("reopens an ended Employment rather than writing a second row", async () => {
+    it("starts a new Employment for a returner rather than reopening the ended one", async () => {
       const returner = await userOf("returner");
       const groupId = await newGroup("Returners", owner.id);
       await addMember(groupId, returner.id);
@@ -212,11 +223,11 @@ describe("the employment roster", () => {
 
       await addMember(groupId, returner.id);
 
-      const reopened = await getEmployment(organizationId, returner.id);
-      expect(reopened?.id).toBe(first!.id);
-      expect(reopened?.endedAt).toBeNull();
+      const current = await getEmployment(organizationId, returner.id);
+      expect(current?.id).not.toBe(first!.id);
+      expect(current?.endedAt).toBeNull();
       // A new spell: attendance is measured from the return, not the first day.
-      expect(reopened!.startedAt.getTime()).toBeGreaterThan(first!.startedAt.getTime());
+      expect(current!.startedAt.getTime()).toBeGreaterThan(first!.startedAt.getTime());
     });
 
     it("does not restart the spell of someone joining a second group", async () => {
@@ -343,8 +354,8 @@ describe("the employment roster", () => {
     });
   });
 
-  it("never gives one person two rows in one organization", async () => {
-    const roster = await listEmployments(organizationId);
+  it("never gives one person two open rows in one organization", async () => {
+    const roster = await listEmployments(organizationId, { active: true });
     const userIds = roster.map((row) => row.userId);
 
     expect(new Set(userIds).size).toBe(userIds.length);

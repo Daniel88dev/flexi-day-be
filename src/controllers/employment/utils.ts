@@ -5,6 +5,7 @@ export const presentEmployment = (employment: EmploymentType) => ({
   id: employment.id,
   organizationId: employment.organizationId,
   userId: employment.userId,
+  type: employment.type,
   startedAt: employment.startedAt,
   endedAt: employment.endedAt,
   ended: employment.endedAt !== null,

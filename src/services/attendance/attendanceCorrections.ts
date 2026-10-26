@@ -18,7 +18,7 @@ import {
   assertEmploymentReadable,
   canAdministerEmployment,
 } from "../employment/attendanceAccess.js";
-import { getEmploymentById } from "../employment/employmentServices.js";
+import { asBoundEmployment, getEmploymentById } from "../employment/employmentServices.js";
 import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 import type { AttendanceSettingsType } from "../organization/types.js";
 import {
@@ -270,8 +270,9 @@ const loadCorrectable = async (
   const found = await getSessionById(sessionId, {}, tx);
   if (!found) throw sessionNotFound(sessionId, viewerUserId);
 
-  const employment = await getEmploymentById(found.employmentId, tx);
-  if (!employment) throw employmentMissing(found.employmentId);
+  const row = await getEmploymentById(found.employmentId, tx);
+  if (!row) throw employmentMissing(found.employmentId);
+  const employment = asBoundEmployment(row);
 
   // Checked before the lock too, so nobody without standing ever holds it.
   const unlocked = await authorizeAttendanceWrite(viewerUserId, employment, found, tx, now);

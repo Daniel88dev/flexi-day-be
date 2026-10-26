@@ -142,8 +142,8 @@ today or earlier in the organization's zone and not before the spell started, an
 removes the person from every group of the organization, clears their approver slots, revokes a
 delegated admin grant, cancels pending requests and approved bookings after today with the reason
 `employment ended`, and sets `ended_at` on that date. It refuses while the person manages a group.
-It refuses a live account for now, because the Employment is one row per organization and re-adding
-an ended person would reopen it and overwrite the spell.
+It refuses a live account and an Employment without an account for now; later directory tickets
+open both.
 
 ### Erase
 

@@ -371,7 +371,7 @@ export const resetDevData = async (): Promise<ResetSummary> => {
   // A seeded account that was deleted lost its address, so it is found through
   // its Employment in a seeded organization instead.
   const strippedUsers = await db
-    .selectDistinct({ id: employments.userId })
+    .selectDistinct({ id: user.id })
     .from(employments)
     .innerJoin(organizations, eq(organizations.id, employments.organizationId))
     .innerJoin(user, eq(user.id, employments.userId))

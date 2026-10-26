@@ -137,6 +137,14 @@ export const requestEmploymentExport = async (
   if (!(await isOrganizationAdmin(input.requestedByUserId, employment.organizationId, tx))) {
     throw refuse(403, "FORBIDDEN", "No permission for related organization", context);
   }
+  if (employment.userId === null) {
+    throw refuse(
+      422,
+      "NO_ACCOUNT",
+      "A person without an account has no Person export yet; the Organization export holds them",
+      context
+    );
+  }
 
   return requestPersonExport(
     {

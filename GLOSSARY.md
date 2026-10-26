@@ -211,9 +211,12 @@ reserved-domain address there is bad data, and bouncing it helps nobody.
 - `report-export-schema.ts` / `support-access-schema.ts` — write-only audit trails; nothing reads
   them back.
 - `user-settings-schema.ts` — a missing row means defaults, not opt-out.
-- `employment-schema.ts` — unique on `(organization_id, user_id)`, so the row is the person's
-  **current** spell in that organization, not a history: a rejoin reopens it with a new
-  `started_at` and the earlier spell is gone. `name` and `email` are the organization's own copy:
+- `employment-schema.ts`: one row per spell. A partial unique index allows one **open** row per
+  `(organization_id, user_id)`, so a rejoin inserts a new row and the earlier spell keeps its
+  attendance. `user_id` is null for a person without an account; such a row's `email` is unique
+  among the organization's open rows, and a join path that would clash with it gets a 409
+  (`src/services/employment/accountlessClash.ts`). `type` is `employee` or `external`. `name` and
+  `email` are the organization's own copy:
   written on open, rewritten on open rows by the `employments_follow_user` trigger whenever the
   account's name or email changes, and frozen once the row ends or `account_deleted_at` is set.
   Readers show a person's name through `personName` (`src/services/person/personName.ts`), never

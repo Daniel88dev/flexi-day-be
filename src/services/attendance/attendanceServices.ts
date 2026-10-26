@@ -36,7 +36,7 @@ import {
 } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAttendanceActive, isAttendanceActiveFor } from "../billing/guards.js";
-import { getEmployment } from "../employment/employmentServices.js";
+import { asBoundEmployment, getEmployment } from "../employment/employmentServices.js";
 import {
   assertEmploymentReadable,
   canAdministerEmployment,
@@ -47,7 +47,7 @@ import { computeAttendance } from "./attendanceCalculation.js";
 import { getAttendanceExclusions } from "./attendanceExclusions.js";
 import { selfServiceWindowOf } from "./selfServiceWindow.js";
 import type { AttendanceSettingsType } from "../organization/types.js";
-import type { EmploymentType } from "../employment/types.js";
+import type { BoundEmploymentType } from "../employment/types.js";
 import type {
   AttendanceBreakType,
   AttendanceDayType,
@@ -63,7 +63,7 @@ import type {
  * are undefined for an organization that never set attendance up.
  */
 export type AttendanceSubject = {
-  employment: EmploymentType;
+  employment: BoundEmploymentType;
   organizationId: string;
   settings: AttendanceSettingsType | undefined;
   /** `isAttendanceActive` for the organization, as of the read that found the Employment. */
@@ -137,12 +137,28 @@ export const resolveAttendanceSubject = async (
   organizationId: string | undefined,
   tx?: DbTransaction
 ): Promise<AttendanceSubject | undefined> => {
-  const all = await listSubjects(userId, organizationId, tx);
+  const all = currentSpells(await listSubjects(userId, organizationId, tx));
 
   const live = all.filter((subject) => subject.employment.endedAt === null);
   const ordered = live.length > 0 ? live : all;
 
   return ordered.find((subject) => subject.active) ?? ordered[0];
+};
+
+/** Per organization, the open spell, else the one that started last. Keeps the input order. */
+const currentSpells = (subjects: AttendanceSubject[]): AttendanceSubject[] => {
+  const current = new Map<string, AttendanceSubject>();
+  for (const subject of subjects) {
+    const held = current.get(subject.organizationId);
+    if (
+      !held ||
+      (held.employment.endedAt !== null &&
+        subject.employment.startedAt >= held.employment.startedAt)
+    ) {
+      current.set(subject.organizationId, subject);
+    }
+  }
+  return subjects.filter((subject) => current.get(subject.organizationId) === subject);
 };
 
 /** The caller's Employments with each organization's settings and plan, in one round trip. */
@@ -172,7 +188,7 @@ const listSubjects = async (
     .orderBy(asc(employments.startedAt));
 
   return rows.map(({ employment, settings, subscription }) => ({
-    employment,
+    employment: { ...employment, userId },
     organizationId: employment.organizationId,
     settings: settings ?? undefined,
     active: isAttendanceActiveFor(settings ?? undefined, subscription ?? undefined),
@@ -266,7 +282,7 @@ export const beginAttendanceWrite = async (
 export const lockEmployment = async (
   employmentId: string,
   tx: DbTransaction
-): Promise<EmploymentType> => {
+): Promise<BoundEmploymentType> => {
   const [row] = await tx
     .select()
     .from(employments)
@@ -282,7 +298,7 @@ export const lockEmployment = async (
     });
   }
 
-  return row;
+  return asBoundEmployment(row);
 };
 
 export const getOpenSession = async (

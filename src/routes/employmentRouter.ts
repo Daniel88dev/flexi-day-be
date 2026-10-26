@@ -25,8 +25,9 @@ export const employmentRouter = (): Router => {
    *       - Employment
    *     summary: One Employment in an organization
    *     description: |
-   *       One person's membership in one organization — the subject of
-   *       attendance, with the spell it currently runs for and the per-person
+   *       One person's current spell in one organization (the open one, else
+   *       the one that ended last), the subject of attendance, with the
+   *       worker type (`employee` or `external`) and the per-person
    *       override of the organization's required minutes per day (null unless
    *       one was set). Defaults to the caller; `userId` asks about someone
    *       else and needs standing over them — their own group's admin, or an
@@ -49,7 +50,7 @@ export const employmentRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: |
-   *           `{ id, organizationId, userId, startedAt, endedAt, ended,
+   *           `{ id, organizationId, userId, type, startedAt, endedAt, ended,
    *           requiredMinutesPerDay }`
    *       '403':
    *         description: |
@@ -78,7 +79,10 @@ export const employmentRouter = (): Router => {
    *       appears only for organization admins, as do ended ones, which carry
    *       `ended: true`. A group admin's slice is their groups' current
    *       members — their own row is not in it, and is on `GET
-   *       /api/employment`. Callers who administer nothing get 403.
+   *       /api/employment`. A person without an account belongs to no group,
+   *       so only organization admins see them. Each spell is its own row, so
+   *       someone who left and came back appears once per spell. Callers who
+   *       administer nothing get 403.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -90,10 +94,13 @@ export const employmentRouter = (): Router => {
    *     responses:
    *       '200':
    *         description: |
-   *           Array of `{ id, userId, email, startedAt, endedAt, ended,
+   *           Array of `{ id, userId, type, email, startedAt, endedAt, ended,
    *           requiredMinutesPerDay, accountDeletedAt, accountDeleted, user }`:
    *           open Employments by name, then ended ones by `endedAt`, most
-   *           recent first. `requiredMinutesPerDay` is this person's own required
+   *           recent first. `type` is `employee` or `external`. `userId` is
+   *           null for a person without an account: `email` and `user.name`
+   *           then come from the Employment's own copy, and `user.id` is the
+   *           Employment's id. `requiredMinutesPerDay` is this person's own required
    *           time, null while the organization's rule stands.
    *           `accountDeletedAt` is when the person deleted their account, and
    *           `accountDeleted` says whether they did: the row then names them
@@ -394,7 +401,9 @@ export const employmentRouter = (): Router => {
    *       '404':
    *         description: No such Employment
    *       '422':
-   *         description: Malformed employment id
+   *         description: |
+   *           Malformed employment id, or `context.code` is `NO_ACCOUNT`: the
+   *           Employment has no account bound, so there is no Person export of it
    *       '503':
    *         description: "`context.code` is `EXPORT_UNAVAILABLE`: no organization-data store is configured"
    */

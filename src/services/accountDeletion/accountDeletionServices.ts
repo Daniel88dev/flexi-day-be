@@ -81,6 +81,8 @@ const organizationsWithOtherMembers = async (
         eq(employments.organizationId, organizations.id),
         isNull(employments.endedAt),
         isNull(employments.accountDeletedAt),
+        // Like a Deleted account, a person without an account cannot leave, so they never block.
+        isNotNull(employments.userId),
         ne(employments.userId, userId)
       )
     )
