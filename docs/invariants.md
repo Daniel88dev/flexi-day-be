@@ -516,7 +516,9 @@ See [`../GLOSSARY.md`](../GLOSSARY.md) for **Private details** and **Away**. The
   `grantOrganizationAdmin`, `removeOrganizationAdmin`, `createGroup`, `updateGroupManager`,
   `deleteGroup`, `createGroupUser`, `deleteGroupUser` — not off the controllers that call them. A
   new join path therefore keeps the roster in step without knowing the roster exists, which is the
-  whole risk the ADR names.
+  whole risk the ADR names. End employment (`employment/endEmploymentServices.ts`) is the one act
+  that ends a row directly: it removes every link itself and then stamps the chosen date, which a
+  `syncEmployment` would overwrite with `now()`.
 - **It recomputes, never applies a delta.** `syncEmployment` asks `hasOrganizationLink` what is
   left and writes the answer, so two link removals in one request end the Employment exactly once
   whichever order they land in — `handleDeleteGroupUser` drops the last membership and revokes the

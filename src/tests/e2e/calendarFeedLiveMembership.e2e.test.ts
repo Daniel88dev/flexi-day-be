@@ -90,11 +90,12 @@ describe("Team feeds follow the owner's live membership", () => {
       otherGroup.id,
       workingDayFromNow(21)
     );
+    // In the past: leaving a group cancels the leaver's bookings there from tomorrow on.
     await approvedVacation(
       ownVacationId,
       context.user2.id,
       context.group.id,
-      workingDayFromNow(28)
+      workingDayFromNow(-7)
     );
 
     const team = await request(server.url)

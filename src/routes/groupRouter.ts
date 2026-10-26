@@ -563,7 +563,9 @@ export const groupRouter = (): Router => {
    *       '404':
    *         description: Group not found
    *       '422':
-   *         description: A named approver does not belong to the group
+   *         description: |
+   *           A named approver does not belong to the group, or is a Deleted
+   *           account (`context.code` is `ACCOUNT_DELETED`).
    */
   app.put(
     "/:groupId/approvers",

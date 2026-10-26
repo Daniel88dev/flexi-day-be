@@ -53,3 +53,10 @@ export const validatePatchEmployment = z.object({
 });
 
 export type ValidatedPatchEmploymentType = z.infer<typeof validatePatchEmployment>;
+
+/** End employment: the last day of the spell, today or earlier in the organization's zone. */
+export const validateEndEmployment = z.object({
+  endedOn: z.iso.date(),
+});
+
+export type ValidatedEndEmploymentType = z.infer<typeof validateEndEmployment>;
