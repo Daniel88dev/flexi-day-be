@@ -42,7 +42,10 @@ import { directoryProfileHistory, directoryProfiles } from "./directory-profile-
 import { directoryPermissionHistory, directoryRoleAssignments } from "./directory-role-schema.js";
 import { directoryPhotos } from "./directory-photo-schema.js";
 import { directorySensitiveProfiles } from "./directory-sensitive-profile-schema.js";
-import { directoryRetentionPeriods } from "./directory-retention-schema.js";
+import {
+  directoryRetentionHolds,
+  directoryRetentionPeriods,
+} from "./directory-retention-schema.js";
 import { directoryDepartments, directoryLocations } from "./directory-list-schema.js";
 
 export const schema = {
@@ -99,4 +102,5 @@ export const schema = {
   directoryRetentionPeriods,
   directoryDepartments,
   directoryLocations,
+  directoryRetentionHolds,
 };

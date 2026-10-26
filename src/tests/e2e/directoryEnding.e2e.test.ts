@@ -533,16 +533,19 @@ describe("ending an Employment in a Directory organization", () => {
         end: true,
         export: true,
         erase: false,
+        hold: false,
       });
       expect(await actionsOf(mia.id, bobEmployment)).toEqual({
         end: true,
         export: false,
         erase: false,
+        hold: false,
       });
       expect(await actionsOf(gina.id, await employmentIdOf(world.organizationId, mia.id))).toEqual({
         end: false,
         export: false,
         erase: false,
+        hold: false,
       });
       expect(
         (await actionsOf(owner.id, await employmentIdOf(world.organizationId, owner.id))).end

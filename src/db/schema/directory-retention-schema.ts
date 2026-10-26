@@ -1,6 +1,7 @@
 import { pgEnum, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 import { directoryPermissionRowEnum } from "./directory-schema.js";
+import { employments } from "./employment-schema.js";
 import { organizations } from "./organization-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
@@ -46,3 +47,19 @@ export const directoryRetentionPeriods = pgTable(
   },
   (table) => [primaryKey({ columns: [table.organizationId, table.section] })]
 );
+
+/**
+ * A Retention hold: while the row exists, every Retention purge skips the
+ * Employment. Lifting it deletes the row. Erase still removes the Employment,
+ * and the hold with it.
+ */
+export const directoryRetentionHolds = pgTable("directory_retention_holds", {
+  employmentId: text("employment_id")
+    .primaryKey()
+    .references(() => employments.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  setByUserId: text("set_by_user_id").references(() => user.id, { onDelete: "set null" }),
+  setAt: timestamp("set_at", { withTimezone: true }).defaultNow().notNull(),
+});

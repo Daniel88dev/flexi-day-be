@@ -330,6 +330,13 @@
       "when": 1793013787744,
       "tag": "0046_directory_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793014380164,
+      "tag": "0047_directory_retention_holds",
+      "breakpoints": true
     }
   ]
 }

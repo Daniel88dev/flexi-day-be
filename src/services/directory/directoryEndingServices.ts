@@ -48,4 +48,5 @@ export const profileActions = (
     record.endedAt === null && record.userId !== viewer.ownerUserId && access.acts[R.EndEmployment],
   export: administersOrganization(viewer) && record.userId !== null,
   erase: administersOrganization(viewer) && record.accountDeletedAt !== null,
+  hold: administersOrganization(viewer) && record.endedAt !== null,
 });
