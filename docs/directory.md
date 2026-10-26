@@ -62,3 +62,53 @@ cells for each organization that has a copy, and in later enables through the co
   passes. The web's People section reads it.
 - The support organization detail carries the state, agreement versions and counts, never a Profile
   field (`docs/invariants.md`, platform-support surface).
+
+## Reading the directory
+
+Decisions: fenro T-472 (the table and its floors), T-478 (the pages) and T-499 (this build).
+
+`loadDirectoryViewer(viewerUserId, organizationId)` in `src/services/directory/directoryViewer.ts`
+reads the viewer's standing and the organization's cells once. Its `accessTo(record)` calls the pure
+`resolveAccess` in `permissionResolver.ts`, which every directory read and write goes through.
+
+Audiences that credit a viewer on a record:
+
+- **Owner**: the organization's owner.
+- **Self**: the record is the viewer's own open Employment.
+- **Colleague** or **External worker**: the viewer holds an open Employment of that type. Both
+  credit on the viewer's own record too.
+- **Group admin**: the record's user is a plain member of a live group the viewer manages or holds
+  admin access in. A group's manager is never one of its members, and a person without an account
+  is outside every Group admin's reach.
+- **HR** and **Leadership**: directory roles on the viewer's open Employment (T-506 stores them;
+  until then nobody holds one).
+- **Org admin**: a delegated org-admin grant.
+
+The widest cell of those audiences wins per Section. The floors hold whatever the stored cells say:
+the Owner writes every Section, Self reads every Section of their own open record, and Colleague
+and External worker never get more than read. An ended record counts only the Owner, Org admin
+and HR audiences, which is also who sees the Former list.
+
+A viewer reaches a record only while they read its Card: without it the person is missing from
+the list and their profile is a 404.
+
+Routes, all read-only and open through a lapse:
+
+- `GET /api/directory/{organizationId}/people`: open Employments in reach, by name.
+- `GET /api/directory/{organizationId}/former`: ended spells in reach, latest end first; 403
+  `FORMER_LIST_DENIED` for anyone but the owner, org admins and HR.
+- `GET /api/directory/{organizationId}/people/{employmentId}`: the profile, with a key in
+  `sections` only for each Section the viewer reads. Spell dates sit in `job`.
+
+What else a viewer learns:
+
+- The External worker marker goes to everyone in reach. No account, Account deleted and Rejoined
+  go to the owner, org admins and HR.
+- `account` (status, sign-in email, directory roles) goes to the owner, org admins, HR and the
+  person.
+- `image` is the Account picture, so the web falls back from the Profile photo to it, then to
+  initials. No leave or attendance status appears on any directory route.
+
+Refusals: 404 `ORGANIZATION_NOT_FOUND`, 409 `DIRECTORY_OFF`, 403 `NOT_IN_DIRECTORY` for a viewer
+who is not the owner, an org admin or one of the organization's open people, and 404
+`PERSON_NOT_FOUND` for a record out of reach or in another organization.
