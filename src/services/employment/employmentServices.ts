@@ -14,6 +14,8 @@ import { assertNoAccountlessClash, lockEmploymentEmail } from "./accountlessClas
 import { personName } from "../person/personName.js";
 import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
+import { isDirectoryOrganization } from "../directory/directorySettingsServices.js";
+import { clearAtEndSections } from "../directory/retentionPurge.js";
 
 /**
  * Whether the person is still reachable from the organization by any of the
@@ -90,6 +92,11 @@ const hasOrganizationLink = async (
  * reopened. It is refused with a 409 when an open account-less Employment in
  * the organization holds the account's email.
  *
+ * In a Directory organization it opens and never ends: only End employment
+ * does, whatever the plan, so losing the last link leaves the person in no
+ * group. Elsewhere an end empties the Sections set to "at end" in the same
+ * transaction, except the Profile photo, which the next nightly run removes.
+ *
  * Runs in the caller's transaction: the row that decides the answer is usually
  * one the caller just wrote and has not committed.
  */
@@ -125,9 +132,12 @@ export const syncEmployment = async (
     return;
   }
 
+  if (await isDirectoryOrganization(organizationId, tx)) return;
+
+  const now = new Date();
   const ended = await client
     .update(employments)
-    .set({ endedAt: new Date() })
+    .set({ endedAt: now, endRecordedAt: now })
     .where(
       and(
         eq(employments.organizationId, organizationId),
@@ -135,7 +145,7 @@ export const syncEmployment = async (
         isNull(employments.endedAt)
       )
     )
-    .returning({ id: employments.id });
+    .returning({ id: employments.id, organizationId: employments.organizationId });
   await endDirectoryRoles(
     {
       employmentIds: ended.map((row) => row.id),
@@ -144,6 +154,11 @@ export const syncEmployment = async (
     },
     tx
   );
+  if (ended.length === 0) return;
+  const clear = async (transaction: DbTransaction) => {
+    for (const row of ended) await clearAtEndSections(row, transaction, { keepPhoto: true });
+  };
+  await (tx ? clear(tx) : db.transaction(clear));
 };
 
 /** {@link syncEmployment} for everyone a single change touches — group deletion. */
@@ -157,7 +172,7 @@ const syncEmployments = async (
   }
 };
 
-const getOpenEmployment = async (
+export const getOpenEmployment = async (
   organizationId: string,
   userId: string,
   tx?: DbTransaction
@@ -299,6 +314,47 @@ export const listEmployments = async (
     // Keyed on the Employment when there is no account, so the summary still has an id.
     user: buildUserSummary({ id: row.userId ?? row.id, name: userName }),
   }));
+};
+
+/**
+ * Open Employments none of the four links holds: people without an account and
+ * account holders who belong to nothing. A Directory organization keeps them
+ * open; with the directory off only End employment ends them.
+ */
+export const unlinkedOpenEmploymentIds = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<Set<string>> => {
+  const rows = await (tx ?? db)
+    .select({ id: employments.id })
+    .from(employments)
+    .innerJoin(organizations, eq(organizations.id, employments.organizationId))
+    .where(
+      and(
+        eq(employments.organizationId, organizationId),
+        isNull(employments.endedAt),
+        sql`(${employments.userId} is null or (
+          ${employments.userId} <> ${organizations.ownerUserId}
+          and not exists (
+            select 1 from ${organizationUsers}
+            where ${organizationUsers.organizationId} = ${employments.organizationId}
+              and ${organizationUsers.userId} = ${employments.userId}
+              and ${organizationUsers.deletedAt} is null)
+          and not exists (
+            select 1 from ${groups}
+            where ${groups.organizationId} = ${employments.organizationId}
+              and ${groups.managerUserId} = ${employments.userId}
+              and ${groups.deletedAt} is null)
+          and not exists (
+            select 1 from ${groupUsers}
+            inner join ${groups} on ${groups.id} = ${groupUsers.groupId}
+            where ${groups.organizationId} = ${employments.organizationId}
+              and ${groupUsers.userId} = ${employments.userId}
+              and ${groupUsers.deletedAt} is null
+              and ${groups.deletedAt} is null)))`
+      )
+    );
+  return new Set(rows.map((row) => row.id));
 };
 
 /** Headcount for the billing screen: people currently employed, not rows. */

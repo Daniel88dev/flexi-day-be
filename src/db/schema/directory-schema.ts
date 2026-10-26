@@ -77,6 +77,16 @@ export const organizationDirectorySettings = pgTable("organization_directory_set
   disabledByUserId: text("disabled_by_user_id").references(() => user.id, {
     onDelete: "set null",
   }),
+  /** The owner's last Delete all directory data. */
+  dataDeletedAt: timestamp("data_deleted_at", { withTimezone: true }),
+  dataDeletedByUserId: text("data_deleted_by_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  /** The setup checklist stays hidden while this is at or after `enabledAt`, so a re-enable shows it again. */
+  checklistHiddenAt: timestamp("checklist_hidden_at", { withTimezone: true }),
+  /** The organization's own Art. 14 emergency-contact notice; null reads as the product default. */
+  emergencyContactNoticeEn: text("emergency_contact_notice_en"),
+  emergencyContactNoticeCs: text("emergency_contact_notice_cs"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

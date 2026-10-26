@@ -16,7 +16,8 @@ export const handleDeleteGroupInvite = async (req: Request, res: Response) => {
 
   const invite = await getInviteLinkById(inviteId);
 
-  if (!invite) {
+  // A directory invite that names no group is the directory's to revoke.
+  if (!invite?.groupId) {
     throw new AppError({
       message: "Invite not found",
       logging: true,

@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { user } from "./auth-schema.js";
+import { employments } from "./employment-schema.js";
 import { organizations } from "./organization-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 
@@ -37,7 +38,8 @@ export const personExportScopeEnum = pgEnum("person_export_scope", enumToPgEnum(
  * survives a restart: a `PENDING` row is built again by whichever instance
  * picks it up. A build in progress holds a session advisory lock on the id,
  * not a status, so a process that dies mid-build frees it. An Organization
- * export has no subject.
+ * export has no subject. A Person export names its subject by the user, or by
+ * the Employment when the person has no account.
  */
 export const personExports = pgTable(
   "person_exports",
@@ -48,6 +50,9 @@ export const personExports = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     scope: personExportScopeEnum("scope").notNull().default(personExportScope.Person),
     subjectUserId: text("subject_user_id").references(() => user.id, { onDelete: "cascade" }),
+    subjectEmploymentId: text("subject_employment_id").references(() => employments.id, {
+      onDelete: "cascade",
+    }),
     requestedByUserId: text("requested_by_user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -75,7 +80,7 @@ export const personExports = pgTable(
       .where(sql`${table.status} = 'PENDING'`),
     check(
       "person_exports_subject_chk",
-      sql`(${table.scope} = 'PERSON') = (${table.subjectUserId} IS NOT NULL)`
+      sql`(${table.scope} = 'PERSON') = (${table.subjectUserId} IS NOT NULL OR ${table.subjectEmploymentId} IS NOT NULL) AND NOT (${table.subjectUserId} IS NOT NULL AND ${table.subjectEmploymentId} IS NOT NULL)`
     ),
   ]
 );

@@ -28,6 +28,7 @@ import {
   REMOVED_FROM_GROUP_REASON,
 } from "../../services/vacation/departureCancellation.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
+import { isDirectoryOrganization } from "../../services/directory/directorySettingsServices.js";
 
 /**
  * Removes a member from a group (soft delete), cancelling their pending
@@ -117,14 +118,16 @@ export const handleDeleteGroupUser = async (req: Request, res: Response) => {
     // Same reasoning one level up: an org-admin grant is only ever issued to
     // one of the organization's own people, so leaving the last of its groups
     // must end it too. Otherwise someone removed from the company keeps
-    // administering every group in it until the owner notices.
+    // administering every group in it until the owner notices. A Directory
+    // organization keeps the person employed in no group, so the grant stays
+    // until End employment drops it.
     //
     // The count spans the whole organization, which is why the lock taken at
     // the top of this transaction has to be the organization's: two removals
     // from different groups would otherwise each see the other's membership as
     // live and neither would revoke.
     const remaining = await countActiveMembershipsInOrganization(userId, locked.organizationId, tx);
-    if (remaining === 0) {
+    if (remaining === 0 && !(await isDirectoryOrganization(locked.organizationId, tx))) {
       await removeOrganizationAdmin(locked.organizationId, userId, tx);
     }
 

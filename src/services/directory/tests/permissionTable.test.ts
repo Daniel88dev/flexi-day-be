@@ -114,3 +114,21 @@ describe("withDefaultCells", () => {
     expect(value("END_EMPLOYMENT", "GROUP_ADMIN")).toBeUndefined();
   });
 });
+
+describe("Manage departments and locations", () => {
+  it("defaults to the owner (fixed), HR and org admins, and refuses Group admin and Leadership", () => {
+    const row = withDefaultCells([]).filter(
+      (cell) => cell.row === ("MANAGE_DEPARTMENTS_AND_LOCATIONS" as never)
+    );
+    expect(row.map((cell) => [cell.audience, cell.value])).toEqual([
+      ["OWNER", "ALLOWED"],
+      ["GROUP_ADMIN", "NO"],
+      ["HR", "ALLOWED"],
+      ["LEADERSHIP", "NO"],
+      ["ORGANIZATION_ADMIN", "ALLOWED"],
+    ]);
+    expect(cellRule("MANAGE_DEPARTMENTS_AND_LOCATIONS" as never, "OWNER" as never)?.fixed).toBe(
+      true
+    );
+  });
+});

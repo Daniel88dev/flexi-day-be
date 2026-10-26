@@ -18,8 +18,11 @@ export const getUserSettings = async (
 };
 
 /** The user's app language, null when never set (English). */
-export const getUserLanguage = async (userId: string): Promise<appLanguage | null> => {
-  const [row] = await db
+export const getUserLanguage = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<appLanguage | null> => {
+  const [row] = await (tx ?? db)
     .select({ language: userSettings.language })
     .from(userSettings)
     .where(eq(userSettings.userId, userId))

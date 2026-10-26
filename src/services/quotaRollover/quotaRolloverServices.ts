@@ -5,7 +5,7 @@ import { groups } from "../../db/schema/group-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { changesSchema, changesType } from "../../db/schema/changes-schema.js";
-import { employments } from "../../db/schema/employment-schema.js";
+import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { sumDays } from "../vacation/dayWeight.js";
 import { logger } from "../../middleware/logger.js";
@@ -76,6 +76,13 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
       groupDefaultVacationDays: groups.defaultVacationDays,
       groupDefaultHomeOfficeDays: groups.defaultHomeOfficeDays,
       groupDefaultSickDays: groups.defaultSickDays,
+      externalWorker: sql<boolean>`EXISTS (
+        SELECT 1 FROM ${employments}
+        WHERE ${employments.userId} = ${groupUsers.userId}
+          AND ${employments.organizationId} = ${groups.organizationId}
+          AND ${employments.endedAt} IS NULL
+          AND ${employments.type} = ${workerType.External}
+      )`,
     })
     .from(groupUsers)
     .innerJoin(groups, eq(groupUsers.groupId, groups.id))
@@ -124,6 +131,7 @@ export const findRolloverCandidates = async (year: number): Promise<RolloverCand
     groupDefaultVacationDays: row.groupDefaultVacationDays,
     groupDefaultHomeOfficeDays: row.groupDefaultHomeOfficeDays,
     groupDefaultSickDays: row.groupDefaultSickDays,
+    externalWorker: row.externalWorker,
   }));
 };
 

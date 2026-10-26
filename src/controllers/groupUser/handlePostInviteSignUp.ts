@@ -8,7 +8,11 @@ import { withoutConfirmationEmail } from "../../utils/confirmationEmail.js";
 import { hashInviteLinkSecret } from "../../utils/inviteLinkSecret.js";
 import { assertCanAddMember } from "../../services/billing/guards.js";
 import { getInviteLinkBySecretHash } from "../../services/groupUser/inviteLinkServices.js";
-import { assertOpenInviteFor, redeemInvite } from "../../services/groupUser/inviteRedemption.js";
+import {
+  assertOpenInviteFor,
+  redeemInvite,
+  redemptionBody,
+} from "../../services/groupUser/inviteRedemption.js";
 import type { ValidatedInviteSignUpType } from "../../services/groupUser/types.js";
 import { deleteUser, getUserByEmail, markEmailVerified } from "../../services/user/userServices.js";
 import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
@@ -49,7 +53,9 @@ export const handlePostInviteSignUp = async (req: Request, res: Response) => {
     logContext
   );
   if (await getUserByEmail(email)) throw accountExists(invite.id);
-  await assertCanAddMember(invite.groupId, undefined, { redeemingOpenInvite: true });
+  if (invite.groupId !== null) {
+    await assertCanAddMember(invite.groupId, undefined, { redeemingOpenInvite: true });
+  }
 
   const headers = fromNodeHeaders(req.headers);
   const signUp = await withoutConfirmationEmail(() =>
@@ -65,9 +71,9 @@ export const handlePostInviteSignUp = async (req: Request, res: Response) => {
   const userId = created?.user?.id;
   if (!userId || (await getUserByEmail(email))?.id !== userId) throw accountExists(invite.id);
 
-  let membership: Awaited<ReturnType<typeof redeemInvite>>;
+  let redemption: Awaited<ReturnType<typeof redeemInvite>>;
   try {
-    membership = await db.transaction(async (tx) => {
+    redemption = await db.transaction(async (tx) => {
       const current = assertOpenInviteFor(
         await getInviteLinkBySecretHash(linkSecretHash, tx),
         email,
@@ -98,7 +104,9 @@ export const handlePostInviteSignUp = async (req: Request, res: Response) => {
 
   if (!signIn.ok) {
     logger.error("invite sign-up could not start a session", { userId, status: signIn.status });
-    return res.status(201).json({ user: null, token: null, membership });
+    return res
+      .status(201)
+      .json({ user: null, token: null, membership: redemptionBody(redemption) });
   }
 
   for (const cookie of signIn.headers.getSetCookie()) {
@@ -109,9 +117,15 @@ export const handlePostInviteSignUp = async (req: Request, res: Response) => {
     token?: string | null;
   } | null;
 
-  logger.info("invite sign-up completed", { userId, groupId: membership.groupId });
+  logger.info("invite sign-up completed", {
+    userId,
+    groupId: redemption.membership?.groupId ?? null,
+    claimedEmploymentId: redemption.claim?.employmentId ?? null,
+  });
 
-  return res
-    .status(201)
-    .json({ user: session?.user ?? null, token: session?.token ?? null, membership });
+  return res.status(201).json({
+    user: session?.user ?? null,
+    token: session?.token ?? null,
+    membership: redemptionBody(redemption),
+  });
 };

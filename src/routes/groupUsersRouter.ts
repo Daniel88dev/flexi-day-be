@@ -42,7 +42,7 @@ export const groupUsersRouter = (): Router => {
    *       '403':
    *         description: No permission for related group
    *       '404':
-   *         description: Invite not found
+   *         description: Invite not found, or a directory invite that names no group
    *       '409':
    *         description: Invite already used or revoked
    */
@@ -62,6 +62,12 @@ export const groupUsersRouter = (): Router => {
    *       with that address, and only once that address is verified; an
    *       unverified invitee joins through the invite link instead
    *       (`POST /api/auth/invite/join`).
+   *
+   *       Redeeming claims first: when the invite is a directory invite, or
+   *       its address is held by an open Employment without an account in the
+   *       organization, the account is bound to that Employment (the Claim)
+   *       and its name and email follow the account from then on. A directory
+   *       invite that names no group joins no group.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -72,7 +78,11 @@ export const groupUsersRouter = (): Router => {
    *           type: string
    *     responses:
    *       '201':
-   *         description: The created membership
+   *         description: >-
+   *           The created membership, plus `claimed`: `{ employmentId,
+   *           organizationId }` when the redemption bound the account to an
+   *           Employment, else null. A directory invite that names no group
+   *           answers `{ groupId: null, claimed }`.
    *       '400':
    *         description: Malformed code
    *       '402':
@@ -91,8 +101,18 @@ export const groupUsersRouter = (): Router => {
    *       '409':
    *         description: >-
    *           Already a member (`errors[0].context` carries
-   *           `{ code: "ALREADY_MEMBER", groupId }`), or the code was just
-   *           redeemed.
+   *           `{ code: "ALREADY_MEMBER", groupId }`), the code was just
+   *           redeemed, or the account already has an open Employment in the
+   *           organization while the invite would claim another
+   *           (`ALREADY_EMPLOYED`; the admin resolves the duplicate). Also
+   *           `ACCOUNTLESS_EMPLOYMENT_EMAIL` when the account has no open
+   *           Employment there and an open record without an account holds its
+   *           email (`errors[0].context.employmentId`): the admin sends that
+   *           record a directory invite or erases it.
+   *       '410':
+   *         description: >-
+   *           A directory invite whose person has ended, been bound or changed
+   *           address. `errors[0].context.code` is `INVITE_REVOKED`.
    */
   app.post("/code/:validationCode", tryCatch(handlePostGroupUser));
 
@@ -267,8 +287,11 @@ export const groupUsersRouter = (): Router => {
    *       today (in the organization's time zone, UTC while attendance was
    *       never set up), are cancelled with a CANCELLED event naming the
    *       caller and the reason "removed from group"; past bookings and
-   *       today's stay, and nobody is notified. Losing the last link to the
-   *       organization ends the Employment. Deliberately available on
+   *       today's stay, and nobody is notified. Losing the last group of the
+   *       organization revokes a delegated org-admin row, and losing the last
+   *       link ends the Employment. In a Directory organization neither
+   *       happens: the person stays employed in no group, admin row included,
+   *       until End employment. Deliberately available on
    *       read-only (over plan limit) groups, since removing members is how an
    *       owner gets back under their plan's limits.
    *     security:

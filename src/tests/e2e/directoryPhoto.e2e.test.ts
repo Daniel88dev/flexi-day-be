@@ -15,7 +15,6 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { enableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { organizationDataStore } from "../../services/organizationData/organizationDataStore.js";
@@ -31,14 +30,10 @@ import {
   ATTACHMENT_SIGNATURE_HEADER,
   signAttachmentCallback,
 } from "../../services/attachment/callbackSignature.js";
-import {
-  authCookieFor,
-  createWebUser,
-  webSessionCookieFor,
-  WEB_TEST_PASSWORD,
-} from "./helpers/authHelper.js";
+import { createWebUser, webSessionCookieFor, WEB_TEST_PASSWORD } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory } from "./helpers/directoryWorld.js";
 
 const photoWithGps = () =>
   sharp({ create: { width: 1600, height: 1200, channels: 3, background: "#2f6f4f" } })
@@ -116,14 +111,7 @@ describe("The Profile photo", () => {
       email: "ada@example.test",
     });
 
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     const employmentOf = async (userId: string) => {
       const [row] = await db
@@ -148,15 +136,7 @@ describe("The Profile photo", () => {
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      post: (path: string, body: object) =>
-        request(server.url).post(path).set("Cookie", cookie).send(body),
-      delete: (path: string) => request(server.url).delete(path).set("Cookie", cookie),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
 
   /** A store URL points at the configured API origin; send it to the test server instead. */
   const local = (url: string) => {
@@ -508,20 +488,44 @@ describe("The Profile photo", () => {
     ]);
   });
 
+  it("puts the full photo of a person without an account in the Organization export", async () => {
+    const { organizationId, users, employment } = await setUp();
+    const owner = await as(users.owner.id);
+    const { photoId } = await upload(owner, organizationId, employment.ada, await photoWithGps());
+    const queue = createPersonExportQueue({ retryDelaysMs: [0, 0, 0], busyRetryMs: 0 });
+    installPersonExportQueue(queue);
+
+    const requested = await owner.post(
+      `/api/organization/export?organizationId=${organizationId}`,
+      {}
+    );
+    expect(requested.status).toBe(202);
+    await queue.drain();
+    const [row] = await db
+      .select()
+      .from(personExports)
+      .where(eq(personExports.id, requested.body.id as string));
+    const entries = readZip((await organizationDataStore!.getObject(row!.storageKey!))!);
+
+    const file = `people-without-account/profile-photos/${employment.ada}.jpg`;
+    const stored = (await photoFiles(organizationId, employment.ada, photoId)).full!;
+    expect(entries.get(file)?.equals(stored)).toBe(true);
+    const document = JSON.parse(entries.get("organization.json")!.toString("utf8"));
+    expect(document.peopleWithoutAccount).toEqual([
+      expect.objectContaining({
+        employmentId: employment.ada,
+        photo: { file, uploadedAt: expect.any(String) },
+      }),
+    ]);
+  });
+
   it("deletes an organization's photos with the organization", async () => {
     const owner = await createWebUser("Solo Owner");
     const organizationId = (await ensureOrganizationForUser(owner.id)).id;
     const group = await makeGroup("Solo", owner.id, { organizationOwnerId: owner.id });
     await addMember(group, owner.id);
     await syncEmployment(organizationId, owner.id);
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
     const [own] = await db
       .select({ id: employments.id })
       .from(employments)

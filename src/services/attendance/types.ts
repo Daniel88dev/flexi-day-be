@@ -64,7 +64,10 @@ export type AttendanceStateType = {
   employmentId: string;
   /** Employed here once, not any more — history stays readable, writes are refused. */
   employmentEnded: boolean;
+  /** Attendance is live for this person: the organization's is, and they aren't an External worker. */
   active: boolean;
+  /** External workers keep no attendance, so the clock is off for them. */
+  externalWorker: boolean;
   locationEnabled: boolean;
   selfService: SelfServiceWindow;
   /**

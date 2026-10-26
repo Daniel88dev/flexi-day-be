@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, arrayOverlaps, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { attachments, AttachmentStatus } from "../../db/schema/attachment-schema.js";
 import {
@@ -11,21 +11,38 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
-import { readLog, readLogAudience } from "../../db/schema/read-log-schema.js";
+import type { directoryPermissionRow } from "../../db/schema/directory-schema.js";
+import { readLog, readLogAudience, type readLogKind } from "../../db/schema/read-log-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacationEvents } from "../../db/schema/vacation-event-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { downloadFileName } from "../attachment/attachmentServices.js";
 import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
 import { collectProfileExport } from "../directory/directoryProfileServices.js";
+import { collectRoleExport } from "../directory/directoryRoleServices.js";
+import { collectSensitiveExport } from "../directory/sensitiveSections.js";
+import { personSpellIds } from "../employment/personSpells.js";
 import { getPersonContacts } from "../person/personName.js";
 
-/** The fixed purpose labels the person sees in place of reader names (C-579/21). */
-const PURPOSE: Record<readLogAudience, string> = {
+/** The fixed purpose labels the person sees in place of reader names. */
+export const READ_PURPOSE: Record<readLogAudience, string> = {
   [readLogAudience.Owner]: "owner",
   [readLogAudience.OrganizationAdmin]: "organization administration",
+  [readLogAudience.Hr]: "HR administration",
+  [readLogAudience.GroupAdmin]: "line management",
+  [readLogAudience.Leadership]: "leadership",
+  [readLogAudience.Colleague]: "colleague",
+  [readLogAudience.ExternalWorker]: "external worker",
   [readLogAudience.Self]: "self-service",
 };
+
+/** A Read log row as the person sees it: when, what and why, never who. */
+export const readLogExportEntry = (row: {
+  at: Date;
+  kind: readLogKind;
+  sections: directoryPermissionRow[] | null;
+  audience: readLogAudience;
+}) => ({ at: row.at, kind: row.kind, sections: row.sections, purpose: READ_PURPOSE[row.audience] });
 
 export type BookingStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
@@ -60,14 +77,24 @@ export type ExportAttachmentFile = {
  * Everything one organization holds about one person, across every spell:
  * Organization data only. Account data (login, settings, notifications,
  * Birthday, the account's own name and email) stays out; the person's name
- * and email here are the Employment's own copies.
+ * and email here are the Employment's own copies. The spells are the ones
+ * `personSpellIds` links, so a person without an account covers every spell
+ * with their email, and holds nothing keyed by a user.
  */
-export const collectPersonExport = async (organizationId: string, subjectUserId: string) => {
+export const collectPersonExport = async (
+  organizationId: string,
+  subject: string | { employmentId: string }
+) => {
+  const subjectUserId = typeof subject === "string" ? subject : null;
   const [organization] = await db
     .select({ id: organizations.id, name: organizations.name })
     .from(organizations)
     .where(eq(organizations.id, organizationId));
 
+  const spellIds = await personSpellIds(
+    organizationId,
+    typeof subject === "string" ? { userId: subject } : subject
+  );
   const spells = await db
     .select({
       id: employments.id,
@@ -80,12 +107,17 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
     })
     .from(employments)
     .where(
-      and(eq(employments.organizationId, organizationId), eq(employments.userId, subjectUserId))
+      and(
+        eq(employments.organizationId, organizationId),
+        spellIds.length === 0 ? sql`false` : inArray(employments.id, spellIds)
+      )
     )
-    .orderBy(asc(employments.startedAt));
+    .orderBy(asc(employments.startedAt), asc(employments.id));
   const employmentIds = spells.map((spell) => spell.id);
   const profile = await collectProfileExport(organizationId, employmentIds);
   const photos = await readyPhotoIds(employmentIds);
+  const sensitive = await collectSensitiveExport(organizationId, employmentIds);
+  const roles = await collectRoleExport(organizationId, employmentIds);
 
   const organizationGroups = await db
     .select({
@@ -99,10 +131,12 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
   const groupIds = organizationGroups.map((group) => group.id);
   const groupName = new Map(organizationGroups.map((group) => [group.id, group.name]));
 
-  const inGroups = <T>(rows: () => Promise<T[]>) =>
-    groupIds.length === 0 ? Promise.resolve([] as T[]) : rows();
+  const inGroups = <T>(rows: (userId: string) => Promise<T[]>) =>
+    groupIds.length === 0 || subjectUserId === null
+      ? Promise.resolve([] as T[])
+      : rows(subjectUserId);
 
-  const memberships = await inGroups(() =>
+  const memberships = await inGroups((subjectUserId) =>
     db
       .select({
         groupId: groupUsers.groupId,
@@ -118,7 +152,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       .orderBy(asc(groupUsers.createdAt))
   );
 
-  const quotas = await inGroups(() =>
+  const quotas = await inGroups((subjectUserId) =>
     db
       .select({
         groupId: userYearQuotas.groupId,
@@ -136,7 +170,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       .orderBy(asc(userYearQuotas.relatedYear))
   );
 
-  const bookingRows = await inGroups(() =>
+  const bookingRows = await inGroups((subjectUserId) =>
     db
       .select()
       .from(vacation)
@@ -153,16 +187,19 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
           .where(inArray(vacationEvents.vacationId, bookingIds))
           .orderBy(asc(vacationEvents.createdAt));
 
-  const attachmentRows = await db
-    .select()
-    .from(attachments)
-    .where(
-      and(
-        eq(attachments.organizationId, organizationId),
-        eq(attachments.ownerUserId, subjectUserId)
-      )
-    )
-    .orderBy(asc(attachments.createdAt));
+  const attachmentRows =
+    subjectUserId === null
+      ? []
+      : await db
+          .select()
+          .from(attachments)
+          .where(
+            and(
+              eq(attachments.organizationId, organizationId),
+              eq(attachments.ownerUserId, subjectUserId)
+            )
+          )
+          .orderBy(asc(attachments.createdAt));
 
   const sessions =
     employmentIds.length === 0
@@ -190,7 +227,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
           .where(inArray(attendanceEvents.sessionId, sessionIds))
           .orderBy(asc(attendanceEvents.createdAt));
 
-  const changeRows = await inGroups(() =>
+  const changeRows = await inGroups((subjectUserId) =>
     db
       .select()
       .from(changesSchema)
@@ -199,10 +236,23 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
   );
 
   const reads = await db
-    .select({ at: readLog.createdAt, kind: readLog.kind, audience: readLog.audience })
+    .select({
+      at: readLog.createdAt,
+      kind: readLog.kind,
+      sections: readLog.sections,
+      audience: readLog.audience,
+    })
     .from(readLog)
     .where(
-      and(eq(readLog.organizationId, organizationId), eq(readLog.subjectUserId, subjectUserId))
+      and(
+        eq(readLog.organizationId, organizationId),
+        or(
+          subjectUserId === null ? undefined : eq(readLog.subjectUserId, subjectUserId),
+          employmentIds.length === 0
+            ? undefined
+            : arrayOverlaps(readLog.employmentIds, employmentIds)
+        ) ?? sql`false`
+      )
     )
     .orderBy(asc(readLog.createdAt));
 
@@ -329,6 +379,8 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       ...spell,
       profile: profile.profiles.get(spell.id) ?? null,
       photo: photoOfSpell(spell.id),
+      contact: sensitive.get(spell.id)?.contact ?? null,
+      personal: sensitive.get(spell.id)?.personal ?? null,
     })),
     groups: memberships.map((row) => ({
       groupId: row.groupId,
@@ -341,7 +393,7 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       controlledUser: row.controlledUser,
     })),
     managedGroups: organizationGroups
-      .filter((group) => group.managerUserId === subjectUserId)
+      .filter((group) => subjectUserId !== null && group.managerUserId === subjectUserId)
       .map((group) => ({ groupId: group.id, groupName: group.name, deletedAt: group.deletedAt })),
     quotas: quotas.map((row) => ({ ...row, groupName: groupName.get(row.groupId) ?? null })),
     bookings,
@@ -357,7 +409,9 @@ export const collectPersonExport = async (organizationId: string, subjectUserId:
       by: nameOf(row.changingUserId),
     })),
     profileHistory: profile.history,
-    readLog: reads.map((row) => ({ at: row.at, kind: row.kind, purpose: PURPOSE[row.audience] })),
+    directoryRoles: roles.assigned,
+    directoryRoleHistory: roles.history,
+    readLog: reads.map(readLogExportEntry),
   };
 
   return { person, files, employmentIds };

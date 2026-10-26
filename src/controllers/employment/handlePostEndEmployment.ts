@@ -6,6 +6,7 @@ import {
   markCalendarTargetsDirty,
   markMemberGroupEventTargetsDirty,
 } from "../../services/calendarSync/markCalendarTargetsDirty.js";
+import { removePhotoObjects } from "../../services/directory/directoryPhotoServices.js";
 import { endEmployment } from "../../services/employment/endEmploymentServices.js";
 import type { ValidatedEndEmploymentType } from "../../services/employment/types.js";
 import { presentEmployment } from "./utils.js";
@@ -15,10 +16,11 @@ export const handlePostEndEmployment = async (req: Request, res: Response) => {
   const employmentId = z.uuid().parse(req.params.employmentId);
   const { endedOn } = req.body as ValidatedEndEmploymentType;
 
-  const { employment, cancelled } = await db.transaction((tx) =>
+  const { employment, cancelled, photoPrefixes } = await db.transaction((tx) =>
     endEmployment({ employmentId, endedOn, actorUserId: auth.userId }, tx)
   );
 
+  await removePhotoObjects(photoPrefixes);
   await markCalendarTargetsDirty(cancelled);
   if (employment.userId) await markMemberGroupEventTargetsDirty(employment.userId);
 

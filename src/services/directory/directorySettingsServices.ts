@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import {
@@ -7,6 +7,7 @@ import {
   organizationDirectorySettings,
 } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
+import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -95,6 +96,7 @@ export const readDirectoryState = async (
     enabled,
     enabledAt: settings?.enabledAt ?? null,
     disabledAt: settings?.disabledAt ?? null,
+    dataDeletedAt: settings?.dataDeletedAt ?? null,
     writable: await isDirectoryWritable(organizationId, tx),
     agreement: await readAgreement(organizationId, enabled, tx),
     people: await countDirectoryPeople(organizationId, tx),
@@ -151,20 +153,15 @@ export const enableDirectory = async (
       set: { enabled: true, enabledAt: now, enabledByUserId: userId },
     });
   await recordAcceptance(input, tx);
-  await tx
-    .insert(directoryPermissionCells)
-    .values(
-      DIRECTORY_PERMISSION_DEFAULTS.map(({ row, audience, value }) => ({
-        organizationId,
-        row,
-        audience,
-        value,
-      }))
-    )
-    .onConflictDoNothing();
+  await storeMissingCells(organizationId, tx);
 };
 
-/** Turns the directory off. Never plan-gated, keeps every row, and a second call changes nothing. */
+/**
+ * Turns the directory off. Never plan-gated and ends nobody. Open directory
+ * invites that name no group are revoked: outside the directory they lead
+ * nowhere. Invites naming a group stay valid and still claim. A second call
+ * changes nothing.
+ */
 export const disableDirectory = async (input: Actor, tx: DbTransaction): Promise<void> => {
   const { organizationId, userId } = input;
   await lockOrganization(organizationId, tx);
@@ -175,6 +172,23 @@ export const disableDirectory = async (input: Actor, tx: DbTransaction): Promise
     .update(organizationDirectorySettings)
     .set({ enabled: false, disabledAt: new Date(), disabledByUserId: userId })
     .where(eq(organizationDirectorySettings.organizationId, organizationId));
+  await tx
+    .update(inviteLink)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        isNull(inviteLink.groupId),
+        isNull(inviteLink.usedAt),
+        isNull(inviteLink.revokedAt),
+        inArray(
+          inviteLink.employmentId,
+          tx
+            .select({ id: employments.id })
+            .from(employments)
+            .where(eq(employments.organizationId, organizationId))
+        )
+      )
+    );
 };
 
 /** The owner accepts a new agreement version while the directory is on. Never plan-gated. */
@@ -191,6 +205,21 @@ export const acceptDirectoryAgreement = async (
   }
   assertCurrentAgreement(input.agreementVersion, { organizationId });
   await recordAcceptance(input, tx);
+};
+
+/** Stores every product cell the organization's copy lacks, at its default. A stored cell stays. */
+export const storeMissingCells = async (organizationId: string, tx: DbTransaction) => {
+  await tx
+    .insert(directoryPermissionCells)
+    .values(
+      DIRECTORY_PERMISSION_DEFAULTS.map(({ row, audience, value }) => ({
+        organizationId,
+        row,
+        audience,
+        value,
+      }))
+    )
+    .onConflictDoNothing();
 };
 
 /** The organization's Permission table, a cell its copy lacks read as the product default. */

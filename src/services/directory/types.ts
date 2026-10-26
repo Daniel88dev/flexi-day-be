@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { contractType, workingTime } from "../../db/schema/directory-profile-schema.js";
+import {
+  contractType,
+  profileHistoryActor,
+  workingTime,
+} from "../../db/schema/directory-profile-schema.js";
 import { directoryRole, roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { AttachmentRejectionReason } from "../attachment/processor.js";
 import {
@@ -7,8 +11,12 @@ import {
   directoryPermissionRow,
   directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
+import { workerType } from "../../db/schema/employment-schema.js";
+import { readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import type { UserSummary } from "../../utils/userPresentation.js";
 import type { CountryView, PhoneView } from "./contactFormat.js";
+import { retentionPeriod } from "../../db/schema/directory-retention-schema.js";
+import { SECTION_ROWS, type SectionRow } from "./permissionResolver.js";
 
 export const validateDirectoryAgreementBody = z.object({
   /** The agreement version the owner was shown and accepted. */
@@ -16,6 +24,13 @@ export const validateDirectoryAgreementBody = z.object({
 });
 
 export type DirectoryAgreementBody = z.infer<typeof validateDirectoryAgreementBody>;
+
+export const validateEnableDirectoryBody = validateDirectoryAgreementBody.extend({
+  /** Send the members' notice after the enable commits. Absent reads as false. */
+  tellMembers: z.boolean().optional(),
+});
+
+export type EnableDirectoryBody = z.infer<typeof validateEnableDirectoryBody>;
 
 export type DirectoryAgreementState = {
   currentVersion: number;
@@ -31,12 +46,62 @@ export type DirectoryState = {
   enabled: boolean;
   enabledAt: Date | null;
   disabledAt: Date | null;
+  /** The owner's last Delete all directory data. */
+  dataDeletedAt: Date | null;
   /** Enterprise or Custom right now: turning on and adding data are open. */
   writable: boolean;
   agreement: DirectoryAgreementState;
   /** Live counts for the enable dialog's summary. */
   people: { open: number; former: number };
 };
+
+export const validateDirectoryDeleteAllBody = z
+  .object({ confirmName: z.string().max(200) })
+  .strict();
+
+export type DirectoryDeleteAllBody = z.infer<typeof validateDirectoryDeleteAllBody>;
+
+export type DirectoryListKind = "departments" | "locations";
+
+const entryName = z.string().trim().min(1).max(100);
+const entryCountry = z.string().trim().toUpperCase().nullable().optional();
+const atLeastOne = (body: object) => Object.keys(body).length > 0;
+
+export const validatePostDepartment = z.object({ name: entryName }).strict();
+export const validatePostLocation = z.object({ name: entryName, country: entryCountry }).strict();
+export const validatePatchDepartment = z
+  .object({ name: entryName.optional(), archived: z.boolean().optional() })
+  .strict()
+  .refine(atLeastOne, "Nothing to change");
+export const validatePatchLocation = z
+  .object({ name: entryName.optional(), archived: z.boolean().optional(), country: entryCountry })
+  .strict()
+  .refine(atLeastOne, "Nothing to change");
+
+export type PostListEntry = { name: string; country?: string | null };
+export type PatchListEntry = { name?: string; archived?: boolean; country?: string | null };
+
+/** An entry of a Department or Location list. */
+export type DirectoryListEntry = {
+  id: string;
+  name: string;
+  archived: boolean;
+  /** Locations only. */
+  country?: CountryView | null;
+  /** A Profile, open or former, holds it. Sent only to viewers who manage the lists. */
+  inUse?: boolean;
+};
+
+export type DirectoryList = {
+  /** The viewer may add, rename, archive and delete entries. */
+  editable: boolean;
+  /** The plan passes the directory gate; while lapsed nothing can be added. */
+  writable: boolean;
+  entries: DirectoryListEntry[];
+};
+
+/** A Department or Location as a record shows it. */
+export type DirectoryEntryRef = { id: string; name: string; archived: boolean };
 
 export type DirectoryOrganizationRole = "OWNER" | "ORGANIZATION_ADMIN" | "MEMBER";
 
@@ -51,9 +116,10 @@ export type DirectoryOrganization = {
 };
 
 /** Badges on a directory row. Everyone in reach sees `EXTERNAL_WORKER`; the rest go to the owner, org admins and HR only. */
-export type DirectoryMarker = "EXTERNAL_WORKER" | "NO_ACCOUNT" | "ACCOUNT_DELETED" | "REJOINED";
+export type DirectoryMarker =
+  "EXTERNAL_WORKER" | "NO_ACCOUNT" | "ACCOUNT_DELETED" | "REJOINED" | "INVITE_SENT";
 
-/** A Section the viewer reads, at their level. Later tickets add the Section's fields beside `level`. */
+/** A Section the viewer reads, at their level. */
 export type DirectorySectionView = { level: "READ" | "WRITE" };
 
 export type DirectoryPerson = {
@@ -61,15 +127,28 @@ export type DirectoryPerson = {
   name: string;
   /** A Card field, so everyone who reaches the person reads it. */
   jobTitle: string | null;
+  /** Card fields too; an archived entry still shows on the record that holds it. */
+  department: DirectoryEntryRef | null;
+  location: DirectoryEntryRef | null;
   /** The Account picture: the avatar when there is no Profile photo. */
   image: string | null;
   /** The small Profile photo; null without one or without a read on the Photo Section. */
   photoUrl: string | null;
-  user: UserSummary;
+  /** `id` is null on a record without an account, so it can't tell who has one. */
+  user: Omit<UserSummary, "id"> & { id: string | null };
   markers: DirectoryMarker[];
+  /** In no group of the organization; sent to the owner and org admins only. */
+  noGroup?: boolean;
 };
 
-export type FormerDirectoryPerson = DirectoryPerson & { startedAt: Date; endedAt: Date };
+export type FormerDirectoryPerson = DirectoryPerson & {
+  /** The spell dates; null when the viewer doesn't read Job. */
+  startedAt: Date | null;
+  endedAt: Date | null;
+  /** The earliest coming Retention purge among the Sections the viewer reads; null under a hold. */
+  nextRemoval: { section: ProfileSectionKey; date: string } | null;
+  hold: boolean;
+};
 
 export type DirectoryCardView = DirectorySectionView & {
   jobTitle: string | null;
@@ -77,6 +156,8 @@ export type DirectoryCardView = DirectorySectionView & {
   reportsTo: { employmentId: string; name: string | null } | null;
   /** The name follows a bound, open account and nobody edits it here. */
   nameFromAccount: boolean;
+  department: DirectoryEntryRef | null;
+  location: (DirectoryEntryRef & { country: CountryView | null }) | null;
 };
 
 export type DirectoryWorkContactView = DirectorySectionView & {
@@ -104,11 +185,78 @@ export type DirectoryPhotoView = DirectorySectionView & {
   photo: { smallUrl: string; fullUrl: string } | null;
 };
 
+export type EmergencyContactView = { name: string; phone: PhoneView };
+
+/** The Contact values, only ever in a Show response. */
+export type ContactSectionValues = {
+  privatePhone: PhoneView | null;
+  /** Lowercase. */
+  privateEmail: string | null;
+  emergencyContact1: EmergencyContactView | null;
+  emergencyContact2: EmergencyContactView | null;
+};
+
+export type HomeAddressView = {
+  line1: string;
+  line2: string | null;
+  postalCode: string | null;
+  city: string;
+  region: string | null;
+  country: CountryView;
+};
+
+/** The Personal values, only ever in a Show response. */
+export type PersonalSectionValues = {
+  homeAddress: HomeAddressView | null;
+  /** `YYYY-MM-DD`. */
+  dateOfBirth: string | null;
+};
+
+/**
+ * The Contact Section on a profile: never its values, which only Show returns.
+ * Whoever writes it gets the Art. 14 notice and the phone picker's start.
+ */
+export type DirectoryContactView = DirectorySectionView & {
+  notice?: string;
+  phoneCountryDefault?: CountryView | null;
+};
+
+export type SensitiveSectionName = "contact" | "personal";
+
+/** What Show returns for one Sensitive section. `recorded` says a read-log row was written. */
+export type ShownSection =
+  | ({ section: "CONTACT"; level: "READ" | "WRITE"; recorded: boolean } & ContactSectionValues)
+  | ({ section: "PERSONAL"; level: "READ" | "WRITE"; recorded: boolean } & PersonalSectionValues);
+
 export type DirectoryPeople = {
   people: DirectoryPerson[];
   formerList: boolean;
   /** The viewer opens Directory settings: the owner, org admins and HR. */
   settings: boolean;
+  /** The rows carry `noGroup`: the owner and org admins. */
+  noGroupFilter: boolean;
+  /** The viewer holds the Create account-less person act. */
+  addPerson: boolean;
+};
+
+export type ProfileActions = {
+  /** End employment, by the End act cell, on an open record that isn't the owner's. */
+  end: boolean;
+  /** The Person export: the owner and org admins, on any record. */
+  export: boolean;
+  /** Erase: the owner and org admins, for a Deleted account or a person without an account. */
+  erase: boolean;
+  /** Set or lift the Retention hold: the owner and org admins, on an ended record. */
+  hold: boolean;
+  /** Send directory invite, by its act cell, on an open record without an account. */
+  invite: boolean;
+  /** Change worker type, by its act cell, on an open record. */
+  changeType: boolean;
+  /**
+   * Copy from previous spell: the owner, org admins and HR, on an open record
+   * whose previous spell still holds a Section the caller can copy.
+   */
+  copyFromPreviousSpell: boolean;
 };
 
 export type DirectoryAccountStatus = "ACTIVE" | "NO_ACCOUNT" | "DELETED";
@@ -123,30 +271,46 @@ export type DirectoryProfile = DirectoryPerson & {
     photo?: DirectoryPhotoView;
     workContact?: DirectoryWorkContactView;
     job?: DirectoryJobView;
-    contact?: DirectorySectionView;
+    contact?: DirectoryContactView;
+    /** Absent on an External worker's record: Personal applies to employees only. */
     personal?: DirectorySectionView;
   };
   /** The owner, org admins and HR read the profile history. */
   canReadHistory: boolean;
+  /** What the viewer may do to this record from its profile. */
+  actions: ProfileActions;
+  /** On an ended record only: the Retention hold and when each Section goes or went. */
+  retention?: ProfileRetention;
   /** For the owner, org admins, HR and the person. */
   account?: {
     status: DirectoryAccountStatus;
     signInEmail: string | null;
-    directoryRoles: ("HR" | "LEADERSHIP")[];
+    directoryRoles: directoryRole[];
   };
 };
 
 /** A value sets the field, `null` clears it, and a missing key leaves it as it is. */
 const text = (max: number) => z.string().trim().min(1).max(max).nullable().optional();
 const day = z.iso.date().nullable().optional();
+const optionalLine = (max: number) => z.string().trim().max(max).nullable().optional();
+const phone = z.string().trim().min(1).max(40);
+const emergencyContact = z
+  .object({ name: z.string().trim().min(1).max(100), phone })
+  .strict()
+  .nullable()
+  .optional();
 
 export const validatePatchDirectoryProfile = z
   .object({
     card: z
       .object({
         name: z.string().trim().min(1).max(200).optional(),
+        /** Only on an open record without an account. */
+        email: z.string().trim().toLowerCase().pipe(z.email().max(254)).nullable().optional(),
         jobTitle: text(100),
         reportsToEmploymentId: z.string().min(1).nullable().optional(),
+        departmentId: z.string().min(1).nullable().optional(),
+        locationId: z.string().min(1).nullable().optional(),
       })
       .strict()
       .optional(),
@@ -170,10 +334,123 @@ export const validatePatchDirectoryProfile = z
       })
       .strict()
       .optional(),
+    contact: z
+      .object({
+        /** International form; the service parses it and stores E.164. */
+        privatePhone: phone.nullable().optional(),
+        privateEmail: z
+          .string()
+          .trim()
+          .toLowerCase()
+          .pipe(z.email().max(254))
+          .nullable()
+          .optional(),
+        /** A filled slot needs both a name and a phone. */
+        emergencyContact1: emergencyContact,
+        emergencyContact2: emergencyContact,
+      })
+      .strict()
+      .optional(),
+    personal: z
+      .object({
+        /** Line 1, city and country are needed once any part is filled. */
+        homeAddress: z
+          .object({
+            line1: z.string().trim().min(1).max(200),
+            line2: optionalLine(200),
+            postalCode: optionalLine(16),
+            city: z.string().trim().min(1).max(100),
+            region: optionalLine(100),
+            country: z.string().trim().toUpperCase().length(2),
+          })
+          .strict()
+          .nullable()
+          .optional(),
+        dateOfBirth: day,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
 export type PatchDirectoryProfile = z.infer<typeof validatePatchDirectoryProfile>;
+
+const directoryEmail = z.string().trim().toLowerCase().pipe(z.email().max(254));
+
+/** Add person: an Employment without an account, with the Card fields the dialog offers. */
+export const validatePostDirectoryPerson = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    type: z.enum(workerType).default(workerType.Employee),
+    email: directoryEmail.nullable().optional(),
+    card: z
+      .object({
+        jobTitle: text(100),
+        reportsToEmploymentId: z.string().min(1).nullable().optional(),
+        departmentId: z.string().min(1).nullable().optional(),
+        locationId: z.string().min(1).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type PostDirectoryPerson = z.infer<typeof validatePostDirectoryPerson>;
+
+export const validateDirectoryEmailCheck = z.object({ email: directoryEmail }).strict();
+
+export type DirectoryEmailCheck = z.infer<typeof validateDirectoryEmailCheck>;
+
+export const validatePostDirectoryInvite = z
+  .object({ groupId: z.uuid().nullable().optional() })
+  .strict()
+  .optional()
+  .transform((body) => body ?? {});
+
+export type PostDirectoryInvite = z.infer<typeof validatePostDirectoryInvite>;
+
+export const validatePutWorkerType = z.object({ type: z.enum(workerType) }).strict();
+
+export type PutWorkerType = z.infer<typeof validatePutWorkerType>;
+
+/** The Sections Copy from previous spell can bring over, by their profile keys. */
+export const COPYABLE_SECTION_KEYS = ["contact", "personal", "photo"] as const;
+
+export type CopyableSectionKey = (typeof COPYABLE_SECTION_KEYS)[number];
+
+export const validatePostCopyPreviousSpell = z
+  .object({ sections: z.array(z.enum(COPYABLE_SECTION_KEYS)).min(1).max(3) })
+  .strict();
+
+export type PostCopyPreviousSpell = z.infer<typeof validatePostCopyPreviousSpell>;
+
+/**
+ * One Section in the Copy from previous spell dialog. `COPYABLE`: the previous
+ * spell holds it and the caller may write it here. `REMOVED_ON`: a Retention
+ * purge emptied it on the previous spell. `EMPTY`: the previous spell holds
+ * nothing else. `FILLED`: this spell already holds it, and a copy never
+ * overwrites. `NOT_WRITABLE`: the caller's cells don't allow writing it.
+ */
+export type CopyableSection =
+  | { status: "COPYABLE" | "EMPTY" | "FILLED" | "NOT_WRITABLE" }
+  | { status: "REMOVED_ON"; date: string };
+
+export type PreviousSpellView = {
+  previous: { employmentId: string; startedAt: Date; endedAt: Date };
+  /** Personal is absent when this spell is an External worker's. */
+  sections: Partial<Record<CopyableSectionKey, CopyableSection>>;
+};
+
+/** A directory invite as its sender sees it. The code and the link secret stay out. */
+export type DirectoryInviteView = {
+  id: string;
+  employmentId: string;
+  groupId: string | null;
+  email: string;
+  status: "open" | "used" | "expired" | "revoked";
+  expiresAt: Date;
+  createdAt: Date;
+};
 
 export type ProfileHistoryEntry = {
   id: string;
@@ -182,7 +459,9 @@ export type ProfileHistoryEntry = {
   actorName: string | null;
   section: directoryPermissionRow;
   fields: string[];
-  audience: directoryAudience;
+  /** RETENTION for a Retention purge, which has no actor and no Audience. */
+  actor: profileHistoryActor;
+  audience: directoryAudience | null;
 };
 
 export const validatePatchPermissionCell = z
@@ -283,3 +562,103 @@ export const validatePhotoProcessed = z.discriminatedUnion("status", [
 ]);
 
 export type PhotoProcessedPayload = z.infer<typeof validatePhotoProcessed>;
+export const validateReadLogQuery = z.object({
+  employmentId: z.string().min(1).optional(),
+  readerUserId: z.string().min(1).optional(),
+  /** The id of the last row of the previous page. */
+  before: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export type ReadLogEntry = {
+  id: string;
+  kind: readLogKind;
+  at: Date;
+  /** `name` is null once the reader's user row is gone. */
+  reader: { userId: string; name: string | null };
+  /** `name` is null once the person was erased. */
+  person: { employmentId: string | null; name: string | null };
+  /** The Sections a read opened; null on an export. */
+  sections: directoryPermissionRow[] | null;
+  audience: readLogAudience;
+};
+
+export type ReadLogPage = {
+  entries: ReadLogEntry[];
+  /** Pass as `before` for the next page; null on the last. */
+  nextBefore: string | null;
+  /** Everyone the log holds rows about, for the person filter. */
+  people: { employmentId: string; name: string }[];
+  /** Everyone the log holds rows by, for the reader filter. */
+  readers: { userId: string; name: string | null }[];
+};
+
+const noticeText = z.string().trim().min(1).max(2000).nullable().optional();
+
+export const validatePutDirectoryGeneralSettings = z
+  .object({
+    /** The organization's own Art. 14 notice per language; null goes back to the default. */
+    emergencyContactNotice: z.object({ en: noticeText, cs: noticeText }).strict(),
+  })
+  .strict();
+
+export type PutDirectoryGeneralSettings = z.infer<typeof validatePutDirectoryGeneralSettings>;
+
+export const validatePutRetentionPeriod = z
+  .object({
+    section: z.enum(SECTION_ROWS),
+    period: z.enum(retentionPeriod),
+  })
+  .strict();
+
+export type PutRetentionPeriod = z.infer<typeof validatePutRetentionPeriod>;
+
+export const validateRetentionPreviewQuery = validatePutRetentionPeriod;
+
+export type RetentionSettings = {
+  /** The owner and org admins change these; HR reads them. */
+  editable: boolean;
+  periods: Record<SectionRow, retentionPeriod>;
+  defaults: Record<SectionRow, retentionPeriod>;
+};
+
+export type RetentionPreview = PutRetentionPeriod & {
+  /** People whose Section the period would remove at the next nightly run, once each. */
+  affected: number;
+};
+
+/** Where the Section keys are those of `DirectoryProfile.sections`. */
+export type ProfileSectionKey = "card" | "photo" | "workContact" | "job" | "contact" | "personal";
+
+/**
+ * One Section's retention on an ended record. `REMOVES_ON`: the nightly run of
+ * that day empties it. `REMOVED_ON`: a Retention purge emptied it that day.
+ * `KEPT_UNTIL_ERASED`: its period is until erased. `ON_HOLD`: it holds data
+ * that a hold keeps.
+ */
+export type SectionRetention =
+  | { status: "REMOVES_ON" | "REMOVED_ON"; date: string }
+  | { status: "KEPT_UNTIL_ERASED" | "ON_HOLD" };
+
+export type ProfileRetention = {
+  hold: RetentionHoldView | null;
+  /** Only Sections the viewer reads; a Section with nothing to say is absent. */
+  sections: Partial<Record<ProfileSectionKey, SectionRetention>>;
+};
+
+export type RetentionHoldView = {
+  setAt: Date;
+  /** Null once the setter's account is gone; `name` is null when it can't be read. */
+  setBy: { userId: string; name: string | null } | null;
+};
+
+export type DirectoryGeneralSettings = {
+  /** The owner and org admins change these; HR reads them. */
+  editable: boolean;
+  /** The organization's own texts; null where it uses the default. */
+  emergencyContactNotice: { en: string | null; cs: string | null };
+  /** The product defaults, with `{organization}` and `{period}` unfilled. */
+  defaults: { en: string; cs: string };
+  /** What `{period}` reads as: how long Contact is kept after an Employment ends. */
+  period: { en: string; cs: string };
+};

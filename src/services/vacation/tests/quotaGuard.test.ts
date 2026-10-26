@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockSumCountedDaysForQuota, mockGetMemberYearAllocations } = vi.hoisted(() => ({
-  mockSumCountedDaysForQuota: vi.fn(),
-  mockGetMemberYearAllocations: vi.fn(),
+const { mockSumCountedDaysForQuota, mockGetMemberYearAllocations, mockExternalWorkerPairs } =
+  vi.hoisted(() => ({
+    mockSumCountedDaysForQuota: vi.fn(),
+    mockGetMemberYearAllocations: vi.fn(),
+    mockExternalWorkerPairs: vi.fn(),
+  }));
+
+vi.mock("../../employment/externalWorkers.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../employment/externalWorkers.js")>()),
+  externalWorkerPairs: mockExternalWorkerPairs,
 }));
 
 vi.mock("../../userYearQuotas/yearAllocation.js", async (importOriginal) => ({
@@ -62,6 +69,7 @@ const editedRow = (overrides: Record<string, unknown> = {}) => ({
 describe("assertEditWithinQuota", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExternalWorkerPairs.mockResolvedValue(new Set());
     allocate({ vacationDays: 1 });
   });
 
@@ -113,7 +121,21 @@ describe("assertEditWithinQuota", () => {
 describe("assertRequestWithinQuota", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExternalWorkerPairs.mockResolvedValue(new Set());
     allocate({ vacationDays: 1 });
+  });
+
+  it("refuses an External worker a type that draws on an allowance, and lets the rest through", async () => {
+    mockExternalWorkerPairs.mockResolvedValue(new Set(["u-1::g-1"]));
+    mockSumCountedDaysForQuota.mockResolvedValue({ approved: 0, pending: 0 });
+
+    await expect(assertRequestWithinQuota([editedRow()], tx)).rejects.toMatchObject({
+      code: 422,
+      errors: [{ publicContext: { code: "EXTERNAL_WORKER_ALLOWANCE", vacationType: "VACATION" } }],
+    });
+    await expect(
+      assertRequestWithinQuota([editedRow({ vacationType: CalendarRecordType.NonPaidLeave })], tx)
+    ).resolves.toBeUndefined();
   });
 
   it("excludes nothing — new rows are not stored yet", async () => {
@@ -185,6 +207,7 @@ describe("sick day allowance", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExternalWorkerPairs.mockResolvedValue(new Set());
     mockSumCountedDaysForQuota.mockResolvedValue({ approved: 0, pending: 0 });
   });
 

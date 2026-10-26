@@ -11,16 +11,26 @@ import {
 } from "../../db/schema/directory-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
-import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
-import { parsePhone } from "./contactFormat.js";
-import { getPersonContacts } from "../person/personName.js";
+import { isCountryCode, parsePhone } from "./contactFormat.js";
 import {
-  canReadHistory,
-  getDirectoryProfile,
-  nameFromAccount,
-} from "./directoryProfileServices.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+  EMPTY_CONTACT,
+  EMPTY_PERSONAL,
+  readSensitiveSection,
+  writeSensitiveSections,
+  type StoredContact,
+  type StoredPersonal,
+} from "./sensitiveSections.js";
+import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
+import { businessDateInZone } from "../../utils/dateFunc.js";
+import { assertAssignableEntry } from "./directoryListServices.js";
+import { revokeOpenEmploymentInvite } from "./directoryInviteServices.js";
+import { assertEmploymentEmailFree } from "../employment/accountlessClash.js";
+import { getPersonContacts } from "../person/personName.js";
+import { getDirectoryProfile, nameFromAccount } from "./directoryProfileServices.js";
+import { administersPeople, lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
+import { CARD_COLUMNS, JOB_COLUMNS, WORK_CONTACT_COLUMNS } from "./profileSectionFields.js";
+import { recordProfileHistory } from "./profileHistory.js";
 import type { SectionRow } from "./permissionResolver.js";
 import type { DirectoryProfile, PatchDirectoryProfile, ProfileHistoryEntry } from "./types.js";
 
@@ -30,22 +40,11 @@ type ProfileColumns = Omit<
   "employmentId" | "organizationId" | "createdAt" | "updatedAt"
 >;
 
-/** Field names as the API and the profile history spell them, per Section. */
-const CARD_COLUMNS = { jobTitle: "jobTitle", reportsToEmploymentId: "reportsTo" } as const;
-const WORK_CONTACT_COLUMNS = { workEmail: "workEmail", workPhone: "workPhone" } as const;
-const JOB_COLUMNS = {
-  legalName: "legalName",
-  employeeNumber: "employeeNumber",
-  startDate: "startDate",
-  leavingDate: "leavingDate",
-  probationEndDate: "probationEndDate",
-  contractType: "contractType",
-  workingTime: "workingTime",
-} as const;
-
 const EMPTY: ProfileColumns = {
   jobTitle: null,
   reportsToEmploymentId: null,
+  departmentId: null,
+  locationId: null,
   legalName: null,
   employeeNumber: null,
   startDate: null,
@@ -58,11 +57,149 @@ const EMPTY: ProfileColumns = {
 };
 
 const setsAValue = (patch: PatchDirectoryProfile) =>
-  [patch.card, patch.workContact, patch.job].some(
+  [patch.card, patch.workContact, patch.job, patch.contact, patch.personal].some(
     (section) =>
       section !== undefined &&
       Object.values(section).some((value) => value !== null && value !== undefined)
   );
+
+type SensitivePatch = {
+  contact?: Partial<StoredContact>;
+  personal?: Partial<StoredPersonal>;
+};
+
+const EARLIEST_DATE_OF_BIRTH = "1900-01-01";
+
+/** Parses phones, checks the country and the date of birth, and returns the values to store. */
+const checkSensitivePatch = async (
+  patch: PatchDirectoryProfile,
+  organizationId: string,
+  context: Record<string, unknown>,
+  tx: DbTransaction
+): Promise<SensitivePatch> => {
+  const phoneOrRefuse = (input: string) => {
+    const e164 = parsePhone(input);
+    if (e164 === null) {
+      throw refuse(422, "INVALID_PHONE", "That isn't a valid phone number", context);
+    }
+    return e164;
+  };
+  const result: SensitivePatch = {};
+
+  if (patch.contact) {
+    const contact: Partial<StoredContact> = {};
+    const { privatePhone, privateEmail, emergencyContact1, emergencyContact2 } = patch.contact;
+    if (privatePhone !== undefined) {
+      contact.privatePhone = privatePhone === null ? null : phoneOrRefuse(privatePhone);
+    }
+    if (privateEmail !== undefined) contact.privateEmail = privateEmail;
+    const slot = (entry: { name: string; phone: string } | null) =>
+      entry === null ? null : { name: entry.name, phone: phoneOrRefuse(entry.phone) };
+    if (emergencyContact1 !== undefined) contact.emergencyContact1 = slot(emergencyContact1);
+    if (emergencyContact2 !== undefined) contact.emergencyContact2 = slot(emergencyContact2);
+    result.contact = contact;
+  }
+
+  if (patch.personal) {
+    const personal: Partial<StoredPersonal> = {};
+    const { homeAddress, dateOfBirth } = patch.personal;
+    if (homeAddress !== undefined) {
+      if (homeAddress !== null && !isCountryCode(homeAddress.country)) {
+        throw refuse(422, "INVALID_COUNTRY", "That isn't a country code", context);
+      }
+      const line = (value: string | null | undefined) => (value ? value : null);
+      personal.homeAddress =
+        homeAddress === null
+          ? null
+          : {
+              line1: homeAddress.line1,
+              line2: line(homeAddress.line2),
+              postalCode: line(homeAddress.postalCode),
+              city: homeAddress.city,
+              region: line(homeAddress.region),
+              country: homeAddress.country,
+            };
+    }
+    if (dateOfBirth !== undefined) {
+      if (dateOfBirth !== null) {
+        const today = businessDateInZone(
+          new Date(),
+          await organizationTimeZone(organizationId, tx)
+        );
+        if (dateOfBirth < EARLIEST_DATE_OF_BIRTH || dateOfBirth > today) {
+          throw refuse(
+            422,
+            "DATE_OF_BIRTH_OUT_OF_RANGE",
+            "A date of birth lies between 1900-01-01 and today",
+            context
+          );
+        }
+      }
+      personal.dateOfBirth = dateOfBirth;
+    }
+    result.personal = personal;
+  }
+  return result;
+};
+
+const changedKeys = (before: object, after: object) =>
+  Object.keys(after).filter(
+    (key) =>
+      JSON.stringify(new Map(Object.entries(before)).get(key) ?? null) !==
+      JSON.stringify(new Map(Object.entries(after)).get(key) ?? null)
+  );
+
+/** Merges the patch into the sealed Sections and returns the fields each one changed. */
+const writeSensitivePatch = async (
+  organizationId: string,
+  employmentId: string,
+  patch: SensitivePatch,
+  tx: DbTransaction
+): Promise<{ contact: string[]; personal: string[] }> => {
+  const stored = await readSensitiveSection(organizationId, employmentId, tx);
+  const before = {
+    contact: stored.contact ?? EMPTY_CONTACT,
+    personal: stored.personal ?? EMPTY_PERSONAL,
+  };
+  const after = {
+    contact: { ...before.contact, ...patch.contact },
+    personal: { ...before.personal, ...patch.personal },
+  };
+  const changes = {
+    contact: changedKeys(before.contact, after.contact),
+    personal: changedKeys(before.personal, after.personal),
+  };
+  if (changes.contact.length + changes.personal.length > 0) {
+    await writeSensitiveSections(organizationId, employmentId, after, tx);
+  }
+  return changes;
+};
+
+/** Reports to names another open Employment of the organization, never another spell of the person. */
+export const assertReportsTo = async (
+  organizationId: string,
+  record: { id: string; userId: string | null },
+  reportsToEmploymentId: string,
+  context: Record<string, unknown>,
+  tx: DbTransaction
+): Promise<void> => {
+  const [manager] = await tx
+    .select({ id: employments.id, userId: employments.userId })
+    .from(employments)
+    .where(
+      and(
+        eq(employments.organizationId, organizationId),
+        eq(employments.id, reportsToEmploymentId),
+        isNull(employments.endedAt)
+      )
+    );
+  if (!manager) {
+    throw refuse(422, "REPORTS_TO_NOT_FOUND", "Reports to must be an open Employment", context);
+  }
+  if (manager.id === record.id || (record.userId !== null && manager.userId === record.userId)) {
+    throw refuse(422, "REPORTS_TO_SELF", "Nobody reports to themself", context);
+  }
+};
 
 /**
  * Writes the Card, Work contact and Job fields of one profile, and the frozen or
@@ -77,30 +214,14 @@ export const updateDirectoryProfile = async (
   tx: DbTransaction
 ): Promise<DirectoryProfile> => {
   const { organizationId } = viewer;
-  const context = { organizationId, employmentId, viewerUserId: viewer.standing.userId };
-
-  const [record] = await tx
-    .select({
-      id: employments.id,
-      userId: employments.userId,
-      type: employments.type,
-      name: employments.name,
-      endedAt: employments.endedAt,
-      accountDeletedAt: employments.accountDeletedAt,
-    })
-    .from(employments)
-    .where(and(eq(employments.organizationId, organizationId), eq(employments.id, employmentId)))
-    .for("update");
-  const access =
-    record && viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null });
-  if (!record || !access?.inReach) {
-    throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
-  }
+  const { record, access, context } = await lockRecordInReach(viewer, employmentId, tx);
 
   const touched: [SectionRow, object | undefined][] = [
     [R.Card, patch.card],
     [R.WorkContact, patch.workContact],
     [R.Job, patch.job],
+    [R.Contact, patch.contact],
+    [R.Personal, patch.personal],
   ];
   for (const [row, section] of touched) {
     if (section !== undefined && access.sections[row] !== V.Write) {
@@ -109,6 +230,14 @@ export const updateDirectoryProfile = async (
   }
   if (patch.card?.name !== undefined && nameFromAccount(record)) {
     throw refuse(403, "NAME_FROM_ACCOUNT", "The name follows the person's account", context);
+  }
+  if (patch.card?.email !== undefined && (record.userId !== null || record.endedAt !== null)) {
+    throw refuse(
+      422,
+      "EMAIL_FROM_ACCOUNT",
+      "Only an open record without an account takes an email here",
+      context
+    );
   }
 
   const workContact = { ...patch.workContact };
@@ -120,6 +249,14 @@ export const updateDirectoryProfile = async (
     workContact.workPhone = e164;
   }
 
+  if (patch.personal !== undefined && record.type === workerType.External) {
+    throw refuse(422, "EMPLOYEES_ONLY", "The Personal Section applies to employees only", context);
+  }
+  const sensitivePatch =
+    patch.contact === undefined && patch.personal === undefined
+      ? undefined
+      : await checkSensitivePatch(patch, organizationId, context, tx);
+
   if (setsAValue(patch)) await assertDirectoryWritable(organizationId, tx);
 
   const [stored] = await tx
@@ -127,7 +264,11 @@ export const updateDirectoryProfile = async (
     .from(directoryProfiles)
     .where(eq(directoryProfiles.employmentId, employmentId));
   const before: ProfileColumns = stored ?? EMPTY;
-  const { name, ...cardFields } = patch.card ?? {};
+  const { name, email, ...cardFields } = patch.card ?? {};
+  const emailChanges = email !== undefined && email !== record.email;
+  if (emailChanges && email !== null) {
+    await assertEmploymentEmailFree(organizationId, email, context, tx, employmentId);
+  }
   const after: ProfileColumns = { ...before };
   for (const [key, value] of Object.entries({ ...cardFields, ...workContact, ...patch.job })) {
     if (value !== undefined) (after as Record<string, unknown>)[key] = value;
@@ -149,23 +290,18 @@ export const updateDirectoryProfile = async (
     throw refuse(422, "PROBATION_BEFORE_START", "Probation can't end before the start", context);
   }
 
+  for (const [kind, key] of [
+    ["departments", "departmentId"],
+    ["locations", "locationId"],
+  ] as const) {
+    const entryId = after[key];
+    if (entryId && entryId !== before[key]) {
+      await assertAssignableEntry(kind, organizationId, entryId, context, tx);
+    }
+  }
+
   if (after.reportsToEmploymentId && after.reportsToEmploymentId !== before.reportsToEmploymentId) {
-    const [manager] = await tx
-      .select({ id: employments.id, userId: employments.userId })
-      .from(employments)
-      .where(
-        and(
-          eq(employments.organizationId, organizationId),
-          eq(employments.id, after.reportsToEmploymentId),
-          isNull(employments.endedAt)
-        )
-      );
-    if (!manager) {
-      throw refuse(422, "REPORTS_TO_NOT_FOUND", "Reports to must be an open Employment", context);
-    }
-    if (manager.id === record.id || (record.userId !== null && manager.userId === record.userId)) {
-      throw refuse(422, "REPORTS_TO_SELF", "Nobody reports to themself", context);
-    }
+    await assertReportsTo(organizationId, record, after.reportsToEmploymentId, context, tx);
   }
 
   if (
@@ -226,24 +362,36 @@ export const updateDirectoryProfile = async (
     cardChanges.unshift("name");
   }
 
+  if (emailChanges) {
+    await tx.update(employments).set({ email }).where(eq(employments.id, employmentId));
+    // The invite went to the old address, which no longer claims this record.
+    await revokeOpenEmploymentInvite(employmentId, tx);
+    cardChanges.push("email");
+  }
+
+  const sensitiveChanges = sensitivePatch
+    ? await writeSensitivePatch(organizationId, employmentId, sensitivePatch, tx)
+    : { contact: [], personal: [] };
+
   const history = (
     [
       [R.Card, cardChanges],
       [R.WorkContact, workContactChanges],
       [R.Job, jobChanges],
+      [R.Contact, sensitiveChanges.contact],
+      [R.Personal, sensitiveChanges.personal],
     ] as const
   )
     .filter(([, fields]) => fields.length > 0)
     .map(([row, fields]) => ({
-      id: generateRandomUUID(),
       organizationId,
       employmentId,
       actorUserId: viewer.standing.userId,
       section: row,
-      fields: [...fields],
+      fields,
       audience: access.grantedBy[row]!,
     }));
-  if (history.length > 0) await tx.insert(directoryProfileHistory).values(history);
+  await recordProfileHistory(history, tx);
 
   return getDirectoryProfile(viewer, employmentId, tx);
 };
@@ -263,7 +411,7 @@ export const listProfileHistory = async (
     employmentId,
     viewerUserId: viewer.standing.userId,
   };
-  if (!canReadHistory(viewer)) {
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "HISTORY_DENIED",
@@ -296,6 +444,7 @@ export const listProfileHistory = async (
     actorName: row.actorUserId ? (names.get(row.actorUserId) ?? null) : null,
     section: row.section,
     fields: row.fields,
+    actor: row.actor,
     audience: row.audience,
   }));
 };

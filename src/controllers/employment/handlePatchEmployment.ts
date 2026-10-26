@@ -3,6 +3,8 @@ import { getAuth } from "../../middleware/authSession.js";
 import { presentEmployment } from "./utils.js";
 import { db } from "../../db/db.js";
 import AppError from "../../utils/appError.js";
+import { assertKeepsAttendance } from "../../services/attendance/attendanceServices.js";
+import { workerType } from "../../db/schema/employment-schema.js";
 import {
   getEmploymentById,
   setEmploymentRequiredMinutes,
@@ -44,6 +46,10 @@ export const handlePatchEmployment = async (req: Request, res: Response) => {
         code: 403,
         context: { userId: auth.userId, organizationId: existing.organizationId, employmentId },
       });
+    }
+
+    if (existing.type === workerType.External && requiredMinutesPerDay !== null) {
+      assertKeepsAttendance(existing);
     }
 
     return setEmploymentRequiredMinutes(employmentId, requiredMinutesPerDay, tx);

@@ -514,7 +514,9 @@ export const vacationRouter = (): Router => {
    *         description: |
    *           Validation error, the range holds no working day (every day is a
    *           non-working day or a public holiday), the allowance would be
-   *           exceeded, or `SICK_DAY` was requested without an active Sick day
+   *           exceeded, an External worker asked for a type that draws on an
+   *           allowance (`errors[].context.code: "EXTERNAL_WORKER_ALLOWANCE"`),
+   *           or `SICK_DAY` was requested without an active Sick day
    *           benefit (`errors[].context.reason: "SICK_DAY_BENEFIT_DISABLED"`).
    *       '500':
    *         description: Failed to create vacation
@@ -632,6 +634,11 @@ export const vacationRouter = (): Router => {
    *           Plan limit reached, or the group is read-only because the plan
    *           lapsed. `errors[].context` carries
    *           `{ reason: "PLAN_LIMIT" | "READ_ONLY", limit, current }`.
+   *       '422':
+   *         description: |
+   *           Approving would exceed the allowance, or the requester is an
+   *           External worker and the type draws on an allowance
+   *           (`errors[].context.code: "EXTERNAL_WORKER_ALLOWANCE"`).
    */
   app.post(
     "/approve/:id",
@@ -976,7 +983,9 @@ export const vacationRouter = (): Router => {
    *       '422':
    *         description: |
    *           Validation error, mixed members/groups, the edit exceeds the
-   *           allowance, or a retype to `SICK_DAY` without an active Sick day
+   *           allowance, an External worker's row retyped to a type that draws
+   *           on an allowance (`EXTERNAL_WORKER_ALLOWANCE`), or a retype to
+   *           `SICK_DAY` without an active Sick day
    *           benefit (`errors[].context.reason: "SICK_DAY_BENEFIT_DISABLED"`).
    */
   app.patch("/", bodyValidationMiddleware(validateUpdateVacation), tryCatch(handleUpdateVacation));

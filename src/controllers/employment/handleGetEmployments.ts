@@ -1,7 +1,10 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { resolveRosterAudience } from "../../services/employment/attendanceAccess.js";
-import { listEmployments } from "../../services/employment/employmentServices.js";
+import {
+  listEmployments,
+  unlinkedOpenEmploymentIds,
+} from "../../services/employment/employmentServices.js";
 import { validateEmploymentQuery } from "../../services/employment/types.js";
 
 /**
@@ -9,7 +12,8 @@ import { validateEmploymentQuery } from "../../services/employment/types.js";
  * an org admin, their groups' members for a group admin, 403 for anyone else.
  *
  * Ended Employments stay in the list and carry `ended: true` — a former
- * colleague's attendance is still the admin's to look at.
+ * colleague's attendance is still the admin's to look at. Org admins also get
+ * `noLink` on every row, which the People card and the turn-off dialog read.
  */
 export const handleGetEmployments = async (req: Request, res: Response) => {
   const auth = getAuth(req);
@@ -18,10 +22,13 @@ export const handleGetEmployments = async (req: Request, res: Response) => {
 
   const audience = await resolveRosterAudience(auth.userId, organizationId);
 
-  const employments = await listEmployments(
-    organizationId,
-    audience.everyone ? undefined : { userIds: audience.userIds }
-  );
+  if (!audience.everyone) {
+    return res
+      .status(200)
+      .json(await listEmployments(organizationId, { userIds: audience.userIds }));
+  }
 
-  return res.status(200).json(employments);
+  const employments = await listEmployments(organizationId);
+  const unlinked = await unlinkedOpenEmploymentIds(organizationId);
+  return res.status(200).json(employments.map((row) => ({ ...row, noLink: unlinked.has(row.id) })));
 };

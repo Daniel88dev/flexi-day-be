@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import request from "supertest";
 import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
@@ -14,13 +13,12 @@ import { organizationUsers } from "../../db/schema/organization-users-schema.js"
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { appLanguage, userSettings } from "../../db/schema/user-settings-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { enableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 describe("The Work contact Section", () => {
   let server: LoopbackServer;
@@ -66,14 +64,7 @@ describe("The Work contact Section", () => {
       .update(employments)
       .set({ type: workerType.External })
       .where(eq(employments.userId, eli.id));
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
     const [janaEmployment] = await db
       .select({ id: employments.id })
       .from(employments)
@@ -87,16 +78,7 @@ describe("The Work contact Section", () => {
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-    };
-  };
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const fill = async (path: string, ownerId: string) => {
     const res = await (
@@ -317,7 +299,8 @@ describe("The Work contact Section", () => {
         { section: "WORK_CONTACT", fields: ["workPhone"], audience: "ORGANIZATION_ADMIN" },
       ]);
       const history = await (await as(users.owner.id)).get(`${path}/history`);
-      expect(history.text).not.toContain("777");
+      expect(history.text).not.toContain("777 123 456");
+      expect(history.text).not.toContain("777123456");
       expect(history.text).not.toContain("jana.work");
     });
   });

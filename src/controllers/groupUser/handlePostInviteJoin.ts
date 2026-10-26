@@ -3,7 +3,11 @@ import { db } from "../../db/db.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { hashInviteLinkSecret } from "../../utils/inviteLinkSecret.js";
 import { getInviteLinkBySecretHash } from "../../services/groupUser/inviteLinkServices.js";
-import { assertOpenInviteFor, redeemInvite } from "../../services/groupUser/inviteRedemption.js";
+import {
+  assertOpenInviteFor,
+  redeemInvite,
+  redemptionBody,
+} from "../../services/groupUser/inviteRedemption.js";
 import type { ValidatedInviteLinkTokenType } from "../../services/groupUser/types.js";
 import { markEmailVerified } from "../../services/user/userServices.js";
 import { markMemberGroupEventTargetsDirty } from "../../services/calendarSync/markCalendarTargetsDirty.js";
@@ -16,7 +20,7 @@ export const handlePostInviteJoin = async (req: Request, res: Response) => {
   const { token }: ValidatedInviteLinkTokenType = req.body;
   const linkSecretHash = hashInviteLinkSecret(token);
 
-  const membership = await db.transaction(async (tx) => {
+  const redemption = await db.transaction(async (tx) => {
     const invite = assertOpenInviteFor(
       await getInviteLinkBySecretHash(linkSecretHash, tx),
       auth.userEmail.toLowerCase(),
@@ -33,5 +37,5 @@ export const handlePostInviteJoin = async (req: Request, res: Response) => {
   });
   await markMemberGroupEventTargetsDirty(auth.userId);
 
-  return res.status(201).json(membership);
+  return res.status(201).json(redemptionBody(redemption));
 };

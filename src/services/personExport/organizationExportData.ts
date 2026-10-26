@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, arrayOverlaps, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { attendanceSettingsChanges } from "../../db/schema/attendance-settings-change-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
@@ -8,9 +8,12 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
+import { readLog } from "../../db/schema/read-log-schema.js";
+import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
 import { collectProfileExport } from "../directory/directoryProfileServices.js";
+import { collectSensitiveExport } from "../directory/sensitiveSections.js";
 import { getPersonContacts } from "../person/personName.js";
-import { safeFileName } from "./personExportData.js";
+import { readLogExportEntry, safeFileName, type ExportAttachmentFile } from "./personExportData.js";
 
 export type OrganizationExportPerson = { userId: string; name: string; folder: string };
 
@@ -124,10 +127,41 @@ export const collectOrganizationExport = async (organizationId: string) => {
   }
 
   const accountless = spells.filter((spell) => spell.userId === null);
-  const accountlessProfiles = await collectProfileExport(
-    organizationId,
-    accountless.map((spell) => spell.id)
-  );
+  const accountlessIds = accountless.map((spell) => spell.id);
+  const accountlessProfiles = await collectProfileExport(organizationId, accountlessIds);
+  const accountlessSensitive = await collectSensitiveExport(organizationId, accountlessIds);
+  const accountlessPhotos = await readyPhotoIds(accountlessIds);
+  const files: ExportAttachmentFile[] = [];
+  const accountlessPhoto = (employmentId: string) => {
+    const photo = accountlessPhotos.get(employmentId);
+    if (!photo) return null;
+    const path = `people-without-account/profile-photos/${employmentId}.jpg`;
+    files.push({
+      path,
+      storageKey: photoKeys(photoPrefix({ ...photo, employmentId })).full,
+      store: "organizationData",
+    });
+    return { file: path, uploadedAt: photo.readyAt };
+  };
+  const accountlessReads =
+    accountlessIds.length === 0
+      ? []
+      : await db
+          .select({
+            at: readLog.createdAt,
+            kind: readLog.kind,
+            sections: readLog.sections,
+            audience: readLog.audience,
+            employmentIds: readLog.employmentIds,
+          })
+          .from(readLog)
+          .where(
+            and(
+              eq(readLog.organizationId, organizationId),
+              arrayOverlaps(readLog.employmentIds, accountlessIds)
+            )
+          )
+          .orderBy(asc(readLog.createdAt));
 
   const document = {
     exportedAt: new Date(),
@@ -249,11 +283,21 @@ export const collectOrganizationExport = async (organizationId: string) => {
       startedAt: spell.startedAt,
       endedAt: spell.endedAt,
       profile: accountlessProfiles.profiles.get(spell.id) ?? null,
+      photo: accountlessPhoto(spell.id),
       profileHistory: accountlessProfiles.history.filter(
         (entry) => entry.employmentId === spell.id
       ),
+      contact: accountlessSensitive.get(spell.id)?.contact ?? null,
+      personal: accountlessSensitive.get(spell.id)?.personal ?? null,
+      readLog: accountlessReads
+        .filter((row) => row.employmentIds.includes(spell.id))
+        .map(readLogExportEntry),
     })),
   };
 
-  return { document, people };
+  return { document, files, people };
 };
+
+export type OrganizationExportDocument = Awaited<
+  ReturnType<typeof collectOrganizationExport>
+>["document"];

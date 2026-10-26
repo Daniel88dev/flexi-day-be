@@ -79,3 +79,45 @@ export const endDirectoryRoles = async (
     }))
   );
 };
+
+/**
+ * For the Person export: the Directory roles assigned on each of the given
+ * Employments now, and every assignment and removal the Permission history
+ * holds for them, oldest first.
+ */
+export const collectRoleExport = async (organizationId: string, employmentIds: string[]) => {
+  if (employmentIds.length === 0) return { assigned: [], history: [] };
+  const assigned = await db
+    .select({
+      employmentId: directoryRoleAssignments.employmentId,
+      role: directoryRoleAssignments.role,
+      assignedAt: directoryRoleAssignments.assignedAt,
+    })
+    .from(directoryRoleAssignments)
+    .where(
+      and(
+        eq(directoryRoleAssignments.organizationId, organizationId),
+        inArray(directoryRoleAssignments.employmentId, employmentIds)
+      )
+    )
+    .orderBy(asc(directoryRoleAssignments.assignedAt));
+  const history = await db
+    .select({
+      employmentId: directoryPermissionHistory.employmentId,
+      role: directoryPermissionHistory.role,
+      heldBefore: directoryPermissionHistory.heldBefore,
+      heldAfter: directoryPermissionHistory.heldAfter,
+      reason: directoryPermissionHistory.reason,
+      at: directoryPermissionHistory.createdAt,
+    })
+    .from(directoryPermissionHistory)
+    .where(
+      and(
+        eq(directoryPermissionHistory.organizationId, organizationId),
+        eq(directoryPermissionHistory.kind, permissionHistoryKind.Role),
+        inArray(directoryPermissionHistory.employmentId, employmentIds)
+      )
+    )
+    .orderBy(asc(directoryPermissionHistory.createdAt));
+  return { assigned, history };
+};

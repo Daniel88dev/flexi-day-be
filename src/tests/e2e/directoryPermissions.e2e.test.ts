@@ -5,19 +5,23 @@ import { v4 as uuidv4 } from "uuid";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
-import { directoryPermissionCells } from "../../db/schema/directory-schema.js";
+import {
+  directoryPermissionCells,
+  organizationDirectorySettings,
+} from "../../db/schema/directory-schema.js";
 import { directoryPermissionHistory } from "../../db/schema/directory-role-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { enableDirectory } from "../../services/directory/directorySettingsServices.js";
+import { DIRECTORY_PERMISSION_DEFAULTS } from "../../services/directory/permissionDefaults.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { authCookieFor } from "./helpers/authHelper.js";
-import { addMember, makeGroup, makeUser, removeMember } from "./helpers/reportFixtures.js";
+import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
 
 type Cell = { row: string; audience: string; value: string; fixed: boolean; options: string[] };
 
@@ -80,14 +84,7 @@ describe("The Permission table editor, Directory roles and Permission history", 
       email: "ada@example.test",
     });
 
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     const employmentOf = async (userId: string) => {
       const [row] = await db
@@ -113,16 +110,7 @@ describe("The Permission table editor, Directory roles and Permission history", 
     };
   };
 
-  const as = async (userId: string) => {
-    const cookie = await authCookieFor(userId);
-    return {
-      get: (path: string) => request(server.url).get(path).set("Cookie", cookie),
-      patch: (path: string, body: object) =>
-        request(server.url).patch(path).set("Cookie", cookie).send(body),
-      put: (path: string, body: object) =>
-        request(server.url).put(path).set("Cookie", cookie).send(body),
-    };
-  };
+  const as = (userId: string) => apiAs(server.url, userId);
 
   const lapse = (organizationId: string) =>
     upsertSubscription(organizationId, {
@@ -130,8 +118,6 @@ describe("The Permission table editor, Directory roles and Permission history", 
       status: subscriptionStatus.Active,
       graceEndsAt: null,
     });
-
-  const code = (res: request.Response) => res.body.errors?.[0]?.context?.code;
 
   const cellOf = (body: { cells: Cell[] }, row: string, audience: string) =>
     body.cells.find((cell) => cell.row === row && cell.audience === audience);
@@ -359,6 +345,53 @@ describe("The Permission table editor, Directory roles and Permission history", 
         .where(eq(directoryPermissionHistory.organizationId, organizationId));
       expect(entry).toMatchObject({ valueBefore: "READ", valueAfter: "NONE" });
     });
+
+    it("stores every missing cell at its default on the owner's first edit of another row", async () => {
+      const { organizationId, users } = await setUp();
+      const missing = and(
+        eq(directoryPermissionCells.organizationId, organizationId),
+        eq(directoryPermissionCells.row, "WORK_CONTACT" as never)
+      );
+      await db.delete(directoryPermissionCells).where(missing);
+
+      const res = await (
+        await as(users.owner.id)
+      ).patch(`/api/directory/${organizationId}/permissions`, {
+        row: "JOB",
+        audience: "HR",
+        value: "READ",
+      });
+
+      expect(res.status).toBe(200);
+      const stored = await db.select().from(directoryPermissionCells).where(missing);
+      expect(stored).toHaveLength(
+        DIRECTORY_PERMISSION_DEFAULTS.filter((cell) => cell.row === "WORK_CONTACT").length
+      );
+    });
+  });
+
+  describe("every enabled organization's copy", () => {
+    it("holds every cell of the product default", async () => {
+      await setUp();
+      const enabled = await db
+        .select({ organizationId: organizationDirectorySettings.organizationId })
+        .from(organizationDirectorySettings)
+        .where(eq(organizationDirectorySettings.enabled, true));
+      expect(enabled.length).toBeGreaterThan(0);
+      for (const { organizationId } of enabled) {
+        const stored = await db
+          .select({
+            row: directoryPermissionCells.row,
+            audience: directoryPermissionCells.audience,
+          })
+          .from(directoryPermissionCells)
+          .where(eq(directoryPermissionCells.organizationId, organizationId));
+        const keys = new Set(stored.map((cell) => `${cell.row}/${cell.audience}`));
+        for (const cell of DIRECTORY_PERMISSION_DEFAULTS) {
+          expect(keys.has(`${cell.row}/${cell.audience}`)).toBe(true);
+        }
+      }
+    });
   });
 
   describe("Directory roles", () => {
@@ -383,7 +416,7 @@ describe("The Permission table editor, Directory roles and Permission history", 
       expect(holder.roles).toEqual(["HR", "LEADERSHIP"]);
       expect((await hana.get(former)).status).toBe(200);
       const leo = await hana.get(`/api/directory/${organizationId}/people/${employment.leo}`);
-      expect(leo.body.sections.contact).toEqual({ level: "WRITE" });
+      expect(leo.body.sections.contact).toEqual(expect.objectContaining({ level: "WRITE" }));
       expect(leo.body.canReadHistory).toBe(true);
       const own = await hana.get(`/api/directory/${organizationId}/people/${employment.hana}`);
       expect(own.body.account.directoryRoles).toEqual(["HR", "LEADERSHIP"]);
@@ -470,8 +503,13 @@ describe("The Permission table editor, Directory roles and Permission history", 
       const owner = await as(users.owner.id);
       await owner.put(rolesPath(organizationId, employment.hana), { roles: ["HR", "LEADERSHIP"] });
 
-      await removeMember(support, users.hana.id);
-      await syncEmployment(organizationId, users.hana.id);
+      // In a Directory organization only End employment ends a spell.
+      const today = new Date().toISOString().slice(0, 10);
+      const ending = await request(server.url)
+        .post(`/api/employment/${employment.hana}/end`)
+        .set("Cookie", await authCookieFor(users.owner.id))
+        .send({ endedOn: today });
+      expect(ending.status).toBe(200);
 
       const history = await owner.get(`/api/directory/${organizationId}/permissions/history`);
       const ended = history.body.filter(
@@ -484,7 +522,7 @@ describe("The Permission table editor, Directory roles and Permission history", 
         personName: "Hana Human",
         before: true,
         after: false,
-        actorName: null,
+        actorName: "Olga Owner",
       });
 
       await addMember(support, users.hana.id);

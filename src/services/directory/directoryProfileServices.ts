@@ -6,6 +6,7 @@ import {
   contractType,
   directoryProfileHistory,
   directoryProfiles,
+  profileHistoryActor,
   workingTime,
 } from "../../db/schema/directory-profile-schema.js";
 import {
@@ -14,16 +15,28 @@ import {
   directoryPermissionValue as V,
 } from "../../db/schema/directory-schema.js";
 import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
+import { directoryDepartments, directoryLocations } from "../../db/schema/directory-list-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { getPersonContacts, personName, type PersonColumns } from "../person/personName.js";
 import { countryView, phoneCountryDefault, phoneView } from "./contactFormat.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
+import { groupedUserIds, profileActions } from "./directoryEndingServices.js";
 import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
-import { canReadPermissionTable, type DirectoryViewer } from "./directoryViewer.js";
+import { emergencyContactNotice } from "./emergencyContactNotice.js";
+import { copyFromPreviousSpellOffered } from "./previousSpellServices.js";
+import { nextRemoval, profileRetention, readRetentionSchedules } from "./retentionSchedule.js";
+import { getOrganizationById } from "../organization/organizationServices.js";
+import {
+  administersOrganization,
+  administersPeople,
+  createPersonGrantor,
+  type DirectoryViewer,
+} from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
 import type {
+  DirectoryEntryRef,
   DirectoryMarker,
   DirectoryPeople,
   DirectoryPerson,
@@ -67,7 +80,18 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
           where later_spell.organization_id = ${employments.organizationId}
             and later_spell.user_id = ${employments.userId}
             and later_spell.started_at > ${employments.startedAt})`,
+        inviteSent: sql<boolean>`exists (select 1 from invite_link open_invite
+          where open_invite.employment_id = ${employments.id}
+            and open_invite.used_at is null and open_invite.revoked_at is null
+            and open_invite.expires_at > now())`,
         jobTitle: directoryProfiles.jobTitle,
+        departmentId: directoryDepartments.id,
+        departmentName: directoryDepartments.name,
+        departmentArchivedAt: directoryDepartments.archivedAt,
+        locationId: directoryLocations.id,
+        locationName: directoryLocations.name,
+        locationArchivedAt: directoryLocations.archivedAt,
+        locationCountry: directoryLocations.country,
         legalName: directoryProfiles.legalName,
         employeeNumber: directoryProfiles.employeeNumber,
         startDate: directoryProfiles.startDate,
@@ -101,17 +125,13 @@ const selectRecords = (organizationId: string, tx?: DbTransaction) => {
       )
       .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
       .leftJoin(reportsToUser, eq(reportsToUser.id, reportsTo.userId))
+      .leftJoin(directoryDepartments, eq(directoryDepartments.id, directoryProfiles.departmentId))
+      .leftJoin(directoryLocations, eq(directoryLocations.id, directoryProfiles.locationId))
       .$dynamic(),
   };
 };
 
 type RecordRow = Awaited<ReturnType<ReturnType<typeof selectRecords>["query"]["execute"]>>[number];
-
-/** The owner, org admins and HR read a profile's history. */
-export const canReadHistory = (viewer: DirectoryViewer) =>
-  viewer.standing.owner ||
-  viewer.standing.organizationAdmin ||
-  viewer.standing.roles.includes("HR");
 
 const accessFor = (viewer: DirectoryViewer, row: RecordRow) =>
   viewer.accessTo({ userId: row.userId, ended: row.endedAt !== null });
@@ -123,6 +143,7 @@ const markersOf = (row: RecordRow, access: DirectoryAccess): DirectoryMarker[] =
   if (row.userId === null) markers.push("NO_ACCOUNT");
   if (row.accountDeletedAt !== null) markers.push("ACCOUNT_DELETED");
   if (row.endedAt !== null && row.rejoined) markers.push("REJOINED");
+  if (row.userId === null && row.endedAt === null && row.inviteSent) markers.push("INVITE_SENT");
   return markers;
 };
 
@@ -142,6 +163,18 @@ const photoOf = async (
   );
 };
 
+const entryRef = (
+  id: string | null,
+  name: string | null,
+  archivedAt: Date | null
+): DirectoryEntryRef | null =>
+  id === null ? null : { id, name: name ?? "", archived: archivedAt !== null };
+
+const departmentOf = (row: RecordRow) =>
+  entryRef(row.departmentId, row.departmentName, row.departmentArchivedAt);
+const locationOf = (row: RecordRow) =>
+  entryRef(row.locationId, row.locationName, row.locationArchivedAt);
+
 const toPerson = (
   row: RecordRow,
   access: DirectoryAccess,
@@ -150,9 +183,11 @@ const toPerson = (
   employmentId: row.id,
   name: row.name,
   jobTitle: row.jobTitle ?? null,
+  department: departmentOf(row),
+  location: locationOf(row),
   image: row.image ?? null,
   photoUrl: photo?.smallUrl ?? null,
-  user: buildUserSummary({ id: row.userId ?? row.id, name: row.name }),
+  user: { ...buildUserSummary({ id: row.userId ?? row.id, name: row.name }), id: row.userId },
   markers: markersOf(row, access),
 });
 
@@ -166,12 +201,23 @@ export const listDirectoryPeople = async (
     .where(and(eq(employments.organizationId, viewer.organizationId), isNull(employments.endedAt)))
     .orderBy(asc(sql`lower(${name})`), asc(employments.id));
 
+  const noGroupFilter = administersOrganization(viewer);
+  const grouped = noGroupFilter ? await groupedUserIds(viewer.organizationId, tx) : null;
   const people: DirectoryPerson[] = [];
   for (const row of rows) {
     const access = accessFor(viewer, row);
-    if (access.inReach) people.push(toPerson(row, access, await photoOf(viewer, row, access)));
+    if (!access.inReach) continue;
+    const person = toPerson(row, access, await photoOf(viewer, row, access));
+    if (grouped) person.noGroup = row.userId === null || !grouped.has(row.userId);
+    people.push(person);
   }
-  return { people, formerList: viewer.formerList, settings: canReadPermissionTable(viewer) };
+  return {
+    people,
+    formerList: administersPeople(viewer),
+    settings: administersPeople(viewer),
+    noGroupFilter,
+    addPerson: createPersonGrantor(viewer) !== null,
+  };
 };
 
 /** One row per ended spell, latest end first. Owner, org admins and HR only. */
@@ -179,7 +225,7 @@ export const listFormerDirectoryPeople = async (
   viewer: DirectoryViewer,
   tx?: DbTransaction
 ): Promise<FormerDirectoryPerson[]> => {
-  if (!viewer.formerList) {
+  if (!administersPeople(viewer)) {
     throw refuse(
       403,
       "FORMER_LIST_DENIED",
@@ -197,14 +243,25 @@ export const listFormerDirectoryPeople = async (
     )
     .orderBy(desc(employments.endedAt), asc(employments.id));
 
+  const schedules = await readRetentionSchedules(
+    viewer.organizationId,
+    rows.map((row) => row.id),
+    tx
+  );
   const former: FormerDirectoryPerson[] = [];
   for (const row of rows) {
     const access = accessFor(viewer, row);
     if (!access.inReach) continue;
+    const schedule = schedules.get(row.id);
+    const readsJob = access.sections[R.Job] !== V.None;
     former.push({
       ...toPerson(row, access, await photoOf(viewer, row, access)),
-      startedAt: row.startedAt,
-      endedAt: row.endedAt!,
+      startedAt: readsJob ? row.startedAt : null,
+      endedAt: readsJob ? row.endedAt : null,
+      nextRemoval: schedule
+        ? nextRemoval(schedule, access, row.type === workerType.External)
+        : null,
+      hold: schedule?.hold != null,
     });
   }
   return former;
@@ -217,9 +274,11 @@ export const nameFromAccount = (record: {
   accountDeletedAt: Date | null;
 }) => record.userId !== null && record.endedAt === null && record.accountDeletedAt === null;
 
-/** Locations (T-501) will pass the record's Location country here. */
-const phoneCountryView = (viewer: DirectoryViewer) => {
-  const code = phoneCountryDefault({ locationCountry: null, language: viewer.language });
+const phoneCountryView = (viewer: DirectoryViewer, record: RecordRow) => {
+  const code = phoneCountryDefault({
+    locationCountry: record.locationCountry ?? null,
+    language: viewer.language,
+  });
   return code === null ? null : countryView(code, viewer.language);
 };
 
@@ -252,6 +311,18 @@ const sectionsOf = (
               name: reachesManager ? record.reportsToName : null,
             },
       nameFromAccount: nameFromAccount(record),
+      department: departmentOf(record),
+      location: (() => {
+        const location = locationOf(record);
+        return (
+          location && {
+            ...location,
+            country: record.locationCountry
+              ? countryView(record.locationCountry, viewer.language)
+              : null,
+          }
+        );
+      })(),
     },
     photo: (() => {
       const section = view(R.Photo);
@@ -262,7 +333,7 @@ const sectionsOf = (
       workEmail: record.workEmail ?? null,
       workPhone: record.workPhone ? phoneView(record.workPhone, viewer.language) : null,
       ...(access.sections[R.WorkContact] === V.Write && {
-        phoneCountryDefault: phoneCountryView(viewer),
+        phoneCountryDefault: phoneCountryView(viewer, record),
       }),
     },
     job: job && {
@@ -277,7 +348,7 @@ const sectionsOf = (
       workingTime: record.workingTime ?? null,
     },
     contact: view(R.Contact),
-    personal: view(R.Personal),
+    personal: record.type === workerType.External ? undefined : view(R.Personal),
   };
   return Object.fromEntries(
     Object.entries(sections).filter(([, section]) => section !== undefined)
@@ -316,8 +387,34 @@ export const getDirectoryProfile = async (
     self: row.userId !== null && row.userId === viewer.standing.userId,
     ended: row.endedAt !== null,
     sections: sectionsOf(viewer, row, access, photo),
-    canReadHistory: canReadHistory(viewer),
+    canReadHistory: administersPeople(viewer),
+    actions: profileActions(
+      viewer,
+      row,
+      access,
+      await copyFromPreviousSpellOffered(viewer, row, access, tx)
+    ),
   };
+  if (row.endedAt !== null) {
+    const schedule = (await readRetentionSchedules(viewer.organizationId, [row.id], tx)).get(
+      row.id
+    );
+    if (schedule) {
+      profile.retention = profileRetention(schedule, access, row.type === workerType.External);
+    }
+  }
+  if (profile.sections.contact?.level === V.Write) {
+    const organization = await getOrganizationById(viewer.organizationId, tx);
+    profile.sections.contact = {
+      ...profile.sections.contact,
+      notice: await emergencyContactNotice(
+        { id: viewer.organizationId, name: organization?.name ?? "" },
+        viewer.language,
+        tx
+      ),
+      phoneCountryDefault: phoneCountryView(viewer, row),
+    };
+  }
   if (access.accountFacts) {
     profile.account = {
       status:
@@ -336,6 +433,8 @@ export const getDirectoryProfile = async (
  */
 export type ExportedProfile = {
   jobTitle: string | null;
+  department: string | null;
+  location: string | null;
   reportsTo: { employmentId: string; name: string | null } | null;
   legalName: string | null;
   employeeNumber: string | null;
@@ -345,7 +444,6 @@ export type ExportedProfile = {
   contractType: contractType | null;
   workingTime: workingTime | null;
   workEmail: string | null;
-  /** E.164. */
   workPhone: string | null;
 };
 
@@ -355,7 +453,8 @@ export type ExportedProfileHistoryEntry = {
   section: R;
   fields: string[];
   by: string | null;
-  audience: directoryAudience;
+  actor: profileHistoryActor;
+  audience: directoryAudience | null;
 };
 
 export const collectProfileExport = async (
@@ -370,6 +469,8 @@ export const collectProfileExport = async (
     .select({
       employmentId: directoryProfiles.employmentId,
       jobTitle: directoryProfiles.jobTitle,
+      department: directoryDepartments.name,
+      location: directoryLocations.name,
       reportsToId: directoryProfiles.reportsToEmploymentId,
       reportsToName: sql<
         string | null
@@ -391,6 +492,8 @@ export const collectProfileExport = async (
     .from(directoryProfiles)
     .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
     .leftJoin(reportsToUser, eq(reportsToUser.id, reportsTo.userId))
+    .leftJoin(directoryDepartments, eq(directoryDepartments.id, directoryProfiles.departmentId))
+    .leftJoin(directoryLocations, eq(directoryLocations.id, directoryProfiles.locationId))
     .where(
       and(
         eq(directoryProfiles.organizationId, organizationId),
@@ -402,6 +505,8 @@ export const collectProfileExport = async (
       employmentId,
       {
         jobTitle: fields.jobTitle,
+        department: fields.department,
+        location: fields.location,
         reportsTo: reportsToId === null ? null : { employmentId: reportsToId, name: reportsToName },
         legalName: fields.legalName,
         employeeNumber: fields.employeeNumber,
@@ -438,6 +543,7 @@ export const collectProfileExport = async (
     section: row.section,
     fields: row.fields,
     by: row.actorUserId ? (names.get(row.actorUserId) ?? null) : null,
+    actor: row.actor,
     audience: row.audience,
   }));
   return { profiles, history };

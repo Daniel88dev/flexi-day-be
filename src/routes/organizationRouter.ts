@@ -20,7 +20,12 @@ import { handleGetDirectorySettings } from "../controllers/directory/handleGetDi
 import { handlePostEnableDirectory } from "../controllers/directory/handlePostEnableDirectory.js";
 import { handlePostDisableDirectory } from "../controllers/directory/handlePostDisableDirectory.js";
 import { handlePostAcceptDirectoryAgreement } from "../controllers/directory/handlePostAcceptDirectoryAgreement.js";
-import { validateDirectoryAgreementBody } from "../services/directory/types.js";
+import { handlePostDeleteAllDirectoryData } from "../controllers/directory/handlePostDeleteAllDirectoryData.js";
+import {
+  validateDirectoryAgreementBody,
+  validateDirectoryDeleteAllBody,
+  validateEnableDirectoryBody,
+} from "../services/directory/types.js";
 
 export const organizationRouter = (): Router => {
   const app = Router();
@@ -222,7 +227,11 @@ export const organizationRouter = (): Router => {
    *     tags:
    *       - Organization
    *     summary: Revoke organization admin
-   *     description: Owner-only. The owner's own rights are not stored and cannot be revoked.
+   *     description: |
+   *       Owner-only. The owner's own rights are not stored and cannot be
+   *       revoked. The person's Employment ends if the grant was their last
+   *       link, except in a Directory organization, where only End employment
+   *       ends one.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -256,7 +265,9 @@ export const organizationRouter = (): Router => {
    *       The owner's copy of everything the organization holds: one folder
    *       per person in the Person export layout under `people/`, plus
    *       `organization.json` with the organization, its settings, groups,
-   *       memberships, administrators and group events. Works on every plan,
+   *       memberships, administrators, group events and the people without an
+   *       account, whose Profile photos sit under
+   *       `people-without-account/profile-photos/`. Works on every plan,
    *       at any time. The ZIP is built in the background on the Person
    *       export queue; the answer is the `PENDING` export. Each request
    *       writes one `export` row to the Read log for every person in it. A
@@ -591,6 +602,11 @@ export const organizationRouter = (): Router => {
    *           type: string
    *           format: date-time
    *           nullable: true
+   *         dataDeletedAt:
+   *           type: string
+   *           format: date-time
+   *           nullable: true
+   *           description: When the owner last ran Delete all directory data.
    *         writable:
    *           type: boolean
    *           description: |
@@ -614,7 +630,10 @@ export const organizationRouter = (): Router => {
    *               nullable: true
    *             newVersionReady:
    *               type: boolean
-   *               description: On, and the latest acceptance is older than the current version.
+   *               description: |
+   *                 On, and the latest acceptance is older than the current
+   *                 version. Always false for an org admin: only the owner
+   *                 accepts.
    *         people:
    *           type: object
    *           description: Live Employment counts for the enable dialog's summary.
@@ -675,6 +694,11 @@ export const organizationRouter = (): Router => {
    *       Permission table, fixed cells included. A re-enable keeps the cells
    *       the organization already stored and adds only the cells the product
    *       gained since. Nothing is written per Employment.
+   *
+   *       With `tellMembers`, after the commit every person with a bound open
+   *       Employment, the owner and Deleted accounts aside, gets one
+   *       `directory_enabled` Notification, in-app and pushed, never mailed,
+   *       linking to their own profile.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -695,6 +719,10 @@ export const organizationRouter = (): Router => {
    *                 type: integer
    *                 minimum: 1
    *                 description: The agreement version the owner was shown.
+   *               tellMembers:
+   *                 type: boolean
+   *                 default: false
+   *                 description: Send the members' notice once the directory is on.
    *     responses:
    *       '200':
    *         description: The directory state after the change
@@ -719,7 +747,7 @@ export const organizationRouter = (): Router => {
    */
   app.post(
     "/directory/enable",
-    bodyValidationMiddleware(validateDirectoryAgreementBody),
+    bodyValidationMiddleware(validateEnableDirectoryBody),
     tryCatch(handlePostEnableDirectory)
   );
 
@@ -732,8 +760,13 @@ export const organizationRouter = (): Router => {
    *     summary: Turn the people directory off
    *     description: |
    *       Owner only, on every plan. Updates the settings row and keeps every
-   *       other directory row, Permission table included. Ends nobody. Calling
-   *       it while the directory is off changes nothing.
+   *       other directory row, Permission table and Directory roles included.
+   *       Ends nobody: from now on each person's next link change follows the
+   *       derived rule again, and Employments no link holds (`noLink` on
+   *       `GET /api/employment/list`) stay open until an admin ends them.
+   *       Revokes open directory invites that name no group; invites that
+   *       name a group stay valid. Calling it while the directory is off
+   *       changes nothing.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -754,6 +787,74 @@ export const organizationRouter = (): Router => {
    *         description: No such organization
    */
   app.post("/directory/disable", tryCatch(handlePostDisableDirectory));
+
+  /**
+   * @openapi
+   * /api/organization/directory/delete-all:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Delete all directory data
+   *     description: |
+   *       Owner only, on every plan, and only while the directory is off. The
+   *       owner confirms by typing the organization's name (case, surrounding
+   *       spaces and runs of spaces don't matter). In one transaction it
+   *       removes every Profile field and sealed Section, the Profile photo
+   *       rows, the Department and Location lists, the Directory roles, the
+   *       Permission table and its history, the retention periods and holds,
+   *       the organization's own emergency-contact notice text, every Person
+   *       export, and every Employment without an account, open or ended
+   *       (their invites and profile history go with them). Organization
+   *       exports stay: they are the owner's return copy and expire on their
+   *       own.
+   *       Employments with an account keep their name and email copy, type
+   *       and dates; the agreement acceptances, the Read log and the profile
+   *       history of those Employments stay. Photo and export files are
+   *       deleted after the commit. A later enable copies the product's
+   *       default Permission table fresh.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - confirmName
+   *             properties:
+   *               confirmName:
+   *                 type: string
+   *                 maxLength: 200
+   *                 description: The organization's name, typed by the owner.
+   *     responses:
+   *       '200':
+   *         description: The directory state after the deletion
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/DirectoryState'
+   *       '400':
+   *         description: Invalid body, or no unambiguous default organization
+   *       '403':
+   *         description: Caller is not the organization owner (`code: OWNER_ONLY`)
+   *       '404':
+   *         description: No such organization
+   *       '409':
+   *         description: The directory is on (`code: DIRECTORY_ON`)
+   *       '422':
+   *         description: The typed name is not the organization's (`code: NAME_MISMATCH`)
+   */
+  app.post(
+    "/directory/delete-all",
+    bodyValidationMiddleware(validateDirectoryDeleteAllBody),
+    tryCatch(handlePostDeleteAllDirectoryData)
+  );
 
   /**
    * @openapi

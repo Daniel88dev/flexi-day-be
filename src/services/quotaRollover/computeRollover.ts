@@ -24,6 +24,8 @@ export type RolloverCandidate = {
   groupDefaultVacationDays: number;
   groupDefaultHomeOfficeDays: number;
   groupDefaultSickDays: number;
+  /** The member's open Employment in the group's organization is an External worker's. */
+  externalWorker: boolean;
 };
 
 export type RolloverRow = {
@@ -52,15 +54,27 @@ const previousRow = (candidate: RolloverCandidate): QuotaFigures | undefined =>
 /**
  * Derives the new year's allowance for one membership.
  *
- * The member's own allowance carries forward — a manually raised quota stays
+ * The member's own allowance carries forward: a manually raised quota stays
  * raised next year rather than snapping back to the group default. Unused days
  * land in `carriedOverDays`, floored to a whole day because the column is an
  * integer and half-day bookings can leave a fractional remainder, and clamped
  * at zero so an overdrawn member starts the year level rather than in debt.
  * The sick day allocation carries forward too; only its unused balance
- * expires — sick days never contribute to `carriedOverDays`.
+ * expires, so sick days never contribute to `carriedOverDays`. An External
+ * worker's year opens at zero with nothing carried over.
  */
 export const computeRolloverRow = (candidate: RolloverCandidate): RolloverRow => {
+  if (candidate.externalWorker) {
+    return {
+      userId: candidate.userId,
+      groupId: candidate.groupId,
+      vacationDays: 0,
+      homeOfficeDays: 0,
+      sickDays: 0,
+      carriedOverDays: 0,
+    };
+  }
+
   const previous = resolveYearAllocation(previousRow(candidate), {
     defaultVacationDays: candidate.groupDefaultVacationDays,
     defaultHomeOfficeDays: candidate.groupDefaultHomeOfficeDays,

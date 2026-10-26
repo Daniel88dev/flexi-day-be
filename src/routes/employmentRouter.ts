@@ -105,7 +105,12 @@ export const employmentRouter = (): Router => {
    *           `accountDeletedAt` is when the person deleted their account, and
    *           `accountDeleted` says whether they did: the row then names them
    *           by the copy the organization kept and carries the "Account
-   *           deleted" label.
+   *           deleted" label. For organization admins every row also carries
+   *           `noLink`: true on an open Employment that no group membership,
+   *           managed group, admin grant or ownership holds (people without an
+   *           account included). With the directory off only End employment
+   *           ends those; the People card and the directory's turn-off dialog
+   *           list them.
    *       '422':
    *         description: Missing or malformed organizationId
    *       '403':
@@ -162,7 +167,11 @@ export const employmentRouter = (): Router => {
    *           `{ id, organizationId, userId, startedAt, endedAt, ended,
    *           requiredMinutesPerDay }`
    *       '403':
-   *         description: The caller does not administer that organization
+   *         description: |
+   *           The caller does not administer that organization, or
+   *           `context.reason` `EXTERNAL_WORKER` for a value on an External
+   *           worker, who owes no required time. Clearing it with null always
+   *           works.
    *       '404':
    *         description: No such Employment
    *       '422':
@@ -189,14 +198,21 @@ export const employmentRouter = (): Router => {
    *       slots, drops their delegated org-admin row, and cancels their
    *       pending requests and their approved bookings after today. Past
    *       bookings and today's stay. Each cancelled day gets a CANCELLED event
-   *       with the caller as actor and the reason "employment ended". Nobody
-   *       is notified.
+   *       with the caller as actor and the reason "employment ended". It also
+   *       ends the person's Directory roles and clears Reports to on every
+   *       open record that names them, with a Profile history entry each.
+   *       Every Section whose Retention period is "at end" is emptied in the
+   *       same transaction, with a retention entry in the Profile history.
+   *       Nobody is notified.
    *
-   *       The owner and org admins only, never plan-gated, attendance on or
-   *       off. For now only a Deleted account's Employment can be ended: the
-   *       Employment is one row per organization, so ending a live person and
-   *       adding them back would overwrite the spell. The account itself, and
-   *       the person's records in other organizations, are untouched.
+   *       In a Directory organization the End act cell of the Permission
+   *       table decides who may (Owner, HR and Org admin by default);
+   *       elsewhere the owner and org admins. Never plan-gated, attendance on
+   *       or off. A live account, a Deleted account and a person without an
+   *       account all end this way; adding the person back later starts a new
+   *       spell. The owner's own Employment can't be ended. The account
+   *       itself, and the person's records in other organizations, are
+   *       untouched.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -265,19 +281,22 @@ export const employmentRouter = (): Router => {
    *       '401':
    *         description: Not signed in
    *       '403':
-   *         description: The caller is not the owner or an org admin of the organization
+   *         description: |
+   *           The caller may not end it: outside the directory they are not the
+   *           owner or an org admin, inside it the End act cell doesn't allow
+   *           them.
    *       '404':
    *         description: No such Employment
    *       '409':
    *         description: |
-   *           `context.code` is `EMPLOYMENT_ENDED` when it already ended, or
+   *           `context.code` is `EMPLOYMENT_ENDED` when it already ended,
    *           `MANAGES_GROUP` while the person manages one of the
-   *           organization's groups.
+   *           organization's groups, or `OWNER_EMPLOYMENT` for the owner's own.
    *       '422':
    *         description: |
    *           A malformed id or date, or `context.code` is
    *           `END_DATE_IN_FUTURE`, `END_DATE_BEFORE_START` (before the spell
-   *           started) or `ACCOUNT_NOT_DELETED`.
+   *           started).
    */
   app.post(
     "/:employmentId/end",
@@ -309,8 +328,11 @@ export const employmentRouter = (): Router => {
    *       name them "Deleted account".
    *
    *       The owner and org admins only, never plan-gated, and only for a
-   *       Deleted account. `confirmName` must match the name the People card
-   *       shows, ignoring case and extra spaces.
+   *       Deleted account or a person without an account. A person without
+   *       an account is that one Employment, which goes with its profile,
+   *       sealed Sections, Profile photos, profile history and Person
+   *       exports. `confirmName` must match the name the People card or the
+   *       profile shows, ignoring case and extra spaces.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -367,14 +389,18 @@ export const employmentRouter = (): Router => {
    *     summary: Request a Person export
    *     description: |
    *       Starts a Person export: everything the organization holds about the
-   *       Employment's person across every spell, as a ZIP of `person.json`,
+   *       Employment's person across every spell (the same account, or the
+   *       same email on a spell without one), as a ZIP of `person.json`,
    *       four CSVs (bookings, attendance sessions, quotas, changes) and the
    *       attachments. Account data stays out. The ZIP is built in the
    *       background; the answer is the export row in `PENDING`, and the
    *       caller gets an `export_ready` notification once it is `READY`.
    *
    *       The owner and org admins only, on every plan, for any Employment:
-   *       open or ended, account bound or deleted. Group managers and members
+   *       open or ended, account bound, deleted or never there. For a person
+   *       without an account the export row names the Employment in
+   *       `subjectEmploymentId`, and the export covers every spell with its
+   *       email. Group managers and members
    *       get 403. Each new request writes one `export` row to the Read log.
    *       While an earlier request by the same caller for the same person is
    *       still `PENDING`, that one is returned and nothing new is written.
@@ -401,9 +427,7 @@ export const employmentRouter = (): Router => {
    *       '404':
    *         description: No such Employment
    *       '422':
-   *         description: |
-   *           Malformed employment id, or `context.code` is `NO_ACCOUNT`: the
-   *           Employment has no account bound, so there is no Person export of it
+   *         description: Malformed employment id
    *       '503':
    *         description: "`context.code` is `EXPORT_UNAVAILABLE`: no organization-data store is configured"
    */

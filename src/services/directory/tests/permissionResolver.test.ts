@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { directoryRole } from "../../../db/schema/directory-role-schema.js";
 import { workerType } from "../../../db/schema/employment-schema.js";
 import { DIRECTORY_PERMISSION_DEFAULTS } from "../permissionDefaults.js";
 import { resolveAccess, type PermissionCell, type ViewerStanding } from "../permissionResolver.js";
@@ -81,13 +82,13 @@ describe("resolveAccess, one audience at a time on the default table", () => {
   });
 
   it("gives HR write on every Section", () => {
-    expect(levels(defaults, colleague({ roles: ["HR"] }))).toBe(
+    expect(levels(defaults, colleague({ roles: [directoryRole.Hr] }))).toBe(
       "WRITE WRITE WRITE WRITE WRITE WRITE"
     );
   });
 
   it("gives Leadership the non-sensitive Sections to read", () => {
-    expect(levels(defaults, colleague({ roles: ["LEADERSHIP"] }))).toBe(
+    expect(levels(defaults, colleague({ roles: [directoryRole.Leadership] }))).toBe(
       "READ READ READ READ NONE NONE"
     );
   });
@@ -103,7 +104,10 @@ describe("resolveAccess, one audience at a time on the default table", () => {
   });
 
   it("names the audiences that credit the viewer", () => {
-    const viewer = colleague({ groupAdminReach: new Set([SUBJECT]), roles: ["LEADERSHIP"] });
+    const viewer = colleague({
+      groupAdminReach: new Set([SUBJECT]),
+      roles: [directoryRole.Leadership],
+    });
     expect(resolveAccess(defaults, viewer, openRecord).audiences).toEqual([
       "COLLEAGUE",
       "GROUP_ADMIN",
@@ -121,14 +125,14 @@ describe("resolveAccess, widest cell wins", () => {
 
   it("lets Leadership widen a Colleague's view", () => {
     const cells = tableWith({ "CONTACT/LEADERSHIP": "READ" });
-    expect(levels(cells, colleague({ roles: ["LEADERSHIP"] }))).toBe(
+    expect(levels(cells, colleague({ roles: [directoryRole.Leadership] }))).toBe(
       "READ READ READ READ READ NONE"
     );
   });
 
   it("applies on the viewer's own record too", () => {
     const cells = tableWith({ "CARD/HR": "WRITE", "JOB/HR": "WRITE" });
-    expect(levels(cells, colleague({ roles: ["HR"] }), ownRecord)).toBe(
+    expect(levels(cells, colleague({ roles: [directoryRole.Hr] }), ownRecord)).toBe(
       "WRITE WRITE WRITE WRITE WRITE WRITE"
     );
   });
@@ -183,7 +187,7 @@ describe("resolveAccess, the Former list", () => {
     expect(levels(defaults, colleague({ organizationAdmin: true }), endedRecord)).toBe(
       "WRITE WRITE WRITE WRITE WRITE WRITE"
     );
-    expect(levels(defaults, colleague({ roles: ["HR"] }), endedRecord)).toBe(
+    expect(levels(defaults, colleague({ roles: [directoryRole.Hr] }), endedRecord)).toBe(
       "WRITE WRITE WRITE WRITE WRITE WRITE"
     );
   });
@@ -194,7 +198,7 @@ describe("resolveAccess, the Former list", () => {
       colleague(),
       standing({ employmentType: workerType.External }),
       groupAdmin,
-      colleague({ roles: ["LEADERSHIP"] }),
+      colleague({ roles: [directoryRole.Leadership] }),
     ]) {
       expect(levels(defaults, viewer, endedRecord)).toBe("NONE NONE NONE NONE NONE NONE");
     }
@@ -205,10 +209,12 @@ describe("resolveAccess, the Former list", () => {
 
   it("opens the Former list to the owner, org admins and HR only", () => {
     expect(resolveAccess(defaults, standing({ owner: true }), endedRecord).inReach).toBe(true);
-    expect(resolveAccess(defaults, colleague({ roles: ["HR"] }), endedRecord).inReach).toBe(true);
-    expect(resolveAccess(defaults, colleague({ roles: ["LEADERSHIP"] }), endedRecord).inReach).toBe(
-      false
-    );
+    expect(
+      resolveAccess(defaults, colleague({ roles: [directoryRole.Hr] }), endedRecord).inReach
+    ).toBe(true);
+    expect(
+      resolveAccess(defaults, colleague({ roles: [directoryRole.Leadership] }), endedRecord).inReach
+    ).toBe(false);
   });
 });
 
@@ -229,8 +235,8 @@ describe("resolveAccess, reach and record facts", () => {
       resolveAccess(defaults, viewer, record).restrictedMarkers;
     expect(sees(standing({ owner: true }))).toBe(true);
     expect(sees(colleague({ organizationAdmin: true }))).toBe(true);
-    expect(sees(colleague({ roles: ["HR"] }))).toBe(true);
-    expect(sees(colleague({ roles: ["LEADERSHIP"] }))).toBe(false);
+    expect(sees(colleague({ roles: [directoryRole.Hr] }))).toBe(true);
+    expect(sees(colleague({ roles: [directoryRole.Leadership] }))).toBe(false);
     expect(sees(colleague({ groupAdminReach: new Set([SUBJECT]) }))).toBe(false);
     expect(sees(colleague(), ownRecord)).toBe(false);
   });
@@ -240,9 +246,9 @@ describe("resolveAccess, reach and record facts", () => {
       resolveAccess(defaults, viewer, record).accountFacts;
     expect(sees(standing({ owner: true }))).toBe(true);
     expect(sees(colleague({ organizationAdmin: true }))).toBe(true);
-    expect(sees(colleague({ roles: ["HR"] }))).toBe(true);
+    expect(sees(colleague({ roles: [directoryRole.Hr] }))).toBe(true);
     expect(sees(colleague(), ownRecord)).toBe(true);
-    expect(sees(colleague({ roles: ["LEADERSHIP"] }))).toBe(false);
+    expect(sees(colleague({ roles: [directoryRole.Leadership] }))).toBe(false);
     expect(sees(colleague())).toBe(false);
   });
 });
@@ -256,7 +262,7 @@ describe("resolveAccess, directory acts", () => {
 
   it("follows the HR and org admin cells, and gives Colleagues no act", () => {
     const cells = tableWith({ "CHANGE_WORKER_TYPE/HR": "NO" });
-    const hr = resolveAccess(cells, colleague({ roles: ["HR"] }), openRecord).acts;
+    const hr = resolveAccess(cells, colleague({ roles: [directoryRole.Hr] }), openRecord).acts;
     expect(hr.CHANGE_WORKER_TYPE).toBe(false);
     expect(hr.END_EMPLOYMENT).toBe(true);
     expect(resolveAccess(defaults, colleague(), openRecord).acts.END_EMPLOYMENT).toBe(false);
@@ -302,10 +308,30 @@ describe("resolveAccess, the granting audience", () => {
   });
 });
 
+describe("resolveAccess, the audience that allows an act", () => {
+  it("names the first audience whose cell allows it, the owner before anyone", () => {
+    expect(
+      resolveAccess(defaults, colleague({ roles: [directoryRole.Hr] }), openRecord).actGrantedBy
+        .END_EMPLOYMENT
+    ).toBe("HR");
+    expect(
+      resolveAccess(defaults, colleague({ owner: true, roles: [directoryRole.Hr] }), openRecord)
+        .actGrantedBy.END_EMPLOYMENT
+    ).toBe("OWNER");
+  });
+
+  it("names nobody when no cell allows it", () => {
+    const viewer = colleague({ roles: [directoryRole.Leadership] });
+    const access = resolveAccess(defaults, viewer, openRecord);
+    expect(access.acts.END_EMPLOYMENT).toBe(false);
+    expect(access.actGrantedBy.END_EMPLOYMENT).toBeNull();
+  });
+});
+
 describe("resolveAccess, both Directory roles on one person", () => {
   it("credits HR and Leadership together, and the wider cell wins per Section", () => {
     const cells = tableWith({ "CONTACT/HR": "READ", "CONTACT/LEADERSHIP": "WRITE" });
-    const viewer = colleague({ roles: ["HR", "LEADERSHIP"] });
+    const viewer = colleague({ roles: [directoryRole.Hr, directoryRole.Leadership] });
     const access = resolveAccess(cells, viewer, openRecord);
     expect(access.audiences).toEqual(["COLLEAGUE", "HR", "LEADERSHIP"]);
     expect(levels(cells, viewer)).toBe("WRITE WRITE WRITE WRITE WRITE WRITE");
@@ -315,14 +341,18 @@ describe("resolveAccess, both Directory roles on one person", () => {
 
   it("keeps only the HR column on an ended record", () => {
     const cells = tableWith({ "JOB/HR": "READ", "JOB/LEADERSHIP": "WRITE" });
-    const access = resolveAccess(cells, colleague({ roles: ["HR", "LEADERSHIP"] }), endedRecord);
+    const access = resolveAccess(
+      cells,
+      colleague({ roles: [directoryRole.Hr, directoryRole.Leadership] }),
+      endedRecord
+    );
     expect(access.audiences).toEqual(["HR"]);
     expect(access.sections.JOB).toBe("READ");
   });
 
   it("follows a stored allowed on Leadership for an act", () => {
     const cells = tableWith({ "END_EMPLOYMENT/LEADERSHIP": "ALLOWED" });
-    const viewer = colleague({ roles: ["LEADERSHIP"] });
+    const viewer = colleague({ roles: [directoryRole.Leadership] });
     expect(resolveAccess(cells, viewer, openRecord).acts.END_EMPLOYMENT).toBe(true);
     expect(resolveAccess(defaults, viewer, openRecord).acts.END_EMPLOYMENT).toBe(false);
   });

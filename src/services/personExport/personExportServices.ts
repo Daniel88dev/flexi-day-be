@@ -9,6 +9,7 @@ import {
 } from "../../db/schema/person-export-schema.js";
 import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
 import { refuse } from "../../utils/appError.js";
+import { personSpellIds } from "../employment/personSpells.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { isOrganizationAdmin, lockOrganization } from "../organization/organizationServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
@@ -25,6 +26,7 @@ export const presentPersonExport = (row: PersonExportRow): PersonExportView => (
   organizationId: row.organizationId,
   scope: row.scope,
   subjectUserId: row.subjectUserId,
+  subjectEmploymentId: row.subjectEmploymentId,
   status: row.status,
   createdAt: row.createdAt,
   readyAt: row.readyAt,
@@ -38,21 +40,8 @@ export const assertExportStoreConfigured = (): void => {
   }
 };
 
-/** Every spell the organization holds for the person, oldest first. */
-export const employmentIdsOf = async (
-  organizationId: string,
-  subjectUserId: string,
-  tx?: DbTransaction
-): Promise<string[]> => {
-  const rows = await (tx ?? db)
-    .select({ id: employments.id })
-    .from(employments)
-    .where(
-      and(eq(employments.organizationId, organizationId), eq(employments.userId, subjectUserId))
-    )
-    .orderBy(asc(employments.startedAt));
-  return rows.map((row) => row.id);
-};
+/** Who a Person export is about: an account, or the one Employment of a person without one. */
+export type ExportSubject = { subjectUserId: string } | { subjectEmploymentId: string };
 
 /**
  * Records a request and its `export` row in the Read log, in the caller's
@@ -62,12 +51,13 @@ export const employmentIdsOf = async (
 export const requestPersonExport = async (
   input: {
     organizationId: string;
-    subjectUserId: string;
     requestedByUserId: string;
     audience: readLogAudience;
-  },
+  } & ExportSubject,
   tx: DbTransaction
 ): Promise<{ row: PersonExportRow; created: boolean }> => {
+  const subjectUserId = "subjectUserId" in input ? input.subjectUserId : null;
+  const subjectEmploymentId = "subjectEmploymentId" in input ? input.subjectEmploymentId : null;
   // Erase holds this lock, so a request racing one waits and then finds no Employment.
   await lockOrganization(input.organizationId, tx);
   const [pending] = await tx
@@ -77,7 +67,9 @@ export const requestPersonExport = async (
       and(
         eq(personExports.organizationId, input.organizationId),
         eq(personExports.scope, personExportScope.Person),
-        eq(personExports.subjectUserId, input.subjectUserId),
+        subjectUserId !== null
+          ? eq(personExports.subjectUserId, subjectUserId)
+          : eq(personExports.subjectEmploymentId, subjectEmploymentId!),
         eq(personExports.requestedByUserId, input.requestedByUserId),
         eq(personExports.status, personExportStatus.Pending)
       )
@@ -85,7 +77,11 @@ export const requestPersonExport = async (
     .limit(1);
   if (pending) return { row: pending, created: false };
 
-  const employmentIds = await employmentIdsOf(input.organizationId, input.subjectUserId, tx);
+  const employmentIds = await personSpellIds(
+    input.organizationId,
+    subjectUserId !== null ? { userId: subjectUserId } : { employmentId: subjectEmploymentId! },
+    tx
+  );
   if (employmentIds.length === 0) {
     throw refuse(404, "NOT_FOUND", "No employment for that person", { ...input });
   }
@@ -95,7 +91,8 @@ export const requestPersonExport = async (
     .values({
       id: generateRandomUUID(),
       organizationId: input.organizationId,
-      subjectUserId: input.subjectUserId,
+      subjectUserId,
+      subjectEmploymentId,
       requestedByUserId: input.requestedByUserId,
     })
     .returning();
@@ -105,7 +102,7 @@ export const requestPersonExport = async (
     organizationId: input.organizationId,
     kind: readLogKind.Export,
     readerUserId: input.requestedByUserId,
-    subjectUserId: input.subjectUserId,
+    subjectUserId,
     employmentIds,
     audience: input.audience,
     personExportId: row!.id,
@@ -116,8 +113,8 @@ export const requestPersonExport = async (
 
 /**
  * An admin's Person export of the Employment's person, every spell of theirs
- * in the organization. The Read log records the owner or an org admin as the
- * audience.
+ * in the organization, or that one Employment for a person without an
+ * account. The Read log records the owner or an org admin as the audience.
  */
 export const requestEmploymentExport = async (
   input: { employmentId: string; requestedByUserId: string },
@@ -137,19 +134,12 @@ export const requestEmploymentExport = async (
   if (!(await isOrganizationAdmin(input.requestedByUserId, employment.organizationId, tx))) {
     throw refuse(403, "FORBIDDEN", "No permission for related organization", context);
   }
-  if (employment.userId === null) {
-    throw refuse(
-      422,
-      "NO_ACCOUNT",
-      "A person without an account has no Person export yet; the Organization export holds them",
-      context
-    );
-  }
-
   return requestPersonExport(
     {
       organizationId: employment.organizationId,
-      subjectUserId: employment.userId,
+      ...(employment.userId === null
+        ? { subjectEmploymentId: input.employmentId }
+        : { subjectUserId: employment.userId }),
       requestedByUserId: input.requestedByUserId,
       audience:
         employment.ownerUserId === input.requestedByUserId
@@ -180,7 +170,8 @@ export const listRequestedExports = async (
 
   const newest = new Map<string, PersonExportRow>();
   for (const row of rows) {
-    if (row.subjectUserId && !newest.has(row.subjectUserId)) newest.set(row.subjectUserId, row);
+    const subject = row.subjectUserId ?? row.subjectEmploymentId;
+    if (subject && !newest.has(subject)) newest.set(subject, row);
   }
   return [...newest.values()].map(presentPersonExport);
 };
@@ -234,7 +225,7 @@ export const hasEmployment = async (
   organizationId: string,
   userId: string,
   tx?: DbTransaction
-): Promise<boolean> => (await employmentIdsOf(organizationId, userId, tx)).length > 0;
+): Promise<boolean> => (await personSpellIds(organizationId, { userId }, tx)).length > 0;
 
 export const exportFileName = (
   row: Pick<PersonExportRow, "id" | "scope" | "readyAt" | "createdAt">

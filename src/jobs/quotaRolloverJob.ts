@@ -5,6 +5,8 @@ import { rolloverQuotasForYear } from "../services/quotaRollover/quotaRolloverSe
 import { runAttachmentSweep } from "./attachmentSweepJob.js";
 import { runAttendanceCeilingSweep } from "./attendanceCeilingSweepJob.js";
 import { runAttendanceLocationSweep } from "./attendanceLocationSweepJob.js";
+import { runReadLogPurge } from "./readLogPurgeJob.js";
+import { runRetentionPurge } from "./retentionPurgeJob.js";
 
 let job: Cron | null = null;
 
@@ -44,6 +46,8 @@ const runNightly = async (): Promise<void> => {
   await runAttachmentSweep();
   await runAttendanceLocationSweep();
   await runAttendanceCeilingSweep();
+  await runReadLogPurge();
+  await runRetentionPurge();
 };
 
 /**

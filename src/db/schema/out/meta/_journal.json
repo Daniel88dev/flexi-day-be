@@ -309,6 +309,62 @@
       "when": 1793007227270,
       "tag": "0043_directory_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793008227396,
+      "tag": "0044_directory_sensitive_sections",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1793011568691,
+      "tag": "0045_directory_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793013787744,
+      "tag": "0046_directory_lists",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793014380164,
+      "tag": "0047_directory_retention_holds",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793016465223,
+      "tag": "0048_accountless_person_export",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793017465763,
+      "tag": "0049_directory_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793027461080,
+      "tag": "0050_directory_delete_all",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793029988784,
+      "tag": "0051_directory_setup",
+      "breakpoints": true
     }
   ]
 }

@@ -1,12 +1,10 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
-import { directoryProfileHistory } from "../../db/schema/directory-profile-schema.js";
 import {
   directoryPermissionRow as R,
   directoryPermissionValue as V,
 } from "../../db/schema/directory-schema.js";
-import { employments } from "../../db/schema/employment-schema.js";
 import AppError, { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { logger } from "../../middleware/logger.js";
@@ -17,7 +15,8 @@ import {
   organizationDataStore,
   type OrganizationDataStore,
 } from "../organizationData/organizationDataStore.js";
-import type { DirectoryViewer } from "./directoryViewer.js";
+import { lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
+import { recordProfileHistory } from "./profileHistory.js";
 import type { PhotoProcessedOutcome } from "./types.js";
 
 export const MAX_PROFILE_PHOTO_BYTES = MAX_ATTACHMENT_BYTES;
@@ -31,7 +30,6 @@ export const organizationPhotosPrefix = (organizationId: string) => `photos/${or
 export const employmentPhotosPrefix = (organizationId: string, employmentId: string) =>
   `${organizationPhotosPrefix(organizationId)}${employmentId}/`;
 
-/** One upload's folder: its `small.jpg` and `full.jpg`. */
 export const photoPrefix = (photo: { organizationId: string; employmentId: string; id: string }) =>
   `${employmentPhotosPrefix(photo.organizationId, photo.employmentId)}${photo.id}/`;
 
@@ -46,7 +44,7 @@ export type PhotoUploadStatus = {
   rejectionReason: string | null;
 };
 
-const requireStore = (context: object): OrganizationDataStore => {
+export const requireStore = (context: object): OrganizationDataStore => {
   if (!organizationDataStore) {
     throw new AppError({
       code: 503,
@@ -58,27 +56,8 @@ const requireStore = (context: object): OrganizationDataStore => {
   return organizationDataStore;
 };
 
-/** The record, locked, and the viewer's Photo level on it; 404 out of reach. */
-const lockRecordFor = async (viewer: DirectoryViewer, employmentId: string, tx: DbTransaction) => {
-  const context = {
-    organizationId: viewer.organizationId,
-    employmentId,
-    viewerUserId: viewer.standing.userId,
-  };
-  const [record] = await tx
-    .select({ id: employments.id, userId: employments.userId, endedAt: employments.endedAt })
-    .from(employments)
-    .where(
-      and(eq(employments.organizationId, viewer.organizationId), eq(employments.id, employmentId))
-    )
-    .for("update");
-  const access =
-    record && viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null });
-  if (!record || !access?.inReach) {
-    throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
-  }
-  return { record, access, context };
-};
+const lockRecordFor = (viewer: DirectoryViewer, employmentId: string, tx: DbTransaction) =>
+  lockRecordInReach(viewer, employmentId, tx);
 
 const requirePhotoWrite = (
   access: Awaited<ReturnType<typeof lockRecordFor>>["access"],
@@ -206,15 +185,19 @@ export const removeProfilePhoto = async (
     .where(eq(directoryPhotos.employmentId, employmentId))
     .returning();
   if (removed.some((row) => row.status === directoryPhotoStatus.Ready)) {
-    await tx.insert(directoryProfileHistory).values({
-      id: generateRandomUUID(),
-      organizationId: viewer.organizationId,
-      employmentId,
-      actorUserId: viewer.standing.userId,
-      section: R.Photo,
-      fields: ["photo"],
-      audience: access.grantedBy[R.Photo]!,
-    });
+    await recordProfileHistory(
+      [
+        {
+          organizationId: viewer.organizationId,
+          employmentId,
+          actorUserId: viewer.standing.userId,
+          section: R.Photo,
+          fields: ["photo"],
+          audience: access.grantedBy[R.Photo]!,
+        },
+      ],
+      tx
+    );
   }
   return removed.map(photoPrefix);
 };
@@ -267,15 +250,19 @@ export const settlePhoto = async (
     .set({ status: directoryPhotoStatus.Ready, readyAt: new Date() })
     .where(eq(directoryPhotos.id, photoId))
     .returning();
-  await tx.insert(directoryProfileHistory).values({
-    id: generateRandomUUID(),
-    organizationId: photo.organizationId,
-    employmentId: photo.employmentId,
-    actorUserId: photo.uploadedByUserId,
-    section: R.Photo,
-    fields: ["photo"],
-    audience: photo.audience,
-  });
+  await recordProfileHistory(
+    [
+      {
+        organizationId: photo.organizationId,
+        employmentId: photo.employmentId,
+        actorUserId: photo.uploadedByUserId,
+        section: R.Photo,
+        fields: ["photo"],
+        audience: photo.audience,
+      },
+    ],
+    tx
+  );
   return { result: "applied", photo: toStatus(ready!), replaced: previous.map(photoPrefix) };
 };
 

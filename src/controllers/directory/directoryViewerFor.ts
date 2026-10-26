@@ -2,8 +2,11 @@ import type { Request } from "express";
 import { appLanguage } from "../../db/schema/user-settings-schema.js";
 import type { DbTransaction } from "../../db/db.js";
 import { getAuth } from "../../middleware/authSession.js";
-import { loadDirectoryViewer } from "../../services/directory/directoryViewer.js";
-import { requirePathParam } from "../attendance/utils.js";
+import {
+  loadDirectoryViewer,
+  type DirectoryViewerOptions,
+} from "../../services/directory/directoryViewer.js";
+import { requirePathParam } from "../pathParams.js";
 
 const LANGUAGES = new Set<string>(Object.values(appLanguage));
 
@@ -13,10 +16,14 @@ export const requestedLanguage = (req: Request): appLanguage | undefined => {
   return typeof value === "string" && LANGUAGES.has(value) ? (value as appLanguage) : undefined;
 };
 
-export const directoryViewerFor = (req: Request, tx?: DbTransaction) =>
+export const directoryViewerFor = (
+  req: Request,
+  tx?: DbTransaction,
+  options: Pick<DirectoryViewerOptions, "whileOff"> = {}
+) =>
   loadDirectoryViewer(
     getAuth(req).userId,
     requirePathParam(req.params.organizationId, "organization id"),
     tx,
-    { language: requestedLanguage(req) }
+    { ...options, language: requestedLanguage(req) }
   );

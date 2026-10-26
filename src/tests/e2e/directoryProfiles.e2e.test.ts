@@ -10,18 +10,21 @@ import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import {
-  disableDirectory,
-  enableDirectory,
-} from "../../services/directory/directorySettingsServices.js";
+import { disableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { enableEnterpriseDirectory } from "./helpers/directoryWorld.js";
 
-type Person = { employmentId: string; name: string; markers: string[] };
+type Person = {
+  employmentId: string;
+  name: string;
+  markers: string[];
+  user: { id: string | null };
+};
 
 describe("Reading the people directory through the Permission table", () => {
   let server: LoopbackServer;
@@ -109,14 +112,7 @@ describe("Reading the people directory through the Permission table", () => {
       email: "ada@example.test",
     });
 
-    await upsertSubscription(organizationId, {
-      plan: subscriptionPlan.Enterprise,
-      status: subscriptionStatus.Active,
-      graceEndsAt: null,
-    });
-    await db.transaction((tx) =>
-      enableDirectory({ organizationId, userId: owner.id, agreementVersion: 1 }, tx)
-    );
+    await enableEnterpriseDirectory(organizationId, owner.id);
 
     return {
       organizationId,
@@ -200,6 +196,31 @@ describe("Reading the people directory through the Permission table", () => {
       }
     });
 
+    it("sends no user id for a record without an account, to any viewer", async () => {
+      const { organizationId, users, employment } = await setUp();
+
+      for (const viewer of [users.jana, users.owner]) {
+        const res = await (await as(viewer.id))(`/api/directory/${organizationId}/people`);
+        const ada = res.body.people.find(
+          (person: Person) => person.employmentId === employment.ada
+        );
+        expect(ada.user).toEqual({
+          id: null,
+          name: "Ada Noaccount",
+          initials: "AN",
+          avatarColor: expect.any(String),
+        });
+        const profile = await (
+          await as(viewer.id)
+        )(`/api/directory/${organizationId}/people/${employment.ada}`);
+        expect(profile.body.user.id).toBeNull();
+      }
+      const jana = await (await as(users.jana.id))(`/api/directory/${organizationId}/people`);
+      expect(
+        jana.body.people.find((person: Person) => person.employmentId === employment.jana).user.id
+      ).toBe(users.jana.id);
+    });
+
     it("hides the restricted markers from a group admin", async () => {
       const { organizationId, users } = await setUp();
       const res = await (await as(users.gabi.id))(`/api/directory/${organizationId}/people`);
@@ -256,6 +277,25 @@ describe("Reading the people directory through the Permission table", () => {
           [employment.petra, "Petra Leaver", "2026-03-31T12:00:00.000Z", []],
         ]);
       }
+    });
+
+    it("leaves the spell dates out for a viewer who doesn't read Job, and still sorts by end", async () => {
+      const { organizationId, users, employment } = await setUp();
+      await setCell(organizationId, "JOB", "ORGANIZATION_ADMIN", "NONE");
+
+      const res = await (await as(users.dana.id))(`/api/directory/${organizationId}/former`);
+
+      expect(res.status).toBe(200);
+      expect(
+        res.body.map((row: Person & { startedAt: string | null; endedAt: string | null }) => [
+          row.employmentId,
+          row.startedAt,
+          row.endedAt,
+        ])
+      ).toEqual([
+        [employment.ritaFirstSpell, null, null],
+        [employment.petra, null, null],
+      ]);
     });
 
     it("refuses colleagues, group admins and External workers", async () => {
@@ -326,7 +366,7 @@ describe("Reading the people directory through the Permission table", () => {
           level: "READ",
           spell: { startedAt: expect.any(String), endedAt: null },
         }),
-        contact: { level: "WRITE" },
+        contact: expect.objectContaining({ level: "WRITE", notice: expect.any(String) }),
         personal: { level: "WRITE" },
       });
       expect(res.body.account).toEqual({

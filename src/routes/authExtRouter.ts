@@ -117,8 +117,21 @@ export const authExtRouter = (): Router => {
    *                 groupId:
    *                   type: string
    *                   format: uuid
+   *                   nullable: true
+   *                   description: Null on a directory invite that names no group.
    *                 groupName:
    *                   type: string
+   *                   nullable: true
+   *                 organizationName:
+   *                   type: string
+   *                 personName:
+   *                   type: string
+   *                   nullable: true
+   *                   description: |
+   *                     The name the organization holds for the person the
+   *                     invite would claim (the directory invite's Employment,
+   *                     or an open Employment without an account holding the
+   *                     invited address). The sign-up form fills it in.
    *                 inviterName:
    *                   type: string
    *                   nullable: true
@@ -155,8 +168,9 @@ export const authExtRouter = (): Router => {
    *       Redeems the invite for the signed-in user, whose address must be the
    *       invited one. Following the link proves the mailbox, so an unverified
    *       address is verified in the same transaction as the join. Otherwise
-   *       identical to redeeming the invite code: same membership defaults,
-   *       seat cap and quota, and either path uses up the invite.
+   *       identical to redeeming the invite code: the same Claim of an
+   *       Employment without an account, membership defaults, seat cap and
+   *       quota, and either path uses up the invite.
    *     security:
    *       - bearerAuth: []
    *     requestBody:
@@ -173,7 +187,10 @@ export const authExtRouter = (): Router => {
    *                 description: The `token` query parameter of the invite link.
    *     responses:
    *       '201':
-   *         description: The created membership
+   *         description: >-
+   *           The created membership, plus `claimed` (`{ employmentId,
+   *           organizationId }` or null). A directory invite that names no
+   *           group answers `{ groupId: null, claimed }`.
    *       '401':
    *         description: No session
    *       '402':
@@ -190,11 +207,17 @@ export const authExtRouter = (): Router => {
    *       '409':
    *         description: >-
    *           Already a member (`errors[0].context.code` is `ALREADY_MEMBER`,
-   *           with `groupId`), or a concurrent redemption used the invite first.
+   *           with `groupId`), `ALREADY_EMPLOYED` when the account already has
+   *           an open Employment in the organization while the invite would
+   *           claim another, `ACCOUNTLESS_EMPLOYMENT_EMAIL` when a group invite
+   *           would open an Employment for an address an open record without an
+   *           account already holds, or a concurrent redemption used the invite
+   *           first.
    *       '410':
    *         description: >-
    *           The invite can no longer be redeemed. `errors[0].context.code` is
-   *           `INVITE_USED`, `INVITE_EXPIRED` or `INVITE_REVOKED`.
+   *           `INVITE_USED`, `INVITE_EXPIRED` or `INVITE_REVOKED` (also a
+   *           directory invite whose person has ended or changed address).
    *       '422':
    *         description: Missing or malformed token
    *       '429':
@@ -221,8 +244,9 @@ export const authExtRouter = (): Router => {
    *       as a normal sign-up. Following the link proves the mailbox, so the
    *       account is verified in the same transaction as the join and no
    *       confirmation email is sent. The join itself is the same as the other
-   *       redemption paths: same membership defaults, seat cap and quota, and
-   *       it uses up the invite. On success the response signs the user in with
+   *       redemption paths: the same Claim of an Employment without an
+   *       account, membership defaults, seat cap and quota, and it uses up the
+   *       invite. On success the response signs the user in with
    *       the same session cookie as `POST /api/auth/sign-in/email`.
    *
    *       Every invite check runs before the account check, so only the holder
@@ -276,7 +300,10 @@ export const authExtRouter = (): Router => {
    *                   nullable: true
    *                 membership:
    *                   type: object
-   *                   description: The created membership
+   *                   description: >-
+   *                     The created membership plus `claimed`, or
+   *                     `{ groupId: null, claimed }` for a directory invite
+   *                     that names no group.
    *       '400':
    *         description: >-
    *           The password breaks the sign-up policy. `errors[0].context.code`

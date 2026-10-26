@@ -1,8 +1,8 @@
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { and, eq, sql } from "drizzle-orm";
-import { db, pool } from "../../db/db.js";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { db, pool, type DbTransaction } from "../../db/db.js";
 import {
   personExports,
   personExportScope,
@@ -33,6 +33,34 @@ export const exportStorageKey = (organizationId: string, exportId: string) =>
   `${organizationExportsPrefix(organizationId)}${exportId}.zip`;
 
 export const exportLockKey = (exportId: string) => `person-export:${exportId}`;
+
+/**
+ * Deletes the organization's export rows that match `which`. A build in
+ * progress holds the export's lock for its whole run, so waiting on it means
+ * no ZIP lands after the row is gone. Returns the ZIPs' storage keys, for the
+ * caller to remove after the commit.
+ */
+export const removeExportRows = async (
+  organizationId: string,
+  which: SQL | undefined,
+  tx: DbTransaction
+): Promise<string[]> => {
+  const exportIds = (
+    await tx
+      .select({ id: personExports.id })
+      .from(personExports)
+      .where(and(eq(personExports.organizationId, organizationId), which))
+  ).map((row) => row.id);
+  for (const exportId of exportIds) {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${exportLockKey(exportId)}, 0))`
+    );
+  }
+  if (exportIds.length > 0) {
+    await tx.delete(personExports).where(inArray(personExports.id, exportIds));
+  }
+  return exportIds.map((exportId) => exportStorageKey(organizationId, exportId));
+};
 
 type BuildDependencies = {
   store?: OrganizationDataStore;
@@ -136,15 +164,21 @@ export const buildPersonExport = async (
 
 const writeExportZip = async (
   file: string,
-  row: { organizationId: string; scope: personExportScope; subjectUserId: string | null },
+  row: {
+    organizationId: string;
+    scope: personExportScope;
+    subjectUserId: string | null;
+    subjectEmploymentId: string | null;
+  },
   readFile: (file: ExportAttachmentFile) => Promise<Buffer | undefined>
 ): Promise<void> => {
   if (row.scope === personExportScope.Organization) {
-    const { document, people } = await collectOrganizationExport(row.organizationId);
+    const { document, files, people } = await collectOrganizationExport(row.organizationId);
     await writeOrganizationExportZip(
       file,
       {
         document,
+        files,
         people: people.map((person) => ({
           folder: person.folder,
           collect: () => collectPersonExport(row.organizationId, person.userId),
@@ -154,10 +188,13 @@ const writeExportZip = async (
     );
     return;
   }
-  if (!row.subjectUserId) throw new Error("A Person export has no subject");
+  const subject =
+    row.subjectUserId ??
+    (row.subjectEmploymentId ? { employmentId: row.subjectEmploymentId } : null);
+  if (!subject) throw new Error("A Person export has no subject");
   await writePersonExportZip(
     file,
-    await collectPersonExport(row.organizationId, row.subjectUserId),
+    await collectPersonExport(row.organizationId, subject),
     readFile
   );
 };

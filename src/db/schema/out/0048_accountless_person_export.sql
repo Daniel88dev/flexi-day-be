@@ -1,0 +1,4 @@
+ALTER TABLE "person_exports" DROP CONSTRAINT "person_exports_subject_chk";--> statement-breakpoint
+ALTER TABLE "person_exports" ADD COLUMN "subject_employment_id" text;--> statement-breakpoint
+ALTER TABLE "person_exports" ADD CONSTRAINT "person_exports_subject_employment_id_employments_id_fk" FOREIGN KEY ("subject_employment_id") REFERENCES "public"."employments"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "person_exports" ADD CONSTRAINT "person_exports_subject_chk" CHECK (("person_exports"."scope" = 'PERSON') = ("person_exports"."subject_user_id" IS NOT NULL OR "person_exports"."subject_employment_id" IS NOT NULL) AND NOT ("person_exports"."subject_user_id" IS NOT NULL AND "person_exports"."subject_employment_id" IS NOT NULL));

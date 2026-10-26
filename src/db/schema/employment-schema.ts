@@ -54,6 +54,8 @@ export const employments = pgTable(
     type: workerTypeEnum("type").notNull().default(workerType.Employee),
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** When the ending was written, which a backdated `endedAt` precedes. Starts the retention clock. */
+    endRecordedAt: timestamp("end_recorded_at", { withTimezone: true }),
     name: text("name"),
     email: text("email"),
     requiredMinutesPerDay: integer("required_minutes_per_day"),

@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { listAttendanceSessionEvents } from "../../services/attendance/attendanceCorrections.js";
-import { presentAttendanceEvent, requirePathParam } from "./utils.js";
+import { requirePathParam } from "../pathParams.js";
+import { presentAttendanceEvent } from "./utils.js";
 
 export const handleGetAttendanceSessionEvents = async (req: Request, res: Response) => {
   const auth = getAuth(req);

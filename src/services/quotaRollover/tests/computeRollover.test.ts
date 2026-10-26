@@ -16,10 +16,22 @@ const candidate = (over: Partial<RolloverCandidate> = {}): RolloverCandidate => 
   groupDefaultVacationDays: 25,
   groupDefaultHomeOfficeDays: 10,
   groupDefaultSickDays: 3,
+  externalWorker: false,
   ...over,
 });
 
 describe("computeRolloverRow", () => {
+  it("opens an External worker's year at zero and carries nothing over", () => {
+    const row = computeRolloverRow(candidate({ externalWorker: true, previousCarriedOverDays: 3 }));
+
+    expect(row).toMatchObject({
+      vacationDays: 0,
+      homeOfficeDays: 0,
+      sickDays: 0,
+      carriedOverDays: 0,
+    });
+  });
+
   it("carries the member's own allowance forward, not the group default", () => {
     const row = computeRolloverRow(candidate());
 
