@@ -285,12 +285,13 @@ describe("a deleted account", () => {
         .where(eq(attendanceEvents.sessionId, world.sessionId));
       expect(sessionEvents).toContainEqual(expect.objectContaining({ changedByUserId: null }));
 
+      // The cancelled pending request tells nobody; only the account_deleted notice goes out.
       expect(sentEmails).toEqual([]);
       const ownerNotices = await db
-        .select()
+        .select({ type: notifications.type })
         .from(notifications)
         .where(eq(notifications.userId, world.owner.id));
-      expect(ownerNotices).toEqual([]);
+      expect(ownerNotices).toEqual([{ type: notificationType.AccountDeleted }]);
     });
 
     it("lets an owner go whose only remaining people are deleted accounts", async () => {

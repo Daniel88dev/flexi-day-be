@@ -1047,7 +1047,19 @@ export const usersRouter = (): Router => {
    *       or seat from it; the caller's membership there stays with its flags
    *       cleared. The organizations the caller owns go, with their groups and
    *       subscription rows (only possible once nobody else is in them; a
-   *       deleted account left in an owned organization does not count). Stored attachment objects of an owned organization are
+   *       deleted account left in an owned organization does not count).
+   *
+   *       Right after the commit, each organization where the caller still
+   *       has an open Employment hears about it: its owner, every org admin
+   *       and the manager of each group the caller is in get one in-app
+   *       `account_deleted` notification, pushed and never mailed, in their
+   *       own language. Admins' link opens the People card row on
+   *       `/organization/`, a manager's the group's member list, and an owner
+   *       who took over a group reads which one. A recipient sharing several
+   *       organizations with the caller still gets one. A failure is logged and
+   *       does not fail the request.
+   *
+   *       Stored attachment objects of an owned organization are
    *       removed after the commit; a failure there is logged and does not
    *       fail the request. Each Apple account link is then revoked at Apple
    *       with the refresh token read before the transaction; a link without
