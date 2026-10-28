@@ -25,4 +25,40 @@ describe("the Art. 14 emergency-contact notice", () => {
       }
     }
   });
+
+  it("gives each emergency contact what Art. 14 GDPR asks for", () => {
+    const expected: Record<appLanguage, RegExp[]> = {
+      [appLanguage.English]: [
+        /name and phone number/,
+        /only to reach/,
+        /Art\. 6\(1\)\(f\) GDPR/,
+        /Flexi Day stores them for \{organization\}/,
+        /for \{period\} after you leave/,
+        /come from you/,
+        /see, correct, delete or restrict/,
+        /To reach \{organization\}, ask the person who added you/,
+        /object/,
+        /data protection authority/,
+        /show this notice/,
+      ],
+      [appLanguage.Czech]: [
+        /jméno a telefonní číslo/,
+        /jen k tomu/,
+        /čl\. 6 odst\. 1 písm\. f\) GDPR/,
+        /Flexi Day je pro organizaci \{organization\} ukládá/,
+        /\{period\} po vašem odchodu/,
+        /pocházejí od vás/,
+        /přístup.*opravu, výmaz nebo omezení zpracování/,
+        /vám dá kontakt ten, kdo vás uvedl/,
+        /námitku/,
+        /dozorového úřadu/,
+        /ukažte/i,
+      ],
+    };
+    for (const language of [appLanguage.English, appLanguage.Czech]) {
+      const text = DEFAULT_EMERGENCY_CONTACT_NOTICE[language];
+      for (const pattern of expected[language]) expect(text).toMatch(pattern);
+      expect(text.length).toBeLessThanOrEqual(2000);
+    }
+  });
 });

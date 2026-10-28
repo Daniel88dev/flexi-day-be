@@ -42,7 +42,7 @@ export const withDefaultPeriods = (
 
 const LABELS: Record<appLanguage, Record<retentionPeriod, string>> = {
   [appLanguage.English]: {
-    [retentionPeriod.AtEnd]: "no time",
+    [retentionPeriod.AtEnd]: "0 days",
     [retentionPeriod.Days30]: "30 days",
     [retentionPeriod.Months6]: "6 months",
     [retentionPeriod.Year1]: "1 year",
@@ -52,7 +52,7 @@ const LABELS: Record<appLanguage, Record<retentionPeriod, string>> = {
     [retentionPeriod.UntilErased]: "as long as your record is kept",
   },
   [appLanguage.Czech]: {
-    [retentionPeriod.AtEnd]: "ani den",
+    [retentionPeriod.AtEnd]: "0 dní",
     [retentionPeriod.Days30]: "30 dní",
     [retentionPeriod.Months6]: "6 měsíců",
     [retentionPeriod.Year1]: "1 rok",
