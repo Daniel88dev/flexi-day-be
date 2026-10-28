@@ -237,10 +237,11 @@ describe("The Work contact Section", () => {
     it("never reaches a colleague on the list or the profile, and reaches the editors", async () => {
       const { path, users, organizationId } = await setUp();
       await fill(path, users.owner.id);
-      const [{ signInEmail }] = await db
+      const [row] = await db
         .select({ signInEmail: user.email })
         .from(user)
         .where(eq(user.id, users.jana.id));
+      const signInEmail = row!.signInEmail;
       expect(signInEmail).toContain("@");
       const pavel = await as(users.pavel.id);
 

@@ -66,10 +66,12 @@ const enrolUnder = async (secrets: SecretOptions) => {
     returnHeaders: true,
   });
   const session = cookieHeader(headers);
-  const { totpURI, backupCodes } = await auth.api.enableTwoFactor({
+  const enrolment = await auth.api.enableTwoFactor({
     body: { password: PASSWORD },
     headers: session,
   });
+  if (enrolment.method !== "totp") throw new Error("expected a TOTP enrolment");
+  const { totpURI, backupCodes } = enrolment;
   await auth.api.verifyTOTP({
     body: { code: await totpCode(auth, totpURI) },
     headers: session,
@@ -132,7 +134,7 @@ describe.each([
     );
 
     expect(stored).toMatch(shape);
-    expect(await decryptOAuthToken(stored, await context(instance(tables, rotated)))).toBe(
+    expect(await decryptOAuthToken(stored!, await context(instance(tables, rotated)))).toBe(
       "refresh-token"
     );
   });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { BetterAuthOptions } from "better-auth";
 import { auth } from "../../utils/auth.js";
 import { buildAccountLinking } from "../../utils/socialProviders.js";
 import { appleCredentials, socialProvidersFrom } from "../appleFixtures.js";
@@ -54,17 +55,21 @@ describe("account linking policy", () => {
     );
   });
 
+  // Widened to the option type so a key the config does not set yet still reads as undefined.
+  const linking: NonNullable<BetterAuthOptions["account"]>["accountLinking"] =
+    auth.options.account?.accountLinking;
+
   it("requires a linked provider to report the account's own address", () => {
     // `allowDifferentEmails` would let any provider account be attached to any
     // session, which is the documented account-takeover shape.
-    expect(auth.options.account?.accountLinking?.allowDifferentEmails).not.toBe(true);
+    expect(linking?.allowDifferentEmails).not.toBe(true);
   });
 
   it("keeps at least one sign-in method on every account", () => {
-    expect(auth.options.account?.accountLinking?.allowUnlinkingAll).not.toBe(true);
+    expect(linking?.allowUnlinkingAll).not.toBe(true);
   });
 
   it("does not let a link overwrite the local profile", () => {
-    expect(auth.options.account?.accountLinking?.updateUserInfoOnLink).not.toBe(true);
+    expect(linking?.updateUserInfoOnLink).not.toBe(true);
   });
 });

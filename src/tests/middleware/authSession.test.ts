@@ -80,7 +80,6 @@ describe("authSession middleware", () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect((next as any).mock.calls[0].length).toBe(0); // called without args
 
-    // @ts-expect-error augmented by middleware
     expect(req.auth).toEqual<Partial<AuthSession>>({
       sessionId: "sess_123",
       userId: "user_1",
@@ -135,7 +134,7 @@ describe("authSession middleware", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (auth as any).api.getSession.mockRejectedValue(boom);
 
-    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => logger);
 
     await authSession(req, res, next);
 
@@ -150,7 +149,7 @@ describe("authSession middleware", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (auth as any).api.getSession.mockResolvedValue({} as any);
 
-    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => logger);
 
     await authSession(req, res, next);
 

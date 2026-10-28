@@ -10,7 +10,9 @@ import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import {
   attendanceBreaks,
+  attendanceClosedBy,
   attendanceEvents,
+  attendanceSessionOrigin,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import {
@@ -87,8 +89,8 @@ describe("breaks added to closed attendance sessions", () => {
       startedAt: new Date(at(businessDate, "07:00")),
       endedAt: options.open ? null : new Date(at(businessDate, "15:00")),
       timezone: ZONE,
-      closedBy: options.open ? null : "USER",
-      origin: options.entered ? "ENTERED" : "CLOCKED",
+      closedBy: options.open ? null : attendanceClosedBy.User,
+      origin: options.entered ? attendanceSessionOrigin.Entered : attendanceSessionOrigin.Clocked,
     });
     return { id, businessDate };
   };

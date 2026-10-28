@@ -122,7 +122,7 @@ describe("organization attendance settings", () => {
     await free();
   });
 
-  const put = (cookie: string, body: unknown) =>
+  const put = (cookie: string, body: object) =>
     request(server.url)
       .put(`/api/organization/attendance-settings?organizationId=${ORGANIZATION_ID}`)
       .set("Cookie", cookie)

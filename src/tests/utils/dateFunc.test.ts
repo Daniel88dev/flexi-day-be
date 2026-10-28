@@ -13,7 +13,7 @@ import {
   monthEnd,
   monthStart,
   previousDay,
-} from "../../utils/dateFunc";
+} from "../../utils/dateFunc.js";
 
 describe("formatDateToISOString", () => {
   test("formats a UTC date to YYYY-MM-DD (e.g., 2024-01-01)", () => {

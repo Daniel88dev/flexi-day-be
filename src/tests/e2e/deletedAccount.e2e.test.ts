@@ -26,6 +26,7 @@ import { calendarSync } from "../../db/schema/calendar-sync-schema.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { getPersonContacts } from "../../services/person/personName.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { hashPassword } from "better-auth/crypto";
 import {
@@ -153,7 +154,10 @@ describe("a deleted account", () => {
       requestId,
     });
 
-    await upsertAttendanceSettings(organizationId, { timezone: ZONE });
+    await upsertAttendanceSettings(organizationId, {
+      ...ATTENDANCE_SETTINGS_DEFAULTS,
+      timezone: ZONE,
+    });
     const [employment] = await db
       .select()
       .from(employments)

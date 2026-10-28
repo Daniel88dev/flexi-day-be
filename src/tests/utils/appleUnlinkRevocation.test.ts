@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { setTokenUtil } from "better-auth/oauth2";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,7 +29,7 @@ async function signedInWithLinks() {
     session: [],
     verification: [],
   };
-  const instance = betterAuth({
+  const instance = betterAuth<BetterAuthOptions>({
     secret: "a-test-secret-that-is-long-enough-for-better-auth",
     baseURL: "http://localhost:8080",
     database: memoryAdapter(tables),
@@ -131,7 +131,7 @@ describe("unlinking an account", () => {
   it("revokes nothing when the unlink itself is refused", async () => {
     const { tables, unlink } = await signedInWithLinks();
     // better-auth refuses to unlink the last way into an account.
-    tables.account = tables.account?.filter((row) => row.id === "account-apple");
+    tables.account = (tables.account ?? []).filter((row) => row.id === "account-apple");
 
     await expect(unlink("account-apple")).rejects.toThrow();
 

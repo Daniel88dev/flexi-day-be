@@ -252,7 +252,7 @@ describe("requestContext request logging", () => {
     finish();
 
     expect(logger.info).toHaveBeenCalledTimes(2);
-    const [message, meta] = vi.mocked(logger.info).mock.calls[1];
+    const [message, meta] = (vi.mocked(logger.info).mock.calls as unknown[][])[1]!;
     expect(message).toBe("POST /api/vacation/123 200");
     expect(meta).toMatchObject({
       "http.event": "response",
@@ -270,7 +270,7 @@ describe("requestContext request logging", () => {
     requestContext(req, res, next);
     finish();
 
-    const [, meta] = vi.mocked(logger.info).mock.calls[1];
+    const [, meta] = (vi.mocked(logger.info).mock.calls as unknown[][])[1]!;
     expect(meta).toMatchObject({ "http.route": "/api/vacation/:id" });
   });
 
@@ -325,9 +325,14 @@ describe("requestContext request logging", () => {
   it("skips paths listed in REQUEST_LOG_IGNORE_PATHS", async () => {
     vi.resetModules();
     process.env.REQUEST_LOG_IGNORE_PATHS = "/health";
-    const { requestContext: freshMiddleware } =
-      await import("../../middleware/requestContext.js?ignore-paths");
-    const { logger: freshLogger } = await import("../../middleware/logger.js?ignore-paths");
+    // tsc cannot resolve a query-suffixed path; widening it to string and asserting the module's
+    // type back keeps the import typed.
+    const { requestContext: freshMiddleware } = (await import(
+      "../../middleware/requestContext.js?ignore-paths" as string
+    )) as typeof import("../../middleware/requestContext.js");
+    const { logger: freshLogger } = (await import(
+      "../../middleware/logger.js?ignore-paths" as string
+    )) as typeof import("../../middleware/logger.js");
     const infoSpy = vi.spyOn(freshLogger, "info").mockImplementation(() => freshLogger);
 
     const { req, res, next, finish } = makeReqResNext({}, { path: "/health" });
@@ -358,6 +363,6 @@ describe("requestContext request logging", () => {
     finish();
 
     expect(logger.info).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(logger.info).mock.calls[0][0]).toContain("/health 503");
+    expect(vi.mocked(logger.info).mock.calls[0]![0]).toContain("/health 503");
   });
 });

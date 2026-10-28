@@ -27,17 +27,18 @@ import { ensureOrganizationForUser } from "../../../services/organization/organi
  * different permissions per case, which a single shared group cannot express.
  */
 
-export async function makeUser(name: string): Promise<{ id: string; name: string }> {
+export async function makeUser(name: string): Promise<{ id: string; name: string; email: string }> {
   const id = generateId();
+  const email = `${id.toLowerCase()}@report-e2e.test`;
   await db.insert(user).values({
     id,
-    email: `${id.toLowerCase()}@report-e2e.test`,
+    email,
     name,
     emailVerified: true,
     createdAt: new Date(),
     updatedAt: new Date(),
   });
-  return { id, name };
+  return { id, name, email };
 }
 
 export async function makeGroup(

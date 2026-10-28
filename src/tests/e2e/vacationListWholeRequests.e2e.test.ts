@@ -171,11 +171,11 @@ describe("GET /api/vacation?wholeRequests=true lists every row of each Request i
     expect(rows.every((row) => row.requestedDay.startsWith("2027-10"))).toBe(true);
     expect(ids(rows)).toEqual(
       sorted([
-        s.bobPending["2027-10-28"],
-        s.bobPending["2027-10-29"],
-        s.aliceSick[0],
-        s.aliceHome[0],
-        s.daveMirrored[0],
+        s.bobPending["2027-10-28"]!,
+        s.bobPending["2027-10-29"]!,
+        s.aliceSick[0]!,
+        s.aliceHome[0]!,
+        s.daveMirrored[0]!,
       ])
     );
   });
@@ -190,7 +190,7 @@ describe("GET /api/vacation?wholeRequests=true lists every row of each Request i
   it("in own scope without the flag keeps the list inside the month", async () => {
     const rows = await listOk(s.bob.id, { month: 10 });
 
-    expect(ids(rows)).toEqual(sorted([s.bobPending["2027-10-28"], s.bobPending["2027-10-29"]]));
+    expect(ids(rows)).toEqual(sorted([s.bobPending["2027-10-28"]!, s.bobPending["2027-10-29"]!]));
   });
 
   it("leaves out cancelled rows of the Request unless includeCancelled is set", async () => {
@@ -221,7 +221,7 @@ describe("GET /api/vacation?wholeRequests=true lists every row of each Request i
       expect(byId.get(id)?.note).toBe("bob-request-note");
     }
     expect(byId.get(s.bobCancelled)?.canApprove).toBe(false);
-    expect(byId.get(s.aliceSick[1])?.vacationType).toBe("SICK");
+    expect(byId.get(s.aliceSick[1]!)?.vacationType).toBe("SICK");
     expect(byId.get(s.aliceRejected)?.rejectionReason).toBe("alice-rejection-reason");
   });
 
@@ -246,8 +246,8 @@ describe("GET /api/vacation?wholeRequests=true lists every row of each Request i
     expect(ids(rows)).toEqual(
       sorted([...Object.values(s.bobPending), ...s.aliceSick, ...s.daveMirrored])
     );
-    expect(byId.get(s.aliceSick[1])?.vacationType).toBe("AWAY");
-    expect(byId.get(s.bobPending["2027-11-02"])?.note).toBeNull();
+    expect(byId.get(s.aliceSick[1]!)?.vacationType).toBe("AWAY");
+    expect(byId.get(s.bobPending["2027-11-02"]!)?.note).toBeNull();
     expect(rows.every((row) => !row.canApprove)).toBe(true);
     const body = JSON.stringify(res.body);
     for (const secret of ["bob-request-note", "alice-sick-note", "alice-rejection-reason"]) {

@@ -11,7 +11,7 @@ import { employments } from "../../db/schema/employment-schema.js";
 import { notifications } from "../../db/schema/notification-schema.js";
 import { session } from "../../db/schema/auth-schema.js";
 import { pushEnvironment, pushRegistrations } from "../../db/schema/push-registration-schema.js";
-import { userSettings } from "../../db/schema/user-settings-schema.js";
+import { appLanguage, userSettings } from "../../db/schema/user-settings-schema.js";
 import { apnsSender } from "../../services/push/index.js";
 import type { FakeApnsSender } from "../../services/push/fakeApnsSender.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
@@ -217,7 +217,7 @@ describe("the account_deleted notice", () => {
   it("speaks Czech to a recipient who chose it", async () => {
     const world = await setUp();
     await makeGroup("Noční směna", world.jana.id, { organizationOwnerId: world.owner.id });
-    await db.insert(userSettings).values({ userId: world.owner.id, language: "cs" });
+    await db.insert(userSettings).values({ userId: world.owner.id, language: appLanguage.Czech });
 
     expect((await deleteAccount(world.jana.email)).status).toBe(204);
 

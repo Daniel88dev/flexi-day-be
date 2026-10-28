@@ -8,7 +8,11 @@ import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
-import { attendanceBreaks, attendanceSessions } from "../../db/schema/attendance-schema.js";
+import {
+  attendanceBreaks,
+  attendanceClosedBy,
+  attendanceSessions,
+} from "../../db/schema/attendance-schema.js";
 import { bankHolidays } from "../../db/schema/bank-holiday-schema.js";
 import { groupMirrors } from "../../db/schema/group-mirror-schema.js";
 import { CalendarRecordType, vacation } from "../../db/schema/vacation-schema.js";
@@ -119,7 +123,7 @@ describe("my attendance, by month", () => {
       startedAt: input.startedAt,
       endedAt: input.endedAt,
       timezone: ZONE,
-      closedBy: input.endedAt ? "USER" : null,
+      closedBy: input.endedAt ? attendanceClosedBy.User : null,
     });
 
     for (const entry of input.breaks ?? []) {
@@ -367,7 +371,7 @@ describe("my attendance, by month", () => {
       });
       await db
         .update(attendanceSessions)
-        .set({ closedBy: "SWEEP" })
+        .set({ closedBy: attendanceClosedBy.Sweep })
         .where(eq(attendanceSessions.businessDate, businessDate(5)));
       await seedSession({
         employmentId: memberEmploymentId,
