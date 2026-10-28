@@ -26,33 +26,31 @@ describe("the Art. 14 emergency-contact notice", () => {
     }
   });
 
-  it("gives each emergency contact what Art. 14 GDPR asks for", () => {
+  it("speaks to the emergency contact with what Art. 14 GDPR asks for", () => {
     const expected: Record<appLanguage, RegExp[]> = {
       [appLanguage.English]: [
-        /name and phone number/,
-        /only to reach/,
+        /keeps your name and phone number/,
+        /gave them as their emergency contact/,
+        /only to reach you/,
         /Art\. 6\(1\)\(f\) GDPR/,
         /Flexi Day stores them for \{organization\}/,
-        /for \{period\} after you leave/,
-        /come from you/,
-        /see, correct, delete or restrict/,
-        /To reach \{organization\}, ask the person who added you/,
+        /for \{period\} after they leave/,
+        /see, correct, delete or restrict your details/,
         /object/,
         /data protection authority/,
-        /show this notice/,
+        /can tell you how to reach \{organization\}/,
       ],
       [appLanguage.Czech]: [
-        /jméno a telefonní číslo/,
-        /jen k tomu/,
+        /uchovává vaše jméno a telefonní číslo/,
+        /uvedl jako svůj nouzový kontakt/,
+        /aby vás zastihla/,
         /čl\. 6 odst\. 1 písm\. f\) GDPR/,
         /Flexi Day je pro organizaci \{organization\} ukládá/,
-        /\{period\} po vašem odchodu/,
-        /pocházejí od vás/,
+        /\{period\} poté, co odejde/,
         /přístup.*opravu, výmaz nebo omezení zpracování/,
-        /vám dá kontakt ten, kdo vás uvedl/,
         /námitku/,
         /dozorového úřadu/,
-        /ukažte/i,
+        /vám dá ten, kdo vás uvedl/,
       ],
     };
     for (const language of [appLanguage.English, appLanguage.Czech]) {

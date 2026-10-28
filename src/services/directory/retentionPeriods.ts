@@ -49,7 +49,7 @@ const LABELS: Record<appLanguage, Record<retentionPeriod, string>> = {
     [retentionPeriod.Years3]: "3 years",
     [retentionPeriod.Years5]: "5 years",
     [retentionPeriod.Years10]: "10 years",
-    [retentionPeriod.UntilErased]: "as long as your record is kept",
+    [retentionPeriod.UntilErased]: "as long as their record is kept",
   },
   [appLanguage.Czech]: {
     [retentionPeriod.AtEnd]: "0 dní",
@@ -59,7 +59,7 @@ const LABELS: Record<appLanguage, Record<retentionPeriod, string>> = {
     [retentionPeriod.Years3]: "3 roky",
     [retentionPeriod.Years5]: "5 let",
     [retentionPeriod.Years10]: "10 let",
-    [retentionPeriod.UntilErased]: "tak dlouho, jak je uchován váš záznam",
+    [retentionPeriod.UntilErased]: "tak dlouho, jak je uchován záznam o tomto člověku",
   },
 };
 
