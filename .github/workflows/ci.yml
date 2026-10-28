@@ -32,12 +32,14 @@ jobs:
       - name: Format
         run: npm run format:check
 
-  tests:
-    name: Tests
+  unit:
+    name: Build & Unit tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
+    # A few controller unit tests still reach the subscriptions table through unmocked billing
+    # helpers, so this job needs a migrated database too.
     services:
       postgres:
         image: postgres:15
@@ -86,13 +88,66 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Start application
-        run: |
-          npm run start &
-          sleep 10 # wait for the app to start
-
       - name: Run unit tests
         run: npm run test:unit -- --coverage
+
+  e2e:
+    name: E2E (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    # The suite runs one file at a time against a shared database, so it is split across
+    # runners, each with its own Postgres, instead of across workers.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up environment variables
+        run: |
+          echo "PORT=8080" >> $GITHUB_ENV
+          echo "NODE_ENV=test" >> $GITHUB_ENV
+          echo "DATABASE=postgresql://postgres:password@localhost:5432/testdb" >> $GITHUB_ENV
+          echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> $GITHUB_ENV
+          echo "BETTER_AUTH_URL=http://localhost:8080" >> $GITHUB_ENV
+          echo "TRUSTED_ORIGINS=http://localhost:3000,flexiday://" >> $GITHUB_ENV
+
+      - name: Generate database schemas
+        run: npm run db:generate
+
+      - name: Run database migrations
+        run: npm run db:migrate
 
       - name: Run e2e tests
         # Calendar direct sync on the fake driver; the client values are dummies it never sends.
@@ -104,4 +159,4 @@ jobs:
           GOOGLE_CLIENT_SECRET: e2e-google-client-secret
           MICROSOFT_CLIENT_ID: e2e-microsoft-client-id
           MICROSOFT_CLIENT_SECRET: e2e-microsoft-client-secret
-        run: npm run test:e2e
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
