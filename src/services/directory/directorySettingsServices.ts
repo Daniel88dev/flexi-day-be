@@ -12,6 +12,7 @@ import { organizations } from "../../db/schema/organization-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable, isDirectoryWritable } from "../billing/guards.js";
+import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import {
   getAdminOrganizationsForUser,
   lockOrganization,
@@ -272,6 +273,7 @@ export const listDirectoryOrganizations = async (
       role,
       enabled,
       writable: await isDirectoryWritable(organizationId),
+      timezone: await organizationTimeZone(organizationId),
       newAgreementVersionReady:
         role === "OWNER" && (await readAgreement(organizationId, enabled)).newVersionReady,
     });

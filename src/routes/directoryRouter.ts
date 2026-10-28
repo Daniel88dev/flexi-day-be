@@ -87,6 +87,12 @@ export const directoryRouter = (): Router => {
    *                     type: boolean
    *                   writable:
    *                     type: boolean
+   *                   timezone:
+   *                     type: string
+   *                     description: |
+   *                       The organization's IANA zone, UTC while attendance
+   *                       was never set up. Employment start and end instants
+   *                       name their day in it.
    *                   newAgreementVersionReady:
    *                     type: boolean
    *                     description: True only for the owner, while a newer agreement waits.

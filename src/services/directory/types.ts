@@ -111,6 +111,8 @@ export type DirectoryOrganization = {
   role: DirectoryOrganizationRole;
   enabled: boolean;
   writable: boolean;
+  /** The zone Employment instants are written in, so a client names the same day. */
+  timezone: string;
   /** Only ever true for the owner. */
   newAgreementVersionReady: boolean;
 };
