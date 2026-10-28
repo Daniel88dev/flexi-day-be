@@ -950,7 +950,9 @@ export const usersRouter = (): Router => {
    *       Every organization where the caller's account is bound to an
    *       Employment, open or ended, with the newest Person export the caller
    *       requested of themselves there. Settings lists these in the Your data
-   *       card. An export past its 7 days reads as none.
+   *       card. An export past its 7 days reads as none. One row per
+   *       organization, reporting the current spell: the open Employment, else
+   *       the one that ended last.
    *     security:
    *       - bearerAuth: []
    *     responses:
@@ -966,7 +968,7 @@ export const usersRouter = (): Router => {
    *                   type: array
    *                   items:
    *                     type: object
-   *                     required: [organizationId, organizationName, employmentId, startedAt, endedAt, export]
+   *                     required: [organizationId, organizationName, employmentId, startedAt, endedAt, timezone, export]
    *                     properties:
    *                       organizationId:
    *                         type: string
@@ -982,6 +984,13 @@ export const usersRouter = (): Router => {
    *                         type: string
    *                         format: date-time
    *                         nullable: true
+   *                       timezone:
+   *                         type: string
+   *                         description: |
+   *                           The organization's IANA time zone, which names the day
+   *                           startedAt and endedAt fall on. UTC while attendance was
+   *                           never set up.
+   *                         example: Europe/Prague
    *                       export:
    *                         nullable: true
    *                         allOf:

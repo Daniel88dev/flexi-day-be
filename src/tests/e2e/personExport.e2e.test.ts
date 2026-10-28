@@ -23,6 +23,7 @@ import { directoryDepartments, directoryLocations } from "../../db/schema/direct
 import { directoryAudience, directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { notifications, notificationType } from "../../db/schema/notification-schema.js";
+import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { personExports, personExportStatus } from "../../db/schema/person-export-schema.js";
 import { readLog } from "../../db/schema/read-log-schema.js";
@@ -230,6 +231,45 @@ describe("Person export", () => {
       .set("Cookie", await authCookieFor(callerId))
       .send({ organizationId });
 
+  type OwnOrganization = {
+    organizationId: string;
+    employmentId: string;
+    startedAt: string;
+    endedAt: string | null;
+    timezone: string;
+    export: unknown;
+  };
+
+  const ownOrganizations = async (callerId: string): Promise<OwnOrganization[]> => {
+    const res = await request(server.url)
+      .get("/api/users/me/person-exports")
+      .set("Cookie", await authCookieFor(callerId));
+    expect(res.status).toBe(200);
+    return res.body.organizations;
+  };
+
+  const setSpell = (employmentId: string, startedAt: string, endedAt: string) =>
+    db
+      .update(employments)
+      .set({ startedAt: new Date(startedAt), endedAt: new Date(endedAt) })
+      .where(eq(employments.id, employmentId));
+
+  const addSpell = async (
+    world: { organizationId: string; member: { id: string } },
+    startedAt: string,
+    endedAt: string | null
+  ) => {
+    const id = uuidv4();
+    await db.insert(employments).values({
+      id,
+      organizationId: world.organizationId,
+      userId: world.member.id,
+      startedAt: new Date(startedAt),
+      endedAt: endedAt === null ? null : new Date(endedAt),
+    });
+    return id;
+  };
+
   const sign = async (callerId: string, exportId: string) =>
     request(server.url)
       .post(`/api/person-exports/${exportId}/download`)
@@ -329,14 +369,8 @@ describe("Person export", () => {
       expect(refused.status).toBe(403);
       expect(refused.body.errors[0].context.code).toBe("NOT_EMPLOYED");
 
-      const listed = await request(server.url)
-        .get("/api/users/me/person-exports")
-        .set("Cookie", await authCookieFor(world.member.id));
-      expect(listed.status).toBe(200);
       const byOrganization = new Map(
-        (listed.body.organizations as { organizationId: string; export: unknown }[]).map(
-          (entry) => [entry.organizationId, entry]
-        )
+        (await ownOrganizations(world.member.id)).map((entry) => [entry.organizationId, entry])
       );
       expect([...byOrganization.keys()].sort()).toEqual(
         [world.organizationId, world.elsewhereOrganizationId].sort()
@@ -347,6 +381,56 @@ describe("Person export", () => {
         export: { id: own.body.id, status: "PENDING" },
       });
       expect(byOrganization.get(world.elsewhereOrganizationId)).toMatchObject({ export: null });
+    });
+
+    it("names each organization's time zone, UTC while attendance was never set up", async () => {
+      const world = await setUp();
+      await db
+        .insert(organizationAttendanceSettings)
+        .values({ organizationId: world.organizationId, timezone: "Europe/Prague" });
+
+      const zones = new Map(
+        (await ownOrganizations(world.member.id)).map((entry) => [
+          entry.organizationId,
+          entry.timezone,
+        ])
+      );
+      expect(zones.get(world.organizationId)).toBe("Europe/Prague");
+      expect(zones.get(world.elsewhereOrganizationId)).toBe("UTC");
+    });
+
+    it("reports a rehired person's open spell, not the one that ended", async () => {
+      const world = await setUp();
+      await setSpell(world.employment.id, "2020-01-01T00:00:00.000Z", "2025-06-30T00:00:00.000Z");
+      const rehired = await addSpell(world, "2026-02-01T00:00:00.000Z", null);
+
+      const rows = (await ownOrganizations(world.member.id)).filter(
+        (entry) => entry.organizationId === world.organizationId
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({
+          employmentId: rehired,
+          startedAt: "2026-02-01T00:00:00.000Z",
+          endedAt: null,
+        }),
+      ]);
+    });
+
+    it("reports the spell that ended last when none is open", async () => {
+      const world = await setUp();
+      await setSpell(world.employment.id, "2020-01-01T00:00:00.000Z", "2023-03-31T00:00:00.000Z");
+      const later = await addSpell(world, "2024-01-01T00:00:00.000Z", "2026-09-30T00:00:00.000Z");
+
+      const rows = (await ownOrganizations(world.member.id)).filter(
+        (entry) => entry.organizationId === world.organizationId
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({
+          employmentId: later,
+          startedAt: "2024-01-01T00:00:00.000Z",
+          endedAt: "2026-09-30T00:00:00.000Z",
+        }),
+      ]);
     });
 
     it("keeps an ended Employment exportable, by its admin and by the person", async () => {
