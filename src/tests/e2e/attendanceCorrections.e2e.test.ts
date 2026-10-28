@@ -26,7 +26,7 @@ import { ensureOrganizationForUser } from "../../services/organization/organizat
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { businessDateInZone } from "../../utils/dateFunc.js";
+import { businessDateInZone, previousDay } from "../../utils/dateFunc.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ZONE = "Europe/Prague";
@@ -40,7 +40,7 @@ const NOW = new Date("2026-09-16T11:00:00Z");
 
 /** Today and yesterday in the organization's zone: the two sides of the self-service window. */
 const today = () => businessDateInZone(new Date(), ZONE);
-const yesterday = () => businessDateInZone(new Date(Date.now() - DAY_MS), ZONE);
+const yesterday = () => previousDay(today());
 
 /** The calendar date a number of days before another, stepped as dates rather than as real time. */
 const daysBefore = (date: string, days: number) => {

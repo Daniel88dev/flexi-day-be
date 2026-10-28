@@ -20,7 +20,7 @@ import { ensureOrganizationForUser } from "../../services/organization/organizat
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { businessDateInZone } from "../../utils/dateFunc.js";
+import { businessDateInZone, previousDay } from "../../utils/dateFunc.js";
 import {
   addLeave,
   addMember,
@@ -397,7 +397,7 @@ describe("Change worker type", () => {
       return employment;
     };
     const yesterday = () => {
-      const day = businessDateInZone(new Date(Date.now() - 24 * 60 * 60 * 1000), ZONE);
+      const day = previousDay(businessDateInZone(new Date(), ZONE));
       return {
         businessDate: day,
         startedAt: new Date(`${day}T07:00:00Z`).toISOString(),

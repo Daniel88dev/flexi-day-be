@@ -27,7 +27,7 @@ import { ensureOrganizationForUser } from "../../services/organization/organizat
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
-import { businessDateInZone } from "../../utils/dateFunc.js";
+import { businessDateInZone, previousDay } from "../../utils/dateFunc.js";
 import { sweepAttendanceCeilings } from "../../services/attendance/attendanceCeilings.js";
 
 const { sentEmails } = vi.hoisted(() => ({ sentEmails: [] as unknown[] }));
@@ -491,7 +491,7 @@ describe("attendance ceilings", () => {
     });
 
     it("still asks about a day the sweep closed after midnight", async () => {
-      const yesterday = businessDateInZone(new Date(Date.now() - 24 * 60 * MINUTE_MS), ZONE);
+      const yesterday = previousDay(businessDateInZone(new Date(), ZONE));
       const overdue = await openSession(SESSION_CEILING + 60, yesterday);
 
       await sweepAttendanceCeilings();
