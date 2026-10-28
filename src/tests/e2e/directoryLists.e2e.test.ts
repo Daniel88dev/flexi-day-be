@@ -4,9 +4,15 @@ import { and, eq } from "drizzle-orm";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
-import { directoryProfileHistory } from "../../db/schema/directory-profile-schema.js";
-import { directoryRoleAssignments } from "../../db/schema/directory-role-schema.js";
-import { directoryPermissionCells } from "../../db/schema/directory-schema.js";
+import {
+  directoryProfileHistory,
+  profileHistoryActor,
+} from "../../db/schema/directory-profile-schema.js";
+import { directoryRole, directoryRoleAssignments } from "../../db/schema/directory-role-schema.js";
+import {
+  directoryPermissionCells,
+  directoryPermissionRow,
+} from "../../db/schema/directory-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
@@ -90,8 +96,8 @@ describe("Departments and Locations", () => {
       petra: await employmentOf(petra.id),
     };
     await db.insert(directoryRoleAssignments).values([
-      { employmentId: employment.hana, role: "HR", organizationId },
-      { employmentId: employment.lea, role: "LEADERSHIP", organizationId },
+      { employmentId: employment.hana, role: directoryRole.Hr, organizationId },
+      { employmentId: employment.lea, role: directoryRole.Leadership, organizationId },
     ]);
     await db
       .update(employments)
@@ -125,9 +131,6 @@ describe("Departments and Locations", () => {
       status: subscriptionStatus.Active,
       graceEndsAt: null,
     });
-
-  const entryNamed = (res: request.Response, name: string) =>
-    res.body.entries.find((entry: { name: string }) => entry.name === name);
 
   const addEntries = async (organizationId: string, ownerId: string) => {
     const owner = await as(ownerId);
@@ -380,7 +383,7 @@ describe("Departments and Locations", () => {
         .where(
           and(
             eq(directoryProfileHistory.employmentId, employment.jana),
-            eq(directoryProfileHistory.actor, "RETENTION")
+            eq(directoryProfileHistory.actor, profileHistoryActor.Retention)
           )
         );
       expect(purge?.fields).toEqual(expect.arrayContaining(["department", "location"]));
@@ -546,7 +549,7 @@ describe("Departments and Locations", () => {
         .where(
           and(
             eq(directoryPermissionCells.organizationId, organizationId),
-            eq(directoryPermissionCells.row, "MANAGE_DEPARTMENTS_AND_LOCATIONS")
+            eq(directoryPermissionCells.row, directoryPermissionRow.ManageDepartmentsAndLocations)
           )
         );
 

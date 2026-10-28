@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { decryptOAuthToken, setTokenUtil } from "better-auth/oauth2";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,7 +38,7 @@ describe("a repeat Apple sign-in on the phone", () => {
       verification: [],
     };
     const socialProviders = socialProvidersFrom(appleCredentials());
-    const instance = betterAuth({
+    const instance = betterAuth<BetterAuthOptions>({
       secret: "a-test-secret-that-is-long-enough-for-better-auth",
       baseURL: "http://localhost:8080",
       database: memoryAdapter(tables),

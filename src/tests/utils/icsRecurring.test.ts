@@ -1,4 +1,9 @@
-import { buildIcsCalendar, type IcsEvent, type IcsRepeat } from "../../utils/ics.js";
+import {
+  buildIcsCalendar,
+  type IcsEvent,
+  type IcsRepeat,
+  type IcsTimedEvent,
+} from "../../utils/ics.js";
 
 const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
 vi.mock("../../middleware/logger.js", () => ({ logger: { warn } }));
@@ -132,7 +137,7 @@ describe("buildIcsCalendar, timed and recurring events", () => {
   });
 });
 
-const timedIn = (timeZone: string, repeat?: IcsRepeat): IcsEvent => ({
+const timedIn = (timeZone: string, repeat?: IcsRepeat): IcsTimedEvent => ({
   kind: "timed",
   uid: `ge-${timeZone}@flexiday`,
   timeZone,

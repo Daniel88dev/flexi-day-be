@@ -542,7 +542,7 @@ describe("native session", () => {
       request(server.url).get(PROTECTED_ROUTE).set("Cookie", cookie).set(headers);
 
     /** Every shape of the header a browser could send by mistake. */
-    const strayHeaders = () => [
+    const strayHeaders = (): Record<string, string>[] => [
       {},
       { "x-client-device-id": deviceId() },
       { "x-client-device-id": MALFORMED_DEVICE_ID },

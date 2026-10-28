@@ -36,7 +36,7 @@ describe("calendar-sync config: zone and the Group events and Birthdays settings
   const listed = async (id: string) => {
     const res = await request(server.url).get("/api/calendar-sync").set("Cookie", cookie);
     expect(res.status).toBe(200);
-    return (res.body as { id: string }[]).find((config) => config.id === id);
+    return (res.body as { id: string; timeZone: string }[]).find((config) => config.id === id);
   };
 
   beforeAll(async () => {

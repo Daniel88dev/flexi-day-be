@@ -13,6 +13,7 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { vacationEvents, vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
@@ -86,7 +87,10 @@ describe("ending an Employment", () => {
     const groupManager = await makeUser("Gina Manager");
     const plainMember = await makeUser("Pavel Plain");
     const organizationId = (await ensureOrganizationForUser(owner.id)).id;
-    await upsertAttendanceSettings(organizationId, { timezone: ZONE });
+    await upsertAttendanceSettings(organizationId, {
+      ...ATTENDANCE_SETTINGS_DEFAULTS,
+      timezone: ZONE,
+    });
 
     const first = await makeGroup("Support", owner.id, { organizationOwnerId: owner.id });
     const second = await makeGroup("Sales", groupManager.id, { organizationOwnerId: owner.id });

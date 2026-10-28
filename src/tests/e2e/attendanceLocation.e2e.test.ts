@@ -11,6 +11,7 @@ import { employments } from "../../db/schema/employment-schema.js";
 import {
   attendanceClosedBy,
   attendanceEvents,
+  attendanceEventType,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import {
@@ -88,7 +89,7 @@ describe("attendance location", () => {
       .where(
         and(
           eq(attendanceEvents.sessionId, sessionId),
-          eq(attendanceEvents.eventType, "LOCATION_UPDATED")
+          eq(attendanceEvents.eventType, attendanceEventType.LocationUpdated)
         )
       )
       .orderBy(asc(attendanceEvents.createdAt));

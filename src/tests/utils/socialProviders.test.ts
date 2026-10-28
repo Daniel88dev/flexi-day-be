@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { appleCredentials, decodeJwtPart, socialProvidersFrom } from "../appleFixtures.js";
 import { newSigningKey, signIdToken, stubKeySet } from "../idTokenFixtures.js";
 
+// The real mappers ignore their argument; typing one in lets these tests hand them every claim shape.
+type MapProfile = (profile: object) => unknown;
+
 const microsoft = { microsoftClientId: "id", microsoftClientSecret: "secret" };
 const google = { googleClientId: "id", googleClientSecret: "secret" };
 const apple = appleCredentials();
@@ -125,17 +128,17 @@ describe("provider-supplied email is never trusted", () => {
   ] as const;
 
   it.each(claims)("microsoft: %s -> unverified", (_label, profile) => {
-    const map = socialProvidersFrom(microsoft)?.microsoft?.mapProfileToUser;
+    const map: MapProfile | undefined = socialProvidersFrom(microsoft)?.microsoft?.mapProfileToUser;
     expect(map?.(profile)).toEqual({ emailVerified: false });
   });
 
   it.each(claims)("google: %s -> unverified", (_label, profile) => {
-    const map = socialProvidersFrom(google)?.google?.mapProfileToUser;
+    const map: MapProfile | undefined = socialProvidersFrom(google)?.google?.mapProfileToUser;
     expect(map?.(profile)).toEqual({ emailVerified: false });
   });
 
   it.each(claims)("apple: %s -> unverified", (_label, profile) => {
-    const map = socialProvidersFrom(apple)?.apple?.mapProfileToUser;
+    const map: MapProfile | undefined = socialProvidersFrom(apple)?.apple?.mapProfileToUser;
     expect(map?.(profile)).toEqual({ emailVerified: false });
   });
 
@@ -143,7 +146,8 @@ describe("provider-supplied email is never trusted", () => {
     // better-auth spreads mapProfileToUser's result OVER its own claim-derived
     // value, so returning {} would hand the decision straight back to the
     // provider claims this whole rule exists to distrust.
-    const result = socialProvidersFrom(microsoft)?.microsoft?.mapProfileToUser?.({});
+    const map: MapProfile | undefined = socialProvidersFrom(microsoft)?.microsoft?.mapProfileToUser;
+    const result = map?.({});
     expect(result).toHaveProperty("emailVerified");
   });
 });

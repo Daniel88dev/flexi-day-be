@@ -41,7 +41,7 @@ describe("sesEmailSender", () => {
     await sesEmailSender.sendTemplated(validEmail);
 
     expect(sendMock).toHaveBeenCalledTimes(1);
-    const input = sendMock.mock.calls[0][0].input as {
+    const input = sendMock.mock.calls[0]![0].input as {
       Destination: { ToAddresses: string[] };
       Content: { Template: { TemplateName: string; TemplateData: string } };
     };

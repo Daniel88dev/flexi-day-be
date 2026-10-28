@@ -12,6 +12,7 @@ import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import {
   directoryAgreementAcceptances,
   directoryPermissionCells,
+  directoryPermissionRow,
   organizationDirectorySettings,
 } from "../../db/schema/directory-schema.js";
 import {
@@ -690,7 +691,7 @@ describe("turning the directory off", () => {
         .where(
           and(
             eq(directoryPermissionCells.organizationId, world.organizationId),
-            eq(directoryPermissionCells.row, "MANAGE_DEPARTMENTS_AND_LOCATIONS")
+            eq(directoryPermissionCells.row, directoryPermissionRow.ManageDepartmentsAndLocations)
           )
         );
       await turnOff(world);

@@ -8,7 +8,11 @@ import { db } from "../../db/db.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
-import { attendanceEvents, attendanceSessions } from "../../db/schema/attendance-schema.js";
+import {
+  attendanceClosedBy,
+  attendanceEvents,
+  attendanceSessions,
+} from "../../db/schema/attendance-schema.js";
 import {
   ATTENDANCE_SETTINGS_DEFAULTS,
   balanceMode,
@@ -530,7 +534,7 @@ describe("entered attendance sessions", () => {
         startedAt: new Date(entry.startedAt),
         endedAt: new Date(entry.endedAt),
         timezone: ZONE,
-        closedBy: "USER",
+        closedBy: attendanceClosedBy.User,
       });
 
       const day = await request(server.url)

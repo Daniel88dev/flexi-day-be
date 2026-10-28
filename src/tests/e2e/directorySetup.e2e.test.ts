@@ -12,7 +12,7 @@ import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { pushEnvironment, pushRegistrations } from "../../db/schema/push-registration-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
-import { userSettings } from "../../db/schema/user-settings-schema.js";
+import { appLanguage, userSettings } from "../../db/schema/user-settings-schema.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { disableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
@@ -240,7 +240,9 @@ describe("The directory setup checklist and the members' notice", () => {
 
     it("speaks Czech to a member who chose it", async () => {
       const world = await setUp();
-      await db.insert(userSettings).values({ userId: world.users.jana.id, language: "cs" });
+      await db
+        .insert(userSettings)
+        .values({ userId: world.users.jana.id, language: appLanguage.Czech });
 
       await enable(world.users.owner.id, world.organizationId, { tellMembers: true });
 

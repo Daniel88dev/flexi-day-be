@@ -12,6 +12,7 @@ import {
   attendanceBreaks,
   attendanceClosedBy,
   attendanceEvents,
+  attendanceEventType,
   attendanceSessions,
 } from "../../db/schema/attendance-schema.js";
 import {
@@ -77,7 +78,7 @@ describe("attendance corrections", () => {
 
   const cookieOf = (person: Person) => cookies.get(person.id)!;
 
-  const patchSession = (person: Person, sessionId: string, body: unknown) =>
+  const patchSession = (person: Person, sessionId: string, body: object) =>
     request(server.url)
       .patch(`/api/attendance/sessions/${sessionId}`)
       .set("Cookie", cookieOf(person))
@@ -88,7 +89,7 @@ describe("attendance corrections", () => {
       .delete(`/api/attendance/sessions/${sessionId}`)
       .set("Cookie", cookieOf(person));
 
-  const patchBreak = (person: Person, breakId: string, body: unknown) =>
+  const patchBreak = (person: Person, breakId: string, body: object) =>
     request(server.url)
       .patch(`/api/attendance/breaks/${breakId}`)
       .set("Cookie", cookieOf(person))
@@ -1075,7 +1076,7 @@ describe("attendance corrections", () => {
       await db.insert(attendanceEvents).values({
         id: uuidv4(),
         sessionId: id,
-        eventType: "CLOCK_OUT",
+        eventType: attendanceEventType.ClockOut,
         changedByUserId: null,
         before: null,
         after: { closedBy: "SWEEP" },

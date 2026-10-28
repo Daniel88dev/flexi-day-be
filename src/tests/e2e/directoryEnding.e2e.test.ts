@@ -15,6 +15,7 @@ import { upsertSubscription } from "../../services/billing/subscriptionServices.
 import { disableDirectory } from "../../services/directory/directorySettingsServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { ensureOrganizationForUser } from "../../services/organization/organizationServices.js";
+import { ATTENDANCE_SETTINGS_DEFAULTS } from "../../db/schema/organization-attendance-settings-schema.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -69,7 +70,10 @@ describe("ending an Employment in a Directory organization", () => {
     const mia = await makeUser("Mia Sales");
     const dana = await makeUser("Dana Delegate");
     const organizationId = (await ensureOrganizationForUser(owner.id)).id;
-    await upsertAttendanceSettings(organizationId, { timezone: ZONE });
+    await upsertAttendanceSettings(organizationId, {
+      ...ATTENDANCE_SETTINGS_DEFAULTS,
+      timezone: ZONE,
+    });
 
     const support = await makeGroup("Support", owner.id, { organizationOwnerId: owner.id });
     const sales = await makeGroup("Sales", gina.id, { organizationOwnerId: owner.id });

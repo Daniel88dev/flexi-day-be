@@ -127,7 +127,9 @@ describe("markCalendarTargetsDirty", () => {
   });
 
   it("marks each owner's targets for a batch across users and types, and enqueues them", async () => {
-    const run = vi.fn((): Promise<SyncOutcome> => Promise.resolve({ status: "done" }));
+    const run = vi.fn((_targetId: string): Promise<SyncOutcome> =>
+      Promise.resolve({ status: "done" })
+    );
     const queue = createSyncQueue({ run });
     installCalendarSyncQueue(queue);
 

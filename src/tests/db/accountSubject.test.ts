@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { socialProviders } from "better-auth/social-providers";
+import {
+  socialProviders,
+  type GoogleProfile,
+  type MicrosoftEntraIDProfile,
+} from "better-auth/social-providers";
 import { readFileSync } from "node:fs";
 
 /**
@@ -21,9 +25,12 @@ const credentials = { clientId: "test-client", clientSecret: "test-secret" };
 describe("account key survives the issuer revert", () => {
   it("resolves Microsoft's subject from the directory oid", () => {
     const microsoft = socialProviders.microsoft(credentials);
-    expect(microsoft.accountSubject({ profile: { oid: "dir-oid-1", sub: "pairwise-1" } })).toBe(
-      "dir-oid-1"
-    );
+    expect(
+      microsoft.accountSubject({
+        tokens: {},
+        profile: { oid: "dir-oid-1", sub: "pairwise-1" } as MicrosoftEntraIDProfile,
+      })
+    ).toBe("dir-oid-1");
     expect(migration).toContain("claim_oid := payload ->> 'oid'");
     // Matched as one statement, not two loose substrings: asserting the claims
     // appear somewhere would still pass with the two of them swapped, which is
@@ -37,6 +44,8 @@ describe("account key survives the issuer revert", () => {
 
   it("leaves Google's subject as sub", () => {
     const google = socialProviders.google(credentials);
-    expect(google.accountSubject({ profile: { sub: "subject-123" } })).toBe("subject-123");
+    expect(
+      google.accountSubject({ tokens: {}, profile: { sub: "subject-123" } as GoogleProfile })
+    ).toBe("subject-123");
   });
 });

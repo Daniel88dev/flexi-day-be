@@ -9,6 +9,7 @@ import { directoryPhotos } from "../../db/schema/directory-photo-schema.js";
 import {
   directoryProfileHistory,
   directoryProfiles,
+  profileHistoryActor,
 } from "../../db/schema/directory-profile-schema.js";
 import { directoryRoleAssignments, directoryRole } from "../../db/schema/directory-role-schema.js";
 import { directorySensitiveProfiles } from "../../db/schema/directory-sensitive-profile-schema.js";
@@ -191,7 +192,7 @@ describe("Retention periods and purges", () => {
       .where(
         and(
           eq(directoryProfileHistory.employmentId, employmentId),
-          eq(directoryProfileHistory.actor, "RETENTION")
+          eq(directoryProfileHistory.actor, profileHistoryActor.Retention)
         )
       );
 

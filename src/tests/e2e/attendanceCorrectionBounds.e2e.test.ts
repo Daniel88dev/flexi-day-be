@@ -59,13 +59,13 @@ describe("attendance correction bounds", () => {
   let memberCookie: string;
   let ownerCookie: string;
 
-  const patchSession = (sessionId: string, body: unknown, cookie = memberCookie) =>
+  const patchSession = (sessionId: string, body: object, cookie = memberCookie) =>
     request(server.url)
       .patch(`/api/attendance/sessions/${sessionId}`)
       .set("Cookie", cookie)
       .send(body);
 
-  const patchBreak = (breakId: string, body: unknown) =>
+  const patchBreak = (breakId: string, body: object) =>
     request(server.url)
       .patch(`/api/attendance/breaks/${breakId}`)
       .set("Cookie", memberCookie)

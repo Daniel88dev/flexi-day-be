@@ -97,7 +97,7 @@ describe("Admin on-behalf vacation management E2E", () => {
     await db.delete(session);
   });
 
-  const createOnBehalf = (cookie: string[], body: Record<string, unknown>) =>
+  const createOnBehalf = (cookie: string, body: Record<string, unknown>) =>
     request(server.url)
       .post("/api/vacation/create-vacation")
       .set("Cookie", cookie)

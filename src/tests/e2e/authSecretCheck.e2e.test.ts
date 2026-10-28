@@ -4,7 +4,7 @@ import { generateId } from "better-auth";
 import { db } from "../../db/db.js";
 import { session as sessionTable, user } from "../../db/schema/auth-schema.js";
 import { authSecretFingerprint as fingerprintTable } from "../../db/schema/auth-secret-schema.js";
-import { pushRegistrations } from "../../db/schema/push-registration-schema.js";
+import { pushEnvironment, pushRegistrations } from "../../db/schema/push-registration-schema.js";
 import {
   authSecretFingerprint,
   checkAuthSecret,
@@ -49,7 +49,7 @@ describe("auth secret boot check", () => {
     await db.insert(pushRegistrations).values({
       sessionId,
       token: uuidv4().replace(/-/g, "").repeat(2),
-      environment: "sandbox",
+      environment: pushEnvironment.Sandbox,
     });
     return sessionId;
   };
