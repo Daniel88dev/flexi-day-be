@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { db } from "../../db/db.js";
+import { directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
 import {
   processLocalPhotoUpload,
   removePhotoObjects,
@@ -35,7 +36,9 @@ export const handleLocalPhotoUpload = async (req: Request, res: Response) => {
   const settled =
     processed && (await db.transaction((tx) => settlePhoto(photoId, processed.outcome, tx)));
   if (settled?.result !== "applied") {
-    if (processed?.written) await removePhotoObjects([processed.written]);
+    const servedByRacingUpload =
+      settled?.result === "already" && settled.photo.status === directoryPhotoStatus.Ready;
+    if (processed?.written && !servedByRacingUpload) await removePhotoObjects([processed.written]);
     throw new AppError({
       code: 409,
       message: "This photo upload is no longer waiting for bytes",
