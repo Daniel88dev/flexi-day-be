@@ -176,3 +176,6 @@ terraform.rc
 # attachment-processor Lambda build output (npm run lambda:build)
 lambda/attachment-processor/dist/
 lambda/attachment-processor/*.zip
+
+# macOS
+.DS_Store

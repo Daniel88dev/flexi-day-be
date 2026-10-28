@@ -83,10 +83,24 @@ export default [
       // Console is useful on servers and in containers
       "no-console": "off",
 
-      // Security plugin: keep useful checks but avoid noisy false positives
-      "security/detect-object-injection": "warn",
-      "security/detect-non-literal-fs-filename": "warn",
+      // Flags every `obj[key]`; typed keys already rule out what it guards against.
+      "security/detect-object-injection": "off",
+      "security/detect-non-literal-fs-filename": "error",
       "@typescript-eslint/no-floating-promises": "error",
+    },
+  },
+
+  // The disk stores confine every key under their root (`keyToPath`), and the person export
+  // writes only into its own `mkdtemp` folder. Disk access elsewhere still needs a look.
+  {
+    files: [
+      "src/services/attachment/attachmentStore.ts",
+      "src/services/organizationData/organizationDataStore.ts",
+      "src/services/personExport/personExportArchive.ts",
+      "src/services/personExport/personExportBuild.ts",
+    ],
+    rules: {
+      "security/detect-non-literal-fs-filename": "off",
     },
   },
 ];
