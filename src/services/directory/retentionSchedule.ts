@@ -10,7 +10,8 @@ import {
   directoryPermissionRow as R,
   directoryPermissionValue as V,
 } from "../../db/schema/directory-schema.js";
-import { employments } from "../../db/schema/employment-schema.js";
+import { employments, workerType } from "../../db/schema/employment-schema.js";
+import { loadDirectoryViewer } from "./directoryViewer.js";
 import { SECTION_ROWS, type DirectoryAccess, type SectionRow } from "./permissionResolver.js";
 import { readRetentionHolds } from "./retentionHoldServices.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
@@ -174,4 +175,46 @@ export const nextRemoval = (
     }
   }
   return next;
+};
+
+export type RetentionSummary = {
+  nextRemoval: { section: ProfileSectionKey; date: string } | null;
+  hold: boolean;
+};
+
+/** What a list row shows of an ended record's Retention. */
+export const retentionSummary = (
+  schedule: RetentionSchedule | undefined,
+  access: DirectoryAccess,
+  external: boolean
+): RetentionSummary => ({
+  nextRemoval: schedule ? nextRemoval(schedule, access, external) : null,
+  hold: schedule?.hold != null,
+});
+
+/** Each ended Employment's Retention summary as the owner or an org admin reads it, directory on or off. */
+export const readEndedRetention = async (
+  viewerUserId: string,
+  organizationId: string,
+  records: { id: string; userId: string | null; type: workerType; ended: boolean }[],
+  tx?: DbTransaction
+): Promise<Map<string, RetentionSummary>> => {
+  const ended = records.filter((record) => record.ended);
+  if (ended.length === 0) return new Map();
+  const viewer = await loadDirectoryViewer(viewerUserId, organizationId, tx, { whileOff: true });
+  const schedules = await readRetentionSchedules(
+    organizationId,
+    ended.map((record) => record.id),
+    tx
+  );
+  return new Map(
+    ended.map((record) => [
+      record.id,
+      retentionSummary(
+        schedules.get(record.id),
+        viewer.accessTo({ userId: record.userId, ended: true }),
+        record.type === workerType.External
+      ),
+    ])
+  );
 };

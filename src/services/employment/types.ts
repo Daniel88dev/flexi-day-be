@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { UserSummary } from "../../utils/userPresentation.js";
 import type { workerType } from "../../db/schema/employment-schema.js";
+import type { ProfileSectionKey } from "../directory/types.js";
 
 export type EmploymentType = {
   id: string;
@@ -40,6 +41,10 @@ export type EmploymentListItem = {
   user: UserSummary;
   /** Org admins only: an open Employment no group, admin grant or ownership holds. */
   noLink?: boolean;
+  /** Org admins only, on ended rows: whether a Retention hold is on. */
+  hold?: boolean;
+  /** Org admins only, on ended rows: the earliest coming Retention purge; null under a hold. */
+  nextRemoval?: { section: ProfileSectionKey; date: string } | null;
 };
 
 /**

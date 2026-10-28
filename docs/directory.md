@@ -66,7 +66,8 @@ fenro T-483 and T-514.
 - Retention keeps running, so its controls stay open to the owner and org admins: setting and
   lifting a hold, reading and changing Retention periods and their preview, and the Read log. Those
   routes load the viewer with `whileOff` (`loadDirectoryViewer`), which lets those two through
-  without Directory roles and still answers 409 `DIRECTORY_OFF` to everyone else.
+  without Directory roles and still answers 409 `DIRECTORY_OFF` to everyone else. The People card
+  reads each ended row's hold from `GET /api/employment/list`, which carries it for them on or off.
 
 ## Delete all directory data
 
@@ -669,4 +670,5 @@ emptied it. A removal date is the day, in the nightly tick's zone, of the first 
 period runs out, and never before the next run (`removalDay` in `retentionPeriods.ts`). The profile
 of an ended record carries `retention`: the hold and, for each Section the viewer reads,
 `REMOVES_ON` with a date, `REMOVED_ON` with the purge's day, `KEPT_UNTIL_ERASED`, or `ON_HOLD`.
-Former list rows carry `nextRemoval` (the earliest `REMOVES_ON`, null under a hold) and `hold`.
+Former list rows carry `nextRemoval` (the earliest `REMOVES_ON`, null under a hold) and `hold`, and
+so do ended rows of `GET /api/employment/list` for the owner and org admins (`readEndedRetention`).

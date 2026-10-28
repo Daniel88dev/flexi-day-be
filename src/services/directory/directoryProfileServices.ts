@@ -26,7 +26,7 @@ import { groupedUserIds, profileActions } from "./directoryEndingServices.js";
 import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
 import { emergencyContactNotice } from "./emergencyContactNotice.js";
 import { copyFromPreviousSpellOffered } from "./previousSpellServices.js";
-import { nextRemoval, profileRetention, readRetentionSchedules } from "./retentionSchedule.js";
+import { profileRetention, readRetentionSchedules, retentionSummary } from "./retentionSchedule.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
 import {
   administersOrganization,
@@ -252,16 +252,12 @@ export const listFormerDirectoryPeople = async (
   for (const row of rows) {
     const access = accessFor(viewer, row);
     if (!access.inReach) continue;
-    const schedule = schedules.get(row.id);
     const readsJob = access.sections[R.Job] !== V.None;
     former.push({
       ...toPerson(row, access, await photoOf(viewer, row, access)),
       startedAt: readsJob ? row.startedAt : null,
       endedAt: readsJob ? row.endedAt : null,
-      nextRemoval: schedule
-        ? nextRemoval(schedule, access, row.type === workerType.External)
-        : null,
-      hold: schedule?.hold != null,
+      ...retentionSummary(schedules.get(row.id), access, row.type === workerType.External),
     });
   }
   return former;
