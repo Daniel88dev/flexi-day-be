@@ -1,8 +1,6 @@
 import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { employments } from "../../db/schema/employment-schema.js";
-import { organizations } from "../../db/schema/organization-schema.js";
-import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -11,75 +9,12 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import type { BoundEmploymentType, EmploymentListItem, EmploymentType } from "./types.js";
 import { assertNoAccountlessClash, lockEmploymentEmail } from "./accountlessClash.js";
+import { hasOrganizationLink } from "./organizationLinks.js";
 import { personName } from "../person/personName.js";
 import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
-import { isDirectoryOrganization } from "../directory/directorySettingsServices.js";
+import { isDirectoryOrganization } from "../directory/directorySettings.js";
 import { clearAtEndSections } from "../directory/retentionPurge.js";
-
-/**
- * Whether the person is still reachable from the organization by any of the
- * four links ADR 0004 names: they own it, hold a live delegated admin row,
- * manage one of its live groups, or belong to one. Deliberately four indexed
- * lookups rather than one union-with-`OR`, for the reason `isOrganizationAdmin`
- * gives: no index drives an `OR` spanning four tables.
- */
-const hasOrganizationLink = async (
-  userId: string,
-  organizationId: string,
-  tx?: DbTransaction
-): Promise<boolean> => {
-  const client = tx ?? db;
-
-  const [owned] = await client
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(and(eq(organizations.id, organizationId), eq(organizations.ownerUserId, userId)))
-    .limit(1);
-  if (owned) return true;
-
-  const [delegated] = await client
-    .select({ id: organizationUsers.id })
-    .from(organizationUsers)
-    .where(
-      and(
-        eq(organizationUsers.organizationId, organizationId),
-        eq(organizationUsers.userId, userId),
-        isNull(organizationUsers.deletedAt)
-      )
-    )
-    .limit(1);
-  if (delegated) return true;
-
-  const [managed] = await client
-    .select({ id: groups.id })
-    .from(groups)
-    .where(
-      and(
-        eq(groups.organizationId, organizationId),
-        eq(groups.managerUserId, userId),
-        isNull(groups.deletedAt)
-      )
-    )
-    .limit(1);
-  if (managed) return true;
-
-  const [member] = await client
-    .select({ id: groupUsers.id })
-    .from(groupUsers)
-    .innerJoin(groups, eq(groupUsers.groupId, groups.id))
-    .where(
-      and(
-        eq(groups.organizationId, organizationId),
-        eq(groupUsers.userId, userId),
-        isNull(groupUsers.deletedAt),
-        isNull(groups.deletedAt)
-      )
-    )
-    .limit(1);
-
-  return member !== undefined;
-};
 
 /**
  * Brings one person's Employment back in line with the links they actually
@@ -314,47 +249,6 @@ export const listEmployments = async (
     // Keyed on the Employment when there is no account, so the summary still has an id.
     user: buildUserSummary({ id: row.userId ?? row.id, name: userName }),
   }));
-};
-
-/**
- * Open Employments none of the four links holds: people without an account and
- * account holders who belong to nothing. A Directory organization keeps them
- * open; with the directory off only End employment ends them.
- */
-export const unlinkedOpenEmploymentIds = async (
-  organizationId: string,
-  tx?: DbTransaction
-): Promise<Set<string>> => {
-  const rows = await (tx ?? db)
-    .select({ id: employments.id })
-    .from(employments)
-    .innerJoin(organizations, eq(organizations.id, employments.organizationId))
-    .where(
-      and(
-        eq(employments.organizationId, organizationId),
-        isNull(employments.endedAt),
-        sql`(${employments.userId} is null or (
-          ${employments.userId} <> ${organizations.ownerUserId}
-          and not exists (
-            select 1 from ${organizationUsers}
-            where ${organizationUsers.organizationId} = ${employments.organizationId}
-              and ${organizationUsers.userId} = ${employments.userId}
-              and ${organizationUsers.deletedAt} is null)
-          and not exists (
-            select 1 from ${groups}
-            where ${groups.organizationId} = ${employments.organizationId}
-              and ${groups.managerUserId} = ${employments.userId}
-              and ${groups.deletedAt} is null)
-          and not exists (
-            select 1 from ${groupUsers}
-            inner join ${groups} on ${groups.id} = ${groupUsers.groupId}
-            where ${groups.organizationId} = ${employments.organizationId}
-              and ${groupUsers.userId} = ${employments.userId}
-              and ${groupUsers.deletedAt} is null
-              and ${groups.deletedAt} is null)))`
-      )
-    );
-  return new Set(rows.map((row) => row.id));
 };
 
 /** Headcount for the billing screen: people currently employed, not rows. */

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
@@ -8,6 +8,7 @@ import { appLanguage, userSettings } from "../../db/schema/user-settings-schema.
 import { logger } from "../../middleware/logger.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { pushNotifications } from "../push/pushServices.js";
+import { boundEmployment } from "../employment/boundEmployment.js";
 
 export type DirectoryEnabledNotice = { userId: string; title: string; body: string; href: string };
 
@@ -47,13 +48,7 @@ export const planDirectoryEnabledNotices = async (
     .innerJoin(user, eq(user.id, employments.userId))
     .leftJoin(userSettings, eq(userSettings.userId, employments.userId))
     .where(
-      and(
-        eq(employments.organizationId, organizationId),
-        isNull(employments.endedAt),
-        isNotNull(employments.userId),
-        isNull(employments.accountDeletedAt),
-        isNull(user.deletedAt)
-      )
+      and(eq(employments.organizationId, organizationId), boundEmployment(), isNull(user.deletedAt))
     );
 
   return rows.map((row) => {

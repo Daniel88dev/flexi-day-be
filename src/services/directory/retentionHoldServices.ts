@@ -3,7 +3,7 @@ import { db, type DbTransaction } from "../../db/db.js";
 import { directoryRetentionHolds } from "../../db/schema/directory-retention-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
-import { getPersonContacts } from "../person/personName.js";
+import { getActorNames } from "../person/personName.js";
 import { administersOrganization, type DirectoryViewer } from "./directoryViewer.js";
 import type { RetentionHoldView } from "./types.js";
 
@@ -23,9 +23,10 @@ export const readRetentionHolds = async (
         inArray(directoryRetentionHolds.employmentId, employmentIds)
       )
     );
-  const setterIds = [...new Set(rows.flatMap((row) => (row.setByUserId ? [row.setByUserId] : [])))];
-  const names = new Map(
-    (await getPersonContacts(setterIds, { organizationId }, tx)).map((row) => [row.id, row.name])
+  const setterName = await getActorNames(
+    rows.map((row) => row.setByUserId),
+    { organizationId },
+    tx
   );
   return new Map(
     rows.map((row) => [
@@ -35,7 +36,7 @@ export const readRetentionHolds = async (
         setBy:
           row.setByUserId === null
             ? null
-            : { userId: row.setByUserId, name: names.get(row.setByUserId) ?? null },
+            : { userId: row.setByUserId, name: setterName(row.setByUserId) },
       },
     ])
   );

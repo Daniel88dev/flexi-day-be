@@ -28,7 +28,7 @@ import {
   REMOVED_FROM_GROUP_REASON,
 } from "../../services/vacation/departureCancellation.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
-import { isDirectoryOrganization } from "../../services/directory/directorySettingsServices.js";
+import { isDirectoryOrganization } from "../../services/directory/directorySettings.js";
 
 /**
  * Removes a member from a group (soft delete), cancelling their pending

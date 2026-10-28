@@ -12,7 +12,8 @@ import { getAdminGroupIdsForUser } from "../groupUser/groupUserServices.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
 import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
-import { isDirectoryOrganization, readPermissionCells } from "./directorySettingsServices.js";
+import { isDirectoryOrganization } from "./directorySettings.js";
+import { readPermissionCells } from "./directorySettingsServices.js";
 import {
   resolveAccess,
   type DirectoryAccess,

@@ -301,6 +301,27 @@ describe("The Profile photo", () => {
     expect((await (await as(users.eli.id)).delete(path(employment.jana))).status).toBe(403);
   });
 
+  it("answers the upload status poll to a Photo writer and refuses everyone else", async () => {
+    const { organizationId, users, employment } = await setUp();
+    const requested = await (
+      await as(users.jana.id)
+    ).post(`/api/directory/${organizationId}/people/${employment.jana}/photo`, {
+      contentType: "image/jpeg",
+      size: 1000,
+    });
+    expect(requested.status).toBe(201);
+    const path = `/api/directory/${organizationId}/people/${employment.jana}/photo/${requested.body.photo.id}`;
+
+    const own = await (await as(users.jana.id)).get(path);
+    expect(own.status).toBe(200);
+    expect(own.body.status).toBe("UPLOADING");
+    expect((await (await as(users.dana.id)).get(path)).status).toBe(200);
+
+    const colleague = await (await as(users.mira.id)).get(path);
+    expect(colleague.status).toBe(403);
+    expect(colleague.body.errors[0].context.code).toBe("SECTION_NOT_WRITABLE");
+  });
+
   it("refuses what is not a picture or is too large", async () => {
     const { organizationId, users, employment } = await setUp();
     const owner = await as(users.owner.id);

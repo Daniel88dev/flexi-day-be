@@ -89,6 +89,20 @@ export const getPersonContacts = async (
     .where(inArray(user.id, userIds));
 };
 
+/**
+ * Looks up who acted, for readers that record actor ids: returns a function
+ * from id to name, null for a missing id or one the lookup does not find.
+ */
+export const getActorNames = async (
+  userIds: Iterable<string | null | undefined>,
+  scope: PersonScope,
+  tx?: DbTransaction
+): Promise<(userId: string | null | undefined) => string | null> => {
+  const ids = [...new Set([...userIds].filter((id): id is string => Boolean(id)))];
+  const names = new Map((await getPersonContacts(ids, scope, tx)).map((row) => [row.id, row.name]));
+  return (userId) => (userId ? (names.get(userId) ?? null) : null);
+};
+
 /** {@link getPersonContacts} for one user. */
 export const getPersonContact = async (
   userId: string,

@@ -2,7 +2,10 @@ import {
   ATTACHMENT_SIGNATURE_HEADER,
   signAttachmentCallback,
 } from "../../services/attachment/callbackSignature.js";
-import { ATTACHMENT_GONE_REASON } from "../../services/attachment/types.js";
+import {
+  ATTACHMENT_GONE_REASON,
+  type AttachmentProcessedPayload,
+} from "../../services/attachment/types.js";
 import type { NotifyResult, SettledRow } from "./handler.js";
 
 export type NotifyDeps = {
@@ -14,6 +17,8 @@ export type NotifyDeps = {
   path?: string;
   /** The `reason` the route's 404 carries when the row was deleted in flight. */
   goneReason?: string;
+  /** Names the callback in the error a failed delivery throws. */
+  callback?: "Attachment" | "Photo";
 };
 
 /**
@@ -22,12 +27,13 @@ export type NotifyDeps = {
  * the report once more, so a rotated secret reaches a warm Lambda through
  * the refusal rather than only through its next cold start.
  */
-export const createNotify = ({
+export const createNotify = <Payload extends object = AttachmentProcessedPayload>({
   apiUrl,
   readSecret,
   fetch = globalThis.fetch,
   path = "/api/attachments/processed",
   goneReason = ATTACHMENT_GONE_REASON,
+  callback = "Attachment",
 }: NotifyDeps) => {
   let secret: Promise<string> | undefined;
   // A failed read is not cached, so the next report retries it.
@@ -47,7 +53,7 @@ export const createNotify = ({
       body,
     });
 
-  return async (payload: object): Promise<NotifyResult> => {
+  return async (payload: Payload): Promise<NotifyResult> => {
     const body = JSON.stringify(payload);
     let response = await post(body);
     if (response.status === 401) {
@@ -64,7 +70,7 @@ export const createNotify = ({
     if (response.status === 404 && context?.reason === goneReason) {
       return { result: "gone" };
     }
-    throw new Error(`Attachment callback failed: ${response.status.toString()} ${text}`);
+    throw new Error(`${callback} callback failed: ${response.status.toString()} ${text}`);
   };
 };
 

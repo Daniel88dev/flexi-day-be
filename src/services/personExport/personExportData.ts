@@ -17,12 +17,13 @@ import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
 import { vacationEvents } from "../../db/schema/vacation-event-schema.js";
 import { vacation } from "../../db/schema/vacation-schema.js";
 import { downloadFileName } from "../attachment/attachmentServices.js";
-import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
-import { collectProfileExport } from "../directory/directoryProfileServices.js";
+import { readyPhotoIds } from "../directory/directoryPhotoServices.js";
+import { photoKeys, photoPrefix } from "../directory/photoPrefixes.js";
+import { collectProfileExport } from "../directory/profileExportServices.js";
 import { collectRoleExport } from "../directory/directoryRoleServices.js";
 import { collectSensitiveExport } from "../directory/sensitiveSections.js";
 import { personSpellIds } from "../employment/personSpells.js";
-import { getPersonContacts } from "../person/personName.js";
+import { getActorNames } from "../person/personName.js";
 
 /** The fixed purpose labels the person sees in place of reader names. */
 export const READ_PURPOSE: Record<readLogAudience, string> = {
@@ -271,10 +272,7 @@ export const collectPersonExport = async (
   sessions.forEach((row) => note(row.deletedByUserId));
   sessionEvents.forEach((row) => note(row.changedByUserId));
   changeRows.forEach((row) => note(row.changingUserId));
-  const names = new Map(
-    (await getPersonContacts([...actorIds], { organizationId })).map((row) => [row.id, row.name])
-  );
-  const nameOf = (id: string | null) => (id ? (names.get(id) ?? null) : null);
+  const nameOf = await getActorNames(actorIds, { organizationId });
 
   const files: ExportAttachmentFile[] = [];
   const attachmentEntries = attachmentRows.map((row) => {

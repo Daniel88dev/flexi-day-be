@@ -4,6 +4,7 @@ import {
   verifyAttachmentCallback,
 } from "../../../services/attachment/callbackSignature.js";
 import type { AttachmentProcessedPayload } from "../../../services/attachment/types.js";
+import type { PhotoProcessedPayload } from "../../../services/directory/types.js";
 import { createNotify } from "../notify.js";
 
 const payload: AttachmentProcessedPayload = {
@@ -130,7 +131,7 @@ describe("attachment-processor notify", () => {
 
   it("sends a Profile photo report to the photo route and knows its gone reason", async () => {
     const api = fakeApi(reply(200), reply(404, errorBody({ reason: "PHOTO_GONE" })));
-    const notify = createNotify({
+    const notify = createNotify<PhotoProcessedPayload>({
       apiUrl: "https://api.example.test",
       readSecret: () => Promise.resolve("s1"),
       fetch: api.fetch,
@@ -149,5 +150,21 @@ describe("attachment-processor notify", () => {
         api.calls[0]!.signature ?? undefined
       )
     ).toBe(true);
+  });
+
+  it("names the photo callback when a photo report fails", async () => {
+    const api = fakeApi(reply(500));
+    const notify = createNotify<PhotoProcessedPayload>({
+      apiUrl: "https://api.example.test",
+      readSecret: () => Promise.resolve("s1"),
+      fetch: api.fetch,
+      path: "/api/directory/photos/processed",
+      goneReason: "PHOTO_GONE",
+      callback: "Photo",
+    });
+
+    await expect(
+      notify({ photoId: "7a1c9f0e-2b3d-4e5f-8a9b-0c1d2e3f4a5b", status: "READY" })
+    ).rejects.toThrow("Photo callback failed: 500");
   });
 });

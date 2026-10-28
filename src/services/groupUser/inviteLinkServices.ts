@@ -14,6 +14,7 @@ import { groups } from "../../db/schema/group-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { getPersonContact, personName } from "../person/personName.js";
+import { findOpenAccountlessEmployment } from "../employment/accountlessClash.js";
 
 // Every column but `linkSecretHash`, which no reader outside the link lookup
 // has any use for and no response may carry.
@@ -194,18 +195,7 @@ export const getInvitePreviewBySecretHash = async (
   // the invite would claim.
   let personName = row.targetName;
   if (personName === null) {
-    const [match] = await db
-      .select({ name: employments.name })
-      .from(employments)
-      .where(
-        and(
-          eq(employments.organizationId, organizationId),
-          isNull(employments.userId),
-          isNull(employments.endedAt),
-          sql`lower(${employments.email}) = ${row.invitedEmail}`
-        )
-      )
-      .limit(1);
+    const match = await findOpenAccountlessEmployment(organizationId, row.invitedEmail);
     personName = match?.name ?? null;
   }
 

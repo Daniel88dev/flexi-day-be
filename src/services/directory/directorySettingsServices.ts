@@ -21,6 +21,7 @@ import { personName } from "../person/personName.js";
 import { DIRECTORY_AGREEMENT_VERSION } from "./directoryAgreement.js";
 import { DIRECTORY_PERMISSION_DEFAULTS } from "./permissionDefaults.js";
 import { withDefaultCells } from "./permissionTable.js";
+import { getDirectorySettings, isDirectoryOrganization } from "./directorySettings.js";
 import type {
   DirectoryAgreementState,
   DirectoryOrganization,
@@ -29,21 +30,6 @@ import type {
 } from "./types.js";
 
 type Actor = { organizationId: string; userId: string };
-
-export const getDirectorySettings = async (organizationId: string, tx?: DbTransaction) => {
-  const [row] = await (tx ?? db)
-    .select()
-    .from(organizationDirectorySettings)
-    .where(eq(organizationDirectorySettings.organizationId, organizationId))
-    .limit(1);
-  return row;
-};
-
-/** Whether the organization is a Directory organization: the stored toggle, whatever the plan. */
-export const isDirectoryOrganization = async (
-  organizationId: string,
-  tx?: DbTransaction
-): Promise<boolean> => (await getDirectorySettings(organizationId, tx))?.enabled === true;
 
 const readAgreement = async (
   organizationId: string,

@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { listFormerDirectoryPeople } from "../../services/directory/directoryProfileServices.js";
+import { listFormerDirectoryPeople } from "../../services/directory/directoryPeopleServices.js";
 import { directoryViewerFor } from "./directoryViewerFor.js";
 
 export const handleGetFormerDirectoryPeople = async (req: Request, res: Response) => {

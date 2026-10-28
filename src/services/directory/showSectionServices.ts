@@ -1,8 +1,8 @@
 import type { DbTransaction } from "../../db/db.js";
 import {
-  directoryAudience as A,
-  directoryPermissionRow as R,
-  directoryPermissionValue as V,
+  directoryAudience,
+  directoryPermissionRow,
+  directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
 import { workerType } from "../../db/schema/employment-schema.js";
 import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-schema.js";
@@ -14,19 +14,19 @@ import {
   personalValuesView,
   readSensitiveSection,
 } from "./sensitiveSections.js";
-import type { SensitiveSectionName, ShownSection } from "./types.js";
+import { employeesOnly, PERSONAL_EMPLOYEES_ONLY } from "./profileSectionFields.js";
+import { sectionRowOf, type SensitiveSectionName } from "./sectionKeys.js";
+import type { ShownSection } from "./types.js";
 
-const ROW = { contact: R.Contact, personal: R.Personal } as const;
-
-const READ_AUDIENCE: Record<A, readLogAudience> = {
-  [A.Owner]: readLogAudience.Owner,
-  [A.Self]: readLogAudience.Self,
-  [A.Colleague]: readLogAudience.Colleague,
-  [A.ExternalWorker]: readLogAudience.ExternalWorker,
-  [A.GroupAdmin]: readLogAudience.GroupAdmin,
-  [A.Hr]: readLogAudience.Hr,
-  [A.Leadership]: readLogAudience.Leadership,
-  [A.OrganizationAdmin]: readLogAudience.OrganizationAdmin,
+const READ_AUDIENCE: Record<directoryAudience, readLogAudience> = {
+  [directoryAudience.Owner]: readLogAudience.Owner,
+  [directoryAudience.Self]: readLogAudience.Self,
+  [directoryAudience.Colleague]: readLogAudience.Colleague,
+  [directoryAudience.ExternalWorker]: readLogAudience.ExternalWorker,
+  [directoryAudience.GroupAdmin]: readLogAudience.GroupAdmin,
+  [directoryAudience.Hr]: readLogAudience.Hr,
+  [directoryAudience.Leadership]: readLogAudience.Leadership,
+  [directoryAudience.OrganizationAdmin]: readLogAudience.OrganizationAdmin,
 };
 
 /**
@@ -44,14 +44,14 @@ export const showSensitiveSection = async (
   const found = await lockRecordInReach(viewer, employmentId, tx, { lock: false });
   const { record, access } = found;
   const context = { ...found.context, section };
-  const row = ROW[section];
+  const row = sectionRowOf(section);
   const level = access.sections[row];
   const grantedBy = access.grantedBy[row];
-  if (level === V.None || grantedBy === null) {
+  if (level === directoryPermissionValue.None || grantedBy === null) {
     throw refuse(403, "SECTION_NOT_READABLE", "You can't read this Section", context);
   }
   if (section === "personal" && record.type === workerType.External) {
-    throw refuse(422, "EMPLOYEES_ONLY", "The Personal Section applies to employees only", context);
+    throw employeesOnly(PERSONAL_EMPLOYEES_ONLY, context);
   }
 
   const values = await readSensitiveSection(viewer.organizationId, employmentId, tx);
@@ -71,13 +71,13 @@ export const showSensitiveSection = async (
 
   return section === "contact"
     ? {
-        section: R.Contact,
+        section: directoryPermissionRow.Contact,
         level,
         recorded: !self,
         ...contactValuesView(values.contact, viewer.language),
       }
     : {
-        section: R.Personal,
+        section: directoryPermissionRow.Personal,
         level,
         recorded: !self,
         ...personalValuesView(values.personal, viewer.language),

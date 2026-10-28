@@ -5,10 +5,10 @@ import {
   directoryProfileHistory,
   profileHistoryActor,
 } from "../../db/schema/directory-profile-schema.js";
-import { retentionPeriod as P } from "../../db/schema/directory-retention-schema.js";
+import { retentionPeriod } from "../../db/schema/directory-retention-schema.js";
 import {
-  directoryPermissionRow as R,
-  directoryPermissionValue as V,
+  directoryPermissionRow,
+  directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { loadDirectoryViewer } from "./directoryViewer.js";
@@ -23,21 +23,8 @@ import {
   readRetentionPeriods,
   storedPeriod,
 } from "./retentionPurge.js";
-import type {
-  ProfileRetention,
-  ProfileSectionKey,
-  RetentionHoldView,
-  SectionRetention,
-} from "./types.js";
-
-export const SECTION_KEYS: Record<SectionRow, ProfileSectionKey> = {
-  [R.Card]: "card",
-  [R.Photo]: "photo",
-  [R.WorkContact]: "workContact",
-  [R.Job]: "job",
-  [R.Contact]: "contact",
-  [R.Personal]: "personal",
-};
+import type { ProfileRetention, RetentionHoldView, SectionRetention } from "./types.js";
+import { SECTION_KEYS, type ProfileSectionKey } from "./sectionKeys.js";
 
 type SectionState = {
   holds: boolean;
@@ -113,7 +100,7 @@ export const readRetentionSchedules = async (
             {
               holds: row[`holds_${section}`] === true,
               dueAt: asDate(row[`due_${section}`]),
-              untilErased: periods[section] === P.UntilErased,
+              untilErased: periods[section] === retentionPeriod.UntilErased,
               removedOn: removedAt && businessDateInZone(removedAt, timezone),
             },
           ];
@@ -141,7 +128,9 @@ const sectionRetention = (
 /** The Sections the viewer reads; Personal never on an External worker's record. */
 const readableSections = (access: DirectoryAccess, external: boolean) =>
   SECTION_ROWS.filter(
-    (section) => access.sections[section] !== V.None && !(external && section === R.Personal)
+    (section) =>
+      access.sections[section] !== directoryPermissionValue.None &&
+      !(external && section === directoryPermissionRow.Personal)
   );
 
 /** The `retention` block of an ended profile. */

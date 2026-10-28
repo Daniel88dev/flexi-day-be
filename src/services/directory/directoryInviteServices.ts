@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
-import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { inviteLink } from "../../db/schema/invite-link-schema.js";
 import AppError, { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -24,7 +24,9 @@ import type { DirectoryInviteView, PostDirectoryInvite } from "./types.js";
 
 /** The audience whose Send directory invite cell credits the viewer, on an open record without an account. */
 export const sendInviteGrantor = (viewer: DirectoryViewer) =>
-  viewer.accessTo({ userId: null, ended: false }).actGrantedBy[R.SendDirectoryInvite];
+  viewer.accessTo({ userId: null, ended: false }).actGrantedBy[
+    directoryPermissionRow.SendDirectoryInvite
+  ];
 
 /** Revokes the open directory invite of an Employment, if any, so its code and link stop working. */
 export const revokeOpenEmploymentInvite = async (employmentId: string, tx: DbTransaction) => {

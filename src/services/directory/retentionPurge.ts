@@ -5,14 +5,14 @@ import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import {
   directoryRetentionHolds,
   directoryRetentionPeriods,
-  retentionPeriod as P,
+  retentionPeriod,
 } from "../../db/schema/directory-retention-schema.js";
-import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { directorySensitiveProfiles } from "../../db/schema/directory-sensitive-profile-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { logger } from "../../middleware/logger.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
-import { employmentPhotosPrefix } from "./directoryPhotoServices.js";
+import { employmentPhotosPrefix } from "./photoPrefixes.js";
 import { SECTION_ROWS, type SectionRow } from "./permissionResolver.js";
 import {
   CARD_COLUMNS,
@@ -80,25 +80,29 @@ const sealedSection = (
   };
 };
 
-const COLUMN_SECTIONS: Record<Exclude<SectionRow, typeof R.Photo>, ColumnSection> = {
-  [R.Card]: profileSection(CARD_COLUMNS),
-  [R.WorkContact]: profileSection(WORK_CONTACT_COLUMNS),
-  [R.Job]: profileSection(JOB_COLUMNS),
-  [R.Contact]: sealedSection("contact", CONTACT_FIELDS),
-  [R.Personal]: sealedSection("personal", PERSONAL_FIELDS),
+const COLUMN_SECTIONS: Record<
+  Exclude<SectionRow, typeof directoryPermissionRow.Photo>,
+  ColumnSection
+> = {
+  [directoryPermissionRow.Card]: profileSection(CARD_COLUMNS),
+  [directoryPermissionRow.WorkContact]: profileSection(WORK_CONTACT_COLUMNS),
+  [directoryPermissionRow.Job]: profileSection(JOB_COLUMNS),
+  [directoryPermissionRow.Contact]: sealedSection("contact", CONTACT_FIELDS),
+  [directoryPermissionRow.Personal]: sealedSection("personal", PERSONAL_FIELDS),
 };
 
 const photoHoldsData = sql`exists (select 1 from ${directoryPhotos} where ${directoryPhotos.employmentId} = ${employments.id})`;
 
 export const holdsData = (section: SectionRow): SQL =>
-  section === R.Photo ? photoHoldsData : COLUMN_SECTIONS[section].holdsData;
+  section === directoryPermissionRow.Photo ? photoHoldsData : COLUMN_SECTIONS[section].holdsData;
 
 const retentionHistory = (section: SectionRow, cleared: Cleared[]): ProfileHistoryInput[] =>
   cleared.map((row) => ({
     organizationId: row.organizationId,
     employmentId: row.employmentId,
     section,
-    fields: section === R.Photo ? PHOTO_FIELDS : COLUMN_SECTIONS[section].fields,
+    fields:
+      section === directoryPermissionRow.Photo ? PHOTO_FIELDS : COLUMN_SECTIONS[section].fields,
     retention: true,
   }));
 
@@ -106,13 +110,13 @@ const retentionHistory = (section: SectionRow, cleared: Cleared[]): ProfileHisto
 export const clockStart = sql`greatest(${employments.endedAt}, coalesce(${employments.endRecordedAt}, ${employments.endedAt}))`;
 
 export const intervalOf = (period: SQL) => sql`(case ${period}
-  when ${P.AtEnd} then interval '0'
-  when ${P.Days30} then interval '30 days'
-  when ${P.Months6} then interval '6 months'
-  when ${P.Year1} then interval '1 year'
-  when ${P.Years3} then interval '3 years'
-  when ${P.Years5} then interval '5 years'
-  when ${P.Years10} then interval '10 years'
+  when ${retentionPeriod.AtEnd} then interval '0'
+  when ${retentionPeriod.Days30} then interval '30 days'
+  when ${retentionPeriod.Months6} then interval '6 months'
+  when ${retentionPeriod.Year1} then interval '1 year'
+  when ${retentionPeriod.Years3} then interval '3 years'
+  when ${retentionPeriod.Years5} then interval '5 years'
+  when ${retentionPeriod.Years10} then interval '10 years'
 end)`;
 
 /** Until erased has no interval, so the comparison is null and never due. */
@@ -143,7 +147,7 @@ const dueEmployments = (client: Client, section: SectionRow, period: SQL, at: Da
  * counted once per account, or per email for spells without one.
  */
 export const countDueUnder = async (
-  input: { organizationId: string; section: SectionRow; period: P; at: Date },
+  input: { organizationId: string; section: SectionRow; period: retentionPeriod; at: Date },
   tx?: DbTransaction
 ): Promise<number> => {
   const due = await dueEmployments(
@@ -179,7 +183,7 @@ const purgePhotos = async (due: Cleared[]): Promise<number> => {
         .where(eq(directoryPhotos.employmentId, row.employmentId))
         .returning({ status: directoryPhotos.status });
       if (!removed.some((photo) => photo.status === directoryPhotoStatus.Ready)) return 0;
-      await recordProfileHistory(retentionHistory(R.Photo, [row]), tx);
+      await recordProfileHistory(retentionHistory(directoryPermissionRow.Photo, [row]), tx);
       return 1;
     });
   }
@@ -198,7 +202,7 @@ export const purgeRetention = async (now = new Date()): Promise<number> => {
   for (const section of SECTION_ROWS) {
     const due = await dueEmployments(db, section, storedPeriod(section), now);
     if (due.length === 0) continue;
-    if (section === R.Photo) {
+    if (section === directoryPermissionRow.Photo) {
       purged += await purgePhotos(due);
       continue;
     }
@@ -237,7 +241,7 @@ export const atEndSectionsHeld = async (
   const periods = await readRetentionPeriods(employment.organizationId, tx);
   const held: SectionRow[] = [];
   for (const section of SECTION_ROWS) {
-    if (periods[section] !== P.AtEnd) continue;
+    if (periods[section] !== retentionPeriod.AtEnd) continue;
     const [row] = await client
       .select({ id: employments.id })
       .from(employments)
@@ -263,8 +267,8 @@ export const clearAtEndSections = async (
   const photoPrefixes: string[] = [];
   const row = { employmentId: employment.id, organizationId: employment.organizationId };
   for (const section of SECTION_ROWS) {
-    if (periods[section] !== P.AtEnd) continue;
-    if (section === R.Photo) {
+    if (periods[section] !== retentionPeriod.AtEnd) continue;
+    if (section === directoryPermissionRow.Photo) {
       if (options.keepPhoto) continue;
       const removed = await tx
         .delete(directoryPhotos)

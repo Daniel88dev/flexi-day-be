@@ -2,7 +2,7 @@ import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { directoryDepartments, directoryLocations } from "../../db/schema/directory-list-schema.js";
 import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
-import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import type { appLanguage } from "../../db/schema/user-settings-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -17,17 +17,69 @@ import type {
   PostListEntry,
 } from "./types.js";
 
-const tableOf = (kind: DirectoryListKind) =>
-  kind === "locations" ? directoryLocations : directoryDepartments;
-const profileColumnOf = (kind: DirectoryListKind) =>
-  kind === "locations" ? directoryProfiles.locationId : directoryProfiles.departmentId;
-
 type EntryRow = {
   id: string;
   name: string;
   archivedAt: Date | null;
   country?: string | null;
 };
+
+type EntryValues = { id: string; organizationId: string; name: string };
+type EntryChanges = { name?: string; archivedAt: Date | null };
+
+/** Everything that differs between the two lists. Only Locations carry a country. */
+type ListSpec = {
+  table: typeof directoryDepartments | typeof directoryLocations;
+  profileColumn: typeof directoryProfiles.departmentId | typeof directoryProfiles.locationId;
+  countryColumn: typeof directoryLocations.country | null;
+  insert: (tx: DbTransaction, values: EntryValues, country: string | null) => Promise<EntryRow>;
+  update: (
+    tx: DbTransaction,
+    entryId: string,
+    changes: EntryChanges,
+    country: string | null | undefined
+  ) => Promise<EntryRow>;
+};
+
+const DEPARTMENTS: ListSpec = {
+  table: directoryDepartments,
+  profileColumn: directoryProfiles.departmentId,
+  countryColumn: null,
+  insert: async (tx, values) =>
+    (await tx.insert(directoryDepartments).values(values).returning())[0]!,
+  update: async (tx, entryId, changes) =>
+    (
+      await tx
+        .update(directoryDepartments)
+        .set(changes)
+        .where(eq(directoryDepartments.id, entryId))
+        .returning()
+    )[0]!,
+};
+
+const LOCATIONS: ListSpec = {
+  table: directoryLocations,
+  profileColumn: directoryProfiles.locationId,
+  countryColumn: directoryLocations.country,
+  insert: async (tx, values, country) =>
+    (
+      await tx
+        .insert(directoryLocations)
+        .values({ ...values, country })
+        .returning()
+    )[0]!,
+  update: async (tx, entryId, changes, country) =>
+    (
+      await tx
+        .update(directoryLocations)
+        .set({ ...changes, ...(country !== undefined && { country }) })
+        .where(eq(directoryLocations.id, entryId))
+        .returning()
+    )[0]!,
+};
+
+const listOf = (kind: DirectoryListKind): ListSpec =>
+  kind === "locations" ? LOCATIONS : DEPARTMENTS;
 
 const contextOf = (viewer: DirectoryViewer, kind: DirectoryListKind) => ({
   organizationId: viewer.organizationId,
@@ -43,7 +95,7 @@ const contextOf = (viewer: DirectoryViewer, kind: DirectoryListKind) => ({
 export const canManageLists = (viewer: DirectoryViewer): boolean => {
   const [reached] = viewer.standing.groupAdminReach;
   return viewer.accessTo({ userId: reached ?? null, ended: false }).acts[
-    R.ManageDepartmentsAndLocations
+    directoryPermissionRow.ManageDepartmentsAndLocations
   ];
 };
 
@@ -67,20 +119,20 @@ const entryView = (
   id: row.id,
   name: row.name,
   archived: row.archivedAt !== null,
-  ...(kind === "locations" && {
+  ...(listOf(kind).countryColumn && {
     country: row.country ? countryView(row.country, language) : null,
   }),
   ...(inUse !== undefined && { inUse }),
 });
 
 const inUseSql = (kind: DirectoryListKind, entryId: unknown) =>
-  sql<boolean>`exists (select 1 from ${directoryProfiles} where ${profileColumnOf(kind)} = ${entryId})`;
+  sql<boolean>`exists (select 1 from ${directoryProfiles} where ${listOf(kind).profileColumn} = ${entryId})`;
 
 const isInUse = async (kind: DirectoryListKind, entryId: string, tx: DbTransaction) => {
   const [row] = await tx
     .select({ id: directoryProfiles.employmentId })
     .from(directoryProfiles)
-    .where(eq(profileColumnOf(kind), entryId))
+    .where(eq(listOf(kind).profileColumn, entryId))
     .limit(1);
   return row !== undefined;
 };
@@ -91,14 +143,14 @@ export const readDirectoryList = async (
   kind: DirectoryListKind,
   tx?: DbTransaction
 ): Promise<DirectoryList> => {
-  const table = tableOf(kind);
+  const { table, countryColumn } = listOf(kind);
   const editable = canManageLists(viewer);
   const rows = await (tx ?? db)
     .select({
       id: table.id,
       name: table.name,
       archivedAt: table.archivedAt,
-      ...(kind === "locations" && { country: directoryLocations.country }),
+      ...(countryColumn && { country: countryColumn }),
       inUse: inUseSql(kind, table.id),
     })
     .from(table)
@@ -120,7 +172,7 @@ const assertNameFree = async (
   exceptId: string | null,
   tx: DbTransaction
 ) => {
-  const table = tableOf(kind);
+  const { table } = listOf(kind);
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`directory-list:${kind}:${viewer.organizationId}`}, 0))`
   );
@@ -170,14 +222,8 @@ export const addDirectoryListEntry = async (
     organizationId: viewer.organizationId,
     name: body.name,
   };
-  const [row] =
-    kind === "locations"
-      ? await tx
-          .insert(directoryLocations)
-          .values({ ...values, country })
-          .returning()
-      : await tx.insert(directoryDepartments).values(values).returning();
-  return entryView(kind, row!, viewer.language, false);
+  const row = await listOf(kind).insert(tx, values, country);
+  return entryView(kind, row, viewer.language, false);
 };
 
 const lockEntry = async (
@@ -186,7 +232,7 @@ const lockEntry = async (
   entryId: string,
   tx: DbTransaction
 ): Promise<EntryRow> => {
-  const table = tableOf(kind);
+  const { table } = listOf(kind);
   const [row] = await tx
     .select()
     .from(table)
@@ -231,16 +277,8 @@ export const updateDirectoryListEntry = async (
     ...(body.name !== undefined && { name: body.name }),
     archivedAt,
   };
-  const table = tableOf(kind);
-  const [updated] =
-    kind === "locations"
-      ? await tx
-          .update(directoryLocations)
-          .set({ ...changes, ...(country !== undefined && { country }) })
-          .where(eq(directoryLocations.id, entryId))
-          .returning()
-      : await tx.update(table).set(changes).where(eq(table.id, entryId)).returning();
-  return entryView(kind, updated!, viewer.language, await isInUse(kind, entryId, tx));
+  const updated = await listOf(kind).update(tx, entryId, changes, country);
+  return entryView(kind, updated, viewer.language, await isInUse(kind, entryId, tx));
 };
 
 /** Deletes an entry no Profile holds, open or former. One in use can only be archived. */
@@ -258,7 +296,7 @@ export const deleteDirectoryListEntry = async (
       entryId,
     });
   }
-  const table = tableOf(kind);
+  const { table } = listOf(kind);
   await tx.delete(table).where(eq(table.id, entryId));
 };
 
@@ -274,7 +312,7 @@ export const assertAssignableEntry = async (
   context: object,
   tx: DbTransaction
 ) => {
-  const table = tableOf(kind);
+  const { table } = listOf(kind);
   const [row] = await tx
     .select({ id: table.id, archivedAt: table.archivedAt })
     .from(table)

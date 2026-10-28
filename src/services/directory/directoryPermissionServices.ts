@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import {
@@ -14,8 +14,8 @@ import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable, isDirectoryWritable } from "../billing/guards.js";
 import { lockOrganization } from "../organization/organizationServices.js";
-import { getPersonContacts } from "../person/personName.js";
-import { recordName } from "./directoryProfileServices.js";
+import { getActorNames } from "../person/personName.js";
+import { recordName } from "./recordName.js";
 import { readDirectoryRoles, sortRoles } from "./directoryRoleServices.js";
 import { readPermissionCells, storeMissingCells } from "./directorySettingsServices.js";
 import { administersPeople, type DirectoryViewer } from "./directoryViewer.js";
@@ -26,6 +26,7 @@ import type {
   PermissionHistoryEntry,
   PermissionTable,
 } from "./types.js";
+import { boundEmployment } from "../employment/boundEmployment.js";
 
 const contextOf = (viewer: DirectoryViewer) => ({
   organizationId: viewer.organizationId,
@@ -128,14 +129,7 @@ const eligibleRecords = (organizationId: string, tx?: DbTransaction) =>
     .select({ employmentId: employments.id, name: recordName(employments, user, organizationId) })
     .from(employments)
     .innerJoin(user, eq(user.id, employments.userId))
-    .where(
-      and(
-        eq(employments.organizationId, organizationId),
-        isNull(employments.endedAt),
-        isNotNull(employments.userId),
-        isNull(employments.accountDeletedAt)
-      )
-    )
+    .where(and(eq(employments.organizationId, organizationId), boundEmployment()))
     .orderBy(
       asc(sql`lower(${recordName(employments, user, organizationId)})`),
       asc(employments.id)
@@ -271,18 +265,16 @@ export const listPermissionHistory = async (
     .where(eq(directoryPermissionHistory.organizationId, organizationId))
     .orderBy(desc(directoryPermissionHistory.createdAt), desc(directoryPermissionHistory.id));
 
-  const actorIds = [
-    ...new Set(rows.flatMap(({ entry }) => (entry.actorUserId ? [entry.actorUserId] : []))),
-  ];
-  const names = new Map(
-    (await getPersonContacts(actorIds, { organizationId })).map((row) => [row.id, row.name])
+  const actorName = await getActorNames(
+    rows.map(({ entry }) => entry.actorUserId),
+    { organizationId }
   );
 
   return rows.map(({ entry, personName }): PermissionHistoryEntry => {
     const base = {
       id: entry.id,
       at: entry.createdAt,
-      actorName: entry.actorUserId ? (names.get(entry.actorUserId) ?? null) : null,
+      actorName: actorName(entry.actorUserId),
     };
     if (entry.kind === permissionHistoryKind.Cell) {
       return {

@@ -12,10 +12,8 @@ import {
   removeAttachmentObjects,
 } from "../../services/accountDeletion/accountDeletionServices.js";
 import { removeOrganizationExports } from "../../services/personExport/organizationExportServices.js";
-import {
-  organizationPhotosPrefix,
-  removePhotoObjects,
-} from "../../services/directory/directoryPhotoServices.js";
+import { removePhotoObjects } from "../../services/directory/directoryPhotoServices.js";
+import { organizationPhotosPrefix } from "../../services/directory/photoPrefixes.js";
 import { disconnectAllProviders } from "../../services/calendarConnection/calendarConnectionServices.js";
 import { collectAppleRevocations } from "../../services/appleAuthorization/appleAuthorizationServices.js";
 import { revokeAtApple } from "../../services/appleAuthorization/appleRevocation.js";

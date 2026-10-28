@@ -1,12 +1,14 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
 import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
-import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
-import { assertEmploymentEmailFree } from "../employment/accountlessClash.js";
+import {
+  assertEmploymentEmailFree,
+  findOpenEmploymentByEmail,
+} from "../employment/accountlessClash.js";
 import { assertAssignableEntry } from "./directoryListServices.js";
 import { assertReportsTo } from "./directoryProfileEditServices.js";
 import { getDirectoryProfile } from "./directoryProfileServices.js";
@@ -28,22 +30,6 @@ const assertCanCreate = (viewer: DirectoryViewer) => {
   return grantor;
 };
 
-/** Whether an open Employment of the organization, bound or not, holds the email. */
-const emailHeld = async (organizationId: string, email: string, tx: DbTransaction) => {
-  const [row] = await tx
-    .select({ id: employments.id })
-    .from(employments)
-    .where(
-      and(
-        eq(employments.organizationId, organizationId),
-        isNull(employments.endedAt),
-        sql`lower(${employments.email}) = ${email.trim().toLowerCase()}`
-      )
-    )
-    .limit(1);
-  return row !== undefined;
-};
-
 /** The Add person dialog's blur check: is the email free among the open Employments. */
 export const checkDirectoryEmail = async (
   viewer: DirectoryViewer,
@@ -51,7 +37,10 @@ export const checkDirectoryEmail = async (
   tx: DbTransaction
 ): Promise<{ available: boolean }> => {
   assertCanCreate(viewer);
-  return { available: !(await emailHeld(viewer.organizationId, email, tx)) };
+  return {
+    available:
+      (await findOpenEmploymentByEmail(viewer.organizationId, email, {}, tx)) === undefined,
+  };
 };
 
 /**
@@ -118,7 +107,7 @@ export const createDirectoryPerson = async (
         organizationId,
         employmentId,
         actorUserId: viewer.standing.userId,
-        section: R.Card,
+        section: directoryPermissionRow.Card,
         fields,
         audience: grantor,
       },

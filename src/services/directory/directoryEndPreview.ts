@@ -1,10 +1,10 @@
-import { and, asc, count, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import { directoryRole } from "../../db/schema/directory-role-schema.js";
-import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { groupUsers } from "../../db/schema/group-users-schema.js";
@@ -13,8 +13,9 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { businessDateInZone, type DateString } from "../../utils/dateFunc.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
-import { profileActions } from "./directoryEndingServices.js";
-import { recordName } from "./directoryProfileServices.js";
+import { profileActions } from "./profileActions.js";
+import { recordName } from "./recordName.js";
+import { departureBookings } from "../vacation/departureCancellation.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
 import type { DirectoryViewer } from "./directoryViewer.js";
 import type { SectionRow } from "./permissionResolver.js";
@@ -65,7 +66,7 @@ export const endPreview = async (
   if (!record) throw refuse(404, "PERSON_NOT_FOUND", "Person not found", context);
   const access = viewer.accessTo({ userId: record.userId, ended: record.endedAt !== null });
   if (!profileActions(viewer, record, access).end) {
-    if (record.endedAt !== null && access.acts[R.EndEmployment]) {
+    if (record.endedAt !== null && access.acts[directoryPermissionRow.EndEmployment]) {
       throw refuse(409, "EMPLOYMENT_ENDED", "This employment has already ended", context);
     }
     throw refuse(403, "END_DENIED", "You may not end this employment", context);
@@ -120,19 +121,10 @@ export const endPreview = async (
     .orderBy(asc(groups.groupName));
 
   const organizationGroupIds = client.select({ id: groups.id }).from(groups).where(liveGroups);
-  // The same rows `cancelBookingsOnDeparture` cancels.
   const [bookings] = await client
     .select({ value: count() })
     .from(vacation)
-    .where(
-      and(
-        eq(vacation.userId, userId),
-        inArray(vacation.groupId, organizationGroupIds),
-        isNull(vacation.deletedAt),
-        isNull(vacation.rejectedAt),
-        or(isNull(vacation.approvedAt), gt(vacation.requestedDay, today))
-      )
-    );
+    .where(departureBookings({ userId, groupIds: organizationGroupIds, today }));
   preview.cancelledBookings = Number(bookings?.value ?? 0);
 
   const [grant] = await client
