@@ -12,6 +12,7 @@ import {
   organizationDirectorySettings,
 } from "../../db/schema/directory-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
+import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import {
   manualPlanOverride,
@@ -461,6 +462,21 @@ describe("Turning the people directory on", () => {
       expect(forMember.body).toEqual([
         expect.objectContaining({ organizationId, role: "MEMBER", enabled: false }),
       ]);
+    });
+
+    it("carries the organization's time zone, UTC while attendance was never set up", async () => {
+      const { owner, member, delegate, organizationId } = await setUp();
+      const zoneFor = async (userId: string) =>
+        (await (await as(userId)).get("/api/directory/organizations")).body[0].timezone;
+
+      expect(await zoneFor(member.id)).toBe("UTC");
+
+      await db
+        .insert(organizationAttendanceSettings)
+        .values({ organizationId, timezone: "Europe/Prague" });
+      for (const viewer of [owner, delegate, member]) {
+        expect(await zoneFor(viewer.id)).toBe("Europe/Prague");
+      }
     });
 
     it("leaves out an organization the person has left", async () => {
