@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
@@ -11,6 +11,7 @@ import { readLog, readLogAudience, readLogKind } from "../../db/schema/read-log-
 import { refuse } from "../../utils/appError.js";
 import { personSpellIds } from "../employment/personSpells.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { isOrganizationAdmin, lockOrganization } from "../organization/organizationServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
 import {
@@ -176,7 +177,11 @@ export const listRequestedExports = async (
   return [...newest.values()].map(presentPersonExport);
 };
 
-/** Every organization where the caller's account is bound to an Employment, with their newest own export. */
+/**
+ * Every organization where the caller's account is bound to an Employment,
+ * with their newest own export. Each row reports the current spell: the open
+ * one, else the one that ended last.
+ */
 export const listOwnExportOrganizations = async (
   userId: string
 ): Promise<OwnExportOrganization[]> => {
@@ -191,7 +196,12 @@ export const listOwnExportOrganizations = async (
     .from(employments)
     .innerJoin(organizations, eq(organizations.id, employments.organizationId))
     .where(eq(employments.userId, userId))
-    .orderBy(asc(organizations.name), asc(employments.startedAt));
+    .orderBy(
+      asc(organizations.name),
+      asc(organizations.id),
+      sql`${employments.endedAt} desc nulls first`,
+      desc(employments.startedAt)
+    );
 
   const own = await db
     .select()
@@ -216,7 +226,11 @@ export const listOwnExportOrganizations = async (
     if (seen.has(row.organizationId)) continue;
     seen.add(row.organizationId);
     const latest = newest.get(row.organizationId);
-    result.push({ ...row, export: latest ? presentPersonExport(latest) : null });
+    result.push({
+      ...row,
+      timezone: await organizationTimeZone(row.organizationId),
+      export: latest ? presentPersonExport(latest) : null,
+    });
   }
   return result;
 };

@@ -50,6 +50,7 @@ export type OwnExportOrganization = {
   employmentId: string;
   startedAt: Date;
   endedAt: Date | null;
+  timezone: string;
   export: PersonExportView | null;
 };
 
