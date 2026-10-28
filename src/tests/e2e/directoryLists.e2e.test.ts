@@ -30,6 +30,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
+import { DIRECTORY_AGREEMENT_VERSION } from "../../services/directory/directoryAgreement.js";
 
 describe("Departments and Locations", () => {
   let server: LoopbackServer;
@@ -640,7 +641,11 @@ describe("Departments and Locations", () => {
       });
       await db.transaction((tx) =>
         enableDirectory(
-          { organizationId: otherOrganization, userId: other.id, agreementVersion: 1 },
+          {
+            organizationId: otherOrganization,
+            userId: other.id,
+            agreementVersion: DIRECTORY_AGREEMENT_VERSION,
+          },
           tx
         )
       );

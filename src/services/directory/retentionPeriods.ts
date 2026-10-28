@@ -42,24 +42,24 @@ export const withDefaultPeriods = (
 
 const LABELS: Record<appLanguage, Record<retentionPeriod, string>> = {
   [appLanguage.English]: {
-    [retentionPeriod.AtEnd]: "no time",
+    [retentionPeriod.AtEnd]: "0 days",
     [retentionPeriod.Days30]: "30 days",
     [retentionPeriod.Months6]: "6 months",
     [retentionPeriod.Year1]: "1 year",
     [retentionPeriod.Years3]: "3 years",
     [retentionPeriod.Years5]: "5 years",
     [retentionPeriod.Years10]: "10 years",
-    [retentionPeriod.UntilErased]: "as long as your record is kept",
+    [retentionPeriod.UntilErased]: "as long as their record is kept",
   },
   [appLanguage.Czech]: {
-    [retentionPeriod.AtEnd]: "ani den",
+    [retentionPeriod.AtEnd]: "0 dní",
     [retentionPeriod.Days30]: "30 dní",
     [retentionPeriod.Months6]: "6 měsíců",
     [retentionPeriod.Year1]: "1 rok",
     [retentionPeriod.Years3]: "3 roky",
     [retentionPeriod.Years5]: "5 let",
     [retentionPeriod.Years10]: "10 let",
-    [retentionPeriod.UntilErased]: "tak dlouho, jak je uchován váš záznam",
+    [retentionPeriod.UntilErased]: "tak dlouho, jak je uchován záznam o tomto člověku",
   },
 };
 

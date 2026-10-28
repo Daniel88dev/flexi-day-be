@@ -55,6 +55,7 @@ import {
 } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 import { apiAs, enableEnterpriseDirectory, errorCode as code } from "./helpers/directoryWorld.js";
+import { DIRECTORY_AGREEMENT_VERSION } from "../../services/directory/directoryAgreement.js";
 
 type SentEmail = { to: string; template: string; data: Record<string, string> };
 const sentEmails: SentEmail[] = [];
@@ -359,7 +360,7 @@ describe("turning the directory off", () => {
   const turnOn = async (world: World) => {
     const res = await world.ownerApi.post(
       `/api/organization/directory/enable?organizationId=${world.organizationId}`,
-      { agreementVersion: 1 }
+      { agreementVersion: DIRECTORY_AGREEMENT_VERSION }
     );
     expect(res.status).toBe(200);
   };

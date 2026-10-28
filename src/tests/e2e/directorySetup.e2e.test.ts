@@ -24,6 +24,7 @@ import { authCookieFor, createTestSession } from "./helpers/authHelper.js";
 import { addMember, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 import { apiAs } from "./helpers/directoryWorld.js";
+import { DIRECTORY_AGREEMENT_VERSION } from "../../services/directory/directoryAgreement.js";
 
 const sentEmails: unknown[] = [];
 vi.mock("../../services/email/index.js", () => ({
@@ -148,7 +149,7 @@ describe("The directory setup checklist and the members' notice", () => {
     const res = await (
       await as(ownerId)
     ).post(`/api/organization/directory/enable?organizationId=${organizationId}`, {
-      agreementVersion: 1,
+      agreementVersion: DIRECTORY_AGREEMENT_VERSION,
       ...body,
     });
     expect(res.status).toBe(200);
@@ -259,7 +260,7 @@ describe("The directory setup checklist and the members' notice", () => {
       const res = await (
         await as(world.users.owner.id)
       ).post(`/api/organization/directory/enable?organizationId=${world.organizationId}`, {
-        agreementVersion: 1,
+        agreementVersion: DIRECTORY_AGREEMENT_VERSION,
         tellMembers: true,
       });
 

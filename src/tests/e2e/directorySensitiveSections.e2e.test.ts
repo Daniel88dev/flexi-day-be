@@ -828,7 +828,7 @@ describe("The Sensitive sections, Contact and Personal", () => {
         period: { en: "30 days", cs: "30 dní" },
       });
       const shown = await owner.get(`${path(employment.jana)}?language=en`);
-      expect(shown.body.sections.contact.notice).toContain("for 30 days after you leave");
+      expect(shown.body.sections.contact.notice).toContain("for 30 days after they leave");
       expect(shown.body.sections.contact.notice).not.toContain("{");
 
       const saved = await (
@@ -842,7 +842,7 @@ describe("The Sensitive sections, Contact and Personal", () => {
       const own = await (await as(users.jana.id)).get(`${path(employment.jana)}?language=en`);
       expect(own.body.sections.contact.notice).toMatch(/ keeps them for 30 days\.$/);
       const czech = await (await as(users.jana.id)).get(`${path(employment.jana)}?language=cs`);
-      expect(czech.body.sections.contact.notice).toContain("30 dní po vašem odchodu");
+      expect(czech.body.sections.contact.notice).toContain("30 dní poté, co odejde");
       const reader = await (await as(users.dana.id)).get(path(employment.jana));
       expect(reader.body.sections.contact).toHaveProperty("notice");
 

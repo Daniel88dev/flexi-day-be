@@ -2,6 +2,7 @@ import request from "supertest";
 import { db } from "../../../db/db.js";
 import { subscriptionPlan, subscriptionStatus } from "../../../db/schema/subscription-schema.js";
 import { upsertSubscription } from "../../../services/billing/subscriptionServices.js";
+import { DIRECTORY_AGREEMENT_VERSION } from "../../../services/directory/directoryAgreement.js";
 import { enableDirectory } from "../../../services/directory/directorySettingsServices.js";
 import { authCookieFor } from "./authHelper.js";
 
@@ -31,6 +32,9 @@ export const enableEnterpriseDirectory = async (organizationId: string, ownerId:
     graceEndsAt: null,
   });
   await db.transaction((tx) =>
-    enableDirectory({ organizationId, userId: ownerId, agreementVersion: 1 }, tx)
+    enableDirectory(
+      { organizationId, userId: ownerId, agreementVersion: DIRECTORY_AGREEMENT_VERSION },
+      tx
+    )
   );
 };

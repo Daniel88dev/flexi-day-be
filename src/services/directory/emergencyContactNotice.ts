@@ -11,20 +11,31 @@ import { retentionPeriodLabel } from "./retentionPeriods.js";
 export type NoticeTexts = Record<appLanguage, string>;
 
 /**
- * The product's default Art. 14 notice, shown under the emergency contacts to
- * whoever edits them. A placeholder until the owner's legal wording lands.
+ * The product's default Art. 14 notice, shown under the emergency contacts for
+ * whoever edits them to pass on, so it speaks to the emergency contact. Keep it in step with section 6 of the web's
+ * `/directory-agreement/` page.
  */
 export const DEFAULT_EMERGENCY_CONTACT_NOTICE: NoticeTexts = {
   [appLanguage.English]:
-    "{organization} keeps the names and phone numbers of the emergency contacts you add here, " +
-    "only to reach them if something happens to you at work. They are kept while you work here " +
-    "and for {period} after you leave. Please tell the people you add that you gave their details " +
-    "to {organization}.",
+    "{organization} keeps your name and phone number because one of its people gave them as " +
+    "their emergency contact. It uses them only to reach you if something happens to that " +
+    "person at work, in its legitimate interest in being able to do so (Art. 6(1)(f) GDPR). " +
+    "Flexi Day stores them for {organization}, encrypted, in the EU, and only the people " +
+    "{organization} allows to see private contact details can see them. They are kept while " +
+    "that person works there and for {period} after they leave. You can ask {organization} to " +
+    "see, correct, delete or restrict your details, object to their use, and complain to a " +
+    "data protection authority. The person who gave your details can tell you how to reach " +
+    "{organization}.",
   [appLanguage.Czech]:
-    "Organizace {organization} uchovává jména a telefonní čísla nouzových kontaktů, které zde " +
-    "uvedete, jen proto, aby je mohla zastihnout, kdyby se vám v práci něco stalo. Uchovává je po " +
-    "dobu vaší práce a {period} po vašem odchodu. Dejte prosím lidem, které uvedete, vědět, že jste " +
-    "jejich údaje předali organizaci {organization}.",
+    "Organizace {organization} uchovává vaše jméno a telefonní číslo, protože vás jeden z " +
+    "jejích lidí uvedl jako svůj nouzový kontakt. Používá je jen k tomu, aby vás zastihla, " +
+    "kdyby se tomuto člověku v práci něco stalo, a to na základě svého oprávněného zájmu (čl. 6 " +
+    "odst. 1 písm. f) GDPR). Flexi Day je pro organizaci {organization} ukládá šifrovaně v EU a " +
+    "vidí je jen ti, komu organizace {organization} dovolí vidět soukromé kontaktní údaje. " +
+    "Uchovávají se po dobu, kdy tento člověk v organizaci pracuje, a {period} poté, co odejde. " +
+    "Můžete organizaci {organization} požádat o přístup ke svým údajům, jejich opravu, výmaz " +
+    "nebo omezení zpracování, vznést námitku proti jejich použití a podat stížnost u " +
+    "dozorového úřadu. Kontakt na organizaci {organization} vám dá ten, kdo vás uvedl.",
 };
 
 /** How long the organization keeps Contact after an Employment ends, as the notice names it. */
