@@ -1,7 +1,7 @@
 export type CustomErrorContent = {
   message: string;
   /** Internal context — logged, NEVER sent to clients. May contain auth / PII. */
-  context?: { [key: string]: any };
+  context?: object;
   /** Explicitly safe-to-send-to-client context (e.g. conflictingDays). */
   publicContext?: { [key: string]: unknown };
 };
@@ -22,7 +22,7 @@ export default class AppError extends CustomError {
   private static readonly _statusCode = 400;
   private readonly _code: number;
   private readonly _logging: boolean;
-  private readonly _context: { [key: string]: any };
+  private readonly _context: object;
   private readonly _publicContext: { [key: string]: unknown };
 
   constructor(params?: {
@@ -30,7 +30,7 @@ export default class AppError extends CustomError {
     message?: string;
     logging?: boolean;
     /** Internal context — logged, never returned to clients. */
-    context?: { [key: string]: any };
+    context?: object;
     /** Safe-to-expose fields returned alongside the error message. */
     publicContext?: { [key: string]: unknown };
     cause?: unknown;

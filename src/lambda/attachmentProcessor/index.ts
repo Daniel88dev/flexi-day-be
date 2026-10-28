@@ -13,7 +13,6 @@ import type { PhotoProcessedPayload } from "../../services/directory/types.js";
  */
 
 const env = (name: string): string => {
-  // eslint-disable-next-line security/detect-object-injection
   const value = process.env[name];
   if (!value) throw new Error(`Missing environment variable: ${name}`);
   return value;

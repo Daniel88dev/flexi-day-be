@@ -166,7 +166,6 @@ const VALID_ENVS = ["production", "dev", "test"] as const;
 type NodeEnv = (typeof VALID_ENVS)[number];
 
 function envOrThrow(key: string) {
-  // eslint-disable-next-line security/detect-object-injection
   const value = process.env[key];
   if (!value) {
     throw new Error(`Missing environment variable: ${key}`);
