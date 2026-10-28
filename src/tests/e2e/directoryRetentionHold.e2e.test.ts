@@ -50,7 +50,7 @@ describe("Retention holds and removal dates", () => {
    * Pavel (members who leave), Dana (org-admin grant), Hana (HR) and Mira (a
    * member who stays).
    */
-  const setUp = async () => {
+  const setUp = async ({ directory = true } = {}) => {
     const owner = await makeUser("Olga Owner");
     const jana = await makeUser("Jana Member");
     const pavel = await makeUser("Pavel Member");
@@ -71,7 +71,7 @@ describe("Retention holds and removal dates", () => {
       userId: dana.id,
       grantedByUserId: owner.id,
     });
-    await enableEnterpriseDirectory(organizationId, owner.id);
+    if (directory) await enableEnterpriseDirectory(organizationId, owner.id);
     const employmentOf = async (userId: string) => {
       const [row] = await db
         .select({ id: employments.id })
@@ -79,12 +79,14 @@ describe("Retention holds and removal dates", () => {
         .where(and(eq(employments.userId, userId), eq(employments.organizationId, organizationId)));
       return row!.id;
     };
-    await db.insert(directoryRoleAssignments).values({
-      employmentId: await employmentOf(hana.id),
-      role: directoryRole.Hr,
-      organizationId,
-      assignedByUserId: owner.id,
-    });
+    if (directory) {
+      await db.insert(directoryRoleAssignments).values({
+        employmentId: await employmentOf(hana.id),
+        role: directoryRole.Hr,
+        organizationId,
+        assignedByUserId: owner.id,
+      });
+    }
     return {
       organizationId,
       users: { owner, jana, pavel, dana, hana, mira },
@@ -347,6 +349,111 @@ describe("Retention holds and removal dates", () => {
         nextRemoval: null,
         hold: true,
       });
+    });
+  });
+
+  describe("the roster", () => {
+    const roster = async (fixture: Fixture, userId: string) => {
+      const res = await (
+        await as(userId)
+      ).get(`/api/employment/list?organizationId=${fixture.organizationId}`);
+      expect(res.status).toBe(200);
+      return res.body as { id: string; ended: boolean }[];
+    };
+    const rowOf = (body: { id: string }[], id: string) => body.find((row) => row.id === id);
+
+    it("gives the owner and org admins the hold and next removal on ended rows, none on open ones", async () => {
+      const fixture = await setUp();
+      const { employment, users } = fixture;
+      await fill(fixture, employment.jana);
+      await endWithPinnedClock(fixture, employment.jana);
+
+      for (const viewer of [users.owner.id, users.dana.id]) {
+        const body = await roster(fixture, viewer);
+        expect(rowOf(body, employment.jana)).toMatchObject({
+          ended: true,
+          hold: false,
+          nextRemoval: { section: "workContact", date: "2030-02-15" },
+        });
+        const open = rowOf(body, employment.mira);
+        expect(open).toMatchObject({ ended: false });
+        expect(open).not.toHaveProperty("hold");
+        expect(open).not.toHaveProperty("nextRemoval");
+      }
+
+      expect((await (await as(users.owner.id)).put(fixture.hold(employment.jana))).status).toBe(
+        200
+      );
+      expect(rowOf(await roster(fixture, users.dana.id), employment.jana)).toMatchObject({
+        hold: true,
+        nextRemoval: null,
+      });
+    });
+
+    it("keeps them while the directory is off", async () => {
+      const fixture = await setUp();
+      const { employment, users } = fixture;
+      await fill(fixture, employment.jana);
+      await endWithPinnedClock(fixture, employment.jana);
+      await endWithPinnedClock(fixture, employment.pavel);
+      const owner = await as(users.owner.id);
+      expect((await owner.put(fixture.hold(employment.pavel))).status).toBe(200);
+      const off = await owner.post(
+        `/api/organization/directory/disable?organizationId=${fixture.organizationId}`
+      );
+      expect(off.status).toBe(200);
+
+      for (const viewer of [users.owner.id, users.dana.id]) {
+        const body = await roster(fixture, viewer);
+        expect(rowOf(body, employment.jana)).toMatchObject({
+          hold: false,
+          nextRemoval: { section: "workContact", date: "2030-02-15" },
+        });
+        expect(rowOf(body, employment.pavel)).toMatchObject({ hold: true, nextRemoval: null });
+        expect(rowOf(body, employment.mira)).not.toHaveProperty("hold");
+      }
+    });
+
+    it("gives ended rows no hold and nothing scheduled where the directory never was", async () => {
+      const fixture = await setUp({ directory: false });
+      const { employment, users } = fixture;
+      await endWithPinnedClock(fixture, employment.jana);
+
+      for (const viewer of [users.owner.id, users.dana.id]) {
+        const body = await roster(fixture, viewer);
+        expect(rowOf(body, employment.jana)).toMatchObject({
+          ended: true,
+          hold: false,
+          nextRemoval: null,
+        });
+        expect(rowOf(body, employment.mira)).not.toHaveProperty("nextRemoval");
+      }
+    });
+
+    it("gives a group admin's slice neither, ended members included", async () => {
+      const fixture = await setUp();
+      const { employment, users } = fixture;
+      await fill(fixture, employment.jana);
+      await endWithPinnedClock(fixture, employment.jana);
+      const lead = await makeUser("Gita Lead");
+      const ops = await makeGroup("Ops", lead.id, { organizationOwnerId: users.owner.id });
+      await addMember(ops, users.jana.id);
+      await addMember(ops, users.mira.id);
+
+      const slice = async () => {
+        const body = await roster(fixture, lead.id);
+        expect(body.map((row) => row.id).sort()).toEqual([employment.jana, employment.mira].sort());
+        for (const row of body) {
+          expect(row).not.toHaveProperty("hold");
+          expect(row).not.toHaveProperty("nextRemoval");
+        }
+      };
+      await slice();
+      const off = await (
+        await as(users.owner.id)
+      ).post(`/api/organization/directory/disable?organizationId=${fixture.organizationId}`);
+      expect(off.status).toBe(200);
+      await slice();
     });
   });
 });

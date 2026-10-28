@@ -110,7 +110,17 @@ export const employmentRouter = (): Router => {
    *           managed group, admin grant or ownership holds (people without an
    *           account included). With the directory off only End employment
    *           ends those; the People card and the directory's turn-off dialog
-   *           list them.
+   *           list them. For organization admins every ended row also
+   *           carries `hold` and `nextRemoval`, with the directory on or off:
+   *           `hold` is true while a Retention hold is on, and `nextRemoval`
+   *           is `{ section, date }`, the earliest coming Retention purge
+   *           among the Sections the caller reads (`section` one of `card`,
+   *           `photo`, `workContact`, `job`, `contact`, `personal`; `date` a
+   *           `YYYY-MM-DD` day), null under a hold or when nothing is
+   *           scheduled, as on the Former list. An organization that never had
+   *           the directory holds no Section data, so its ended rows read
+   *           `nextRemoval: null`, and `hold: false` unless an admin set one.
+   *           Open rows, and every row a group admin gets, carry neither.
    *       '422':
    *         description: Missing or malformed organizationId
    *       '403':
