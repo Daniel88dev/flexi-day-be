@@ -6,7 +6,7 @@ import { readLog } from "../../db/schema/read-log-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { personSpellIds } from "../employment/personSpells.js";
 import { getPersonContacts } from "../person/personName.js";
-import { recordName } from "./directoryProfileServices.js";
+import { recordName } from "./recordName.js";
 import { administersOrganization, type DirectoryViewer } from "./directoryViewer.js";
 import type { ReadLogEntry, ReadLogPage } from "./types.js";
 

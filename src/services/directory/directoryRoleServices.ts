@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import {
   directoryPermissionHistory,
@@ -9,6 +9,7 @@ import {
 } from "../../db/schema/directory-role-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
+import { boundEmployment } from "../employment/boundEmployment.js";
 
 const ROLE_ORDER = [directoryRole.Hr, directoryRole.Leadership];
 
@@ -33,14 +34,7 @@ export const readDirectoryRoles = async (
     })
     .from(directoryRoleAssignments)
     .innerJoin(employments, eq(employments.id, directoryRoleAssignments.employmentId))
-    .where(
-      and(
-        inArray(directoryRoleAssignments.employmentId, employmentIds),
-        isNull(employments.endedAt),
-        isNotNull(employments.userId),
-        isNull(employments.accountDeletedAt)
-      )
-    )
+    .where(and(inArray(directoryRoleAssignments.employmentId, employmentIds), boundEmployment()))
     .orderBy(asc(directoryRoleAssignments.role));
   const byEmployment = new Map<string, directoryRole[]>();
   for (const { employmentId, role } of rows) {

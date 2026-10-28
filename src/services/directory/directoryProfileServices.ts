@@ -1,274 +1,32 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
-import { db, type DbTransaction } from "../../db/db.js";
-import { user } from "../../db/schema/auth-schema.js";
+import { and, eq } from "drizzle-orm";
+import type { DbTransaction } from "../../db/db.js";
 import {
-  contractType,
-  directoryProfileHistory,
-  directoryProfiles,
-  profileHistoryActor,
-  workingTime,
-} from "../../db/schema/directory-profile-schema.js";
-import {
-  directoryAudience,
-  directoryPermissionRow as R,
-  directoryPermissionValue as V,
+  directoryPermissionRow,
+  directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
-import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
-import { directoryDepartments, directoryLocations } from "../../db/schema/directory-list-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
-import { buildUserSummary } from "../../utils/userPresentation.js";
-import { getPersonContacts, personName, type PersonColumns } from "../person/personName.js";
 import { countryView, phoneCountryDefault, phoneView } from "./contactFormat.js";
 import { readDirectoryRoles } from "./directoryRoleServices.js";
-import { groupedUserIds, profileActions } from "./directoryEndingServices.js";
-import { photoView, type ProfilePhotoView } from "./directoryPhotoServices.js";
+import { isBoundEmployment } from "../employment/boundEmployment.js";
+import { profileActions } from "./profileActions.js";
+import type { ProfilePhotoView } from "./directoryPhotoServices.js";
 import { emergencyContactNotice } from "./emergencyContactNotice.js";
 import { copyFromPreviousSpellOffered } from "./previousSpellServices.js";
-import { profileRetention, readRetentionSchedules, retentionSummary } from "./retentionSchedule.js";
+import { profileRetention, readRetentionSchedules } from "./retentionSchedule.js";
 import { getOrganizationById } from "../organization/organizationServices.js";
-import {
-  administersOrganization,
-  administersPeople,
-  createPersonGrantor,
-  type DirectoryViewer,
-} from "./directoryViewer.js";
+import { administersPeople, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
-import type {
-  DirectoryEntryRef,
-  DirectoryMarker,
-  DirectoryPeople,
-  DirectoryPerson,
-  DirectoryProfile,
-  DirectorySectionView,
-  FormerDirectoryPerson,
-} from "./types.js";
-
-const reportsTo = alias(employments, "reports_to");
-const reportsToUser = alias(user, "reports_to_user");
-
-/**
- * The name a record shows: the account's while it is bound, open and not
- * deleted, otherwise the Employment's own copy, which Card writers may edit.
- */
-export const recordName = (
-  employment: Record<"userId" | "endedAt" | "accountDeletedAt" | "name", AnyPgColumn>,
-  person: PersonColumns,
-  organizationId: string
-) => sql<string>`case
-  when ${employment.userId} is not null and ${employment.endedAt} is null
-    and ${employment.accountDeletedAt} is null then ${personName(person, { organizationId })}
-  else coalesce(${employment.name}, ${personName(person, { organizationId })}, '') end`;
-
-const selectRecords = (organizationId: string, tx?: DbTransaction) => {
-  const name = recordName(employments, user, organizationId);
-  return {
-    name,
-    query: (tx ?? db)
-      .select({
-        id: employments.id,
-        userId: employments.userId,
-        type: employments.type,
-        startedAt: employments.startedAt,
-        endedAt: employments.endedAt,
-        accountDeletedAt: employments.accountDeletedAt,
-        email: employments.email,
-        image: user.image,
-        name,
-        rejoined: sql<boolean>`exists (select 1 from employments later_spell
-          where later_spell.organization_id = ${employments.organizationId}
-            and later_spell.user_id = ${employments.userId}
-            and later_spell.started_at > ${employments.startedAt})`,
-        inviteSent: sql<boolean>`exists (select 1 from invite_link open_invite
-          where open_invite.employment_id = ${employments.id}
-            and open_invite.used_at is null and open_invite.revoked_at is null
-            and open_invite.expires_at > now())`,
-        jobTitle: directoryProfiles.jobTitle,
-        departmentId: directoryDepartments.id,
-        departmentName: directoryDepartments.name,
-        departmentArchivedAt: directoryDepartments.archivedAt,
-        locationId: directoryLocations.id,
-        locationName: directoryLocations.name,
-        locationArchivedAt: directoryLocations.archivedAt,
-        locationCountry: directoryLocations.country,
-        legalName: directoryProfiles.legalName,
-        employeeNumber: directoryProfiles.employeeNumber,
-        startDate: directoryProfiles.startDate,
-        leavingDate: directoryProfiles.leavingDate,
-        probationEndDate: directoryProfiles.probationEndDate,
-        contractType: directoryProfiles.contractType,
-        workingTime: directoryProfiles.workingTime,
-        workEmail: directoryProfiles.workEmail,
-        workPhone: directoryProfiles.workPhone,
-        photoId: directoryPhotos.id,
-        reportsToId: reportsTo.id,
-        reportsToUserId: reportsTo.userId,
-        reportsToEndedAt: reportsTo.endedAt,
-        reportsToName: sql<
-          string | null
-        >`case when ${reportsTo.id} is null then null else ${recordName(
-          reportsTo,
-          reportsToUser,
-          organizationId
-        )} end`,
-      })
-      .from(employments)
-      .leftJoin(user, eq(employments.userId, user.id))
-      .leftJoin(directoryProfiles, eq(directoryProfiles.employmentId, employments.id))
-      .leftJoin(
-        directoryPhotos,
-        and(
-          eq(directoryPhotos.employmentId, employments.id),
-          eq(directoryPhotos.status, directoryPhotoStatus.Ready)
-        )
-      )
-      .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
-      .leftJoin(reportsToUser, eq(reportsToUser.id, reportsTo.userId))
-      .leftJoin(directoryDepartments, eq(directoryDepartments.id, directoryProfiles.departmentId))
-      .leftJoin(directoryLocations, eq(directoryLocations.id, directoryProfiles.locationId))
-      .$dynamic(),
-  };
-};
-
-type RecordRow = Awaited<ReturnType<ReturnType<typeof selectRecords>["query"]["execute"]>>[number];
-
-const accessFor = (viewer: DirectoryViewer, row: RecordRow) =>
-  viewer.accessTo({ userId: row.userId, ended: row.endedAt !== null });
-
-const markersOf = (row: RecordRow, access: DirectoryAccess): DirectoryMarker[] => {
-  const markers: DirectoryMarker[] = [];
-  if (row.type === workerType.External) markers.push("EXTERNAL_WORKER");
-  if (!access.restrictedMarkers) return markers;
-  if (row.userId === null) markers.push("NO_ACCOUNT");
-  if (row.accountDeletedAt !== null) markers.push("ACCOUNT_DELETED");
-  if (row.endedAt !== null && row.rejoined) markers.push("REJOINED");
-  if (row.userId === null && row.endedAt === null && row.inviteSent) markers.push("INVITE_SENT");
-  return markers;
-};
-
-/** The Profile photo's links, only for a viewer who reads the Photo Section. */
-const photoOf = async (
-  viewer: DirectoryViewer,
-  row: RecordRow,
-  access: DirectoryAccess
-): Promise<ProfilePhotoView | null> => {
-  if (row.photoId === null || access.sections[R.Photo] === V.None) return null;
-  return (
-    (await photoView({
-      id: row.photoId,
-      organizationId: viewer.organizationId,
-      employmentId: row.id,
-    })) ?? null
-  );
-};
-
-const entryRef = (
-  id: string | null,
-  name: string | null,
-  archivedAt: Date | null
-): DirectoryEntryRef | null =>
-  id === null ? null : { id, name: name ?? "", archived: archivedAt !== null };
-
-const departmentOf = (row: RecordRow) =>
-  entryRef(row.departmentId, row.departmentName, row.departmentArchivedAt);
-const locationOf = (row: RecordRow) =>
-  entryRef(row.locationId, row.locationName, row.locationArchivedAt);
-
-const toPerson = (
-  row: RecordRow,
-  access: DirectoryAccess,
-  photo: ProfilePhotoView | null
-): DirectoryPerson => ({
-  employmentId: row.id,
-  name: row.name,
-  jobTitle: row.jobTitle ?? null,
-  department: departmentOf(row),
-  location: locationOf(row),
-  image: row.image ?? null,
-  photoUrl: photo?.smallUrl ?? null,
-  user: { ...buildUserSummary({ id: row.userId ?? row.id, name: row.name }), id: row.userId },
-  markers: markersOf(row, access),
-});
-
-/** The open Employments whose Card the viewer reads, by name. */
-export const listDirectoryPeople = async (
-  viewer: DirectoryViewer,
-  tx?: DbTransaction
-): Promise<DirectoryPeople> => {
-  const { name, query } = selectRecords(viewer.organizationId, tx);
-  const rows = await query
-    .where(and(eq(employments.organizationId, viewer.organizationId), isNull(employments.endedAt)))
-    .orderBy(asc(sql`lower(${name})`), asc(employments.id));
-
-  const noGroupFilter = administersOrganization(viewer);
-  const grouped = noGroupFilter ? await groupedUserIds(viewer.organizationId, tx) : null;
-  const people: DirectoryPerson[] = [];
-  for (const row of rows) {
-    const access = accessFor(viewer, row);
-    if (!access.inReach) continue;
-    const person = toPerson(row, access, await photoOf(viewer, row, access));
-    if (grouped) person.noGroup = row.userId === null || !grouped.has(row.userId);
-    people.push(person);
-  }
-  return {
-    people,
-    formerList: administersPeople(viewer),
-    settings: administersPeople(viewer),
-    noGroupFilter,
-    addPerson: createPersonGrantor(viewer) !== null,
-  };
-};
-
-/** One row per ended spell, latest end first. Owner, org admins and HR only. */
-export const listFormerDirectoryPeople = async (
-  viewer: DirectoryViewer,
-  tx?: DbTransaction
-): Promise<FormerDirectoryPerson[]> => {
-  if (!administersPeople(viewer)) {
-    throw refuse(
-      403,
-      "FORMER_LIST_DENIED",
-      "Only the owner, org admins and HR see the Former list",
-      {
-        organizationId: viewer.organizationId,
-        viewerUserId: viewer.standing.userId,
-      }
-    );
-  }
-  const { query } = selectRecords(viewer.organizationId, tx);
-  const rows = await query
-    .where(
-      and(eq(employments.organizationId, viewer.organizationId), isNotNull(employments.endedAt))
-    )
-    .orderBy(desc(employments.endedAt), asc(employments.id));
-
-  const schedules = await readRetentionSchedules(
-    viewer.organizationId,
-    rows.map((row) => row.id),
-    tx
-  );
-  const former: FormerDirectoryPerson[] = [];
-  for (const row of rows) {
-    const access = accessFor(viewer, row);
-    if (!access.inReach) continue;
-    const readsJob = access.sections[R.Job] !== V.None;
-    former.push({
-      ...toPerson(row, access, await photoOf(viewer, row, access)),
-      startedAt: readsJob ? row.startedAt : null,
-      endedAt: readsJob ? row.endedAt : null,
-      ...retentionSummary(schedules.get(row.id), access, row.type === workerType.External),
-    });
-  }
-  return former;
-};
-
-/** The name follows a bound, open account that was not deleted. */
-export const nameFromAccount = (record: {
-  userId: string | null;
-  endedAt: Date | null;
-  accountDeletedAt: Date | null;
-}) => record.userId !== null && record.endedAt === null && record.accountDeletedAt === null;
+import type { DirectoryProfile, DirectorySectionView } from "./types.js";
+import {
+  accessFor,
+  photoOf,
+  selectRecords,
+  toPerson,
+  departmentOf,
+  locationOf,
+  type RecordRow,
+} from "./directoryRecords.js";
 
 const phoneCountryView = (viewer: DirectoryViewer, record: RecordRow) => {
   const code = phoneCountryDefault({
@@ -286,11 +44,11 @@ const sectionsOf = (
 ): DirectoryProfile["sections"] => {
   const view = (row: SectionRow): DirectorySectionView | undefined => {
     const level = access.sections[row];
-    return level === V.None ? undefined : { level };
+    return level === directoryPermissionValue.None ? undefined : { level };
   };
-  const card = view(R.Card);
-  const job = view(R.Job);
-  const workContact = view(R.WorkContact);
+  const card = view(directoryPermissionRow.Card);
+  const job = view(directoryPermissionRow.Job);
+  const workContact = view(directoryPermissionRow.WorkContact);
   const reachesManager =
     record.reportsToId !== null &&
     viewer.accessTo({ userId: record.reportsToUserId, ended: record.reportsToEndedAt !== null })
@@ -306,7 +64,7 @@ const sectionsOf = (
               employmentId: record.reportsToId,
               name: reachesManager ? record.reportsToName : null,
             },
-      nameFromAccount: nameFromAccount(record),
+      nameFromAccount: isBoundEmployment(record),
       department: departmentOf(record),
       location: (() => {
         const location = locationOf(record);
@@ -321,14 +79,15 @@ const sectionsOf = (
       })(),
     },
     photo: (() => {
-      const section = view(R.Photo);
+      const section = view(directoryPermissionRow.Photo);
       return section && { ...section, photo };
     })(),
     workContact: workContact && {
       ...workContact,
       workEmail: record.workEmail ?? null,
       workPhone: record.workPhone ? phoneView(record.workPhone, viewer.language) : null,
-      ...(access.sections[R.WorkContact] === V.Write && {
+      ...(access.sections[directoryPermissionRow.WorkContact] ===
+        directoryPermissionValue.Write && {
         phoneCountryDefault: phoneCountryView(viewer, record),
       }),
     },
@@ -343,8 +102,9 @@ const sectionsOf = (
       contractType: record.contractType ?? null,
       workingTime: record.workingTime ?? null,
     },
-    contact: view(R.Contact),
-    personal: record.type === workerType.External ? undefined : view(R.Personal),
+    contact: view(directoryPermissionRow.Contact),
+    personal:
+      record.type === workerType.External ? undefined : view(directoryPermissionRow.Personal),
   };
   return Object.fromEntries(
     Object.entries(sections).filter(([, section]) => section !== undefined)
@@ -399,7 +159,7 @@ export const getDirectoryProfile = async (
       profile.retention = profileRetention(schedule, access, row.type === workerType.External);
     }
   }
-  if (profile.sections.contact?.level === V.Write) {
+  if (profile.sections.contact?.level === directoryPermissionValue.Write) {
     const organization = await getOrganizationById(viewer.organizationId, tx);
     profile.sections.contact = {
       ...profile.sections.contact,
@@ -420,127 +180,4 @@ export const getDirectoryProfile = async (
     };
   }
   return profile;
-};
-
-/**
- * The Card, Work contact and Job fields of the given spells, keyed by Employment id, and
- * their profile history, oldest first, for the Person export. History rows
- * name the actor and the Audience and carry no values.
- */
-export type ExportedProfile = {
-  jobTitle: string | null;
-  department: string | null;
-  location: string | null;
-  reportsTo: { employmentId: string; name: string | null } | null;
-  legalName: string | null;
-  employeeNumber: string | null;
-  startDate: string | null;
-  leavingDate: string | null;
-  probationEndDate: string | null;
-  contractType: contractType | null;
-  workingTime: workingTime | null;
-  workEmail: string | null;
-  workPhone: string | null;
-};
-
-export type ExportedProfileHistoryEntry = {
-  at: Date;
-  employmentId: string;
-  section: R;
-  fields: string[];
-  by: string | null;
-  actor: profileHistoryActor;
-  audience: directoryAudience | null;
-};
-
-export const collectProfileExport = async (
-  organizationId: string,
-  employmentIds: string[]
-): Promise<{
-  profiles: Map<string, ExportedProfile>;
-  history: ExportedProfileHistoryEntry[];
-}> => {
-  if (employmentIds.length === 0) return { profiles: new Map(), history: [] };
-  const rows = await db
-    .select({
-      employmentId: directoryProfiles.employmentId,
-      jobTitle: directoryProfiles.jobTitle,
-      department: directoryDepartments.name,
-      location: directoryLocations.name,
-      reportsToId: directoryProfiles.reportsToEmploymentId,
-      reportsToName: sql<
-        string | null
-      >`case when ${reportsTo.id} is null then null else ${recordName(
-        reportsTo,
-        reportsToUser,
-        organizationId
-      )} end`,
-      legalName: directoryProfiles.legalName,
-      employeeNumber: directoryProfiles.employeeNumber,
-      startDate: directoryProfiles.startDate,
-      leavingDate: directoryProfiles.leavingDate,
-      probationEndDate: directoryProfiles.probationEndDate,
-      contractType: directoryProfiles.contractType,
-      workingTime: directoryProfiles.workingTime,
-      workEmail: directoryProfiles.workEmail,
-      workPhone: directoryProfiles.workPhone,
-    })
-    .from(directoryProfiles)
-    .leftJoin(reportsTo, eq(reportsTo.id, directoryProfiles.reportsToEmploymentId))
-    .leftJoin(reportsToUser, eq(reportsToUser.id, reportsTo.userId))
-    .leftJoin(directoryDepartments, eq(directoryDepartments.id, directoryProfiles.departmentId))
-    .leftJoin(directoryLocations, eq(directoryLocations.id, directoryProfiles.locationId))
-    .where(
-      and(
-        eq(directoryProfiles.organizationId, organizationId),
-        inArray(directoryProfiles.employmentId, employmentIds)
-      )
-    );
-  const profiles = new Map(
-    rows.map(({ employmentId, reportsToId, reportsToName, ...fields }) => [
-      employmentId,
-      {
-        jobTitle: fields.jobTitle,
-        department: fields.department,
-        location: fields.location,
-        reportsTo: reportsToId === null ? null : { employmentId: reportsToId, name: reportsToName },
-        legalName: fields.legalName,
-        employeeNumber: fields.employeeNumber,
-        startDate: fields.startDate,
-        leavingDate: fields.leavingDate,
-        probationEndDate: fields.probationEndDate,
-        contractType: fields.contractType,
-        workingTime: fields.workingTime,
-        workEmail: fields.workEmail,
-        workPhone: fields.workPhone,
-      },
-    ])
-  );
-
-  const entries = await db
-    .select()
-    .from(directoryProfileHistory)
-    .where(
-      and(
-        eq(directoryProfileHistory.organizationId, organizationId),
-        inArray(directoryProfileHistory.employmentId, employmentIds)
-      )
-    )
-    .orderBy(asc(directoryProfileHistory.createdAt), asc(directoryProfileHistory.section));
-  const actorIds = [
-    ...new Set(entries.flatMap((row) => (row.actorUserId ? [row.actorUserId] : []))),
-  ];
-  const names = new Map(
-    (await getPersonContacts(actorIds, { organizationId })).map((row) => [row.id, row.name])
-  );
-  const history = entries.map((row) => ({
-    at: row.createdAt,
-    employmentId: row.employmentId,
-    section: row.section,
-    fields: row.fields,
-    by: row.actorUserId ? (names.get(row.actorUserId) ?? null) : null,
-    actor: row.actor,
-    audience: row.audience,
-  }));
-  return { profiles, history };
 };

@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { db } from "../../db/db.js";
-import { updateGeneralSettings } from "../../services/directory/emergencyContactNotice.js";
+import { updateGeneralSettings } from "../../services/directory/generalSettingsServices.js";
 import type { PutDirectoryGeneralSettings } from "../../services/directory/types.js";
 import { directoryViewerFor } from "./directoryViewerFor.js";
 

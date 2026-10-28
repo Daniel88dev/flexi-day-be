@@ -1,62 +1,81 @@
 import {
-  directoryAudience as A,
-  directoryPermissionRow as R,
-  directoryPermissionValue as V,
+  directoryAudience,
+  directoryPermissionRow,
+  directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
 
 export type PermissionCellDefault = {
-  row: R;
-  audience: A;
-  value: V;
+  row: directoryPermissionRow;
+  audience: directoryAudience;
+  value: directoryPermissionValue;
   /** The owner can never change a fixed cell. */
   fixed: boolean;
 };
 
 const SECTION_AUDIENCES = [
-  A.Owner,
-  A.Self,
-  A.Colleague,
-  A.ExternalWorker,
-  A.GroupAdmin,
-  A.Hr,
-  A.Leadership,
-  A.OrganizationAdmin,
+  directoryAudience.Owner,
+  directoryAudience.Self,
+  directoryAudience.Colleague,
+  directoryAudience.ExternalWorker,
+  directoryAudience.GroupAdmin,
+  directoryAudience.Hr,
+  directoryAudience.Leadership,
+  directoryAudience.OrganizationAdmin,
 ] as const;
 
-const N = V.None;
-const r = V.Read;
-const W = V.Write;
+const { None, Read, Write } = directoryPermissionValue;
 
 /**
  * Section cells in the audience order above. `true` beside a value marks it
  * fixed.
  */
-const SECTIONS: [R, [V, boolean?][]][] = [
-  [R.Card, [[W, true], [r, true], [r], [r], [r], [W], [r], [W]]],
-  [R.Photo, [[W, true], [W], [r], [r], [r], [W], [r], [W]]],
-  [R.WorkContact, [[W, true], [r], [r], [N], [r], [W], [r], [W]]],
-  [R.Job, [[W, true], [r, true], [N], [N], [r], [W], [r], [W]]],
-  [R.Contact, [[W, true], [W], [N], [N], [N], [W], [N], [W]]],
-  [R.Personal, [[W, true], [W], [N], [N], [N], [W], [N], [W]]],
+const SECTIONS: [directoryPermissionRow, [directoryPermissionValue, boolean?][]][] = [
+  [
+    directoryPermissionRow.Card,
+    [[Write, true], [Read, true], [Read], [Read], [Read], [Write], [Read], [Write]],
+  ],
+  [
+    directoryPermissionRow.Photo,
+    [[Write, true], [Write], [Read], [Read], [Read], [Write], [Read], [Write]],
+  ],
+  [
+    directoryPermissionRow.WorkContact,
+    [[Write, true], [Read], [Read], [None], [Read], [Write], [Read], [Write]],
+  ],
+  [
+    directoryPermissionRow.Job,
+    [[Write, true], [Read, true], [None], [None], [Read], [Write], [Read], [Write]],
+  ],
+  [
+    directoryPermissionRow.Contact,
+    [[Write, true], [Write], [None], [None], [None], [Write], [None], [Write]],
+  ],
+  [
+    directoryPermissionRow.Personal,
+    [[Write, true], [Write], [None], [None], [None], [Write], [None], [Write]],
+  ],
 ];
 
-const STANDARD_ACT: [A, V][] = [
-  [A.GroupAdmin, V.No],
-  [A.Hr, V.Allowed],
-  [A.Leadership, V.No],
-  [A.OrganizationAdmin, V.Allowed],
+const STANDARD_ACT: [directoryAudience, directoryPermissionValue][] = [
+  [directoryAudience.GroupAdmin, directoryPermissionValue.No],
+  [directoryAudience.Hr, directoryPermissionValue.Allowed],
+  [directoryAudience.Leadership, directoryPermissionValue.No],
+  [directoryAudience.OrganizationAdmin, directoryPermissionValue.Allowed],
 ];
 
 /**
  * Act rows have no Self, Colleague or External worker cell, and the Owner cell
  * is a fixed allowed.
  */
-const ACTS: [R, [A, V][]][] = [
-  [R.CreateAccountlessPerson, STANDARD_ACT],
-  [R.SendDirectoryInvite, STANDARD_ACT],
-  [R.ChangeWorkerType, STANDARD_ACT],
-  [R.EndEmployment, STANDARD_ACT.filter(([audience]) => audience !== A.GroupAdmin)],
-  [R.ManageDepartmentsAndLocations, STANDARD_ACT],
+const ACTS: [directoryPermissionRow, [directoryAudience, directoryPermissionValue][]][] = [
+  [directoryPermissionRow.CreateAccountlessPerson, STANDARD_ACT],
+  [directoryPermissionRow.SendDirectoryInvite, STANDARD_ACT],
+  [directoryPermissionRow.ChangeWorkerType, STANDARD_ACT],
+  [
+    directoryPermissionRow.EndEmployment,
+    STANDARD_ACT.filter(([audience]) => audience !== directoryAudience.GroupAdmin),
+  ],
+  [directoryPermissionRow.ManageDepartmentsAndLocations, STANDARD_ACT],
 ];
 
 const buildDefaults = (): PermissionCellDefault[] => [
@@ -69,7 +88,12 @@ const buildDefaults = (): PermissionCellDefault[] => [
     }))
   ),
   ...ACTS.flatMap(([row, cells]) => [
-    { row, audience: A.Owner, value: V.Allowed, fixed: true },
+    {
+      row,
+      audience: directoryAudience.Owner,
+      value: directoryPermissionValue.Allowed,
+      fixed: true,
+    },
     ...cells.map(([audience, value]) => ({ row, audience, value, fixed: false })),
   ]),
 ];

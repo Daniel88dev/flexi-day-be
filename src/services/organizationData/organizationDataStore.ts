@@ -18,14 +18,9 @@ import { config } from "../../config.js";
 import { contentDisposition } from "../attachment/contentDisposition.js";
 import { incomingKey } from "../attachment/s3Layout.js";
 import { UPLOAD_URL_TTL_MS, type UploadTarget } from "../attachment/types.js";
+import { PHOTO_UPLOAD_METADATA } from "./photoUploadMetadata.js";
 
 export type SignedDownload = { url: string; expiresAt: string };
-
-/**
- * S3 object metadata the presigned photo POST pins, so the Lambda learns
- * which photo an object is and where its two sizes go without a database.
- */
-export const PHOTO_UPLOAD_METADATA = { photoId: "photo-id", storageKey: "storage-key" } as const;
 
 /** An image link is signed at the start of its hour, so it stays the same all hour. */
 export const IMAGE_URL_WINDOW_MS = 60 * 60 * 1000;

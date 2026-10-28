@@ -4,6 +4,7 @@ import { createHandler, routeByBucket } from "./handler.js";
 import { createNotify } from "./notify.js";
 import { createPhotoHandler } from "./photoHandler.js";
 import { createS3ObjectStore } from "./s3ObjectStore.js";
+import type { PhotoProcessedPayload } from "../../services/directory/types.js";
 
 /**
  * The Lambda entry point. Bundled by `lambda/attachment-processor/build.mjs`
@@ -34,11 +35,12 @@ const readSecret = async (): Promise<string> => {
 
 // The organization-data bucket's name comes from its event, so the function
 // needs no setting of its own for the second trigger.
-const notifyPhoto = createNotify({
+const notifyPhoto = createNotify<PhotoProcessedPayload>({
   apiUrl,
   readSecret,
   path: "/api/directory/photos/processed",
   goneReason: "PHOTO_GONE",
+  callback: "Photo",
 });
 
 export const handler = routeByBucket({

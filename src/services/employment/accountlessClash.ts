@@ -20,26 +20,42 @@ export const lockEmploymentEmail = async (
   await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 };
 
-/** The open account-less Employment in the organization that holds this email, if any. */
-export const findOpenAccountlessEmployment = async (
+/**
+ * The open Employment in the organization that holds this email, ignoring
+ * case. `accountless` narrows it to records with no account bound;
+ * `exceptEmploymentId` skips the record being edited.
+ */
+export const findOpenEmploymentByEmail = async (
   organizationId: string,
   email: string,
-  tx?: DbTransaction
-): Promise<{ id: string } | undefined> => {
-  const [row] = await (tx ?? db)
-    .select({ id: employments.id })
+  options: { accountless?: boolean; exceptEmploymentId?: string } = {},
+  tx: DbTransaction | typeof db = db
+): Promise<{ id: string; name: string | null } | undefined> => {
+  const [row] = await tx
+    .select({ id: employments.id, name: employments.name })
     .from(employments)
     .where(
       and(
         eq(employments.organizationId, organizationId),
-        isNull(employments.userId),
         isNull(employments.endedAt),
-        sql`lower(${employments.email}) = ${email.trim().toLowerCase()}`
+        sql`lower(${employments.email}) = ${email.trim().toLowerCase()}`,
+        options.accountless ? isNull(employments.userId) : undefined,
+        options.exceptEmploymentId === undefined
+          ? undefined
+          : ne(employments.id, options.exceptEmploymentId)
       )
     )
     .limit(1);
   return row;
 };
+
+/** The open account-less Employment in the organization that holds this email, if any. */
+export const findOpenAccountlessEmployment = (
+  organizationId: string,
+  email: string,
+  tx?: DbTransaction
+): Promise<{ id: string; name: string | null } | undefined> =>
+  findOpenEmploymentByEmail(organizationId, email, { accountless: true }, tx);
 
 /**
  * Refuses to open an Employment for an account whose email an open account-less
@@ -80,18 +96,7 @@ export const assertEmploymentEmailFree = async (
   exceptEmploymentId?: string
 ): Promise<void> => {
   await lockEmploymentEmail(organizationId, email, tx);
-  const [held] = await tx
-    .select({ id: employments.id })
-    .from(employments)
-    .where(
-      and(
-        eq(employments.organizationId, organizationId),
-        isNull(employments.endedAt),
-        sql`lower(${employments.email}) = ${email.trim().toLowerCase()}`,
-        exceptEmploymentId === undefined ? undefined : ne(employments.id, exceptEmploymentId)
-      )
-    )
-    .limit(1);
+  const held = await findOpenEmploymentByEmail(organizationId, email, { exceptEmploymentId }, tx);
   if (held) {
     throw refuse(
       409,

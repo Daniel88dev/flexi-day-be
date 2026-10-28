@@ -16,7 +16,7 @@ import type { VacationType } from "../vacation/types.js";
 import type { EmploymentType } from "./types.js";
 import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
-import { isDirectoryOrganization } from "../directory/directorySettingsServices.js";
+import { isDirectoryOrganization } from "../directory/directorySettings.js";
 import { loadDirectoryViewer } from "../directory/directoryViewer.js";
 import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import { directoryAudience, directoryPermissionRow } from "../../db/schema/directory-schema.js";

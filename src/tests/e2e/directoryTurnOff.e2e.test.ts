@@ -38,7 +38,7 @@ import {
 import { organizations } from "../../db/schema/organization-schema.js";
 import { directoryAudience } from "../../db/schema/directory-schema.js";
 import { organizationDataStore } from "../../services/organizationData/organizationDataStore.js";
-import { photoKeys, photoPrefix } from "../../services/directory/directoryPhotoServices.js";
+import { photoKeys, photoPrefix } from "../../services/directory/photoPrefixes.js";
 import { exportStorageKey } from "../../services/personExport/personExportBuild.js";
 import { DIRECTORY_PERMISSION_DEFAULTS } from "../../services/directory/permissionDefaults.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";

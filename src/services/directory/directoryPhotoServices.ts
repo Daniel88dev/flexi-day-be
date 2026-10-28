@@ -2,8 +2,8 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
 import {
-  directoryPermissionRow as R,
-  directoryPermissionValue as V,
+  directoryPermissionRow,
+  directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
 import AppError, { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
@@ -18,25 +18,12 @@ import {
 import { lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
 import { recordProfileHistory } from "./profileHistory.js";
 import type { PhotoProcessedOutcome } from "./types.js";
+import type { DirectoryAccess } from "./permissionResolver.js";
+import { photoKeys, photoPrefix } from "./photoPrefixes.js";
 
 export const MAX_PROFILE_PHOTO_BYTES = MAX_ATTACHMENT_BYTES;
 
 export const PHOTO_GONE_REASON = "PHOTO_GONE";
-
-/** Everything stored for one organization's photos, for deleting the organization. */
-export const organizationPhotosPrefix = (organizationId: string) => `photos/${organizationId}/`;
-
-/** Every photo an Employment ever had, for Erase and retention purges. */
-export const employmentPhotosPrefix = (organizationId: string, employmentId: string) =>
-  `${organizationPhotosPrefix(organizationId)}${employmentId}/`;
-
-export const photoPrefix = (photo: { organizationId: string; employmentId: string; id: string }) =>
-  `${employmentPhotosPrefix(photo.organizationId, photo.employmentId)}${photo.id}/`;
-
-export const photoKeys = (prefix: string) => ({
-  small: `${prefix}small.jpg`,
-  full: `${prefix}full.jpg`,
-});
 
 export type PhotoUploadStatus = {
   id: string;
@@ -56,17 +43,11 @@ export const requireStore = (context: object): OrganizationDataStore => {
   return organizationDataStore;
 };
 
-const lockRecordFor = (viewer: DirectoryViewer, employmentId: string, tx: DbTransaction) =>
-  lockRecordInReach(viewer, employmentId, tx);
-
-const requirePhotoWrite = (
-  access: Awaited<ReturnType<typeof lockRecordFor>>["access"],
-  context: object
-) => {
-  if (access.sections[R.Photo] !== V.Write) {
+const requirePhotoWrite = (access: DirectoryAccess, context: object) => {
+  if (access.sections[directoryPermissionRow.Photo] !== directoryPermissionValue.Write) {
     throw refuse(403, "SECTION_NOT_WRITABLE", "You can't change this Profile photo", {
       ...context,
-      row: R.Photo,
+      row: directoryPermissionRow.Photo,
     });
   }
 };
@@ -83,7 +64,7 @@ export const requestPhotoUpload = async (
   input: { contentType: string; size: number },
   tx: DbTransaction
 ): Promise<{ photo: PhotoUploadStatus; upload: UploadTarget }> => {
-  const { access, context } = await lockRecordFor(viewer, employmentId, tx);
+  const { access, context } = await lockRecordInReach(viewer, employmentId, tx);
   requirePhotoWrite(access, context);
   await assertDirectoryWritable(viewer.organizationId, tx);
   if (!isProfilePhotoContentType(input.contentType)) {
@@ -123,7 +104,7 @@ export const requestPhotoUpload = async (
       contentType: input.contentType,
       size: input.size,
       uploadedByUserId: viewer.standing.userId,
-      audience: access.grantedBy[R.Photo]!,
+      audience: access.grantedBy[directoryPermissionRow.Photo]!,
     })
     .returning();
   const upload = await store.createPhotoUploadTarget({
@@ -141,22 +122,25 @@ const toStatus = (row: typeof directoryPhotos.$inferSelect): PhotoUploadStatus =
   rejectionReason: row.rejectionReason,
 });
 
-/** How an upload stands, for the writer waiting on it. */
+/**
+ * How an upload stands, for the writer waiting on it. The writer polls, so it
+ * reads the record without locking it.
+ */
 export const getPhotoUploadStatus = async (
   viewer: DirectoryViewer,
   employmentId: string,
-  photoId: string
-): Promise<PhotoUploadStatus> =>
-  db.transaction(async (tx) => {
-    const { access, context } = await lockRecordFor(viewer, employmentId, tx);
-    requirePhotoWrite(access, context);
-    const [row] = await tx
-      .select()
-      .from(directoryPhotos)
-      .where(and(eq(directoryPhotos.id, photoId), eq(directoryPhotos.employmentId, employmentId)));
-    if (!row) throw refuse(404, "PHOTO_NOT_FOUND", "Photo not found", { ...context, photoId });
-    return toStatus(row);
-  });
+  photoId: string,
+  tx: DbTransaction
+): Promise<PhotoUploadStatus> => {
+  const { access, context } = await lockRecordInReach(viewer, employmentId, tx, { lock: false });
+  requirePhotoWrite(access, context);
+  const [row] = await tx
+    .select()
+    .from(directoryPhotos)
+    .where(and(eq(directoryPhotos.id, photoId), eq(directoryPhotos.employmentId, employmentId)));
+  if (!row) throw refuse(404, "PHOTO_NOT_FOUND", "Photo not found", { ...context, photoId });
+  return toStatus(row);
+};
 
 /** Deletes stored photo folders after the commit; a store failure is logged, the change stands. */
 export const removePhotoObjects = async (prefixes: string[]): Promise<void> => {
@@ -178,7 +162,7 @@ export const removeProfilePhoto = async (
   employmentId: string,
   tx: DbTransaction
 ): Promise<string[]> => {
-  const { access, context } = await lockRecordFor(viewer, employmentId, tx);
+  const { access, context } = await lockRecordInReach(viewer, employmentId, tx);
   requirePhotoWrite(access, context);
   const removed = await tx
     .delete(directoryPhotos)
@@ -191,9 +175,9 @@ export const removeProfilePhoto = async (
           organizationId: viewer.organizationId,
           employmentId,
           actorUserId: viewer.standing.userId,
-          section: R.Photo,
+          section: directoryPermissionRow.Photo,
           fields: ["photo"],
-          audience: access.grantedBy[R.Photo]!,
+          audience: access.grantedBy[directoryPermissionRow.Photo]!,
         },
       ],
       tx
@@ -256,7 +240,7 @@ export const settlePhoto = async (
         organizationId: photo.organizationId,
         employmentId: photo.employmentId,
         actorUserId: photo.uploadedByUserId,
-        section: R.Photo,
+        section: directoryPermissionRow.Photo,
         fields: ["photo"],
         audience: photo.audience,
       },
@@ -267,40 +251,29 @@ export const settlePhoto = async (
 };
 
 /**
- * What the S3 event does in production, run in-process by the disk store:
- * check and rewrite the bytes, store both sizes, settle the row. Undefined
- * when the row is not waiting for bytes.
+ * What the Lambda does in production, run in-process by the disk store: check
+ * and rewrite the bytes and store both sizes. The caller then settles the row
+ * with the outcome, as the Lambda's report does. Undefined when the row is not
+ * waiting for bytes; `written` names the folder to drop if the settle does
+ * not apply.
  */
-export const completeLocalPhotoUpload = async (
+export const processLocalPhotoUpload = async (
   photoId: string,
   bytes: Buffer
-): Promise<PhotoUploadStatus | undefined> => {
+): Promise<{ outcome: PhotoProcessedOutcome; written: string | null } | undefined> => {
   const [photo] = await db.select().from(directoryPhotos).where(eq(directoryPhotos.id, photoId));
   if (photo?.status !== directoryPhotoStatus.Uploading) return undefined;
   const store = requireStore({ photoId });
 
   const processed = await processProfilePhoto(bytes, photo.contentType);
+  if (!processed.ok) {
+    return { outcome: { status: "REJECTED", rejectionReason: processed.reason }, written: null };
+  }
   const prefix = photoPrefix(photo);
-  if (processed.ok) {
-    const keys = photoKeys(prefix);
-    await store.putObject(keys.small, processed.small, "image/jpeg");
-    await store.putObject(keys.full, processed.full, "image/jpeg");
-  }
-  const settled = await db.transaction((tx) =>
-    settlePhoto(
-      photoId,
-      processed.ok
-        ? { status: "READY" }
-        : { status: "REJECTED", rejectionReason: processed.reason },
-      tx
-    )
-  );
-  if (settled.result !== "applied") {
-    if (processed.ok) await removePhotoObjects([prefix]);
-    return undefined;
-  }
-  await removePhotoObjects(settled.replaced);
-  return settled.photo;
+  const keys = photoKeys(prefix);
+  await store.putObject(keys.small, processed.small, "image/jpeg");
+  await store.putObject(keys.full, processed.full, "image/jpeg");
+  return { outcome: { status: "READY" }, written: prefix };
 };
 
 /** The current photo of each Employment that has one, by Employment id. */

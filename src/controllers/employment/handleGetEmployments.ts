@@ -2,10 +2,8 @@ import type { Request, Response } from "express";
 import { getAuth } from "../../middleware/authSession.js";
 import { readEndedRetention } from "../../services/directory/retentionSchedule.js";
 import { resolveRosterAudience } from "../../services/employment/attendanceAccess.js";
-import {
-  listEmployments,
-  unlinkedOpenEmploymentIds,
-} from "../../services/employment/employmentServices.js";
+import { listEmployments } from "../../services/employment/employmentServices.js";
+import { unlinkedOpenEmploymentIds } from "../../services/employment/organizationLinks.js";
 import { validateEmploymentQuery } from "../../services/employment/types.js";
 
 /**

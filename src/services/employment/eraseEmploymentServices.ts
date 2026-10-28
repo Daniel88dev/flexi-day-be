@@ -17,7 +17,8 @@ import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
-import { employmentPhotosPrefix, removePhotoObjects } from "../directory/directoryPhotoServices.js";
+import { removePhotoObjects } from "../directory/directoryPhotoServices.js";
+import { employmentPhotosPrefix } from "../directory/photoPrefixes.js";
 import { getPersonContact } from "../person/personName.js";
 import { removeExportRows } from "../personExport/personExportBuild.js";
 import {

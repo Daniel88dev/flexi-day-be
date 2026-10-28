@@ -2,23 +2,24 @@ import { and, desc, eq, isNotNull, lt, ne } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { directoryPhotos, directoryPhotoStatus } from "../../db/schema/directory-photo-schema.js";
 import {
-  directoryPermissionRow as R,
-  directoryPermissionValue as V,
+  directoryPermissionRow,
+  directoryPermissionValue,
 } from "../../db/schema/directory-schema.js";
 import { directorySensitiveProfiles } from "../../db/schema/directory-sensitive-profile-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import AppError, { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertDirectoryWritable } from "../billing/guards.js";
-import {
-  photoKeys,
-  photoPrefix,
-  removePhotoObjects,
-  requireStore,
-} from "./directoryPhotoServices.js";
+import { removePhotoObjects, requireStore } from "./directoryPhotoServices.js";
+import { photoKeys, photoPrefix } from "./photoPrefixes.js";
 import { administersPeople, lockRecordInReach, type DirectoryViewer } from "./directoryViewer.js";
 import type { DirectoryAccess, SectionRow } from "./permissionResolver.js";
-import { CONTACT_FIELDS, PERSONAL_FIELDS, PHOTO_FIELDS } from "./profileSectionFields.js";
+import {
+  CONTACT_FIELDS,
+  employeesOnly,
+  PERSONAL_FIELDS,
+  PHOTO_FIELDS,
+} from "./profileSectionFields.js";
 import { recordProfileHistory } from "./profileHistory.js";
 import { samePersonAs } from "../employment/personSpells.js";
 import { readRetentionSchedules } from "./retentionSchedule.js";
@@ -30,12 +31,7 @@ import {
   type PostCopyPreviousSpell,
   type PreviousSpellView,
 } from "./types.js";
-
-const SECTION_ROW: Record<CopyableSectionKey, SectionRow> = {
-  contact: R.Contact,
-  personal: R.Personal,
-  photo: R.Photo,
-};
+import { sectionRowOf } from "./sectionKeys.js";
 
 type SpellRecord = {
   id: string;
@@ -112,7 +108,7 @@ const copyableSections = async (
   const sections: Partial<Record<CopyableSectionKey, CopyableSection>> = {};
   for (const key of COPYABLE_SECTION_KEYS) {
     if (key === "personal" && record.type === workerType.External) continue;
-    const row = SECTION_ROW[key];
+    const row = sectionRowOf(key);
     const held = key === "photo" ? previousPhoto !== undefined : from[row].holds;
     sections[key] = !held
       ? from[row].removedOn !== null
@@ -120,7 +116,7 @@ const copyableSections = async (
         : { status: "EMPTY" }
       : into[row].holds
         ? { status: "FILLED" }
-        : access.sections[row] !== V.Write
+        : access.sections[row] !== directoryPermissionValue.Write
           ? { status: "NOT_WRITABLE" }
           : { status: "COPYABLE" };
   }
@@ -221,7 +217,7 @@ export const copyFromPreviousSpell = async (
     const section = sections[key];
     const sectionContext = { ...context, section: key, previousEmploymentId: previous.id };
     if (!section) {
-      throw refuse(422, "EMPLOYEES_ONLY", "Personal applies to employees only", sectionContext);
+      throw employeesOnly("Personal applies to employees only", sectionContext);
     }
     if (section.status === "NOT_WRITABLE") {
       throw refuse(403, "SECTION_NOT_WRITABLE", "You can't change this Section", sectionContext);
@@ -254,10 +250,16 @@ export const copyFromPreviousSpell = async (
     const personal = chosen.includes("personal") ? from.personal : into.personal;
     await writeSensitiveSections(organizationId, record.id, { contact, personal }, tx);
     if (chosen.includes("contact")) {
-      history.push({ section: R.Contact, fields: filled(CONTACT_FIELDS, from.contact) });
+      history.push({
+        section: directoryPermissionRow.Contact,
+        fields: filled(CONTACT_FIELDS, from.contact),
+      });
     }
     if (chosen.includes("personal")) {
-      history.push({ section: R.Personal, fields: filled(PERSONAL_FIELDS, from.personal) });
+      history.push({
+        section: directoryPermissionRow.Personal,
+        fields: filled(PERSONAL_FIELDS, from.personal),
+      });
     }
   }
 
@@ -290,10 +292,10 @@ export const copyFromPreviousSpell = async (
       contentType: "image/jpeg",
       size: full.length,
       uploadedByUserId: viewer.standing.userId,
-      audience: access.grantedBy[R.Photo]!,
+      audience: access.grantedBy[directoryPermissionRow.Photo]!,
       readyAt: new Date(),
     });
-    history.push({ section: R.Photo, fields: [...PHOTO_FIELDS] });
+    history.push({ section: directoryPermissionRow.Photo, fields: [...PHOTO_FIELDS] });
   };
 
   try {

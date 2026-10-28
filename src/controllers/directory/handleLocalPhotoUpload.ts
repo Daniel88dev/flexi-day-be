@@ -1,6 +1,11 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { completeLocalPhotoUpload } from "../../services/directory/directoryPhotoServices.js";
+import { db } from "../../db/db.js";
+import {
+  processLocalPhotoUpload,
+  removePhotoObjects,
+  settlePhoto,
+} from "../../services/directory/directoryPhotoServices.js";
 import { verifyLocalPhotoUpload } from "../../services/organizationData/organizationDataStore.js";
 import AppError from "../../utils/appError.js";
 import { requirePathParam } from "../pathParams.js";
@@ -26,8 +31,11 @@ export const handleLocalPhotoUpload = async (req: Request, res: Response) => {
     throw new AppError({ code: 422, message: "Upload body is empty", logging: true });
   }
 
-  const settled = await completeLocalPhotoUpload(photoId, bytes);
-  if (!settled) {
+  const processed = await processLocalPhotoUpload(photoId, bytes);
+  const settled =
+    processed && (await db.transaction((tx) => settlePhoto(photoId, processed.outcome, tx)));
+  if (settled?.result !== "applied") {
+    if (processed?.written) await removePhotoObjects([processed.written]);
     throw new AppError({
       code: 409,
       message: "This photo upload is no longer waiting for bytes",
@@ -35,5 +43,6 @@ export const handleLocalPhotoUpload = async (req: Request, res: Response) => {
       context: { photoId },
     });
   }
-  return res.status(200).json(settled);
+  await removePhotoObjects(settled.replaced);
+  return res.status(200).json(settled.photo);
 };

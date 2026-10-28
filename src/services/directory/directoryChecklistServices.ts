@@ -7,7 +7,8 @@ import { organizationDirectorySettings } from "../../db/schema/directory-schema.
 import { employments } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { administersPeople, type DirectoryViewer } from "./directoryViewer.js";
-import { getDirectorySettings } from "./directorySettingsServices.js";
+import { getDirectorySettings } from "./directorySettings.js";
+import { boundEmployment } from "../employment/boundEmployment.js";
 
 export type ChecklistItemKey = "departments" | "locations" | "hr" | "jobTitles";
 
@@ -68,9 +69,7 @@ const readTicks = async (
           and(
             eq(directoryRoleAssignments.organizationId, organizationId),
             eq(directoryRoleAssignments.role, directoryRole.Hr),
-            isNull(employments.endedAt),
-            isNotNull(employments.userId),
-            isNull(employments.accountDeletedAt)
+            boundEmployment()
           )
         )
         .limit(1)

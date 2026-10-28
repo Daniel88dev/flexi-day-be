@@ -9,10 +9,11 @@ import { organizationAttendanceSettings } from "../../db/schema/organization-att
 import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { readLog } from "../../db/schema/read-log-schema.js";
-import { photoKeys, photoPrefix, readyPhotoIds } from "../directory/directoryPhotoServices.js";
-import { collectProfileExport } from "../directory/directoryProfileServices.js";
+import { readyPhotoIds } from "../directory/directoryPhotoServices.js";
+import { photoKeys, photoPrefix } from "../directory/photoPrefixes.js";
+import { collectProfileExport } from "../directory/profileExportServices.js";
 import { collectSensitiveExport } from "../directory/sensitiveSections.js";
-import { getPersonContacts } from "../person/personName.js";
+import { getActorNames } from "../person/personName.js";
 import { readLogExportEntry, safeFileName, type ExportAttachmentFile } from "./personExportData.js";
 
 export type OrganizationExportPerson = { userId: string; name: string; folder: string };
@@ -110,10 +111,7 @@ export const collectOrganizationExport = async (organizationId: string) => {
   memberships.forEach((row) => note(row.userId));
   events.forEach((row) => note(row.createdByUserId));
   settingsChanges.forEach((row) => note(row.changedByUserId));
-  const names = new Map(
-    (await getPersonContacts([...ids], { organizationId })).map((row) => [row.id, row.name])
-  );
-  const nameOf = (id: string | null | undefined) => (id ? (names.get(id) ?? null) : null);
+  const nameOf = await getActorNames(ids, { organizationId });
 
   const people: OrganizationExportPerson[] = [];
   const folders = new Set<string>();

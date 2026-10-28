@@ -56,7 +56,7 @@ fenro T-483 and T-514.
 - It ends nobody. From then on each person's next link change follows the derived rule again.
 - Open Employments that no link holds stay open until an admin ends them: people without an
   account, and account holders in no group with no admin grant. `GET /api/employment/list` marks
-  them `noLink: true` for org admins (`unlinkedOpenEmploymentIds` in `employmentServices.ts`). The
+  them `noLink: true` for org admins (`unlinkedOpenEmploymentIds` in `employment/organizationLinks.ts`). The
   web's turn-off dialog lists them, and the People card on `/organization` offers End employment
   on those rows and Erase on rows without an account.
 - It revokes open directory invites that name no group. Invites that name a group stay valid and

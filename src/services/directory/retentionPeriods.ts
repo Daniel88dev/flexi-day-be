@@ -1,35 +1,37 @@
 import { Cron } from "croner";
-import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
-import { retentionPeriod as P } from "../../db/schema/directory-retention-schema.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
+import { retentionPeriod } from "../../db/schema/directory-retention-schema.js";
 import { appLanguage } from "../../db/schema/user-settings-schema.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { SECTION_ROWS, type SectionRow } from "./permissionResolver.js";
 
 export const RETENTION_PERIODS = [
-  P.AtEnd,
-  P.Days30,
-  P.Months6,
-  P.Year1,
-  P.Years3,
-  P.Years5,
-  P.Years10,
-  P.UntilErased,
+  retentionPeriod.AtEnd,
+  retentionPeriod.Days30,
+  retentionPeriod.Months6,
+  retentionPeriod.Year1,
+  retentionPeriod.Years3,
+  retentionPeriod.Years5,
+  retentionPeriod.Years10,
+  retentionPeriod.UntilErased,
 ] as const;
 
 /** The product's Retention periods, for every organization that never changed one. */
-export const RETENTION_DEFAULTS: Record<SectionRow, P> = {
-  [R.Card]: P.UntilErased,
-  [R.Photo]: P.Year1,
-  [R.WorkContact]: P.Days30,
-  [R.Job]: P.UntilErased,
-  [R.Contact]: P.Days30,
-  [R.Personal]: P.Years3,
+export const RETENTION_DEFAULTS: Record<SectionRow, retentionPeriod> = {
+  [directoryPermissionRow.Card]: retentionPeriod.UntilErased,
+  [directoryPermissionRow.Photo]: retentionPeriod.Year1,
+  [directoryPermissionRow.WorkContact]: retentionPeriod.Days30,
+  [directoryPermissionRow.Job]: retentionPeriod.UntilErased,
+  [directoryPermissionRow.Contact]: retentionPeriod.Days30,
+  [directoryPermissionRow.Personal]: retentionPeriod.Years3,
 };
 
-export const isShortening = (from: P, to: P): boolean =>
+export const isShortening = (from: retentionPeriod, to: retentionPeriod): boolean =>
   RETENTION_PERIODS.indexOf(to) < RETENTION_PERIODS.indexOf(from);
 
-export const withDefaultPeriods = (stored: { section: R; period: P }[]): Record<SectionRow, P> => {
+export const withDefaultPeriods = (
+  stored: { section: directoryPermissionRow; period: retentionPeriod }[]
+): Record<SectionRow, retentionPeriod> => {
   const periods = { ...RETENTION_DEFAULTS };
   for (const row of stored) {
     const section = SECTION_ROWS.find((candidate) => candidate === row.section);
@@ -38,31 +40,31 @@ export const withDefaultPeriods = (stored: { section: R; period: P }[]): Record<
   return periods;
 };
 
-const LABELS: Record<appLanguage, Record<P, string>> = {
+const LABELS: Record<appLanguage, Record<retentionPeriod, string>> = {
   [appLanguage.English]: {
-    [P.AtEnd]: "no time",
-    [P.Days30]: "30 days",
-    [P.Months6]: "6 months",
-    [P.Year1]: "1 year",
-    [P.Years3]: "3 years",
-    [P.Years5]: "5 years",
-    [P.Years10]: "10 years",
-    [P.UntilErased]: "as long as your record is kept",
+    [retentionPeriod.AtEnd]: "no time",
+    [retentionPeriod.Days30]: "30 days",
+    [retentionPeriod.Months6]: "6 months",
+    [retentionPeriod.Year1]: "1 year",
+    [retentionPeriod.Years3]: "3 years",
+    [retentionPeriod.Years5]: "5 years",
+    [retentionPeriod.Years10]: "10 years",
+    [retentionPeriod.UntilErased]: "as long as your record is kept",
   },
   [appLanguage.Czech]: {
-    [P.AtEnd]: "ani den",
-    [P.Days30]: "30 dní",
-    [P.Months6]: "6 měsíců",
-    [P.Year1]: "1 rok",
-    [P.Years3]: "3 roky",
-    [P.Years5]: "5 let",
-    [P.Years10]: "10 let",
-    [P.UntilErased]: "tak dlouho, jak je uchován váš záznam",
+    [retentionPeriod.AtEnd]: "ani den",
+    [retentionPeriod.Days30]: "30 dní",
+    [retentionPeriod.Months6]: "6 měsíců",
+    [retentionPeriod.Year1]: "1 rok",
+    [retentionPeriod.Years3]: "3 roky",
+    [retentionPeriod.Years5]: "5 let",
+    [retentionPeriod.Years10]: "10 let",
+    [retentionPeriod.UntilErased]: "tak dlouho, jak je uchován váš záznam",
   },
 };
 
 /** A period as the Art. 14 notice's `{period}` reads it. */
-export const retentionPeriodLabel = (period: P, language: appLanguage): string =>
+export const retentionPeriodLabel = (period: retentionPeriod, language: appLanguage): string =>
   LABELS[language][period];
 
 export type NightlySchedule = { cron: string; timezone: string };

@@ -1,10 +1,7 @@
 import { processProfilePhoto } from "../../services/attachment/processor.js";
 import type { PhotoProcessedPayload } from "../../services/directory/types.js";
+import { PHOTO_UPLOAD_METADATA } from "../../services/organizationData/photoUploadMetadata.js";
 import type { NotifyResult, ObjectStore } from "./handler.js";
-
-/** Mirrors `PHOTO_UPLOAD_METADATA` in the API's organization-data store. */
-const PHOTO_ID = "photo-id";
-const STORAGE_KEY = "storage-key";
 
 export type PhotoProcessorDeps = {
   store: ObjectStore;
@@ -38,8 +35,8 @@ export const createPhotoHandler =
       log("Incoming photo object is already gone", { key });
       return;
     }
-    const photoId = object.metadata[PHOTO_ID];
-    const storageKey = object.metadata[STORAGE_KEY];
+    const photoId = object.metadata[PHOTO_UPLOAD_METADATA.photoId];
+    const storageKey = object.metadata[PHOTO_UPLOAD_METADATA.storageKey];
     if (!photoId || !storageKey) {
       log("Incoming photo object carries no photo metadata; dropping it", { key });
       await store.delete(key);

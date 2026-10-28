@@ -24,8 +24,9 @@ import { sameName } from "../employment/eraseEmploymentServices.js";
 import { lockOrganization } from "../organization/organizationServices.js";
 import { organizationDataStore } from "../organizationData/organizationDataStore.js";
 import { removeExportRows } from "../personExport/personExportBuild.js";
-import { organizationPhotosPrefix, removePhotoObjects } from "./directoryPhotoServices.js";
-import { getDirectorySettings } from "./directorySettingsServices.js";
+import { removePhotoObjects } from "./directoryPhotoServices.js";
+import { organizationPhotosPrefix } from "./photoPrefixes.js";
+import { getDirectorySettings } from "./directorySettings.js";
 
 export type DeletedDirectoryData = {
   organizationId: string;

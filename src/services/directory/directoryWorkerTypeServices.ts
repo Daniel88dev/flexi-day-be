@@ -2,7 +2,7 @@ import { and, eq, isNotNull } from "drizzle-orm";
 import type { DbTransaction } from "../../db/db.js";
 import { directoryProfiles } from "../../db/schema/directory-profile-schema.js";
 import { directorySensitiveProfiles } from "../../db/schema/directory-sensitive-profile-schema.js";
-import { directoryPermissionRow as R } from "../../db/schema/directory-schema.js";
+import { directoryPermissionRow } from "../../db/schema/directory-schema.js";
 import { employments, workerType } from "../../db/schema/employment-schema.js";
 import { refuse } from "../../utils/appError.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
@@ -30,7 +30,7 @@ export const changeWorkerType = async (
 ): Promise<DirectoryProfile> => {
   const { organizationId } = viewer;
   const { record, access, context } = await lockRecordInReach(viewer, employmentId, tx);
-  const audience = access.actGrantedBy[R.ChangeWorkerType];
+  const audience = access.actGrantedBy[directoryPermissionRow.ChangeWorkerType];
   if (audience === null) {
     throw refuse(403, "WORKER_TYPE_DENIED", "You can't change this person's worker type", context);
   }
@@ -39,7 +39,7 @@ export const changeWorkerType = async (
   }
   if (record.type === input.type) return getDirectoryProfile(viewer, employmentId, tx);
 
-  const history: { section: R; fields: string[] }[] = [];
+  const history: { section: directoryPermissionRow; fields: string[] }[] = [];
 
   if (input.type === workerType.External) {
     const [profile] = await tx
@@ -58,7 +58,7 @@ export const changeWorkerType = async (
         .update(directoryProfiles)
         .set({ probationEndDate: null, contractType: null, workingTime: null })
         .where(eq(directoryProfiles.employmentId, employmentId));
-      history.push({ section: R.Job, fields: held });
+      history.push({ section: directoryPermissionRow.Job, fields: held });
     }
 
     // Clearing a sealed column needs no cipher; like a retention purge, the
@@ -73,7 +73,8 @@ export const changeWorkerType = async (
         )
       )
       .returning({ id: directorySensitiveProfiles.employmentId });
-    if (cleared.length > 0) history.push({ section: R.Personal, fields: [...PERSONAL_FIELDS] });
+    if (cleared.length > 0)
+      history.push({ section: directoryPermissionRow.Personal, fields: [...PERSONAL_FIELDS] });
 
     await tx
       .update(employments)
@@ -94,7 +95,7 @@ export const changeWorkerType = async (
   }
 
   await tx.update(employments).set({ type: input.type }).where(eq(employments.id, employmentId));
-  history.push({ section: R.ChangeWorkerType, fields: ["type"] });
+  history.push({ section: directoryPermissionRow.ChangeWorkerType, fields: ["type"] });
 
   await recordProfileHistory(
     history.map(({ section, fields }) => ({

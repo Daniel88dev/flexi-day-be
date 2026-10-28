@@ -17,6 +17,9 @@ import type { UserSummary } from "../../utils/userPresentation.js";
 import type { CountryView, PhoneView } from "./contactFormat.js";
 import { retentionPeriod } from "../../db/schema/directory-retention-schema.js";
 import { SECTION_ROWS, type SectionRow } from "./permissionResolver.js";
+import type { ProfileSectionKey, SensitiveSectionName } from "./sectionKeys.js";
+
+export type { ProfileSectionKey, SensitiveSectionName };
 
 export const validateDirectoryAgreementBody = z.object({
   /** The agreement version the owner was shown and accepted. */
@@ -223,8 +226,6 @@ export type DirectoryContactView = DirectorySectionView & {
   phoneCountryDefault?: CountryView | null;
 };
 
-export type SensitiveSectionName = "contact" | "personal";
-
 /** What Show returns for one Sensitive section. `recorded` says a read-log row was written. */
 export type ShownSection =
   | ({ section: "CONTACT"; level: "READ" | "WRITE"; recorded: boolean } & ContactSectionValues)
@@ -416,7 +417,11 @@ export const validatePutWorkerType = z.object({ type: z.enum(workerType) }).stri
 export type PutWorkerType = z.infer<typeof validatePutWorkerType>;
 
 /** The Sections Copy from previous spell can bring over, by their profile keys. */
-export const COPYABLE_SECTION_KEYS = ["contact", "personal", "photo"] as const;
+export const COPYABLE_SECTION_KEYS = [
+  "contact",
+  "personal",
+  "photo",
+] as const satisfies readonly ProfileSectionKey[];
 
 export type CopyableSectionKey = (typeof COPYABLE_SECTION_KEYS)[number];
 
@@ -628,9 +633,6 @@ export type RetentionPreview = PutRetentionPeriod & {
   /** People whose Section the period would remove at the next nightly run, once each. */
   affected: number;
 };
-
-/** Where the Section keys are those of `DirectoryProfile.sections`. */
-export type ProfileSectionKey = "card" | "photo" | "workContact" | "job" | "contact" | "personal";
 
 /**
  * One Section's retention on an ended record. `REMOVES_ON`: the nightly run of
