@@ -7,6 +7,7 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     // .claude/worktrees holds full checkouts of this repo; their tests are not ours to run.
     exclude: ["src/**/*.e2e.test.ts", "**/node_modules/**", "**/dist/**", "**/.claude/**"],
+    setupFiles: ["./src/tests/noRealDatabase.ts"],
     coverage: {
       provider: "istanbul",
       reporter: ["text", "json", "html"],
