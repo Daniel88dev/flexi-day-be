@@ -23,7 +23,7 @@ export const handlePatchEmployment = async (req: Request, res: Response) => {
   const { requiredMinutesPerDay } = req.body as ValidatedPatchEmploymentType;
   const employmentId = req.params.employmentId;
 
-  if (!employmentId) {
+  if (typeof employmentId !== "string" || !employmentId) {
     throw new AppError({ message: "An employment id is required", logging: false, code: 422 });
   }
 
