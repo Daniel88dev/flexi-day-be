@@ -175,7 +175,8 @@ export const calendarFeedLimiter = rateLimit({
   ...shared,
   windowMs: ONE_HOUR,
   limit: 120,
-  keyGenerator: (req) => (req.params.token ? `t:${req.params.token}` : ipKey(req)),
+  keyGenerator: (req) =>
+    typeof req.params.token === "string" && req.params.token ? `t:${req.params.token}` : ipKey(req),
 });
 
 /**

@@ -3,7 +3,7 @@ import { db } from "../../db/db.js";
 import { getAuth } from "../../middleware/authSession.js";
 import { updateSessionLocation } from "../../services/attendance/attendanceLocation.js";
 import type { ValidatedAttendanceLocationType } from "../../services/attendance/types.js";
-import AppError from "../../utils/appError.js";
+import { requirePathParam } from "../pathParams.js";
 
 /**
  * Attaches a fix from the browser to one end of the caller's own session. A
@@ -13,11 +13,7 @@ import AppError from "../../utils/appError.js";
  */
 export const handleUpdateSessionLocation = async (req: Request, res: Response) => {
   const auth = getAuth(req);
-  const sessionId = req.params.sessionId;
-
-  if (!sessionId) {
-    throw new AppError({ message: "A session id is required", logging: false, code: 422 });
-  }
+  const sessionId = requirePathParam(req.params.sessionId, "session id");
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const fix: ValidatedAttendanceLocationType = req.body;

@@ -1,9 +1,10 @@
 import type { Request, Response } from "express";
 import { getGroupDetailForSupport } from "../../services/support/supportServices.js";
 import AppError from "../../utils/appError.js";
+import { requirePathParam } from "../pathParams.js";
 
 export const handleGetGroupDetail = async (req: Request, res: Response) => {
-  const groupId = req.params.groupId ?? "";
+  const groupId = requirePathParam(req.params.groupId, "group id");
   const detail = await getGroupDetailForSupport(groupId);
 
   if (!detail) {
@@ -11,7 +12,7 @@ export const handleGetGroupDetail = async (req: Request, res: Response) => {
       message: "Group not found",
       code: 404,
       logging: true,
-      context: { groupId: req.params.groupId },
+      context: { groupId },
     });
   }
 

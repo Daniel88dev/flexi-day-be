@@ -1,9 +1,10 @@
 import type { Request, Response } from "express";
 import { getOrganizationDetailForSupport } from "../../services/support/supportServices.js";
 import AppError from "../../utils/appError.js";
+import { requirePathParam } from "../pathParams.js";
 
 export const handleGetOrganizationDetail = async (req: Request, res: Response) => {
-  const organizationId = req.params.organizationId ?? "";
+  const organizationId = requirePathParam(req.params.organizationId, "organization id");
   const detail = await getOrganizationDetailForSupport(organizationId);
 
   if (!detail) {
@@ -11,7 +12,7 @@ export const handleGetOrganizationDetail = async (req: Request, res: Response) =
       message: "Organization not found",
       code: 404,
       logging: true,
-      context: { organizationId: req.params.organizationId },
+      context: { organizationId },
     });
   }
 
