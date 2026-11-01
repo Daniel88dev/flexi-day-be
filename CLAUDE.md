@@ -134,7 +134,9 @@ deliberately absent from the API docs.
 
 ## Testing
 
-- Unit: `src/**/*.test.ts`, run with `npm test`. Mock database calls and test the logic.
+- Unit: `src/**/*.test.ts`, run with `npm test`. Mock database calls and test the logic. A unit
+  test that executes a query fails with a message naming the module to mock; see
+  [`docs/adr/0009-unit-tests-refuse-query-execution.md`](docs/adr/0009-unit-tests-refuse-query-execution.md).
 - E2E: `src/**/*.e2e.test.ts`, run with `npm run test:e2e` — it checks the DB connection first
   (`src/tests/e2e/check-db.ts`) and reads `.env.e2e.test`. Real database, helpers in
   `src/tests/e2e/helpers/`, and each test cleans up after itself. `npm run docker:e2e:run` runs
