@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       libheif-js:
-        specifier: ^1.23.2
-        version: 1.23.2
+        specifier: ^1.23.5
+        version: 1.23.5
       sharp:
         specifier: ^0.35.5
         version: 0.35.5
@@ -186,8 +186,8 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  libheif-js@1.23.2:
-    resolution: {integrity: sha512-qvHIXtggEsw1lCNCWBYKloL2Z36DJBm0R9ThGiH2JnhKYdeZFLPFkP30Lw4yMskxxhx0bKg1gLrBHX1D2w2pSw==}
+  libheif-js@1.23.5:
+    resolution: {integrity: sha512-umXZPthnWZtF3iG/5mQG+AZ2V6i0UeYpo3z2CkggTEgL8dKmIIwJT6TDuAMuabXa1yTW8uJ1ZAgR+CxNTklYYw==}
     engines: {node: '>=8.0.0'}
 
   semver@7.8.5:
@@ -322,7 +322,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  libheif-js@1.23.2: {}
+  libheif-js@1.23.5: {}
 
   semver@7.8.5: {}
 
