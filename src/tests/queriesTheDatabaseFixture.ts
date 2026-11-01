@@ -16,3 +16,13 @@ export const composedAtImport: SQL = notExists(
     .from(schema.groups)
     .where(isNull(schema.groups.deletedAt))
 );
+
+export const runWithSelect = async (): Promise<unknown> =>
+  db
+    .with(db.$with("live").as(db.select().from(schema.groups)))
+    .select()
+    .from(schema.groups)
+    .limit(1);
+
+export const runRelationalQuery = async (): Promise<unknown> =>
+  db.query.groups.findMany({ limit: 1 });

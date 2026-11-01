@@ -38,7 +38,22 @@ const refuse = (operation: string, origin: string | undefined): never => {
 // because modules build SQL fragments at import time and never execute them.
 const RUNS_THE_QUERY = new Set(["then", "catch", "finally", "execute"]);
 
-const executable = (value: unknown): value is object =>
+// Chained drizzle builders return fresh objects, so each entry point is wrapped on the way
+// out rather than once on `db` itself. `with` is here too: it hands back a scope whose own
+// `select` and friends are the real entry points.
+const ENTRY_POINTS = new Set([
+  "select",
+  "selectDistinct",
+  "selectDistinctOn",
+  "insert",
+  "update",
+  "delete",
+  "execute",
+  "$count",
+  "refreshMaterializedView",
+]);
+
+const executable = (value: unknown): boolean =>
   typeof value === "object" &&
   value !== null &&
   (typeof (value as { then?: unknown }).then === "function" ||
@@ -54,24 +69,37 @@ const guardBuilder = (builder: object, operation: string, origin: string | undef
       if (typeof value !== "function") return value;
       return (...args: unknown[]) => {
         const result = (value as (...a: unknown[]) => unknown).apply(target, args);
-        return executable(result) ? guardBuilder(result, operation, origin) : result;
+        // A `with(...)` scope returns builders that are not thenable yet, so a known entry
+        // point is followed whatever it hands back.
+        const follow = executable(result) || (typeof prop === "string" && ENTRY_POINTS.has(prop));
+        return follow && typeof result === "object" && result !== null
+          ? guardBuilder(result, operation, origin)
+          : result;
       };
     },
   });
 
-// Chained drizzle builders return fresh objects, so each entry point is wrapped on the way
-// out rather than once on `db` itself.
-const ENTRY_POINTS = new Set([
-  "select",
-  "selectDistinct",
-  "selectDistinctOn",
-  "insert",
-  "update",
-  "delete",
-  "execute",
-  "$count",
-  "refreshMaterializedView",
-]);
+// `db.query` is a namespace of per-table helpers rather than a callable entry point, so it
+// is followed a level at a time down to `findMany` and `findFirst`.
+const guardNamespace = (namespace: object, path: string): object =>
+  new Proxy(namespace, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof prop !== "string") return value;
+      if (typeof value === "function") {
+        return (...args: unknown[]) => {
+          const origin = buildSite();
+          const result = (value as (...a: unknown[]) => unknown).apply(target, args);
+          return typeof result === "object" && result !== null
+            ? guardBuilder(result, `${path}.${prop}`, origin)
+            : result;
+        };
+      }
+      return typeof value === "object" && value !== null
+        ? guardNamespace(value, `${path}.${prop}`)
+        : value;
+    },
+  });
 
 const guardDb = (db: object): object =>
   new Proxy(db, {
@@ -82,9 +110,11 @@ const guardDb = (db: object): object =>
         return () => refuse("transaction", buildSite());
       }
       const value = Reflect.get(target, prop, receiver);
-      if (typeof value !== "function" || typeof prop !== "string" || !ENTRY_POINTS.has(prop)) {
-        return value;
+      if (prop === "query" && typeof value === "object" && value !== null) {
+        return guardNamespace(value, "query");
       }
+      if (typeof value !== "function" || typeof prop !== "string") return value;
+      if (!ENTRY_POINTS.has(prop) && prop !== "with") return value;
       return (...args: unknown[]) => {
         const origin = buildSite();
         const result = (value as (...a: unknown[]) => unknown).apply(target, args);
