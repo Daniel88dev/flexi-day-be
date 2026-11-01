@@ -66,6 +66,10 @@ jobs:
       - name: Build application
         run: pnpm run build
 
+      # Otherwise only CD on main installs the Lambda's own lockfile, after merge.
+      - name: Build the Lambda zip
+        run: pnpm run lambda:build
+
       - name: Run unit tests
         run: pnpm run test:unit --coverage
 

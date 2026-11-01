@@ -1,0 +1,11 @@
+# Fails a PR only when it adds a dependency with a known advisory, so a new advisory against
+# something already on main never turns an unrelated PR red. Policy: T-561.
+fail-on-severity: high
+fail-on-scopes:
+  - runtime
+  - development
+comment-summary-in-pr: on-failure
+
+# Each waiver is one GHSA id with a comment saying why it can't be fixed yet and the Fenro task
+# tracking the fix. The weekly dependency job drops waivers whose fix has shipped.
+allow-ghsas: []

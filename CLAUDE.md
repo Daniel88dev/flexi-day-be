@@ -31,6 +31,17 @@ vitest ignores every flag after it.
 `lambda/attachment-processor/` is a pnpm root of its own, with its own lockfile and a hoisted
 `node_modules`, because a Lambda zip cannot hold symlinks.
 
+## Supply-chain policy
+
+Both `pnpm-workspace.yaml` files block too-new versions and unapproved build scripts. A new
+`allowBuilds` entry needs a comment saying what the script does and why the package fails without
+it, plus a call-out in the PR. `minimumReleaseAgeExclude` and `trustPolicyExclude` entries are
+exact-version (`pkg@1.2.3`), and each GHSA waiver in `.github/dependency-review-config.yml` names
+its reason and Fenro task. Policy: T-561.
+
+Both Dockerfiles pin their images by digest. Dependabot keeps the `node:24-alpine` digest current.
+The `ghcr.io/pnpm/pnpm` digest moves by hand, together with `packageManager` in `package.json`.
+
 ## Imports need `.js` extensions
 
 `"type": "module"` plus `verbatimModuleSyntax: true` means every relative import carries a `.js`
