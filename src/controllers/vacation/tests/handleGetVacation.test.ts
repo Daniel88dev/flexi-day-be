@@ -10,6 +10,7 @@ const {
   mockListAttachmentsForRequest,
   mockIsAttachmentUploadAvailable,
   mockIsRequestPastRetention,
+  mockGetProjectingMirrorTargetGroupIds,
 } = vi.hoisted(() => ({
   mockGetVacationDetailById: vi.fn(),
   mockGetVacationEvents: vi.fn(),
@@ -20,6 +21,7 @@ const {
   mockListAttachmentsForRequest: vi.fn(),
   mockIsAttachmentUploadAvailable: vi.fn(),
   mockIsRequestPastRetention: vi.fn(),
+  mockGetProjectingMirrorTargetGroupIds: vi.fn(),
 }));
 
 vi.mock("../../../services/groupUser/groupAccess.js", () => ({
@@ -50,6 +52,11 @@ vi.mock("../../../services/attachment/attachmentRetention.js", () => ({
 
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getGroupUser: mockGetGroupUser,
+}));
+
+// Reached through the real `resolveVacationPermissions`, which these tests exercise.
+vi.mock("../../../services/groupMirror/groupMirrorServices.js", () => ({
+  getProjectingMirrorTargetGroupIds: mockGetProjectingMirrorTargetGroupIds,
 }));
 
 vi.mock("../../../services/vacation/vacationServices.js", () => ({
@@ -88,6 +95,7 @@ describe("handleGetVacation", () => {
     mockListAttachmentsForRequest.mockResolvedValue([]);
     mockIsAttachmentUploadAvailable.mockResolvedValue(true);
     mockIsRequestPastRetention.mockResolvedValue(false);
+    mockGetProjectingMirrorTargetGroupIds.mockResolvedValue([]);
   });
 
   it("returns the detail with history and the owner's permissions", async () => {

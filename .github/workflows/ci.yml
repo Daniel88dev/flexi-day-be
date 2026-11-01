@@ -41,23 +41,6 @@ jobs:
     permissions:
       contents: read
 
-    # A few controller unit tests still reach the subscriptions table through unmocked billing
-    # helpers, so this job needs a migrated database too.
-    services:
-      postgres:
-        image: postgres:15
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: testdb
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,6 +56,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # No database here: every unit test mocks its service modules. `DATABASE` is still set
+      # because `src/config.ts` validates it at import, but nothing connects to it.
       - name: Set up environment variables
         run: |
           echo "PORT=8080" >> $GITHUB_ENV
@@ -81,12 +66,6 @@ jobs:
           echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> $GITHUB_ENV
           echo "BETTER_AUTH_URL=http://localhost:8080" >> $GITHUB_ENV
           echo "TRUSTED_ORIGINS=http://localhost:3000,flexiday://" >> $GITHUB_ENV
-
-      - name: Generate database schemas
-        run: npm run db:generate
-
-      - name: Run database migrations
-        run: npm run db:migrate
 
       - name: Build application
         run: npm run build
