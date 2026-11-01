@@ -31,10 +31,12 @@ These mocks are not redundant with the unit guard in `src/tests/noRealDatabase.t
 guard refuses every `db.transaction`, so a file that dropped its own mock would fail rather than
 pass. See `docs/adr/0009-unit-tests-refuse-query-execution.md`.
 
-Passing `{}` as the transaction handle hides little. Controller tests assert the handle's
-position with `expect.anything()`, which fails when a controller forgets to pass `tx`, because
-the call then has one argument fewer. It would not catch a controller passing `db` in place of
-`tx`, and no controller does that.
+Passing `{}` as the transaction handle hides little. Where a test asserts the handle's position,
+it uses `expect.anything()`, `{}` or a named sentinel such as `TX`, and each of those fails when a
+controller forgets to pass `tx`, because the call then has one argument fewer. Not every service
+call's handle is asserted. `expect.anything()` would also not catch a controller passing `db` in
+place of `tx`, but no controller does that: each passes `tx` to the services it calls inside a
+transaction.
 
 ## Prior requests
 
