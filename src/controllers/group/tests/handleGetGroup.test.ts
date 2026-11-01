@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockGetGroup, mockGetGroupUser, mockIsOrganizationAdmin, mockResolveOrganizationBadges } =
-  vi.hoisted(() => ({
-    mockGetGroup: vi.fn(),
-    mockGetGroupUser: vi.fn(),
-    mockIsOrganizationAdmin: vi.fn(),
-    mockResolveOrganizationBadges: vi.fn(),
-  }));
+const {
+  mockGetGroup,
+  mockGetGroupUser,
+  mockIsOrganizationAdmin,
+  mockResolveOrganizationBadges,
+  mockIsAttachmentUploadAvailable,
+} = vi.hoisted(() => ({
+  mockGetGroup: vi.fn(),
+  mockGetGroupUser: vi.fn(),
+  mockIsOrganizationAdmin: vi.fn(),
+  mockResolveOrganizationBadges: vi.fn(),
+  mockIsAttachmentUploadAvailable: vi.fn(),
+}));
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
 
@@ -33,6 +39,10 @@ vi.mock("../../../services/organization/organizationBadge.js", () => ({
   resolveOrganizationBadges: mockResolveOrganizationBadges,
 }));
 
+vi.mock("../../../services/billing/guards.js", () => ({
+  isAttachmentUploadAvailable: mockIsAttachmentUploadAvailable,
+}));
+
 import { handleGetGroup } from "../handleGetGroup.js";
 import { getAuth } from "../../../middleware/authSession.js";
 import { makeReqRes, mockAuthData } from "../../../tests/testUtils.js";
@@ -55,6 +65,7 @@ describe("handleGetGroup", () => {
     mockGetGroup.mockResolvedValue(group);
     mockIsOrganizationAdmin.mockResolvedValue(false);
     mockResolveOrganizationBadges.mockResolvedValue(new Map([["org-1", badge]]));
+    mockIsAttachmentUploadAvailable.mockResolvedValue(false);
   });
 
   const call = async () => {

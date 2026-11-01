@@ -5,11 +5,13 @@ const {
   mockGetAllGroups,
   mockCountMembersByGroup,
   mockResolveOrganizationBadges,
+  mockIsAttachmentUploadAvailable,
 } = vi.hoisted(() => ({
   mockGetAllGroupsForUser: vi.fn(),
   mockGetAllGroups: vi.fn(),
   mockCountMembersByGroup: vi.fn(),
   mockResolveOrganizationBadges: vi.fn(),
+  mockIsAttachmentUploadAvailable: vi.fn(),
 }));
 
 vi.mock("../../../middleware/authSession.js", () => ({ getAuth: vi.fn() }));
@@ -25,6 +27,11 @@ vi.mock("../../../services/group/groupServices.js", () => ({
 vi.mock("../../../services/groupUser/groupUserServices.js", () => ({
   getAllGroupsForUser: mockGetAllGroupsForUser,
   countMembersByGroup: mockCountMembersByGroup,
+}));
+
+// Reached through the real `toGroupListItems`, whose shaping is what these tests assert on.
+vi.mock("../../../services/billing/guards.js", () => ({
+  isAttachmentUploadAvailable: mockIsAttachmentUploadAvailable,
 }));
 
 import { handleGetGroups } from "../handleGetGroups.js";
@@ -52,6 +59,7 @@ describe("handleGetGroups", () => {
       ])
     );
     mockResolveOrganizationBadges.mockResolvedValue(new Map([["org-1", badge]]));
+    mockIsAttachmentUploadAvailable.mockResolvedValue(false);
   });
 
   const call = async () => {
