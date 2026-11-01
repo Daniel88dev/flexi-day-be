@@ -6,12 +6,13 @@ with Postgres up it is worse: the same test quietly passes against the dev datab
 Neither outcome says which module to mock. A `setupFiles` guard on the unit config makes
 the failure local, immediate and self-explaining.
 
-The guard refuses **execution**, not access. It intercepts `then` on the builder the `db`
-export returns, and `transaction` at its call site. Both are entered synchronously from
-the calling module, so the error can name the module to mock. `execute` and `$count` are
-thenables and need no case of their own. A patch over `pg.Pool.prototype.connect` and
-`query` sits underneath as a backstop for code that reaches `pool` directly, with a weaker
-message that cannot name the caller.
+The guard refuses **execution**, not access. Each query entry point on the `db` export
+(`select`, `insert`, `execute`, `$count` and the rest) records where it was called while
+the calling module is still on the stack. It returns the real drizzle builder, wrapped so
+that `then` and `execute` throw and name the module recorded at build time. `transaction`
+refuses at its own call site, because nothing composes a transaction. A patch over
+`pg.Pool.prototype.connect` and `query` sits underneath as a backstop for code that
+reaches `pool` directly, with a weaker message that cannot name the caller.
 
 `transaction` carries this repo's database access: 98 call sites against one `db.execute`
 and one `db.$count`, with every other `execute` on a `tx` already inside a transaction. A
@@ -24,6 +25,16 @@ everything worth naming.
 running it. The attachment retention service calls `db.select()` at module scope to build
 a `notExists` fragment that never executes and needs no connection, so this option fails
 three test files on import.
+
+**Reading the stack inside `then`.** Rejected, and the reason is easy to get wrong: `await`
+invokes a thenable's `then` from a microtask job, not from the awaiting frame, so by then
+the calling module is gone and the trace shows only `processTicksAndRejections`. The build
+site has to be captured synchronously, when the builder is made, and carried to the throw.
+
+**A stand-in builder instead of the real one.** Rejected, because composition needs a real
+builder. `notExists(db.select()...)` hands the builder to drizzle's own SQL machinery,
+which an invented chain cannot satisfy. The guard wraps the real builder and forwards
+everything except execution.
 
 **Patching `pg.Pool.prototype` alone.** Rejected as the primary layer, kept as the
 backstop. It is free and catches everything, but by the time `connect` fires the calling
