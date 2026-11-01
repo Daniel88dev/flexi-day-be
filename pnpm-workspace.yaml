@@ -1,9 +1,18 @@
+# Supply-chain policy (T-561), the same block in every Flexi Day repo.
+minimumReleaseAge: 4320 # 3 days; pnpm enforces it strictly only when it is set explicitly
+minimumReleaseAgeExcludePrune: true
+strictDepBuilds: true
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 43200 # 30 days
+trustPolicyExcludePrune: true
+blockExoticSubdeps: true
+trustLockfile: false
+
 allowBuilds:
   "@sentry/cli": false
   "@sentry/node-cpu-profiler": false
   esbuild: false
   sharp: false
-strictDepBuilds: true
 # Keeps the lockfile free of the packageManagerDependencies document, which GitHub's dependency
 # graph cannot parse yet (dependabot-core#15904). Drop it once that issue closes.
 pmOnFail: ignore

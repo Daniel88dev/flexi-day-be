@@ -10,6 +10,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Matches minimumReleaseAge in pnpm-workspace.yaml, so a routine bump never proposes a version
+    # the install would reject as too new.
+    cooldown:
+      default-days: 3
     groups:
       minor-and-patch:
         update-types:
@@ -26,6 +30,34 @@ updates:
           - "@vitest/*"
         update-types:
           - major
+
+  # The attachment-processor Lambda is a pnpm root of its own, with its own lockfile.
+  - package-ecosystem: npm
+    directory: /lambda/attachment-processor
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Keeps the node:24-alpine digest in Dockerfile and Dockerfile.e2e current. Node majors follow
+  # .nvmrc, so Dependabot must not propose 26-alpine on its own.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
+    ignore:
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
 
   # Actions are pinned to commit SHAs, which pins the supply chain but also means
   # nothing updates them by hand. This is what keeps those pins current.
