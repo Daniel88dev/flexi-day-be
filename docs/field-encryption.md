@@ -37,7 +37,7 @@ are in fenro T-477; the code is `src/services/fieldEncryption/`.
 ## Re-key
 
 ```bash
-npm run rekey:organization -- <organizationId>
+pnpm run rekey:organization <organizationId>
 ```
 
 Issues a new data key for one organization and re-encrypts every value it holds, in one

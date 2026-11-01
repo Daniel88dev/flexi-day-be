@@ -1,4 +1,4 @@
-// Usage: npm run rekey:organization -- <organizationId>
+// Usage: pnpm run rekey:organization <organizationId>
 // docs/field-encryption.md says when and how to run it against production.
 import { config } from "../config.js";
 import { pool } from "../db/db.js";
@@ -7,7 +7,7 @@ import { rekeyOrganization } from "../services/fieldEncryption/rekeyServices.js"
 const organizationId = process.argv[2];
 
 if (!organizationId) {
-  console.error("Usage: npm run rekey:organization -- <organizationId>");
+  console.error("Usage: pnpm run rekey:organization <organizationId>");
   process.exit(1);
 }
 

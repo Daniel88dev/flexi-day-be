@@ -69,7 +69,7 @@ output "rds_security_group_id" {
   value       = aws_security_group.rds.id
 }
 
-# Schema deployment. `npm run db:migrate:prod` (scripts/db-migrate.sh) reads
+# Schema deployment. `pnpm run db:migrate:prod` (scripts/db-migrate.sh) reads
 # this same secret, pins the RDS CA bundle and runs drizzle-kit migrate, so
 # nothing here has to be copied by hand. This output stays for the case where
 # you want a psql shell on the instance instead.

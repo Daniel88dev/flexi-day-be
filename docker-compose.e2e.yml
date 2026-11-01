@@ -41,6 +41,6 @@ services:
       MICROSOFT_CLIENT_SECRET: e2e-microsoft-client-secret
     command: >
       sh -c "
-        npm run db:migrate &&
-        npm run test:e2e
+        pnpm run db:migrate &&
+        pnpm run test:e2e
       "

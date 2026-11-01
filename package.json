@@ -11,13 +11,13 @@
     "build": "node node_modules/@typescript/native/bin/tsc",
     "lambda:build": "node lambda/attachment-processor/build.mjs",
     "start": "node --import ./dist/instrument.js dist/index.js",
-    "dev": "npm run build && node --import ./dist/instrument.js dist/index.js",
+    "dev": "pnpm run build && node --import ./dist/instrument.js dist/index.js",
     "test": "vitest --run",
     "test:unit": "vitest --run --config vitest.config.ts",
     "test:e2e:check": "tsx src/tests/e2e/check-db.ts",
-    "test:e2e": "npm run test:e2e:check && vitest --run --config vitest.e2e.config.ts",
-    "test:e2e:watch": "npm run test:e2e:check && vitest --config vitest.e2e.config.ts",
-    "test:e2e:ui": "npm run test:e2e:check && vitest --ui --config vitest.e2e.config.ts",
+    "test:e2e": "pnpm run test:e2e:check && vitest --run --config vitest.e2e.config.ts",
+    "test:e2e:watch": "pnpm run test:e2e:check && vitest --config vitest.e2e.config.ts",
+    "test:e2e:ui": "pnpm run test:e2e:check && vitest --ui --config vitest.e2e.config.ts",
     "test:coverage": "vitest --run --coverage",
     "test:ui": "vitest --ui --coverage",
     "docker:e2e:build": "docker build -t flexi-day-be-e2e -f Dockerfile.e2e .",
@@ -27,7 +27,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "node node_modules/@typescript/native/bin/tsc --noEmit -p . && node node_modules/@typescript/native/bin/tsc -p tsconfig.test.json",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm test",
     "db:generate": "cross-env NODE_OPTIONS=\"--import tsx\" drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:local": "./scripts/db-migrate.sh local",
@@ -82,7 +82,9 @@
   },
   "devDependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1156.0",
+    "@better-auth/utils": "0.5.0",
     "@eslint/js": "^10.0.1",
+    "@sentry/cli": "^3.8.2",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/eslint-plugin-security": "^3.0.0",
@@ -107,14 +109,5 @@
     "typescript-eslint": "^8.72.0",
     "vitest": "^5.0.0"
   },
-  "overrides": {
-    "exceljs": {
-      "uuid": "^14.0.0"
-    },
-    "esbuild": "^0.25.4",
-    "brace-expansion": "^2.0.2",
-    "readdir-glob@^3.0.0": {
-      "brace-expansion": "^5.0.5"
-    }
-  }
+  "packageManager": "pnpm@12.16.1+sha512.091d1dee7927575661b25dab3c2ae31cafc1c54d6b71ed6a6600cf0c1cb10434a447eae14015f1b23e2e6bedeed79df94a932e2164d2832280dce3fb32f656d1"
 }

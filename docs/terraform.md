@@ -222,8 +222,8 @@ The callback secret sits in `secrets.tf` beside the others. App Runner receives 
 to select the S3 store.
 
 Terraform creates the function with a placeholder zip and ignores its code from then on. The code
-ships from `cd.yml`: `npm run lambda:build` bundles `src/lambda/attachmentProcessor` with the shared
-processor into `lambda/attachment-processor/attachment-processor.zip` (sharp and libheif-js
+ships from `cd.yml`: `pnpm run lambda:build` bundles `src/lambda/attachmentProcessor` with the
+shared processor into `lambda/attachment-processor/attachment-processor.zip` (sharp and libheif-js
 installed for linux/x64 from that directory's own lockfile), and the `deploy-attachment-processor`
 job uploads it with `aws lambda update-function-code`. The job is skipped until the
 `ATTACHMENT_PROCESSOR_FUNCTION_NAME` repository variable exists, so the first rollout is: apply, run
@@ -390,7 +390,7 @@ version 1 survives as better-auth's fallback key even after it leaves `BETTER_AU
 
 - Applies belong to the user. Run `terraform fmt`, `terraform validate` and `terraform plan`, show
   the plan, and stop there.
-- No CI runs Terraform, and no npm script wraps it. Nothing catches a variable declared but never
+- No CI runs Terraform, and no package script wraps it. Nothing catches a variable declared but never
   injected, or a `terraform.tfvars.example` that has drifted from `variables.tf`. Reading both is the
   whole check.
 - Every secret but the two Apple `.p8` keys sits in plain text in `terraform.tfstate`, including the
@@ -399,7 +399,7 @@ version 1 survives as better-auth's fallback key even after it leaves `BETTER_AU
 - Raising `better_auth_secret_version` signs out every active user and voids pending email
   verification links. It is not a knob to adjust in passing; "Rotating the Better Auth secret" above is the runbook.
 - Schema migrations do not run from Terraform, from `cd.yml`, or from the deploy.
-  `npm run db:migrate:prod` applies them, reading the connection string from the same Secrets
+  `pnpm run db:migrate:prod` applies them, reading the connection string from the same Secrets
   Manager entry Terraform creates. **The user runs that, never you**, on the same footing as
   `terraform apply`; the Migrations section of `CLAUDE.md` has the rule and the script enforces it.
   A change that needs a migration needs that step called out on its own. The `psql_command` output
