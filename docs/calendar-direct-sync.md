@@ -306,9 +306,9 @@ Three dev routes sit behind the same five gates as the rest of `/api/dev`:
 `entitled`. It does not grant a plan, so a Free user's target pauses, which is how to see the
 `PAUSED` card. `capability` answers 200 with `connectionId`, `provider`, `capability` and
 `targetsMarked`. `connect` and `capability` take `@dev.local` addresses only, like the other dev
-writes, so `npm run dev:reset` undoes them.
+writes, so `pnpm run dev:reset` undoes them.
 
-`npm run dev:scenario` connects `owner@dev.local` to a fake Google target when the backend runs the
+`pnpm run dev:scenario` connects `owner@dev.local` to a fake Google target when the backend runs the
 fake driver with Google on, and skips the step otherwise. The step gives the owner's organization a
 Pro override first when no paid plan covers them. The scenario response carries the connection as
 `calendar`, or `null`. Approving the owner's pending booking then leaves an insert that
@@ -316,7 +316,7 @@ Pro override first when no paid plan covers them. The scenario response carries 
 
 The `flexi-dev` MCP server wraps the three routes as `dev_calendar_connect`, `dev_calendar_events`
 and `dev_calendar_capability`, and the workspace root runs them as
-`npm run dev:calendar:connect|events|capability`. The `ui-test` loop uses those.
+`pnpm run dev:calendar:connect|events|capability`. The `ui-test` loop uses those.
 
 ## Portal prerequisites
 
