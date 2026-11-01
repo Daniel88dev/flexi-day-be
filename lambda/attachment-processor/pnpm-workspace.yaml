@@ -1,0 +1,8 @@
+# Lambda zips cannot carry symlinks, so the runtime install is flat.
+nodeLinker: hoisted
+supportedArchitectures:
+  os: [linux]
+  cpu: [x64]
+  libc: [glibc]
+skills:
+  dirs: []

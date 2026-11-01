@@ -15,7 +15,7 @@ if (!databaseUrl.includes("testdb")) {
   console.error("Expected DATABASE to contain 'testdb'");
   console.error("Current DATABASE:", databaseUrl);
   console.error("\n💡 Make sure Docker database is running:");
-  console.error("   npm run docker:e2e:up\n");
+  console.error("   docker compose -f docker-compose.e2e.yml up -d postgres\n");
   process.exit(1);
 }
 
@@ -29,7 +29,7 @@ try {
   console.error("\n❌ ERROR: Cannot connect to test database!");
   console.error("Database URL:", databaseUrl);
   console.error("\n💡 Make sure Docker database is running:");
-  console.error("   npm run docker:e2e:up\n");
+  console.error("   docker compose -f docker-compose.e2e.yml up -d postgres\n");
   if (error instanceof Error) {
     console.error("Error:", error.message);
   }

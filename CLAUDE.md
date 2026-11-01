@@ -21,6 +21,16 @@ permission, or any AWS resource. Production runs on App Runner and RDS defined i
 variable that only reaches `config.ts` and `.env` never reaches production. Secrets go in via
 Secrets Manager, and the live values live in the gitignored `terraform/terraform.tfvars`.
 
+## pnpm
+
+The repo uses pnpm, pinned by `packageManager` in `package.json`. Settings and overrides live in
+`pnpm-workspace.yaml`, not `.npmrc`. Flags follow the script name directly:
+`pnpm run test:e2e --shard=1/4`. With a `--` in between, pnpm hands vitest a literal `--` and
+vitest ignores every flag after it.
+
+`lambda/attachment-processor/` is a pnpm root of its own, with its own lockfile and a hoisted
+`node_modules`, because a Lambda zip cannot hold symlinks.
+
 ## Imports need `.js` extensions
 
 `"type": "module"` plus `verbatimModuleSyntax: true` means every relative import carries a `.js`
@@ -90,7 +100,7 @@ const quota = await db.transaction(async (tx) => {
 
 ## Migrations
 
-`npm run db:generate` writes a new file into `src/db/schema/out/`. `scripts/db-migrate.sh` applies
+`pnpm run db:generate` writes a new file into `src/db/schema/out/`. `scripts/db-migrate.sh` applies
 it, and its header documents every flag.
 
 **Apply migrations to local databases. Hand every production migration to the user.** Write the
@@ -98,12 +108,12 @@ migration, apply it locally, confirm the app still works, then give the user the
 stop. The prod target refuses to start unless stdin is a terminal, so an agent shell cannot put DDL
 on the live database even by accident, and `--yes` does not get around it.
 
-| Command                    | Target                                         | Who runs it             |
-| -------------------------- | ---------------------------------------------- | ----------------------- |
-| `npm run db:migrate:local` | the `DATABASE` in `.env`                       | anyone                  |
-| `npm run db:status:prod`   | prints the applied ledger, writes nothing      | anyone                  |
-| `npm run db:baseline:prod` | records a squashed baseline as applied, no DDL | the user, at a terminal |
-| `npm run db:migrate:prod`  | RDS, connection string from Secrets Manager    | the user, at a terminal |
+| Command                     | Target                                         | Who runs it             |
+| --------------------------- | ---------------------------------------------- | ----------------------- |
+| `pnpm run db:migrate:local` | the `DATABASE` in `.env`                       | anyone                  |
+| `pnpm run db:status:prod`   | prints the applied ledger, writes nothing      | anyone                  |
+| `pnpm run db:baseline:prod` | records a squashed baseline as applied, no DDL | the user, at a terminal |
+| `pnpm run db:migrate:prod`  | RDS, connection string from Secrets Manager    | the user, at a terminal |
 
 The prod target pins the RDS CA bundle and connects with `sslmode=verify-full`. The connection
 string is never printed and never passed as a command-line argument, where `ps` would hand it to
@@ -134,12 +144,12 @@ deliberately absent from the API docs.
 
 ## Testing
 
-- Unit: `src/**/*.test.ts`, run with `npm test`. Mock database calls and test the logic. A unit
+- Unit: `src/**/*.test.ts`, run with `pnpm test`. Mock database calls and test the logic. A unit
   test that executes a query fails with a message naming the module to mock; see
   [`docs/adr/0009-unit-tests-refuse-query-execution.md`](docs/adr/0009-unit-tests-refuse-query-execution.md).
-- E2E: `src/**/*.e2e.test.ts`, run with `npm run test:e2e` — it checks the DB connection first
+- E2E: `src/**/*.e2e.test.ts`, run with `pnpm run test:e2e` — it checks the DB connection first
   (`src/tests/e2e/check-db.ts`) and reads `.env.e2e.test`. Real database, helpers in
-  `src/tests/e2e/helpers/`, and each test cleans up after itself. `npm run docker:e2e:run` runs
+  `src/tests/e2e/helpers/`, and each test cleans up after itself. `pnpm run docker:e2e:run` runs
   the suite against a containerised Postgres, as CI does. `.env.e2e.test` is gitignored and has no
   tracked example, so write it by hand on a fresh clone; besides the database and better-auth
   values it must set `TRUSTED_ORIGINS=http://localhost:3000,flexiday://`, the same value `ci.yml`

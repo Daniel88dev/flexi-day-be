@@ -1,10 +1,11 @@
 // Builds attachment-processor.zip next to this file: the handler and the
 // shared processor bundled into one ESM file, plus sharp and libheif-js
-// installed for the Lambda's linux/x64 runtime. `npm run lambda:build` from
+// installed for the Lambda's linux/x64 runtime. `pnpm run lambda:build` from
 // the repo root runs it; CD uploads the result with `aws lambda update-function-code`.
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, rmSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,20 +34,18 @@ await build({
   logLevel: "info",
 });
 
-for (const file of ["package.json", "package-lock.json"]) {
+// Without its own pnpm-workspace.yaml, pnpm in dist/ would walk up to the repo root's file.
+for (const file of ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"]) {
   cpSync(path.join(here, file), path.join(dist, file));
 }
 execFileSync(
-  "npm",
+  "pnpm",
   [
-    "ci",
-    "--omit=dev",
-    "--ignore-scripts",
-    "--no-audit",
-    "--no-fund",
-    "--os=linux",
-    "--cpu=x64",
-    "--libc=glibc",
+    "install",
+    "--frozen-lockfile",
+    "--prod",
+    "--store-dir",
+    path.join(os.tmpdir(), "attachment-processor-pnpm-store"),
   ],
   { cwd: dist, stdio: "inherit" }
 );
