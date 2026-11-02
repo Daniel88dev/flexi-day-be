@@ -13,14 +13,18 @@ const SENTRY_DSN =
   "https://b20be47db13f6b4d1ef6059b378c347d@o4507832619237376.ingest.de.sentry.io/4511796017365072";
 
 // Must match the release used for `sentry-cli sourcemaps upload` (APP_VERSION, see Dockerfile).
-const release = process.env.SENTRY_RELEASE ?? process.env.APP_VERSION;
+const release = process.env.SENTRY_RELEASE || process.env.APP_VERSION;
 
-// On for CI-built production images only; opt in elsewhere with SENTRY_ENABLE=true. The
+// On for CI-built production images only. SENTRY_ENABLE=true forces it on anywhere and
+// SENTRY_ENABLE=false forces it off, e.g. for a local run of an image pulled from ECR. The
 // Dockerfile bakes in NODE_ENV=production, so a local `docker run` of that image would
 // otherwise report as production. Only cd.yml passes a real APP_VERSION.
 const enabled =
-  (process.env.NODE_ENV === "production" && !!release && release !== "unknown") ||
-  process.env.SENTRY_ENABLE === "true";
+  process.env.SENTRY_ENABLE === "true" ||
+  (process.env.SENTRY_ENABLE !== "false" &&
+    process.env.NODE_ENV === "production" &&
+    !!release &&
+    release !== "unknown");
 
 if (enabled) {
   Sentry.init({
