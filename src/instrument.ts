@@ -12,15 +12,25 @@ const SENTRY_DSN =
   process.env.SENTRY_DSN ??
   "https://b20be47db13f6b4d1ef6059b378c347d@o4507832619237376.ingest.de.sentry.io/4511796017365072";
 
-// On in production only; opt in elsewhere with SENTRY_ENABLE=true.
-const enabled = process.env.NODE_ENV === "production" || process.env.SENTRY_ENABLE === "true";
+// Must match the release used for `sentry-cli sourcemaps upload` (APP_VERSION, see Dockerfile).
+const release = process.env.SENTRY_RELEASE || process.env.APP_VERSION;
+
+// On for CI-built production images only. SENTRY_ENABLE=true forces it on anywhere and
+// SENTRY_ENABLE=false forces it off, e.g. for a local run of an image pulled from ECR. The
+// Dockerfile bakes in NODE_ENV=production, so a local `docker run` of that image would
+// otherwise report as production. Only cd.yml passes a real APP_VERSION.
+const enabled =
+  process.env.SENTRY_ENABLE === "true" ||
+  (process.env.SENTRY_ENABLE !== "false" &&
+    process.env.NODE_ENV === "production" &&
+    !!release &&
+    release !== "unknown");
 
 if (enabled) {
   Sentry.init({
     dsn: SENTRY_DSN,
     environment: process.env.NODE_ENV,
-    // Must match the release used for `sentry-cli sourcemaps upload` (APP_VERSION, see Dockerfile).
-    release: process.env.SENTRY_RELEASE ?? process.env.APP_VERSION,
+    release,
     integrations: [nodeProfilingIntegration()],
     // The v10 baseline, spelled out: left unset, v11 collects request bodies (passwords on
     // sign-in), cookies and database query data.
