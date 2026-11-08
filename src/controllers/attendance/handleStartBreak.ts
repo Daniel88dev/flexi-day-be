@@ -10,7 +10,7 @@ export const handleStartBreak = async (req: Request, res: Response) => {
 
   const entry = await db.transaction(async (tx) => {
     const subject = await beginAttendanceWrite(auth.userId, organizationId, tx, "OPEN");
-    return startBreak(subject, auth.userId, tx);
+    return startBreak(subject, auth, tx);
   });
 
   return res.status(201).json(presentBreak(entry));

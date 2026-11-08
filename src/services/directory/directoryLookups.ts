@@ -49,6 +49,7 @@ export const showProfileSection = async (
       await loadDirectoryViewer(auth.userId, organizationId, tx, { language }),
       employmentId,
       section,
+      auth.channel,
       tx
     )
   );

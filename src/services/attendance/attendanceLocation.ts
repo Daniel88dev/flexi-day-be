@@ -155,6 +155,7 @@ export const updateSessionLocation = async (
       sessionId: session.id,
       eventType: attendanceEventType.LocationUpdated,
       changedByUserId: userId,
+      channel: "app",
       before: { end: fix.end, ...stored },
       after: {
         end: fix.end,

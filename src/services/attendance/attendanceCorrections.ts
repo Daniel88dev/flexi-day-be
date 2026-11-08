@@ -474,6 +474,7 @@ export const correctAttendanceSession = async (
       sessionId: session.id,
       eventType: attendanceEventType.SessionEdited,
       changedByUserId: viewerUserId,
+      channel: "app",
       before: {
         startedAt: session.startedAt,
         endedAt: session.endedAt,
@@ -570,6 +571,7 @@ export const correctAttendanceBreak = async (
       sessionId: session.id,
       eventType: attendanceEventType.BreakEdited,
       changedByUserId: viewerUserId,
+      channel: "app",
       before: {
         breakId: entry.id,
         startedAt: entry.startedAt,
@@ -649,6 +651,7 @@ export const recordAddedBreak = async (
       sessionId: session.id,
       eventType: attendanceEventType.BreakAdded,
       changedByUserId: viewerUserId,
+      channel: "app",
       after: { breakId: entry.id, startedAt: entry.startedAt, endedAt: entry.endedAt },
     },
     tx
@@ -685,6 +688,7 @@ export const deleteAttendanceBreak = async (
       sessionId: session.id,
       eventType: attendanceEventType.BreakDeleted,
       changedByUserId: viewerUserId,
+      channel: "app",
       before: {
         breakId: entry.id,
         startedAt: entry.startedAt,
@@ -746,6 +750,7 @@ export const deleteAttendanceSession = async (
       sessionId: session.id,
       eventType: attendanceEventType.SessionDeleted,
       changedByUserId: viewerUserId,
+      channel: "app",
       before: { startedAt: session.startedAt, endedAt: session.endedAt, deletedAt: null },
       after: { deletedAt: now },
     },
@@ -790,6 +795,7 @@ export const markAttendanceSessionChecked = async (
       sessionId: session.id,
       eventType: attendanceEventType.SessionChecked,
       changedByUserId: viewerUserId,
+      channel: "app",
       before: { changedAfterDay: true },
       after: { changedAfterDay: false },
     },
@@ -828,6 +834,7 @@ export const listAttendanceSessionEvents = async (
       eventType: attendanceEvents.eventType,
       before: attendanceEvents.before,
       after: attendanceEvents.after,
+      channel: attendanceEvents.channel,
       createdAt: attendanceEvents.createdAt,
       userId: user.id,
       userName: personName(user, { organizationId: employment.organizationId }),
@@ -844,6 +851,7 @@ export const listAttendanceSessionEvents = async (
     user: row.userId ? buildUserSummary({ id: row.userId, name: row.userName ?? "" }) : null,
     before: row.before,
     after: row.after,
+    channel: row.channel,
     createdAt: row.createdAt,
   }));
 };

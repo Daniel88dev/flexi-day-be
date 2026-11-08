@@ -28,6 +28,7 @@ export const mockAuthData = {
   userName: "Test User",
   userEmail: "test@example.com",
   emailVerified: true,
+  channel: "app" as const,
 };
 
 export const mockDifferentAuthData = {
@@ -36,4 +37,5 @@ export const mockDifferentAuthData = {
   userName: "Different User",
   userEmail: "different@example.com",
   emailVerified: true,
+  channel: "app" as const,
 };

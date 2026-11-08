@@ -86,6 +86,7 @@ describe("authSession middleware", () => {
       userName: "Ada Lovelace",
       userEmail: "ada@example.com",
       emailVerified: true,
+      channel: "app",
     });
   });
 

@@ -57,6 +57,7 @@ export const cancelBookingsOnDeparture = async (
       eventType: vacationEventType.Cancelled,
       actorUserId: input.actorUserId,
       reason: input.reason,
+      channel: "app",
     })),
     tx
   );

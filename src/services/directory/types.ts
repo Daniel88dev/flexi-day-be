@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ChangeChannel } from "../../db/schema/change-channel-schema.js";
 import {
   contractType,
   profileHistoryActor,
@@ -588,6 +589,7 @@ export type ReadLogEntry = {
   /** The Sections a read opened; null on an export. */
   sections: directoryPermissionRow[] | null;
   audience: readLogAudience;
+  channel: ChangeChannel;
 };
 
 export type ReadLogPage = {

@@ -169,6 +169,7 @@ const appendEventsRowByRow =
           eventType,
           actorUserId: auth.userId,
           reason,
+          channel: auth.channel,
         },
         tx
       );
@@ -185,6 +186,7 @@ const appendEventsInOneInsert =
         eventType,
         actorUserId: auth.userId,
         reason,
+        channel: auth.channel,
       })),
       tx
     );

@@ -26,7 +26,7 @@ export const clockInOwn = async (params: {
   const { auth, organizationId } = params;
   return db.transaction(async (tx) => {
     const subject = await beginAttendanceWrite(auth.userId, organizationId, tx, "OPEN");
-    return clockIn(subject, auth.userId, tx);
+    return clockIn(subject, auth, tx);
   });
 };
 
@@ -37,7 +37,7 @@ export const clockOutOwn = async (params: {
   const { auth, organizationId } = params;
   return db.transaction(async (tx) => {
     const subject = await beginAttendanceWrite(auth.userId, organizationId, tx, "CLOSE");
-    return clockOut(subject, auth.userId, tx);
+    return clockOut(subject, auth, tx);
   });
 };
 

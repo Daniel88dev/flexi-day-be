@@ -48,6 +48,7 @@ import { getAttendanceExclusions } from "./attendanceExclusions.js";
 import { selfServiceWindowOf } from "./selfServiceWindow.js";
 import type { AttendanceSettingsType } from "../organization/types.js";
 import type { BoundEmploymentType } from "../employment/types.js";
+import type { ChangeChannel } from "../../db/schema/change-channel-schema.js";
 import type {
   AttendanceBreakType,
   AttendanceDayType,
@@ -57,6 +58,9 @@ import type {
   AttendanceMonthType,
   ValidatedAttendanceDayQueryType,
 } from "./types.js";
+
+/** Who clocks or breaks, and the channel the history records it under. An `AuthSession` is one. */
+export type ChangeActor = { userId: string; channel: ChangeChannel };
 
 /**
  * The Employment a request is about, with the rules that govern it. Settings
@@ -503,6 +507,7 @@ export const appendAttendanceEvent = async (
     sessionId: string;
     eventType: attendanceEventType;
     changedByUserId: string | null;
+    channel: ChangeChannel;
     before?: unknown;
     after?: unknown;
   },
@@ -513,6 +518,7 @@ export const appendAttendanceEvent = async (
     sessionId: entry.sessionId,
     eventType: entry.eventType,
     changedByUserId: entry.changedByUserId,
+    channel: entry.channel,
     before: entry.before ?? null,
     after: entry.after ?? null,
     // The statement's own instant rather than the transaction's, so the events
@@ -544,7 +550,7 @@ const noOpenSession = (employmentId: string) =>
 
 export const clockIn = async (
   subject: AttendanceSubject & { timezone: string },
-  actorUserId: string,
+  actor: ChangeActor,
   tx: DbTransaction
 ): Promise<AttendanceSessionView> => {
   await lockEmployment(subject.employment.id, tx);
@@ -571,7 +577,8 @@ export const clockIn = async (
     {
       sessionId: session.id,
       eventType: attendanceEventType.ClockIn,
-      changedByUserId: actorUserId,
+      changedByUserId: actor.userId,
+      channel: actor.channel,
       after: { startedAt: session.startedAt, businessDate, timezone: subject.timezone },
     },
     tx
@@ -595,7 +602,7 @@ const requireOpenSession = async (
 
 export const clockOut = async (
   subject: AttendanceSubject,
-  actorUserId: string,
+  actor: ChangeActor,
   tx: DbTransaction
 ): Promise<AttendanceSessionView> => {
   const open = await requireOpenSession(subject, tx);
@@ -625,7 +632,8 @@ export const clockOut = async (
     {
       sessionId: session.id,
       eventType: attendanceEventType.ClockOut,
-      changedByUserId: actorUserId,
+      changedByUserId: actor.userId,
+      channel: actor.channel,
       before: { endedAt: null, closedBy: null },
       after: {
         endedAt: session.endedAt,
@@ -642,7 +650,7 @@ export const clockOut = async (
 
 export const startBreak = async (
   subject: AttendanceSubject,
-  actorUserId: string,
+  actor: ChangeActor,
   tx: DbTransaction
 ): Promise<AttendanceBreakType> => {
   const open = await requireOpenSession(subject, tx);
@@ -667,7 +675,8 @@ export const startBreak = async (
     {
       sessionId: open.id,
       eventType: attendanceEventType.BreakStart,
-      changedByUserId: actorUserId,
+      changedByUserId: actor.userId,
+      channel: actor.channel,
       after: { breakId: entry.id, startedAt: entry.startedAt },
     },
     tx
@@ -678,7 +687,7 @@ export const startBreak = async (
 
 export const endBreak = async (
   subject: AttendanceSubject,
-  actorUserId: string,
+  actor: ChangeActor,
   tx: DbTransaction
 ): Promise<AttendanceBreakType> => {
   const open = await requireOpenSession(subject, tx);
@@ -701,7 +710,8 @@ export const endBreak = async (
     {
       sessionId: open.id,
       eventType: attendanceEventType.BreakEnd,
-      changedByUserId: actorUserId,
+      changedByUserId: actor.userId,
+      channel: actor.channel,
       before: { breakId: entry.id, endedAt: null },
       after: { breakId: entry.id, endedAt: entry.endedAt },
     },

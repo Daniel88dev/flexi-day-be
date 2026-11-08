@@ -53,6 +53,7 @@ export const getVacationEvents = async (
         groupId: sql`(select ${vacation.groupId} from ${vacation} where ${vacation.id} = ${vacationEvents.vacationId})`,
       }),
       reason: vacationEvents.reason,
+      channel: vacationEvents.channel,
       createdAt: vacationEvents.createdAt,
     })
     .from(vacationEvents)

@@ -218,6 +218,7 @@ export const createRequest = async (params: {
         vacationId: row.id,
         eventType: vacationEventType.Created,
         actorUserId: auth.userId,
+        channel: auth.channel,
       })),
       tx
     );
@@ -230,6 +231,7 @@ export const createRequest = async (params: {
           vacationId: row.id,
           eventType: vacationEventType.Approved,
           actorUserId: auth.userId,
+          channel: auth.channel,
         })),
         tx
       );

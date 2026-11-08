@@ -1180,7 +1180,10 @@ export const attendanceRouter = (): Router => {
    *       '200':
    *         description: |
    *           `{ sessionId, events }`, an event being
-   *           `{ id, sessionId, eventType, user, before, after, createdAt }`.
+   *           `{ id, sessionId, eventType, user, before, after, channel, createdAt }`.
+   *           `channel` is what the change came through: `app`, `assistant` or
+   *           `mcp` (an AI app). Entries from before channels were recorded,
+   *           and the sweep's, read `app`.
    *           `eventType` is one of `CLOCK_IN`, `CLOCK_OUT`, `BREAK_START`,
    *           `BREAK_END`, `LOCATION_UPDATED`, `SESSION_EDITED`, `BREAK_EDITED`,
    *           `BREAK_DELETED`, `SESSION_DELETED`, `SESSION_CREATED`,

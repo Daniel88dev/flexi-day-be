@@ -1910,7 +1910,7 @@ export const directoryRouter = (): Router => {
    *                   type: array
    *                   items:
    *                     type: object
-   *                     required: [id, kind, at, reader, person, sections, audience]
+   *                     required: [id, kind, at, reader, person, sections, audience, channel]
    *                     properties:
    *                       id:
    *                         type: string
@@ -1943,6 +1943,10 @@ export const directoryRouter = (): Router => {
    *                       audience:
    *                         type: string
    *                         enum: [OWNER, ORGANIZATION_ADMIN, SELF, HR, LEADERSHIP, GROUP_ADMIN, COLLEAGUE, EXTERNAL_WORKER]
+   *                       channel:
+   *                         type: string
+   *                         enum: [app, assistant, mcp]
+   *                         description: What the read came through. `app` for every export and for rows from before channels were recorded.
    *                 nextBefore:
    *                   type: string
    *                   nullable: true

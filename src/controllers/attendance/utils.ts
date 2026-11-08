@@ -131,5 +131,6 @@ export const presentAttendanceEvent = (event: AttendanceEventView) => ({
   user: event.user,
   before: event.before,
   after: event.after,
+  channel: event.channel,
   createdAt: event.createdAt,
 });

@@ -372,6 +372,13 @@
       "when": 1794128875653,
       "tag": "0052_ai_agreement",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794132056507,
+      "tag": "0053_change_channel",
+      "breakpoints": true
     }
   ]
 }

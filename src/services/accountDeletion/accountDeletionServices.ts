@@ -244,6 +244,7 @@ const closeOpenSessions = async (userId: string, at: Date, tx: DbTransaction) =>
         sessionId: session.id,
         eventType: attendanceEventType.ClockOut,
         changedByUserId: null,
+        channel: "app",
         before: { endedAt: null, closedBy: null },
         after: {
           endedAt: at,
@@ -279,6 +280,7 @@ const cancelPendingRequests = async (userId: string, at: Date, tx: DbTransaction
       eventType: vacationEventType.Cancelled,
       actorUserId: null,
       reason: ACCOUNT_DELETED_REASON,
+      channel: "app",
     })),
     tx
   );

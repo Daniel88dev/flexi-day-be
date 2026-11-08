@@ -40,6 +40,7 @@ const fakeAuthSession =
         userName: "Test",
         userEmail: "test@dev.local",
         emailVerified: true,
+        channel: "app",
       };
       return next();
     }

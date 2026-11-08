@@ -46,6 +46,7 @@ const authOf = (person: { id: string; name: string; email: string }): AuthSessio
   userName: person.name,
   userEmail: person.email,
   emailVerified: true,
+  channel: "app",
 });
 
 const YEAR = new Date().getUTCFullYear() + 1;

@@ -129,6 +129,7 @@ export const listReadLog = async (
       },
       sections: row.sections,
       audience: row.audience,
+      channel: row.channel,
     };
   });
 

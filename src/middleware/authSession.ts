@@ -10,6 +10,7 @@ import {
   SESSION_DEVICE_MISMATCH_MESSAGE,
   isDeviceMismatchError,
 } from "../utils/nativeSession.js";
+import type { ChangeChannel } from "../db/schema/change-channel-schema.js";
 
 export type AuthSession = {
   sessionId: string;
@@ -19,6 +20,8 @@ export type AuthSession = {
   emailVerified: boolean;
   /** Set only on a Native session: the phone it is bound to. */
   deviceId?: string;
+  /** What the request came through: `app` here; the Assistant and MCP adapters set their own. */
+  channel: ChangeChannel;
 };
 
 export const authSession = async (req: Request, res: Response, next: NextFunction) => {
@@ -36,6 +39,7 @@ export const authSession = async (req: Request, res: Response, next: NextFunctio
       userEmail: session.user.email,
       emailVerified: Boolean(session.user.emailVerified),
       ...(session.session.deviceId ? { deviceId: session.session.deviceId } : {}),
+      channel: "app",
     };
     // Id only — name and email deliberately stay out of Sentry.
     Sentry.setUser({ id: session.user.id });

@@ -102,6 +102,7 @@ const seed = async () => {
     vacationId: daveSick,
     eventType: vacationEventType.Comment,
     actorUserId: sue.id,
+    channel: "app",
     reason: "dave-private-comment",
   });
   await attachFile(daveSick, source, dave.id);

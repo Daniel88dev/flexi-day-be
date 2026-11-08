@@ -1,4 +1,5 @@
 import type { DbTransaction } from "../../db/db.js";
+import type { ChangeChannel } from "../../db/schema/change-channel-schema.js";
 import {
   directoryAudience,
   directoryPermissionRow,
@@ -39,6 +40,7 @@ export const showSensitiveSection = async (
   viewer: DirectoryViewer,
   employmentId: string,
   section: SensitiveSectionName,
+  channel: ChangeChannel,
   tx: DbTransaction
 ): Promise<ShownSection> => {
   const found = await lockRecordInReach(viewer, employmentId, tx, { lock: false });
@@ -66,6 +68,7 @@ export const showSensitiveSection = async (
       employmentIds: [employmentId],
       sections: [row],
       audience: READ_AUDIENCE[grantedBy],
+      channel,
     });
   }
 
