@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type { AiFeaturesConfig, AssistantConfig, KnowledgeBaseConfig } from "../config.js";
+import type {
+  AiFeaturesConfig,
+  AssistantConfig,
+  KnowledgeBaseConfig,
+  PrivacyBannerConfig,
+} from "../config.js";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -13,6 +18,7 @@ const loadConfig = async (env: Record<string, string | undefined>) => {
         aiFeatures: AiFeaturesConfig;
         assistant: AssistantConfig;
         knowledgeBase: KnowledgeBaseConfig;
+        privacyBanner: PrivacyBannerConfig;
       };
     }
   ).config;
@@ -44,6 +50,7 @@ const BASE = {
   ASSISTANT_WEEKLY_LIMIT_USD: "",
   ASSISTANT_STEP_OUTPUT_RESERVE: "",
   KB_BUNDLE_URL: "",
+  PRIVACY_BANNER_FROM: "",
 };
 
 const PRODUCTION = {
@@ -322,4 +329,28 @@ describe("config AI features in production", () => {
     });
     expect(config.knowledgeBase.bundleUrl).toBe("http://localhost:3000/help/kb.json");
   });
+});
+
+describe("config Privacy banner", () => {
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("has no start date when unset", async () => {
+    expect((await loadConfig(BASE)).privacyBanner).toEqual({ from: null });
+  });
+
+  it("starts at 00:00 UTC on the given day", async () => {
+    const config = await loadConfig({ ...BASE, PRIVACY_BANNER_FROM: "2026-12-01" });
+    expect(config.privacyBanner.from?.toISOString()).toBe("2026-12-01T00:00:00.000Z");
+  });
+
+  it.each(["2026-12-1", "2026-02-30", "1 December 2026", "2026-12-01T10:00:00Z"])(
+    "rejects %s",
+    async (value) => {
+      await expect(loadConfig({ ...BASE, PRIVACY_BANNER_FROM: value })).rejects.toThrow(
+        `Invalid PRIVACY_BANNER_FROM: "${value}". Expected a date as YYYY-MM-DD`
+      );
+    }
+  );
 });

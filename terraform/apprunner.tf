@@ -116,6 +116,7 @@ resource "aws_apprunner_service" "main" {
           length(var.ai_preview_organization_ids) > 0 ? {
             AI_PREVIEW_ORGANIZATION_IDS = join(",", var.ai_preview_organization_ids)
           } : {},
+          var.privacy_banner_from != "" ? { PRIVACY_BANNER_FROM = var.privacy_banner_from } : {},
           # Google OAuth client id is public; only set when Google sign-in is
           # enabled. The matching client secret is injected below via Secrets
           # Manager. better-auth builds the callback as

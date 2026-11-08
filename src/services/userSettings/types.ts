@@ -8,8 +8,14 @@ import {
 
 export type UserSettingsRecord = typeof userSettings.$inferSelect;
 
-/** What the settings endpoints expose: every preference column, no row id or timestamps. */
-export type UserSettingsResponse = Omit<UserSettingsRecord, "userId" | "createdAt" | "updatedAt">;
+/**
+ * What the settings endpoints expose: every preference column, no row id or timestamps. The
+ * Privacy banner has its own routes under `/api/ai-features`.
+ */
+export type UserSettingsResponse = Omit<
+  UserSettingsRecord,
+  "userId" | "createdAt" | "updatedAt" | "privacyBannerDismissedAt"
+>;
 
 export const DEFAULT_USER_SETTINGS: UserSettingsResponse = {
   emailNotifications: true,

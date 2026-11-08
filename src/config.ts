@@ -187,6 +187,14 @@ type KnowledgeBaseConfig = {
   refreshMs: number;
 };
 
+type PrivacyBannerConfig = {
+  /**
+   * The day the AI texts were published (`PRIVACY_BANNER_FROM`, `YYYY-MM-DD`, 00:00 UTC). The
+   * banner shows for 30 days from it, and only while AI connections is switched on.
+   */
+  from: Date | null;
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
@@ -221,6 +229,7 @@ type Config = {
    * app loads; parsing them here makes a bad value refuse to boot.
    */
   traceRates: TraceRates;
+  privacyBanner: PrivacyBannerConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -636,6 +645,20 @@ const parseKnowledgeBase = (): KnowledgeBaseConfig => {
   };
 };
 
+const parsePrivacyBanner = (): PrivacyBannerConfig => {
+  const raw = process.env.PRIVACY_BANNER_FROM;
+  if (!raw) return { from: null };
+  const from = new Date(`${raw}T00:00:00Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(raw) ||
+    Number.isNaN(from.getTime()) ||
+    from.toISOString().slice(0, 10) !== raw
+  ) {
+    throw new Error(`Invalid PRIVACY_BANNER_FROM: "${raw}". Expected a date as YYYY-MM-DD`);
+  }
+  return { from };
+};
+
 // Mirrored by the preconditions on aws_apprunner_service.main. A preview organization runs both
 // features with their switches off, so a non-empty list counts as on.
 const assertProductionAiConfig = (aiFeatures: AiFeaturesConfig): void => {
@@ -729,6 +752,7 @@ export const config: Config = {
   assistant: parseAssistant(),
   knowledgeBase: parseKnowledgeBase(),
   traceRates: parseTraceRates(process.env),
+  privacyBanner: parsePrivacyBanner(),
 };
 
 export type {
@@ -738,4 +762,5 @@ export type {
   CalendarSyncConfig,
   KnowledgeBaseConfig,
   PaddleConfig,
+  PrivacyBannerConfig,
 };

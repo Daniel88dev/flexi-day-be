@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { handleGetAiAvailability } from "../controllers/aiFeatures/handleGetAiAvailability.js";
+import {
+  handleDismissPrivacyBanner,
+  handleGetPrivacyBanner,
+} from "../controllers/aiFeatures/handlePrivacyBanner.js";
 
 export const aiFeaturesRouter = (): Router => {
   const app = Router();
@@ -60,6 +64,59 @@ export const aiFeaturesRouter = (): Router => {
    *         description: Not signed in
    */
   app.get("/availability", tryCatch(handleGetAiAvailability));
+
+  /**
+   * @openapi
+   * /api/ai-features/privacy-banner:
+   *   get:
+   *     tags:
+   *       - AI features
+   *     summary: Whether the caller sees the Privacy Policy update banner
+   *     description: |
+   *       The banner announces the Privacy Policy changes for the AI features. It
+   *       shows to every signed-in user for 30 days from `PRIVACY_BANNER_FROM`,
+   *       only while `AI_CONNECTIONS_ENABLED` is on (the preview list does not
+   *       count), until the user dismisses it. A dismissal from before the
+   *       current start date doesn't count, so a later update shows it again.
+   *     operationId: handleGetPrivacyBanner
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: Whether to show the banner
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [show]
+   *               properties:
+   *                 show:
+   *                   type: boolean
+   *       '401':
+   *         description: Not signed in
+   */
+  app.get("/privacy-banner", tryCatch(handleGetPrivacyBanner));
+
+  /**
+   * @openapi
+   * /api/ai-features/privacy-banner/dismiss:
+   *   post:
+   *     tags:
+   *       - AI features
+   *     summary: Dismiss the Privacy Policy update banner for the caller
+   *     description: |
+   *       Records the time of the dismissal for the caller only. Idempotent, and
+   *       accepted whether or not the banner is showing. Takes no body.
+   *     operationId: handleDismissPrivacyBanner
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '204':
+   *         description: Dismissed
+   *       '401':
+   *         description: Not signed in
+   */
+  app.post("/privacy-banner/dismiss", tryCatch(handleDismissPrivacyBanner));
 
   return app;
 };

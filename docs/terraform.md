@@ -208,6 +208,7 @@ stops.
 | `assistant_driver`, `assistant_weekly_limit_usd`         | `ASSISTANT_DRIVER`, `ASSISTANT_WEEKLY_LIMIT_USD`         | always                     |
 | `kb_bundle_url`                                          | `KB_BUNDLE_URL`                                          | always                     |
 | `sentry_traces_mcp_rate`, `sentry_traces_assistant_rate` | `SENTRY_TRACES_MCP_RATE`, `SENTRY_TRACES_ASSISTANT_RATE` | always                     |
+| `privacy_banner_from`                                    | `PRIVACY_BANNER_FROM`                                    | when it is not empty       |
 | `assistant_agent_id`, `assistant_environment_id`         | `ASSISTANT_AGENT_ID`, `ASSISTANT_ENVIRONMENT_ID`         | while the Assistant is on  |
 | slot `<project>-<environment>-anthropic-api-key`         | secret `ANTHROPIC_API_KEY`                               | while the Assistant is on  |
 | slot `<project>-<environment>-anthropic-webhook-secret`  | secret `ANTHROPIC_WEBHOOK_SECRET`                        | while the Assistant is on  |
@@ -276,9 +277,13 @@ turn.
 
 ### Launch
 
-1. Day 0: once the AI connection texts are published and the notice email has gone out (record the
-   send time), set `ai_connections_enabled = true` and apply.
-2. Day 30 after that send, with a passing eval baseline on `main`: set `assistant_enabled = true`
+1. Day 0, the texts: set the frontend's `NEXT_PUBLIC_AI_TEXTS_PUBLISHED` repository variable to
+   the day (`YYYY-MM-DD`) and re-run its latest CI run on `main`. The legal pages build with the AI
+   wording and that date as "Last updated"; without the variable they keep today's wording.
+2. Day 0, once the pages are live and the notice email has gone out (record the send time): set
+   `privacy_banner_from` to the same day and `ai_connections_enabled = true`, and apply. Every user
+   then sees the Privacy banner for 30 days, until they dismiss it.
+3. Day 30 after that send, with a passing eval baseline on `main`: set `assistant_enabled = true`
    and apply.
 
 Each flip changes only the App Runner env, which rolls out a new deployment.

@@ -214,6 +214,7 @@ finish() {
 # titles like "(prod)", so items are looked up by title and read by id.
 
 REPO="Daniel88dev/flexi-day-be"
+FE_REPO="Daniel88dev/flexi-day"
 VAULT="Development"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="$ROOT/terraform"
@@ -668,22 +669,51 @@ stages_required_check() {
 # ── launch ───────────────────────────────────────────────────────────────────
 
 stages_launch() {
-  local sent_at="" sent_epoch now_epoch days
-  TOTAL_STAGES=2
+  local sent_at="" sent_epoch now_epoch days day0=""
+  TOTAL_STAGES=3
   banner "Assistant setup: launch"
 
-  stage "Day 0: AI connections"
+  stage "Day 0: publish the texts"
+  say "The legal pages carry the AI wording only in a build with NEXT_PUBLIC_AI_TEXTS_PUBLISHED"
+  say "set, and that date becomes their \"Last updated\" date. The Privacy banner starts on the"
+  say "same day, so the next stage reuses it."
+  ask day0 "Day 0 (YYYY-MM-DD), usually today:" || true
+  if [[ ! "$day0" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    skip "Day 0 (no date given)"
+    finish
+    return 0
+  fi
+  note "NEXT_PUBLIC_AI_TEXTS_PUBLISHED on $FE_REPO is now \"$(gh variable get NEXT_PUBLIC_AI_TEXTS_PUBLISHED --repo "$FE_REPO" 2>/dev/null || true)\"."
+  if confirm "Set NEXT_PUBLIC_AI_TEXTS_PUBLISHED = $day0 on $FE_REPO?"; then
+    if gh variable set NEXT_PUBLIC_AI_TEXTS_PUBLISHED --repo "$FE_REPO" --body "$day0" >/dev/null; then
+      printf '  %s✓ set%s NEXT_PUBLIC_AI_TEXTS_PUBLISHED on %s\n' "$GREEN" "$RESET" "$FE_REPO"
+    else
+      skip "NEXT_PUBLIC_AI_TEXTS_PUBLISHED on $FE_REPO (gh variable set failed)"
+    fi
+  else
+    skip "NEXT_PUBLIC_AI_TEXTS_PUBLISHED = $day0 on $FE_REPO"
+  fi
+  open_url "https://github.com/$FE_REPO/actions/workflows/ci.yml?query=branch%3Amain"
+  step "Re-run the latest CI run on main, so the deploy builds the pages with the date."
+  step "Then check https://www.flexi-day.com/privacy/ says \"Last updated\" on $day0 and has"
+  step "the \"AI connections\" section, and that /dpa/ lists Anthropic."
+  pause
+
+  stage "Day 0: the banner and AI connections"
   say "Before this flip:"
-  step "The AI features agreement, the DPA, Privacy and Security edits are published."
+  step "The pages from the last stage are live."
   step "The notice email has gone to every owner (its command, dry run first), and you"
   step "recorded the send time on the launch task."
-  step "The banner shows in the app."
+  say "privacy_banner_from shows every user the Privacy banner for 30 days from $day0,"
+  say "but only once AI connections is on."
+  note "privacy_banner_from is now $(current_tfvar privacy_banner_from)."
   note "ai_connections_enabled is now $(current_tfvar ai_connections_enabled)."
-  if confirm "All of that is done. Set ai_connections_enabled = true?"; then
+  if confirm "All of that is done. Set privacy_banner_from = \"$day0\" and ai_connections_enabled = true?"; then
+    write_tfvar privacy_banner_from "\"$day0\""
     write_tfvar ai_connections_enabled true
     tf_apply "$TF_DIR" "the backend (flexi-day-be)"
   else
-    skip "ai_connections_enabled = true"
+    skip "privacy_banner_from = \"$day0\" and ai_connections_enabled = true"
   fi
   pause
 

@@ -442,6 +442,13 @@
       "when": 1794160064132,
       "tag": "0062_ai_usage_weeks",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794161530281,
+      "tag": "0063_privacy_banner_dismissed",
+      "breakpoints": true
     }
   ]
 }

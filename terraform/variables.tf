@@ -423,6 +423,17 @@ variable "sentry_traces_assistant_rate" {
   }
 }
 
+variable "privacy_banner_from" {
+  description = "Day 0 of the AI launch as YYYY-MM-DD (PRIVACY_BANNER_FROM). From it, every user sees the Privacy Policy banner for 30 days, only while ai_connections_enabled is true. Empty: no banner. Matches the frontend's NEXT_PUBLIC_AI_TEXTS_PUBLISHED."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.privacy_banner_from == "" || can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", var.privacy_banner_from))
+    error_message = "privacy_banner_from must be empty or a date as YYYY-MM-DD."
+  }
+}
+
 # Attachments (docs/adr/0003)
 variable "attachments_bucket_name" {
   description = "S3 bucket for attachment bytes. Bucket names are global, so override on a collision; empty means <project_name>-<environment>-attachments."
