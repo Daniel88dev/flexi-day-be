@@ -26,6 +26,14 @@ import {
   validateDirectoryDeleteAllBody,
   validateEnableDirectoryBody,
 } from "../services/directory/types.js";
+import { handleGetAiSettings } from "../controllers/aiFeatures/handleGetAiSettings.js";
+import { handlePostEnableAssistant } from "../controllers/aiFeatures/handlePostEnableAssistant.js";
+import { handlePostDisableAssistant } from "../controllers/aiFeatures/handlePostDisableAssistant.js";
+import { handlePostAcceptAiAgreement } from "../controllers/aiFeatures/handlePostAcceptAiAgreement.js";
+import {
+  validateAiAgreementBody,
+  validateEnableAssistantBody,
+} from "../services/aiFeatures/types.js";
 
 export const organizationRouter = (): Router => {
   const app = Router();
@@ -908,6 +916,287 @@ export const organizationRouter = (): Router => {
     "/directory/agreement",
     bodyValidationMiddleware(validateDirectoryAgreementBody),
     tryCatch(handlePostAcceptDirectoryAgreement)
+  );
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     AiSettings:
+   *       type: object
+   *       required: [organizationId, isOwner, ownerName, plan, assistant, agreement, memberNotice]
+   *       properties:
+   *         organizationId:
+   *           type: string
+   *         isOwner:
+   *           type: boolean
+   *         ownerName:
+   *           type: string
+   *           description: The owner's display name, for "Only <owner>, the owner, can change this".
+   *         plan:
+   *           type: string
+   *           enum: [FREE, PRO, ENTERPRISE, CUSTOM]
+   *         assistant:
+   *           type: object
+   *           required: [enabled, enabledAt, planAllows]
+   *           properties:
+   *             enabled:
+   *               type: boolean
+   *               description: The owner's setting. Off by default.
+   *             enabledAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *               description: When the owner last turned it on.
+   *             planAllows:
+   *               type: boolean
+   *               description: Enterprise or Custom, so the owner may turn it on.
+   *         agreement:
+   *           type: object
+   *           required: [currentVersion, acceptedVersion, acceptedAt, acceptedByName, newVersionReady]
+   *           properties:
+   *             currentVersion:
+   *               type: integer
+   *             acceptedVersion:
+   *               type: integer
+   *               nullable: true
+   *               description: The newest version this organization accepted.
+   *             acceptedAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *             acceptedByName:
+   *               type: string
+   *               nullable: true
+   *             newVersionReady:
+   *               type: boolean
+   *               description: An AI feature is on and the newest acceptance is older than the current version.
+   *         memberNotice:
+   *           type: object
+   *           description: |
+   *             The members' notice "Tell members" sends, in both languages, so
+   *             the owner can copy the same text.
+   *           properties:
+   *             assistant:
+   *               type: object
+   *               properties:
+   *                 en:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *                 cs:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *     NoticeText:
+   *       type: object
+   *       required: [title, body]
+   *       properties:
+   *         title:
+   *           type: string
+   *         body:
+   *           type: string
+   */
+
+  /**
+   * @openapi
+   * /api/organization/ai:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: The AI settings, the AI features agreement and the members' notice
+   *     description: |
+   *       Organization admins only, owner and delegate alike. Answers the
+   *       Assistant setting, whether the plan allows it, the agreement state
+   *       and the text "Tell members" sends. Says nothing about the kill
+   *       switches; `GET /api/ai-features/availability` does.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The AI settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '400':
+   *         description: |
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization, or the caller has none yet
+   */
+  app.get("/ai", tryCatch(handleGetAiSettings));
+
+  /**
+   * @openapi
+   * /api/organization/ai/assistant/enable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn the Assistant on and accept the AI features agreement
+   *     description: |
+   *       Owner only, Enterprise or Custom only. Turns the Assistant setting
+   *       on and records an acceptance of the current AI features agreement
+   *       version, once per organization and version: turning it on again
+   *       under a version already accepted writes no second row.
+   *
+   *       With `tellMembers`, after the commit every person with a bound
+   *       open Employment, Deleted accounts and the owner aside, gets one
+   *       `assistant_enabled` Notification, in-app and pushed passively,
+   *       never mailed. Its text is `memberNotice.assistant` in the reader's
+   *       language.
+   *
+   *       Answers 404 while the Assistant is unavailable to the
+   *       organization: `ASSISTANT_ENABLED` off and the organization not in
+   *       `AI_PREVIEW_ORGANIZATION_IDS`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - agreementVersion
+   *             properties:
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *                 description: The agreement version the owner was shown.
+   *               tellMembers:
+   *                 type: boolean
+   *                 default: false
+   *                 description: Send the members' notice once the Assistant is on.
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '400':
+   *         description: No unambiguous default organization
+   *       '402':
+   *         description: |
+   *           The plan is Free or Pro (`reason: PLAN_LIMIT`,
+   *           `code: ASSISTANT_PLAN_REQUIRED`).
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization, or the Assistant is unavailable to it
+   *       '409':
+   *         description: |
+   *           `ASSISTANT_ALREADY_ON`, or `AGREEMENT_VERSION_STALE` when the
+   *           version sent is not the current one.
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/assistant/enable",
+    bodyValidationMiddleware(validateEnableAssistantBody),
+    tryCatch(handlePostEnableAssistant)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/assistant/disable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn the Assistant off
+   *     description: |
+   *       Owner only, on every plan, whatever the kill switch says. Members
+   *       lose the Assistant at once; chats stay until retention deletes
+   *       them. Calling it while the Assistant is off changes nothing.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization
+   */
+  app.post("/ai/assistant/disable", tryCatch(handlePostDisableAssistant));
+
+  /**
+   * @openapi
+   * /api/organization/ai/agreement:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Accept a new version of the AI features agreement
+   *     description: |
+   *       Owner only, on every plan, while an AI feature is on. Records an
+   *       acceptance of the current version once. Until the owner accepts,
+   *       nothing pauses; the web shows the owner a banner.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - agreementVersion
+   *             properties:
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the acceptance
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization
+   *       '409':
+   *         description: |
+   *           `AI_FEATURES_OFF` while no AI feature is on, or
+   *           `AGREEMENT_VERSION_STALE`.
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/agreement",
+    bodyValidationMiddleware(validateAiAgreementBody),
+    tryCatch(handlePostAcceptAiAgreement)
   );
 
   return app;

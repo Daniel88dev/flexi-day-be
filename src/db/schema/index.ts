@@ -20,6 +20,7 @@ import { groupEvents } from "./group-event-schema.js";
 import { reportExports } from "./report-export-schema.js";
 import { supportAccess } from "./support-access-schema.js";
 import { organizations } from "./organization-schema.js";
+import { aiAgreementAcceptances } from "./ai-agreement-schema.js";
 import { organizationUsers } from "./organization-users-schema.js";
 import { subscriptions } from "./subscription-schema.js";
 import { paddleEvents } from "./paddle-event-schema.js";
@@ -103,4 +104,5 @@ export const schema = {
   directoryDepartments,
   directoryLocations,
   directoryRetentionHolds,
+  aiAgreementAcceptances,
 };

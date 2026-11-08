@@ -20,7 +20,11 @@ export const aiFeaturesRouter = (): Router => {
    *       group in or belongs to, oldest first. The top-level flags are true
    *       when the switch is on or any listed organization has the feature.
    *       The web app hides every entry point of a feature that is unavailable.
-   *       Says nothing about plan, settings or standing.
+   *       Says nothing about plan, settings or standing, except
+   *       `newAgreementVersionReady`: true only on the organization the caller
+   *       owns, while an AI feature is on there and the AI features agreement
+   *       version it last accepted is older than the current one. The web
+   *       shows the owner a banner from it.
    *     operationId: handleGetAiAvailability
    *     security:
    *       - bearerAuth: []
@@ -41,7 +45,7 @@ export const aiFeaturesRouter = (): Router => {
    *                   type: array
    *                   items:
    *                     type: object
-   *                     required: [organizationId, assistant, aiConnections]
+   *                     required: [organizationId, assistant, aiConnections, newAgreementVersionReady]
    *                     properties:
    *                       organizationId:
    *                         type: string
@@ -49,6 +53,8 @@ export const aiFeaturesRouter = (): Router => {
    *                       assistant:
    *                         type: boolean
    *                       aiConnections:
+   *                         type: boolean
+   *                       newAgreementVersionReady:
    *                         type: boolean
    *       '401':
    *         description: Not signed in

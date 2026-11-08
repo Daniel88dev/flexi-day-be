@@ -109,7 +109,14 @@ describe("AI feature kill switches and the preview list", () => {
       expect(res.body).toEqual({
         assistant: false,
         aiConnections: false,
-        organizations: [{ organizationId: previewOrgId, assistant: false, aiConnections: false }],
+        organizations: [
+          {
+            organizationId: previewOrgId,
+            assistant: false,
+            aiConnections: false,
+            newAgreementVersionReady: false,
+          },
+        ],
       });
     });
 
@@ -122,12 +129,26 @@ describe("AI feature kill switches and the preview list", () => {
       expect(member.body).toEqual({
         assistant: true,
         aiConnections: true,
-        organizations: [{ organizationId: previewOrgId, assistant: true, aiConnections: true }],
+        organizations: [
+          {
+            organizationId: previewOrgId,
+            assistant: true,
+            aiConnections: true,
+            newAgreementVersionReady: false,
+          },
+        ],
       });
       expect(outsider.body).toEqual({
         assistant: false,
         aiConnections: false,
-        organizations: [{ organizationId: otherOrgId, assistant: false, aiConnections: false }],
+        organizations: [
+          {
+            organizationId: otherOrgId,
+            assistant: false,
+            aiConnections: false,
+            newAgreementVersionReady: false,
+          },
+        ],
       });
     });
 
@@ -140,7 +161,14 @@ describe("AI feature kill switches and the preview list", () => {
       expect(outsider.body).toEqual({
         assistant: true,
         aiConnections: false,
-        organizations: [{ organizationId: otherOrgId, assistant: true, aiConnections: false }],
+        organizations: [
+          {
+            organizationId: otherOrgId,
+            assistant: true,
+            aiConnections: false,
+            newAgreementVersionReady: false,
+          },
+        ],
       });
       expect(lone.body).toEqual({ assistant: true, aiConnections: false, organizations: [] });
     });

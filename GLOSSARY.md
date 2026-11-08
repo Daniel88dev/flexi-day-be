@@ -108,6 +108,8 @@ The vacation/day-off domain as the backend models it. Security and permission bo
 | **Occurrence**             | One dated instance of a recurring group event. Avoid: instance.                                                                                                                                                                                                                                       |
 | **Skipped date**           | A date a recurring group event's rule produces that does not happen, deleted or replaced by a one-off.                                                                                                                                                                                                |
 | **One-off**                | A group event without a repeat rule. One made by a "this event" edit links to the recurring group event and the occurrence it replaced.                                                                                                                                                               |
+| **Assistant**              | The in-app AI chat an owner turns on for an Enterprise organization, running on Anthropic. Avoid: chatbot, bot, agent.                                                                                                                                                                                |
+| **AI features agreement**  | The versioned agreement an owner accepts for the organization the first time they turn on an AI feature, recorded once per version. Adds to the DPA.                                                                                                                                                  |
 
 ## Plans
 

@@ -25,6 +25,10 @@ export const organizations = pgTable(
     // is active only while the plan is paid, and it goes dormant — flag kept,
     // data kept — when the subscription lapses. See `isSickDayBenefitActive`.
     sickDayBenefitEnabled: boolean("sick_day_benefit_enabled").notNull().default(false),
+    // Owner-only and Enterprise-only to turn on. The kill switch and the plan
+    // decide whether members reach it; this is only the owner's choice.
+    assistantEnabled: boolean("assistant_enabled").notNull().default(false),
+    assistantEnabledAt: timestamp("assistant_enabled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()

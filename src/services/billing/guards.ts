@@ -431,3 +431,29 @@ export const assertDirectoryWritable = async (
     });
   }
 };
+
+export const ASSISTANT_PLAN_REQUIRED = "ASSISTANT_PLAN_REQUIRED";
+
+/** The plan the organization runs on now, for the AI card's Pro and Free states. */
+export const planForOrganization = async (organizationId: string, tx?: DbTransaction) =>
+  (await entitlementsForOrganization(organizationId, tx)).plan;
+
+/** Enterprise or a Custom override, grace included, like the directory gate. */
+export const isAssistantPlan = (plan: Entitlements["plan"]): boolean =>
+  plan === "ENTERPRISE" || plan === "CUSTOM";
+
+/** Throws 402 unless the plan allows turning the Assistant on. Turning it off never calls it. */
+export const assertAssistantPlan = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  if (!isAssistantPlan(await planForOrganization(organizationId, tx))) {
+    throw new AppError({
+      message: "The Assistant requires the Enterprise plan",
+      logging: true,
+      code: 402,
+      context: { organizationId },
+      publicContext: { reason: "PLAN_LIMIT", code: ASSISTANT_PLAN_REQUIRED },
+    });
+  }
+};
