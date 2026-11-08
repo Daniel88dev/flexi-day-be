@@ -472,7 +472,7 @@ stages_prod() {
   # secret is filled by op_credential through printf -v, only to check it before put-secret.sh.
   # shellcheck disable=SC2034
   local key="" secret="" org_id=""
-  TOTAL_STAGES=8
+  TOTAL_STAGES=9
   banner "Assistant setup: prod"
 
   stage "Dark deploy and the empty slots"
@@ -564,8 +564,8 @@ stages_prod() {
   unset secret
 
   stage "OpenTelemetry to Sentry"
-  say "Managed Agents can send its own spans to Sentry. Set this up only if the"
-  say "observability ticket (T-727) kept the OTel destination after its trace spike."
+  say "Managed Agents can send its own spans to Sentry, nested under the backend's"
+  say "traces (T-727's spike kept the destination: Sentry sends one traceparent per call)."
   if confirm "Set up the OTel destination now?"; then
     open_url "https://sentry.io/settings/projects/"
     step "In the flexi-day-be project: Settings > Client Keys (DSN). Copy the OTLP"
@@ -602,6 +602,23 @@ stages_prod() {
   else
     skip "the preview list"
   fi
+
+  stage "Sentry alerts and the dashboard"
+  say "The signals exist once the deployment above is live. Every threshold is in"
+  say "docs/terraform.md, Assistant and AI connections > Monitoring."
+  open_url "https://sentry.io/issues/alerts/rules/"
+  step "In the flexi-day-be project, add one monitor per row of the Monitoring table,"
+  step "with the signal, window and threshold it names, notifying you by email."
+  step "Metric monitors: assistant.cost_usd (sum over 1 day above 30),"
+  step "assistant.screen_failed (5 in 15 min), assistant.session_error (3 in 15 min),"
+  step "assistant.webhook_rejected (10 in 1 h)."
+  step "Log monitors, any occurrence: assistant.reconcile_drift, assistant.webhook_missed,"
+  step "session.budget_reached, agent.thread_context_compacted, assistant.provider_refused."
+  step "Check that the existing high-priority alert covers /api/webhooks/anthropic errors."
+  open_url "https://sentry.io/dashboards/"
+  step "Add the dashboard \"Assistant and AI connections\" with the widgets the runbook lists."
+  step "It notifies nobody: the two limit-reached logs are for reading, not paging."
+  pause "Press Enter once the monitors and the dashboard exist."
   finish
 }
 

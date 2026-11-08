@@ -292,7 +292,9 @@ describe("/mcp limits", () => {
       const logged = info.mock.calls.filter(
         ([message]) => (message as unknown) === "mcp.daily_limit_reached"
       );
-      expect(logged).toEqual([["mcp.daily_limit_reached", { organizationId: s.acmeId }]]);
+      expect(logged).toEqual([
+        ["mcp.daily_limit_reached", { organizationId: s.acmeId, limit: 5000 }],
+      ]);
     });
 
     it("gives Enterprise 20,000 calls a day", async () => {

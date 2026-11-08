@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { and, desc, eq, gt, isNotNull, lt, ne } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { assistantChatMessages, assistantChats } from "../../db/schema/assistant-schema.js";
@@ -64,6 +65,7 @@ import {
   TOOL_CARD,
   type CardDecision,
 } from "./types.js";
+import { aiSignal } from "../../utils/aiSignals.js";
 
 /** A turn older than this is taken for dead (a crashed process) and may be reclaimed. */
 export const STALE_TURN_MS = 5 * 60_000;
@@ -351,6 +353,20 @@ export const prepareTurn = async (args: {
   }
 };
 
+const sighted = new Set<string>();
+
+/**
+ * Whether this process sees the event for the first time. `advanceTurn` lists
+ * a turn's events again at every idle; events with no display row of their own
+ * are logged once through this. Bounded: a restart may log one again.
+ */
+const firstSighting = (eventId: string): boolean => {
+  if (sighted.has(eventId)) return false;
+  if (sighted.size >= 1_000) sighted.clear();
+  sighted.add(eventId);
+  return true;
+};
+
 const isTurnEnd = (event: SessionEvent): boolean =>
   (event.type === "session.status_idle" && event.stop_reason.type !== "requires_action") ||
   event.type === "session.status_terminated";
@@ -366,12 +382,33 @@ type Advance = {
 };
 
 /**
+ * A span named after the step, with the chat id as Sentry's conversation id on
+ * it and on everything under it (tool spans, the screen's model call). Ids
+ * only: never the chat's text.
+ */
+const inChat = <T>(
+  name: "assistant.relay" | "assistant.advance",
+  chatId: string,
+  run: () => Promise<T>
+): Promise<T> =>
+  Sentry.withIsolationScope((scope) => {
+    scope.setConversationId(chatId);
+    return Sentry.startSpan(
+      { name, op: name, attributes: { "gen_ai.conversation.id": chatId } },
+      run
+    );
+  });
+
+/**
  * One idempotent step of a turn: list the turn's events, record the
  * Assistant's text, run the reads it asked for and answer each tool call
  * exactly once (the display row keyed on the tool-use event id is the claim).
  * Answers whether the turn has ended. Safe to run again at any point.
  */
-export const advanceTurn = async (turn: Advance): Promise<boolean> => {
+export const advanceTurn = (turn: Advance): Promise<boolean> =>
+  inChat("assistant.advance", turn.chatId, () => advance(turn));
+
+const advance = async (turn: Advance): Promise<boolean> => {
   const events = await turn.driver.listEvents(turn.sessionId, { afterId: turn.startEventId });
   const answered = new Set(
     events.flatMap((event) =>
@@ -391,7 +428,17 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
         code: refused ? ASSISTANT_NOTICE.UNAVAILABLE : ASSISTANT_NOTICE.ERROR,
         eventId: event.id,
       });
+      if (wrote) {
+        aiSignal("assistant.session_error", {
+          chatId: turn.chatId,
+          errorType: event.error.type,
+          retryStatus: event.error.retry_status?.type ?? "none",
+        });
+      }
       if (wrote && refused) noteProviderRefused("session");
+    }
+    if (event.type === "agent.thread_context_compacted" && firstSighting(event.id)) {
+      aiSignal("agent.thread_context_compacted", { chatId: turn.chatId });
     }
   }
 
@@ -419,8 +466,12 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
       });
     }
     if (last.type === "session.status_idle" && last.stop_reason.type === "budget_reached") {
-      logger.warn("session.budget_reached", { chatId: turn.chatId });
-      await record(turn.chatId, { kind: "notice", code: ASSISTANT_NOTICE.ERROR, eventId: last.id });
+      const wrote = await record(turn.chatId, {
+        kind: "notice",
+        code: ASSISTANT_NOTICE.ERROR,
+        eventId: last.id,
+      });
+      if (wrote) aiSignal("session.budget_reached", { chatId: turn.chatId });
     }
     await releaseTurn(turn.chatId);
     return true;
@@ -703,7 +754,9 @@ const relay = async (turn: Advance): Promise<void> => {
 /** Follows a turn in this process unless a relay here already does. */
 const startRelay = (turn: Advance) => {
   if (relays.has(turn.chatId)) return;
-  const running = relay(turn).finally(() => relays.delete(turn.chatId));
+  const running = inChat("assistant.relay", turn.chatId, () => relay(turn)).finally(() =>
+    relays.delete(turn.chatId)
+  );
   relays.set(turn.chatId, running);
 };
 
@@ -830,7 +883,7 @@ export const resumeStalledTurns = async (args: {
       const events = await turn.driver.listEvents(turn.sessionId, { afterId: turn.startEventId });
       const since = waitingSince(events);
       if (!since || Date.now() - since.getTime() < MISSED_WEBHOOK_GRACE_MS) continue;
-      logger.warn("assistant.webhook_missed", { chatId: chat.id });
+      aiSignal("assistant.webhook_missed", { chatId: chat.id });
       if (await advanceTurn(turn)) continue;
       startRelay(turn);
     } catch (error) {

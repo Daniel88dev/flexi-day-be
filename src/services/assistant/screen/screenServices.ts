@@ -11,6 +11,7 @@ import { errorName } from "../../../utils/errorName.js";
 import { currentAgentKnowledge } from "../agent/agentSync.js";
 import type { AssistantDriver, SessionUsage } from "../driver/types.js";
 import { isMeterRefusal, meterScreen } from "../meter/meter.js";
+import { aiSignal } from "../../../utils/aiSignals.js";
 
 /** What a flagged user-written value becomes in the tool result the session reads. */
 export const WITHHELD = "[withheld: looked like instructions]";
@@ -106,7 +107,7 @@ export const screenMessage = async (args: {
   } catch (error) {
     // The Weekly limit or a provider refusal is the turn's answer, not a screen failure.
     if (isMeterRefusal(error)) throw error;
-    logger.warn("assistant.screen_failed", {
+    aiSignal("assistant.screen_failed", {
       chatId: args.chatId,
       purpose: "message",
       reason: failureReason(error),
@@ -186,7 +187,7 @@ export const screenToolResults = async (args: {
     }
   } catch (error) {
     withheld = new Set(slots.keys());
-    logger.warn("assistant.screen_failed", {
+    aiSignal("assistant.screen_failed", {
       chatId: args.chatId,
       purpose: "tool_text",
       reason: failureReason(error),

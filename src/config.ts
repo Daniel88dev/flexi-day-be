@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { hasPrice } from "./services/assistant/meter/prices.js";
+import { parseTraceRates, type TraceRates } from "./utils/tracesSampler.js";
 dotenv.config();
 
 type APIConfig = {
@@ -215,6 +216,11 @@ type Config = {
   aiFeatures: AiFeaturesConfig;
   assistant: AssistantConfig;
   knowledgeBase: KnowledgeBaseConfig;
+  /**
+   * Sentry trace rates. `instrument.ts` reads the same variables before the
+   * app loads; parsing them here makes a bad value refuse to boot.
+   */
+  traceRates: TraceRates;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -722,6 +728,7 @@ export const config: Config = {
   aiFeatures,
   assistant: parseAssistant(),
   knowledgeBase: parseKnowledgeBase(),
+  traceRates: parseTraceRates(process.env),
 };
 
 export type {

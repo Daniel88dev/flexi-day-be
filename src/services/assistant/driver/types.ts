@@ -70,6 +70,7 @@ export type SessionEvent = Stamped &
         };
       }
     | { type: "session.status_terminated" }
+    | { type: "agent.thread_context_compacted" }
     | { type: "user.interrupt" }
   );
 

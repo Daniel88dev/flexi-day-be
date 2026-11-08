@@ -2,10 +2,10 @@ import type { Request, Response } from "express";
 import { Webhook } from "standardwebhooks";
 import { z } from "zod";
 import { config } from "../../config.js";
-import { logger } from "../../middleware/logger.js";
 import { handleAssistantWebhook } from "../../services/assistant/webhookServices.js";
 import AppError from "../../utils/appError.js";
 import { errorName } from "../../utils/errorName.js";
+import { aiSignal } from "../../utils/aiSignals.js";
 
 const payloadSchema = z.object({
   id: z.string().min(1).max(200),
@@ -35,11 +35,14 @@ export const handleAnthropicWebhook = async (req: Request, res: Response) => {
       "webhook-signature": headerOf(req, "webhook-signature"),
     });
   } catch (error) {
-    logger.warn("assistant.webhook_rejected", { reason: errorName(error) });
+    aiSignal("assistant.webhook_rejected", { reason: errorName(error) });
     throw new AppError({ message: "Invalid signature", code: 401 });
   }
 
   const payload = payloadSchema.safeParse(verified);
-  if (!payload.success) throw new AppError({ message: "Invalid payload", code: 400 });
+  if (!payload.success) {
+    aiSignal("assistant.webhook_rejected", { reason: "invalid_payload" });
+    throw new AppError({ message: "Invalid payload", code: 400 });
+  }
   res.status(200).json({ status: await handleAssistantWebhook(payload.data) });
 };

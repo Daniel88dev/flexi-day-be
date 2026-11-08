@@ -3,7 +3,7 @@
 import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
 import dotenv from "dotenv";
-import { scrubQueryErrorEvent } from "./utils/queryError.js";
+import { sentryPrivacyAndSampling } from "./utils/sentryOptions.js";
 
 dotenv.config();
 
@@ -32,26 +32,7 @@ if (enabled) {
     environment: process.env.NODE_ENV,
     release,
     integrations: [nodeProfilingIntegration()],
-    // The v10 baseline, spelled out: left unset, v11 collects request bodies (passwords on
-    // sign-in), cookies and database query data.
-    dataCollection: {
-      userInfo: false,
-      cookies: false,
-      httpHeaders: {
-        request: { deny: ["forwarded", "-ip", "remote-", "via", "-user"] },
-        response: { deny: ["forwarded", "-ip", "remote-", "via", "-user"] },
-      },
-      httpBodies: [],
-      urlQueryParams: { deny: ["forwarded", "-ip", "remote-", "via", "-user"] },
-      genAI: { inputs: false, outputs: false },
-      // Tool arguments and results never leave the process (see the AI connections invariant).
-      mcp: { inputs: false, outputs: false },
-      databaseQueryData: false,
-      queues: false,
-      graphQL: { document: false, variables: false },
-    },
-    beforeSend: (event, hint) => scrubQueryErrorEvent(event, hint.originalException),
-    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0.2),
+    ...sentryPrivacyAndSampling(process.env),
     // Profiling is trace-lifecycle-bound: it runs for the duration of every sampled
     // trace. Keep this low or an always-on server burns through the profile-hours
     // quota (24h/day/instance at 1.0). Overridable for targeted debugging.

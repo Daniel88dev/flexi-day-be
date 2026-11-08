@@ -3,12 +3,12 @@ import { config } from "../../../config.js";
 import { db, type DbTransaction } from "../../../db/db.js";
 import { assistantModelCalls } from "../../../db/schema/assistant-meter-schema.js";
 import { assistantChatMessages } from "../../../db/schema/assistant-schema.js";
-import { logger } from "../../../middleware/logger.js";
 import AppError from "../../../utils/appError.js";
 import { generateRandomUUID } from "../../../utils/generateUUID.js";
 import { ProviderRefusedError, type SessionEvent, type SessionUsage } from "../driver/types.js";
 import { ASSISTANT_NOTICE } from "../types.js";
 import { costOf, priceFor, rateFor, type MeteredUsage } from "./prices.js";
+import { aiSignal } from "../../../utils/aiSignals.js";
 
 /**
  * The meter behind the Weekly limit: reserve each step at its worst case
@@ -205,7 +205,7 @@ const insertReservation = async (
 };
 
 const limitReachedLog = (organizationId: string, purpose: string) =>
-  logger.info("assistant.weekly_limit_reached", { organizationId, purpose });
+  aiSignal("assistant.weekly_limit_reached", { organizationId, purpose });
 
 /**
  * Reserves the step that sends a user message, or throws 429 with the reset
@@ -428,7 +428,7 @@ export const settleSteps = async (args: {
     return { cost };
   });
   if (settled) {
-    logger.info("assistant.cost_usd", {
+    aiSignal("assistant.cost_usd", {
       organizationId: args.organizationId,
       purpose: "main",
       microUsd: settled.cost,
@@ -441,7 +441,7 @@ let providerRefusedAt: number | null = null;
 /** Anthropic refused for its spend limit or credits: every organization sees the Assistant unavailable for a while. */
 export const noteProviderRefused = (operation: string): void => {
   providerRefusedAt = Date.now();
-  logger.error("assistant.provider_refused", { operation });
+  aiSignal("assistant.provider_refused", { operation });
 };
 
 export const providerRefusedRecently = (): boolean =>
@@ -516,7 +516,7 @@ export const meterScreen = async <T extends { usage: SessionUsage }>(
     .update(calls)
     .set({ status: "settled", settledMicroUsd: cost, ...tokensOf(usage), settledAt: new Date() })
     .where(eq(calls.id, reservation.id));
-  logger.info("assistant.cost_usd", {
+  aiSignal("assistant.cost_usd", {
     organizationId: owner.organizationId,
     purpose: "screen",
     microUsd: cost,

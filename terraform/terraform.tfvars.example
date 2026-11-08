@@ -126,6 +126,10 @@ assistant_environment_id = ""
 # The help articles bundle the frontend publishes. The default is right for
 # production.
 kb_bundle_url = "https://www.flexi-day.com/help/kb.json"
+# Sentry trace rates for /mcp and the Assistant. Lower the Assistant's to 0.2
+# once five organizations have it on.
+sentry_traces_mcp_rate       = "0.05"
+sentry_traces_assistant_rate = "1"
 
 # Paddle billing. Leave paddle_api_key empty to disable billing entirely: no
 # Paddle secrets are created, no Paddle env vars are injected, and the

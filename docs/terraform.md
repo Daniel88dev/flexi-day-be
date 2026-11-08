@@ -201,15 +201,16 @@ stops.
 
 ### What reaches App Runner
 
-| Variable                                                | App Runner                                       | When                       |
-| ------------------------------------------------------- | ------------------------------------------------ | -------------------------- |
-| `assistant_enabled`, `ai_connections_enabled`           | `ASSISTANT_ENABLED`, `AI_CONNECTIONS_ENABLED`    | always                     |
-| `ai_preview_organization_ids`                           | `AI_PREVIEW_ORGANIZATION_IDS`                    | when the list is not empty |
-| `assistant_driver`, `assistant_weekly_limit_usd`        | `ASSISTANT_DRIVER`, `ASSISTANT_WEEKLY_LIMIT_USD` | always                     |
-| `kb_bundle_url`                                         | `KB_BUNDLE_URL`                                  | always                     |
-| `assistant_agent_id`, `assistant_environment_id`        | `ASSISTANT_AGENT_ID`, `ASSISTANT_ENVIRONMENT_ID` | while the Assistant is on  |
-| slot `<project>-<environment>-anthropic-api-key`        | secret `ANTHROPIC_API_KEY`                       | while the Assistant is on  |
-| slot `<project>-<environment>-anthropic-webhook-secret` | secret `ANTHROPIC_WEBHOOK_SECRET`                | while the Assistant is on  |
+| Variable                                                 | App Runner                                               | When                       |
+| -------------------------------------------------------- | -------------------------------------------------------- | -------------------------- |
+| `assistant_enabled`, `ai_connections_enabled`            | `ASSISTANT_ENABLED`, `AI_CONNECTIONS_ENABLED`            | always                     |
+| `ai_preview_organization_ids`                            | `AI_PREVIEW_ORGANIZATION_IDS`                            | when the list is not empty |
+| `assistant_driver`, `assistant_weekly_limit_usd`         | `ASSISTANT_DRIVER`, `ASSISTANT_WEEKLY_LIMIT_USD`         | always                     |
+| `kb_bundle_url`                                          | `KB_BUNDLE_URL`                                          | always                     |
+| `sentry_traces_mcp_rate`, `sentry_traces_assistant_rate` | `SENTRY_TRACES_MCP_RATE`, `SENTRY_TRACES_ASSISTANT_RATE` | always                     |
+| `assistant_agent_id`, `assistant_environment_id`         | `ASSISTANT_AGENT_ID`, `ASSISTANT_ENVIRONMENT_ID`         | while the Assistant is on  |
+| slot `<project>-<environment>-anthropic-api-key`         | secret `ANTHROPIC_API_KEY`                               | while the Assistant is on  |
+| slot `<project>-<environment>-anthropic-webhook-secret`  | secret `ANTHROPIC_WEBHOOK_SECRET`                        | while the Assistant is on  |
 
 "The Assistant is on" means `assistant_enabled = true` or a non-empty preview list, because a
 preview organization gets both features with the switches off. `local.assistant_reachable` in
@@ -298,6 +299,53 @@ their grants stay, and retention keeps running.
 
 When the Anthropic side is what's wrong, the Console's workspace spend limit stops every call at
 once without a deploy. Users then see "Assistant unavailable".
+
+### Monitoring
+
+Every alert sits on a log, a metric or an error, never on a span: those three are unsampled, and
+`/mcp` traces at 5%. The owner creates the monitors and the dashboard in Sentry's `flexi-day-be`
+project after the first deploy with the code in it (the `prod` stage of the wizard walks through
+it). Notifications go by email. The signals and what each may carry are in `src/utils/aiSignals.ts`.
+
+| Alert                     | Signal                                                                       | Monitor                           | Fires when                       |
+| ------------------------- | ---------------------------------------------------------------------------- | --------------------------------- | -------------------------------- |
+| Assistant spend           | metric `assistant.cost_usd` (dollars, `purpose` main or screen)              | metric monitor, sum over 1 day    | above 30                         |
+| Reconcile drift           | log `assistant.reconcile_drift` (error, from `pnpm run assistant:reconcile`) | log monitor, count over 1 day     | 1 or more                        |
+| Screen failures           | metric `assistant.screen_failed` (`purpose`, `reason`)                       | metric monitor, count over 15 min | 5 or more                        |
+| Turn errors               | metric `assistant.session_error` (`errorType`, `retryStatus`)                | metric monitor, count over 15 min | 3 or more                        |
+| Webhook rejected          | metric `assistant.webhook_rejected` (`reason`)                               | metric monitor, count over 1 h    | 10 or more                       |
+| Webhook missed            | log `assistant.webhook_missed`                                               | log monitor, count over 1 h       | 1 or more                        |
+| Session budget reached    | log `session.budget_reached`                                                 | log monitor, count over 1 h       | 1 or more                        |
+| Context compacted         | log `agent.thread_context_compacted`                                         | log monitor, count over 1 h       | 1 or more                        |
+| Anthropic refused         | log `assistant.provider_refused` (spend limit or credits)                    | log monitor, count over 1 h       | 1 or more                        |
+| Webhook handler exception | errors on `/api/webhooks/anthropic`                                          | the existing high-priority alert  | as for any other unhandled error |
+
+`assistant.session_error` counts only errors that end a step, so Anthropic's own retries never
+reach it. `session.budget_reached` and a compaction should never happen: the meter raises the
+session budget before every step, and the chat length ceiling closes a chat before the harness
+compacts it. One occurrence means one of those is wrong.
+
+**Dashboard "Assistant and AI connections"**, no notifications:
+
+- `mcp.daily_limit_reached` log count per day, grouped by `organizationId` (with `limit`, the plan's
+  daily AI connection limit).
+- `assistant.weekly_limit_reached` log count per day, grouped by `organizationId` and `purpose`.
+- `assistant.cost_usd` sum per day, split by `purpose`.
+- `assistant.screen_failed` and `assistant.session_error` counts per hour.
+- `gen_ai.execute_tool` spans per hour by `gen_ai.tool.name` and `flexiday.tool.outcome`
+  (extrapolated from the sample).
+
+**Trace rates.** `/mcp` traces at `sentry_traces_mcp_rate` (5%) and the Assistant's routes and
+webhook at `sentry_traces_assistant_rate`, both ignoring the caller's sampling; `/health` never;
+OAuth and discovery at 0.2; the rest at 0.2 or the caller's decision. A sampled Assistant turn stores
+about 100 to 150 spans and a sampled `/mcp` call about 30 (T-727's spike). Once five organizations
+have the Assistant on, set `sentry_traces_assistant_rate = "0.2"` and apply, so the Assistant stays
+inside the organization's span quota.
+
+**Managed Agents spans.** The prod workspace's OpenTelemetry destination (Metadata only) sends
+Anthropic's turn and model-request spans to the same project. They nest under our trace because
+Sentry sends one `traceparent` on every Anthropic call, with the sampled flag of our decision, and
+Anthropic emits nothing for an unsampled one.
 
 ### Rotating the Anthropic key
 

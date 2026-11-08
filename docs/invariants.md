@@ -295,8 +295,9 @@ the app, inside one organization.
   public message and public context only; anything else is one fixed message. Invalid arguments
   name the schema's field paths, never the values.
 - **No argument or result leaves the process.** The `gen_ai.execute_tool` span carries the tool,
-  channel and outcome only (`src/tools/tests/toolSpan.test.ts`), `instrument.ts` sets
-  `dataCollection.mcp` off, and `toToolError` logs an internal error by class name.
+  channel and outcome only (`src/tools/tests/toolSpan.test.ts`), `src/utils/sentryOptions.ts` sets
+  `dataCollection.mcp` off, and `toToolError` logs an internal error by class name. The full list
+  is under Observability below.
 
 ## The Assistant's turns (`src/services/assistant/`)
 
@@ -350,6 +351,37 @@ the app, inside one organization.
   refuses keeps its answers held, and the next admitted message carries them ahead of its text.
   Answering a round's reads while its card is open, or interrupting the session, would leave a tool
   call unanswered or start a model call nobody reserved.
+
+## Observability (`src/utils/sentryOptions.ts`, `src/utils/tracesSampler.ts`, `src/utils/aiSignals.ts`)
+
+Sentry is the only destination for traces, logs and metrics. The winston console and file transports
+write the same entries to CloudWatch, so the rules below hold for them too.
+
+- **Never logged, traced or counted:** chat text (the user's messages, the Assistant's answers,
+  rejected messages), card previews, the system prompt and the per-user `system.message`, the
+  screen's input, tool arguments and results on both channels, error messages built from any of
+  these, names and email addresses, credentials (OAuth tokens and codes, PKCE verifiers, client
+  secrets, the Anthropic key, the webhook secret), and Anthropic's full-content spans. Allowed: ids,
+  enums and numbers. `aiTelemetryPrivacy.e2e.test.ts` drives an Assistant turn, a card and `/mcp`
+  calls with marker text in each of these places and fails if any marker reaches a Sentry envelope
+  or a winston entry.
+- **Content capture stays off in config.** `sentryPrivacyAndSampling` sets `dataCollection.genAI`
+  and `dataCollection.mcp` off, sends no request bodies, and denies the `code` and `state` query
+  parameters, which carry OAuth authorization codes through redirects. The Anthropic client is
+  wrapped with `recordInputs: false, recordOutputs: false`, so the screen's `gen_ai.chat` span holds
+  the model and token counts only.
+- **The Assistant's and `/mcp`'s signals go through `aiSignal`.** Each name lists the attributes it
+  may carry and drops the rest, so a caller can't attach text by accident. `aiSignals.test.ts` pins
+  the names, levels and attributes against the spec, and fails when a name has no call site.
+- **An outside caller can't raise its own trace sampling.** The sampler answers `/mcp`, the
+  Assistant routes, the Anthropic webhook, `/api/auth/oauth2/*` and `/.well-known/*` with their own
+  rates and ignores an inbound `sentry-trace`. Inheriting there would let any client force 100%
+  tracing of its traffic and spend the organization's span quota. `/api/auth/jwks` inherits on
+  purpose: `/mcp` fetches it from this same server. `tracesSampler.test.ts` pins it.
+- **Sentry writes the one `traceparent` on calls to Anthropic.** `propagateTraceparent` is on and
+  the Anthropic SDK's own tracing and propagation are off (`anthropicClient.ts`). Two writers would
+  send two headers, which Anthropic reads as an invalid trace context; none would leave Managed
+  Agents' spans outside our traces.
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 

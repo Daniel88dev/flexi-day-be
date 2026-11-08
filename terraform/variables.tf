@@ -401,6 +401,28 @@ variable "kb_bundle_url" {
   }
 }
 
+variable "sentry_traces_mcp_rate" {
+  description = "Sentry trace sample rate for /mcp (SENTRY_TRACES_MCP_RATE). Ignores the caller's trace headers, so an outside client can't raise it."
+  type        = string
+  default     = "0.05"
+
+  validation {
+    condition     = try(tonumber(var.sentry_traces_mcp_rate) >= 0 && tonumber(var.sentry_traces_mcp_rate) <= 1, false)
+    error_message = "sentry_traces_mcp_rate must be a number from 0 to 1."
+  }
+}
+
+variable "sentry_traces_assistant_rate" {
+  description = "Sentry trace sample rate for the Assistant's chat API and its webhook (SENTRY_TRACES_ASSISTANT_RATE). 1 at launch; 0.2 once five organizations have the Assistant on (docs/terraform.md)."
+  type        = string
+  default     = "1"
+
+  validation {
+    condition     = try(tonumber(var.sentry_traces_assistant_rate) >= 0 && tonumber(var.sentry_traces_assistant_rate) <= 1, false)
+    error_message = "sentry_traces_assistant_rate must be a number from 0 to 1."
+  }
+}
+
 # Attachments (docs/adr/0003)
 variable "attachments_bucket_name" {
   description = "S3 bucket for attachment bytes. Bucket names are global, so override on a collision; empty means <project_name>-<environment>-attachments."

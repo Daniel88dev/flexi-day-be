@@ -4,9 +4,9 @@ import {
   aiConnectionDailyCalls,
   aiConnectionMemberDailyCalls,
 } from "../../db/schema/ai-connection-usage-schema.js";
-import { logger } from "../../middleware/logger.js";
 import { planForOrganization } from "../billing/guards.js";
 import type { Entitlements } from "../billing/entitlements.js";
+import { aiSignal } from "../../utils/aiSignals.js";
 
 /** `tools/call` requests per member per organization and UTC day. */
 export const MEMBER_DAILY_LIMIT = 1000;
@@ -75,7 +75,8 @@ export const countAiConnectionCall = async (args: {
     });
   } catch (error) {
     if (!(error instanceof Refused)) throw error;
-    if (error.limit === "organization") await markOrganizationLimitReached(args.organizationId);
+    if (error.limit === "organization")
+      await markOrganizationLimitReached(args.organizationId, max);
     return {
       counted: false,
       limit: error.limit,
@@ -87,7 +88,7 @@ export const countAiConnectionCall = async (args: {
 };
 
 /** Stamps the day's first refusal; only that one logs, so the log fires once a day per organization. */
-const markOrganizationLimitReached = async (organizationId: string) => {
+const markOrganizationLimitReached = async (organizationId: string, limit: number) => {
   const stamped = await db
     .update(aiConnectionDailyCalls)
     .set({ limitReachedAt: sql`now()` })
@@ -99,5 +100,5 @@ const markOrganizationLimitReached = async (organizationId: string) => {
       )
     )
     .returning({ organizationId: aiConnectionDailyCalls.organizationId });
-  if (stamped.length > 0) logger.info("mcp.daily_limit_reached", { organizationId });
+  if (stamped.length > 0) aiSignal("mcp.daily_limit_reached", { organizationId, limit });
 };

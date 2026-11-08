@@ -104,6 +104,10 @@ resource "aws_apprunner_service" "main" {
             # The help articles bundle, read by the Assistant and the docs
             # tools on /mcp. Required by config.ts while either feature is on.
             KB_BUNDLE_URL = var.kb_bundle_url
+            # Trace rates for /mcp and the Assistant; every other route
+            # keeps the code's 0.2 and /health is never traced.
+            SENTRY_TRACES_MCP_RATE       = var.sentry_traces_mcp_rate
+            SENTRY_TRACES_ASSISTANT_RATE = var.sentry_traces_assistant_rate
           },
           local.assistant_reachable ? {
             ASSISTANT_AGENT_ID       = var.assistant_agent_id

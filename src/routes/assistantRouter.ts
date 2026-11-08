@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/node";
 import { Router, type Request } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
@@ -26,6 +27,11 @@ const bodyOrganizationId = (req: Request): string | undefined => {
 /** Mounted behind `authSession` and `requireAiFeature("assistant", "caller")`. */
 export const assistantRouter = (): Router => {
   const app = Router();
+  // The chat id is Sentry's conversation id for everything the request traces.
+  app.param("chatId", (_req, _res, next, chatId: string) => {
+    Sentry.setConversationId(chatId);
+    next();
+  });
 
   /**
    * @openapi
