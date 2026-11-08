@@ -4,5 +4,5 @@ import { listGroupEventGroups } from "../../services/groupEvent/groupEventAccess
 
 export const handleGetGroupEventGroups = async (req: Request, res: Response) => {
   const auth = getAuth(req);
-  return res.status(200).json(await listGroupEventGroups(auth.userId));
+  return res.status(200).json(await listGroupEventGroups({ auth }));
 };
