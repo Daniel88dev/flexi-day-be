@@ -178,6 +178,25 @@ Roll out in this order:
 
 Each flip changes only the App Runner env, which rolls out a new deployment.
 
+## AI feature switches
+
+`assistant_enabled` and `ai_connections_enabled` are kill switches, booleans that default `false`
+and reach App Runner as `ASSISTANT_ENABLED` and `AI_CONNECTIONS_ENABLED`. While one is off, that
+feature's routes answer 404 and the web app hides its entry points; its data stays and retention
+keeps running. `ai_preview_organization_ids` lists organization ids that get both features while
+the switches are off, and reaches App Runner as `AI_PREVIEW_ORGANIZATION_IDS` only when it is not
+empty. `assistant_driver` stays `managed`: a precondition on the App Runner service refuses `fake`
+when `environment = "production"`, the same rule `config.ts` enforces at boot.
+
+Roll out in this order:
+
+1. Deploy both repos and apply with both switches `false` and an empty preview list.
+2. Add your own organization's id to `ai_preview_organization_ids` and apply.
+3. Day 0 of the launch: set `ai_connections_enabled = true` and apply.
+4. Day 30, with a passing eval baseline on `main`: set `assistant_enabled = true` and apply.
+
+Each flip changes only the App Runner env, which rolls out a new deployment.
+
 ## Adding an IAM permission
 
 `iam.tf` holds two App Runner roles that are easy to confuse. The ECR access role only pulls the

@@ -182,6 +182,11 @@ missing or invalid. Read it rather than a list here. Five blocks are opt-in and 
 `DEV_TOOLS_*`, `SUPPORT_ADMIN_USER_IDS`, `PADDLE_*`, `CALENDAR_SYNC_*` and `APNS_*`. The first three
 are covered in [`docs/invariants.md`](docs/invariants.md).
 
+The AI features ship dark behind `ASSISTANT_ENABLED` and `AI_CONNECTIONS_ENABLED`, with
+`AI_PREVIEW_ORGANIZATION_IDS` opening both to named organizations. Every route of either feature
+mounts behind `requireAiFeature` (`src/middleware/aiFeatureGuard.ts`), which answers 404 while the
+feature is unavailable.
+
 ## Merging pull requests
 
 Never merge a PR yourself — no `gh pr merge`, no merge button, no auto-merge — unless the user

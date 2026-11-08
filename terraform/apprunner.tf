@@ -86,7 +86,16 @@ resource "aws_apprunner_service" "main" {
             # driver. The connections reuse the sign-in client secrets below.
             CALENDAR_SYNC_GOOGLE_ENABLED    = tostring(var.calendar_sync_google_enabled)
             CALENDAR_SYNC_MICROSOFT_ENABLED = tostring(var.calendar_sync_microsoft_enabled)
+
+            # AI features ship dark: both kill switches default false, and the
+            # preview list opens both to the organizations it names.
+            ASSISTANT_ENABLED      = tostring(var.assistant_enabled)
+            AI_CONNECTIONS_ENABLED = tostring(var.ai_connections_enabled)
+            ASSISTANT_DRIVER       = var.assistant_driver
           },
+          length(var.ai_preview_organization_ids) > 0 ? {
+            AI_PREVIEW_ORGANIZATION_IDS = join(",", var.ai_preview_organization_ids)
+          } : {},
           # Google OAuth client id is public; only set when Google sign-in is
           # enabled. The matching client secret is injected below via Secrets
           # Manager. better-auth builds the callback as
@@ -185,6 +194,15 @@ resource "aws_apprunner_service" "main" {
   }
 
   auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.main.arn
+
+  # config.ts refuses the fake driver in production; fail at plan time rather
+  # than letting App Runner boot-loop on it.
+  lifecycle {
+    precondition {
+      condition     = !(var.environment == "production" && var.assistant_driver == "fake")
+      error_message = "assistant_driver must be \"managed\" when environment is \"production\"."
+    }
+  }
 
   # Secret values must exist before the first deployment resolves them, and
   # the schema must be migrated manually before the app can serve traffic.

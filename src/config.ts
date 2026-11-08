@@ -134,6 +134,20 @@ type ApnsConfig = {
   privateKey: string;
 };
 
+type AiFeaturesConfig = {
+  /** Kill switch for the Assistant: off answers 404 on its routes and hides its entry points. */
+  assistantEnabled: boolean;
+  /** Kill switch for AI connections (`/mcp`, its OAuth discovery and consent). */
+  aiConnectionsEnabled: boolean;
+  /** Organizations that get both features while a switch is off. */
+  previewOrganizationIds: string[];
+};
+
+type AssistantConfig = {
+  /** `fake` scripts sessions with no Anthropic call; production runs `managed`. */
+  driver: "managed" | "fake";
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
@@ -160,6 +174,8 @@ type Config = {
   calendarSync?: CalendarSyncConfig;
   /** Push to phones straight through APNs. `undefined` means the log sender stands in. */
   apns?: ApnsConfig;
+  aiFeatures: AiFeaturesConfig;
+  assistant: AssistantConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -464,6 +480,50 @@ const parseApns = (): ApnsConfig | undefined => {
   return { keyId, teamId, topic, privateKey };
 };
 
+const parseSwitch = (key: string): boolean => {
+  const raw = process.env[key] ?? "";
+  if (raw === "" || raw === "false") return false;
+  if (raw === "true") return true;
+  throw new Error(`Invalid ${key}: "${raw}". Expected "true" or "false"`);
+};
+
+const ORGANIZATION_ID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+const parseAiFeatures = (): AiFeaturesConfig => {
+  const previewOrganizationIds = [
+    ...new Set(
+      (process.env.AI_PREVIEW_ORGANIZATION_IDS ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+    ),
+  ];
+  for (const id of previewOrganizationIds) {
+    if (!ORGANIZATION_ID.test(id)) {
+      throw new Error(
+        `AI_PREVIEW_ORGANIZATION_IDS contains "${id}", which is not an organization id`
+      );
+    }
+  }
+  return {
+    assistantEnabled: parseSwitch("ASSISTANT_ENABLED"),
+    aiConnectionsEnabled: parseSwitch("AI_CONNECTIONS_ENABLED"),
+    previewOrganizationIds,
+  };
+};
+
+const parseAssistant = (): AssistantConfig => {
+  const driver =
+    process.env.ASSISTANT_DRIVER || (environment === "production" ? "managed" : "fake");
+  if (driver !== "managed" && driver !== "fake") {
+    throw new Error(`Invalid ASSISTANT_DRIVER: "${driver}". Expected "managed" or "fake"`);
+  }
+  if (environment === "production" && driver === "fake") {
+    throw new Error("ASSISTANT_DRIVER=fake must never be set when NODE_ENV=production");
+  }
+  return { driver };
+};
+
 const authSecrets = parseAuthSecrets();
 
 export const config: Config = {
@@ -524,6 +584,8 @@ export const config: Config = {
   organizationData: parseOrganizationData(),
   calendarSync: parseCalendarSync(),
   apns: parseApns(),
+  aiFeatures: parseAiFeatures(),
+  assistant: parseAssistant(),
 };
 
-export type { ApnsConfig, CalendarSyncConfig, PaddleConfig };
+export type { AiFeaturesConfig, ApnsConfig, AssistantConfig, CalendarSyncConfig, PaddleConfig };

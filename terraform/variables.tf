@@ -319,6 +319,44 @@ variable "calendar_sync_microsoft_enabled" {
   default     = false
 }
 
+# AI features: the Assistant and AI connections (docs/terraform.md has the launch order)
+variable "assistant_enabled" {
+  description = "Kill switch for the Assistant (ASSISTANT_ENABLED). Off, its routes answer 404 and the web app hides it; data stays. Organizations in ai_preview_organization_ids get it either way."
+  type        = bool
+  default     = false
+}
+
+variable "ai_connections_enabled" {
+  description = "Kill switch for AI connections (AI_CONNECTIONS_ENABLED): /mcp, its OAuth discovery and consent. Off, those answer 404 and the web app hides them; grants stay. Organizations in ai_preview_organization_ids get it either way."
+  type        = bool
+  default     = false
+}
+
+variable "ai_preview_organization_ids" {
+  description = "Organization ids that get both AI features while a switch is off (AI_PREVIEW_ORGANIZATION_IDS). Starts with the operator's own organization."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for id in var.ai_preview_organization_ids :
+      can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", id))
+    ])
+    error_message = "Each ai_preview_organization_ids entry must be an organization id (a UUID)."
+  }
+}
+
+variable "assistant_driver" {
+  description = "How the Assistant runs its sessions (ASSISTANT_DRIVER): managed (Claude Managed Agents) or fake (scripted, no Anthropic call). The backend refuses fake in production."
+  type        = string
+  default     = "managed"
+
+  validation {
+    condition     = contains(["managed", "fake"], var.assistant_driver)
+    error_message = "assistant_driver must be \"managed\" or \"fake\"."
+  }
+}
+
 # Attachments (docs/adr/0003)
 variable "attachments_bucket_name" {
   description = "S3 bucket for attachment bytes. Bucket names are global, so override on a collision; empty means <project_name>-<environment>-attachments."

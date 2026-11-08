@@ -49,6 +49,7 @@ import { attachmentCallbackRouter } from "./routes/attachmentCallbackRouter.js";
 import { isDiskAttachmentStore } from "./services/attachment/attachmentStore.js";
 import { isDiskOrganizationDataStore } from "./services/organizationData/organizationDataStore.js";
 import { localOrganizationDataRouter, personExportRouter } from "./routes/personExportRouter.js";
+import { aiFeaturesRouter } from "./routes/aiFeaturesRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -152,6 +153,7 @@ export const createServer = () => {
   app.use("/api/sync", syncRouter());
   app.use("/api/birthdays", birthdayRouter());
   app.use("/api/group-events", groupEventRouter());
+  app.use("/api/ai-features", aiFeaturesRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
   // deploy explicitly carries an allowlist, so for everyone else these routes
