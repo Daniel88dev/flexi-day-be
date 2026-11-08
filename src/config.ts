@@ -619,7 +619,46 @@ const parseAssistant = (): AssistantConfig => {
   });
 };
 
+const parseKnowledgeBase = (): KnowledgeBaseConfig => {
+  const raw = process.env.KB_BUNDLE_URL;
+  if (raw && !/^https?:\/\/[^/]/.test(raw)) {
+    throw new Error(`Invalid KB_BUNDLE_URL: "${raw}". Expected an absolute http(s) URL`);
+  }
+  return {
+    bundleUrl: raw || `${appUrl.replace(/\/+$/, "")}/help/kb.json`,
+    refreshMs: 5 * 60_000,
+  };
+};
+
+// Mirrored by the preconditions on aws_apprunner_service.main. A preview organization runs both
+// features with their switches off, so a non-empty list counts as on.
+const assertProductionAiConfig = (aiFeatures: AiFeaturesConfig): void => {
+  if (environment !== "production") return;
+  const preview = aiFeatures.previewOrganizationIds.length > 0;
+  const assistantOn = aiFeatures.assistantEnabled || preview;
+  const anyOn = assistantOn || aiFeatures.aiConnectionsEnabled;
+  const required = [
+    ...(assistantOn
+      ? [
+          "ANTHROPIC_API_KEY",
+          "ANTHROPIC_WEBHOOK_SECRET",
+          "ASSISTANT_AGENT_ID",
+          "ASSISTANT_ENVIRONMENT_ID",
+        ]
+      : []),
+    ...(anyOn ? ["KB_BUNDLE_URL"] : []),
+  ];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.join(", ")} must be set when NODE_ENV=production and an AI feature is on (ASSISTANT_ENABLED, AI_CONNECTIONS_ENABLED or AI_PREVIEW_ORGANIZATION_IDS)`
+    );
+  }
+};
+
 const authSecrets = parseAuthSecrets();
+const aiFeatures = parseAiFeatures();
+assertProductionAiConfig(aiFeatures);
 
 export const config: Config = {
   api: {
@@ -680,12 +719,9 @@ export const config: Config = {
   organizationData: parseOrganizationData(),
   calendarSync: parseCalendarSync(),
   apns: parseApns(),
-  aiFeatures: parseAiFeatures(),
+  aiFeatures,
   assistant: parseAssistant(),
-  knowledgeBase: {
-    bundleUrl: process.env.KB_BUNDLE_URL || `${appUrl.replace(/\/+$/, "")}/help/kb.json`,
-    refreshMs: 5 * 60_000,
-  },
+  knowledgeBase: parseKnowledgeBase(),
 };
 
 export type {

@@ -75,7 +75,7 @@ microsoft_tenant_id = "common"
 # Sign in with Apple: leave apple_client_id empty to disable it. The four values
 # here are public (Services ID, Team ID, Key ID, bundle id). The .p8 key is the
 # one secret and never passes through Terraform, this file or the environment:
-# terraform/scripts/put-p8.sh apple uploads it from 1Password, and every plan
+# terraform/scripts/put-secret.sh apple uploads it from 1Password, and every plan
 # checks that the slot holds a PEM key. The backend mints Apple's short-lived
 # client secret from the key itself, so nothing here expires. Replacing the key
 # is in docs/terraform.md. Portal steps: flexi-day-rn/docs/native-sign-in-setup.md.
@@ -86,7 +86,7 @@ apple_app_bundle_identifier = "com.flexiday.app"
 
 # Push notifications (APNs): reuses apple_team_id and, as the topic,
 # apple_app_bundle_identifier, whether or not apple_client_id is set. The key
-# goes up first with terraform/scripts/put-p8.sh apns; set apns_key_id only
+# goes up first with terraform/scripts/put-secret.sh apns; set apns_key_id only
 # after that, because the plan stops on an empty slot. Leave empty to keep
 # push off. Rollout and replacement: docs/terraform.md.
 apns_key_id = ""
@@ -115,6 +115,17 @@ ai_preview_organization_ids = []
 assistant_driver            = "managed"
 # Each organization's Weekly limit on Assistant Usage, in dollars.
 assistant_weekly_limit_usd = "10"
+# The agent and environment in the flexi-day-prod Anthropic workspace, as
+# `pnpm run assistant:provision` prints them (scripts/assistant-setup.sh prod
+# runs it). Public ids. Required, with the two Anthropic secrets, once
+# assistant_enabled is true or the preview list names an organization. The
+# key and the webhook secret never go here: terraform/scripts/put-secret.sh
+# uploads them from 1Password, and every plan checks their prefixes.
+assistant_agent_id       = ""
+assistant_environment_id = ""
+# The help articles bundle the frontend publishes. The default is right for
+# production.
+kb_bundle_url = "https://www.flexi-day.com/help/kb.json"
 
 # Paddle billing. Leave paddle_api_key empty to disable billing entirely: no
 # Paddle secrets are created, no Paddle env vars are injected, and the

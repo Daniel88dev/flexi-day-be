@@ -21,6 +21,13 @@ resource "aws_apprunner_auto_scaling_configuration_version" "main" {
   }
 }
 
+# A preview organization runs the Assistant with its switch off, so the
+# Anthropic secrets and ids follow this rather than assistant_enabled alone.
+# config.ts applies the same rule at boot.
+locals {
+  assistant_reachable = var.assistant_enabled || length(var.ai_preview_organization_ids) > 0
+}
+
 resource "aws_apprunner_service" "main" {
   service_name = "${var.project_name}-${var.environment}"
 
@@ -94,7 +101,14 @@ resource "aws_apprunner_service" "main" {
             ASSISTANT_DRIVER       = var.assistant_driver
             # Each organization's Weekly limit on Assistant Usage, in dollars.
             ASSISTANT_WEEKLY_LIMIT_USD = var.assistant_weekly_limit_usd
+            # The help articles bundle, read by the Assistant and the docs
+            # tools on /mcp. Required by config.ts while either feature is on.
+            KB_BUNDLE_URL = var.kb_bundle_url
           },
+          local.assistant_reachable ? {
+            ASSISTANT_AGENT_ID       = var.assistant_agent_id
+            ASSISTANT_ENVIRONMENT_ID = var.assistant_environment_id
+          } : {},
           length(var.ai_preview_organization_ids) > 0 ? {
             AI_PREVIEW_ORGANIZATION_IDS = join(",", var.ai_preview_organization_ids)
           } : {},
@@ -174,6 +188,10 @@ resource "aws_apprunner_service" "main" {
           var.paddle_api_key != "" ? {
             PADDLE_API_KEY        = aws_secretsmanager_secret.paddle_api_key[0].arn
             PADDLE_WEBHOOK_SECRET = aws_secretsmanager_secret.paddle_webhook_secret[0].arn
+          } : {},
+          local.assistant_reachable ? {
+            ANTHROPIC_API_KEY        = aws_secretsmanager_secret.anthropic_api_key.arn
+            ANTHROPIC_WEBHOOK_SECRET = aws_secretsmanager_secret.anthropic_webhook_secret.arn
           } : {}
         )
       }
@@ -197,12 +215,18 @@ resource "aws_apprunner_service" "main" {
 
   auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.main.arn
 
-  # config.ts refuses the fake driver in production; fail at plan time rather
-  # than letting App Runner boot-loop on it.
+  # config.ts refuses the fake driver, and a half-configured Assistant, in
+  # production; fail at plan time rather than letting App Runner boot-loop.
   lifecycle {
     precondition {
       condition     = !(var.environment == "production" && var.assistant_driver == "fake")
       error_message = "assistant_driver must be \"managed\" when environment is \"production\"."
+    }
+
+    # The two secrets are checked by their ephemeral reads in secrets.tf.
+    precondition {
+      condition     = !local.assistant_reachable || (var.assistant_agent_id != "" && var.assistant_environment_id != "")
+      error_message = "assistant_agent_id and assistant_environment_id are required while assistant_enabled is true or ai_preview_organization_ids is not empty. pnpm run assistant:provision prints them."
     }
   }
 

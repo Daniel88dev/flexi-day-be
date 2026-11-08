@@ -289,7 +289,7 @@ variable "apple_team_id" {
 }
 
 variable "apple_key_id" {
-  description = "Key ID of the Sign in with Apple key, whose .p8 goes up through terraform/scripts/put-p8.sh apple (public; plain env var). Required if apple_client_id is set."
+  description = "Key ID of the Sign in with Apple key, whose .p8 goes up through terraform/scripts/put-secret.sh apple (public; plain env var). Required if apple_client_id is set."
   type        = string
   default     = ""
 }
@@ -301,7 +301,7 @@ variable "apple_app_bundle_identifier" {
 }
 
 variable "apns_key_id" {
-  description = "Key ID of the APNs key, whose .p8 goes up through terraform/scripts/put-p8.sh apns (public; plain env var). Set it only once the key is uploaded; it wires APNS_* into App Runner. Leave empty to keep push off."
+  description = "Key ID of the APNs key, whose .p8 goes up through terraform/scripts/put-secret.sh apns (public; plain env var). Set it only once the key is uploaded; it wires APNS_* into App Runner. Leave empty to keep push off."
   type        = string
   default     = ""
 }
@@ -365,6 +365,39 @@ variable "assistant_weekly_limit_usd" {
   validation {
     condition     = can(regex("^[0-9]+(\\.[0-9]{1,2})?$", var.assistant_weekly_limit_usd)) && try(tonumber(var.assistant_weekly_limit_usd) > 0, false)
     error_message = "assistant_weekly_limit_usd must be a positive dollar amount, such as \"10\" or \"12.50\"."
+  }
+}
+
+variable "assistant_agent_id" {
+  description = "Id of the flexi-day-assistant agent in the flexi-day-prod Anthropic workspace (ASSISTANT_AGENT_ID), printed by `pnpm run assistant:provision`. Public; plain env var. Required while the Assistant is on or the preview list is not empty."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.assistant_agent_id == "" || startswith(var.assistant_agent_id, "agent_")
+    error_message = "assistant_agent_id must be an agent id (agent_...), as assistant:provision prints it."
+  }
+}
+
+variable "assistant_environment_id" {
+  description = "Id of the flexi-day-assistant environment in the flexi-day-prod Anthropic workspace (ASSISTANT_ENVIRONMENT_ID), printed by `pnpm run assistant:provision`. Public; plain env var. Required while the Assistant is on or the preview list is not empty."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.assistant_environment_id == "" || startswith(var.assistant_environment_id, "env_")
+    error_message = "assistant_environment_id must be an environment id (env_...), as assistant:provision prints it."
+  }
+}
+
+variable "kb_bundle_url" {
+  description = "The help articles bundle the frontend publishes (KB_BUNDLE_URL), read by the Assistant's prompt and the docs tools on both channels. Always injected; the backend requires it in production while either AI feature is on."
+  type        = string
+  default     = "https://www.flexi-day.com/help/kb.json"
+
+  validation {
+    condition     = startswith(var.kb_bundle_url, "https://")
+    error_message = "kb_bundle_url must be an https URL."
   }
 }
 
