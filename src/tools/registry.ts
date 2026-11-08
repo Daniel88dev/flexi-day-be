@@ -9,10 +9,12 @@ import {
   showDirectorySectionTool,
 } from "./reads/directory.js";
 import { listGroupEventsTool } from "./reads/groupEvents.js";
+import { listRequestsToApproveTool } from "./reads/approvals.js";
 import { listMyRequestsTool } from "./reads/myRequests.js";
 import { listWhoIsAwayTool } from "./reads/whoIsAway.js";
 import { isToolAllowed } from "./runTool.js";
 import { clockInTool, clockOutTool } from "./writes/attendance.js";
+import { approveRequestTool, rejectRequestTool } from "./writes/decisions.js";
 import { cancelMyRequestTool, createRequestTool } from "./writes/requests.js";
 import type { Tool, ToolContext } from "./types.js";
 import { USER_TEXT_KEY } from "./userText.js";
@@ -32,20 +34,29 @@ export const TOOLS: readonly Tool[] = [
   listDirectoryPeopleTool,
   getDirectoryProfileTool,
   showDirectorySectionTool,
+  listRequestsToApproveTool,
   searchDocsTool,
   readDocTool,
   createRequestTool,
   cancelMyRequestTool,
   clockInTool,
   clockOutTool,
+  approveRequestTool,
+  rejectRequestTool,
 ];
 
 export const findTool = (name: string): Tool | undefined =>
   TOOLS.find((tool) => tool.name === name);
 
-/** What `tools/list` offers: a read-only grant sees no write tools. */
+/** What `/mcp` offers: never an Assistant-only tool, and no write tools to a read-only grant. */
 export const toolsFor = (access: ToolContext["access"]): Tool[] =>
-  TOOLS.filter((tool) => isToolAllowed(tool, access));
+  TOOLS.filter((tool) => !tool.assistantOnly && isToolAllowed(tool, access));
+
+/** A tool `/mcp` knows by name; Assistant-only tools don't exist there. */
+export const findMcpTool = (name: string): Tool | undefined => {
+  const tool = findTool(name);
+  return tool?.assistantOnly ? undefined : tool;
+};
 
 /** The input schema as JSON Schema 2020-12, for `tools/list` and the Assistant's tool definitions. */
 export const toolInputJsonSchema = (tool: Tool): Record<string, unknown> =>

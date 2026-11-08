@@ -49,6 +49,8 @@ export type ToolDefinition<Schema extends z.ZodObject, Result> = {
   input: Schema;
   annotations: ToolAnnotations;
   kind: ToolKind;
+  /** Offered and run only on channel `assistant`, never over `/mcp`: approve and reject. */
+  assistantOnly?: boolean;
   fence?: FencedFields<z.infer<Schema>>;
   /**
    * Paths into the result whose strings people wrote: `requests[].note`,

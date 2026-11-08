@@ -1,5 +1,5 @@
 {
-  "version": "56f888e6a267",
+  "version": "865ede103d9b",
   "siteUrl": "https://www.flexi-day.com",
   "languages": {
     "en": {
@@ -11,6 +11,13 @@
           "summary": "Email notifications, the dashboard calendar layout, language and theme, and where the other account settings live.",
           "module": "account",
           "url": "https://www.flexi-day.com/help/account-settings/"
+        },
+        {
+          "id": "ai-connection-limits",
+          "title": "Limits on AI connections",
+          "summary": "The daily AI connection limit, the member daily limit and the limits for each app, and what an AI app hears when it reaches one.",
+          "module": "assistant-and-mcp",
+          "url": "https://www.flexi-day.com/help/ai-connection-limits/"
         },
         {
           "id": "ai-connections",
@@ -32,6 +39,13 @@
           "summary": "Where approvers find waiting requests, how to approve or decline with a reason, and who may decide.",
           "module": "leave",
           "url": "https://www.flexi-day.com/help/approve-requests/"
+        },
+        {
+          "id": "assistant-changes",
+          "title": "Confirm changes the Assistant prepares",
+          "summary": "How the Assistant's confirmation cards work, for your own changes and for approving or rejecting requests, and what happens when you confirm one, decline it or move on.",
+          "module": "assistant-and-mcp",
+          "url": "https://www.flexi-day.com/help/assistant-changes/"
         },
         {
           "id": "assistant-weekly-limit",
@@ -406,6 +420,31 @@
           "body": "Open Settings from the sidebar or from the user menu in the top bar. These settings belong\nto your account, so they apply in every organization you work in.\n\n## Email notifications\n\n\"Email notifications\" controls the emails Flexi Day sends about requests: approval\nrequests for approvers, decisions on your requests, cancellations, and comments. Turn it off and\nthese updates reach you only in the app, in the bell in the top bar, and on your iPhone if you use\nthe app. Account emails, such as confirming your address or resetting your password, always send. See\n[Notifications and emails](https://www.flexi-day.com/help/notifications/).\n\n## The dashboard calendar\n\nThe \"Dashboard calendar\" card sets how the Dashboard calendar opens:\n\n- **Layout.** \"Lanes\" puts names on the calendar.\n  \"Stripes\" keeps the month compact; pick a day to see who is away. The iPhone\n  app uses the same choice.\n- **Whose time off to show.** \"Only me\" or \"My group\".\n  With the group, choose which one. Only groups whose time off you may view are listed; a group\n  admin can give you view access.\n\nYou can still switch between yourself and a group for one visit on the dashboard itself.\n\n## Language and theme\n\nSwitch between English and Czech with the language button in the top bar; the choice is saved with\nyour account. The theme button picks light, dark, or your system's setting.\n\n## Your name and email address\n\nYour name and email address are the ones you signed up with. The app has no field to change them\nyet.\n\n## Other settings on this page\n\n- **Birthday**: whether your groups see your birthday on their calendar. See\n  [Add your birthday and share it](https://www.flexi-day.com/help/birthdays/).\n- **Sign-in methods**, **Change password** and\n  **Two-factor authentication**: see [Sign in to Flexi Day](https://www.flexi-day.com/help/sign-in/).\n- **AI connections**: the AI apps you connected, with Disconnect. See\n  [Connect an AI app to Flexi Day](https://www.flexi-day.com/help/ai-connections/).\n- **Your data** and **Delete account**: see\n  [Download your data or delete your account](https://www.flexi-day.com/help/delete-your-account/)."
         },
         {
+          "id": "ai-connection-limits",
+          "language": "en",
+          "url": "https://www.flexi-day.com/help/ai-connection-limits/",
+          "title": "Limits on AI connections",
+          "summary": "The daily AI connection limit, the member daily limit and the limits for each app, and what an AI app hears when it reaches one.",
+          "module": "assistant-and-mcp",
+          "roles": ["member", "approver", "manager", "group-admin", "org-admin", "owner"],
+          "routes": [],
+          "tools": [],
+          "keywords": [
+            "daily ai connection limit",
+            "member daily limit",
+            "limit reached",
+            "too many calls",
+            "reset",
+            "midnight utc",
+            "ai connections",
+            "mcp",
+            "calls a day"
+          ],
+          "related": ["ai-connections"],
+          "headings": ["Daily limits", "Limits for each app", "When a limit is reached"],
+          "body": "AI connections have limits, so that one app or one person can't use up what the whole organization\nshares. Only the app's tool calls count. Connecting, listing what the app can do and checking the\nconnection don't.\n\n## Daily limits\n\n- **Daily AI connection limit**: the calls all of an organization's AI connections may make in one\n  day, together. 5,000 on Pro, 20,000 on Enterprise and Custom.\n- **Member daily limit**: 1,000 per person in each organization, so one app stuck in a loop can't\n  use the whole organization's day.\n\nBoth reset at midnight UTC. The owner sees both numbers when turning AI connections on in the AI\ncard on the Organization page.\n\n## Limits for each app\n\nEach app a person connected may make 300 tool calls in 5 minutes and 30 changes an hour. A change\nis creating or cancelling a request, or clocking in or out; each can send emails, which is why\nchanges have a lower limit. A person's second app has limits of its own.\n\n## When a limit is reached\n\nThe app gets a message in your app language saying which limit it reached and when it resets, so\nit can tell you. Until then its calls are refused. Flexi Day itself keeps working, and so do your\nother apps, unless the organization reached its daily AI connection limit, which every app there\nshares. Nobody gets an email or a notification."
+        },
+        {
           "id": "ai-connections",
           "language": "en",
           "url": "https://www.flexi-day.com/help/ai-connections/",
@@ -439,7 +478,7 @@
             "agreement",
             "tell members"
           ],
-          "related": ["assistant"],
+          "related": ["assistant", "ai-connection-limits"],
           "headings": [
             "Before you start",
             "Turning AI connections on",
@@ -450,7 +489,7 @@
             "Your connections and Disconnect",
             "What else disconnects apps"
           ],
-          "body": "AI connections let an AI app you already use, such as Claude, ChatGPT or Cursor, work with your\nFlexi Day data. The app acts as you, in one organization, with the same permissions you have in the\napp.\n\n## Before you start\n\nAI connections work on every paid plan: Pro, Enterprise and Custom. The owner chooses one of three\nsettings for \"AI connections\" in the AI card on the\nOrganization page:\n\n- **Off**, the default: no app can connect.\n- **Read only**: apps can read what you can see.\n- **Read and write**: apps can also make changes to your own\n  records.\n\n## Turning AI connections on\n\nOnly the owner can change the setting. Org admins see it but can't change it, and on the Free plan\nit stays off. Before AI connections turn on, the owner reads what the apps can do and what leaves\nFlexi Day: what an app reads goes to the company behind that app, under the member's own agreement\nwith them. Personal accounts of AI apps may keep what they read or train on it, so your\norganization's own policy decides which apps people may use.\n\nThe owner picks the level to start with under \"Start with\". The\nfirst time an AI feature is turned on, the owner accepts the AI features agreement for the\norganization, and Flexi Day records who accepted, when, and which version. If the Assistant already\naccepted the current version, AI connections don't ask again.\n\n\"Tell members\" is ticked by default and sends everyone in the organization a\nnotice in the app and on their phone. While AI connections are on, the owner can copy the same text\nfrom the AI card with \"Copy the members' notice\".\n\nGoing from Read only to\nRead and write needs no new acceptance. Lowering to\nRead only or turning AI connections off asks the owner to confirm\nfirst and names the apps and people it disconnects. Every change is recorded with who made it and\nwhen.\n\n## Connect an app\n\n1. Open Settings and find the \"AI connections\" card.\n2. Under \"Connect an AI app\", copy the server address,\n   `https://api.flexi-day.com/mcp`.\n3. In your AI app, add a custom connector with that address.\n4. The app opens a Flexi Day page that names it. Sign in as usual. If you use two-factor\n   authentication, Flexi Day asks for your code. Nothing is shared until you allow it.\n5. Pick the organization the app should work in. Each one shows the access it allows.\n   Organizations whose owner hasn't turned on AI connections, or that are on the Free plan, are\n   listed with the reason. If none allows it, go back to the app.\n6. Check the consent page and choose \"Allow\".\n\nEach connection covers one organization, and you pick it every time you connect. Connect again to\nadd another.\n\n### The consent page\n\n- When Flexi Day could check the app's address, the page says \"Address checked\" with it.\n  Otherwise it says \"Name not verified\": the name is the app's own claim.\n- When the app is a program on your computer, such as Claude Code or Cursor, a warning asks you to\n  allow it only if you started connecting from it just now.\n- \"See what you can see\" is always part of the connection. \"Make changes for you\"\n  is ticked; untick it to connect read only. On a Read only organization it isn't offered.\n\n## What a connected app can do\n\nIt can read whatever you can see in Flexi Day and look things up in the help. With Read and write\nit can also create a request, cancel your own request, and clock you in or out, only for you.\nFlexi Day makes the change at once, under the same rules as in the app. It can't approve or\nreject requests (do that in Flexi Day, or ask [the Assistant](https://www.flexi-day.com/help/assistant/)), and it can't change roles, billing or\nsettings.\n\nA change the app makes reads \"through an AI app\" in the request's history or in the\nattendance history. When it opens a Sensitive section of someone's profile, the organization's Read\nlog shows the read the same way.\n\n## Limits\n\nEach organization has a daily AI connection limit: 5,000 calls a day on Pro and 20,000 on\nEnterprise. Each person also has a member daily limit of 1,000 calls. Both reset at midnight UTC.\nWhen a limit is reached, the app gets a message saying which limit and when it resets.\n\n## Your connections and Disconnect\n\nThe \"AI connections\" card in Settings lists each app you\nconnected: its address, or \"name not verified\" when Flexi Day couldn't\ncheck it, the organization, its access, and when it was last used. Last use updates at least once an hour while the app is in use.\n\nTo end one, choose \"Disconnect\" next to the app and confirm. The\napp stops at its next call. To use it again, connect it again.\n\n### What else disconnects apps\n\n- Resetting your password disconnects every app you connected, in every organization.\n- Changing your password in Settings does the same, because it also signs you out\n  everywhere else.\n- Deleting your account disconnects them all.\n- The owner turning AI connections off disconnects every app in the organization. Lowering it to\n  Read only disconnects the apps that have write access; connect\n  again to get read access.\n- Owners and org admins see each person's apps on the AI usage page and can revoke them there.\n\nSigning out, turning on two-factor authentication and a lapsed plan keep your connections. While the plan is lapsed, the app's calls are refused."
+          "body": "AI connections let an AI app you already use, such as Claude, ChatGPT or Cursor, work with your\nFlexi Day data. The app acts as you, in one organization, with the same permissions you have in the\napp.\n\n## Before you start\n\nAI connections work on every paid plan: Pro, Enterprise and Custom. The owner chooses one of three\nsettings for \"AI connections\" in the AI card on the\nOrganization page:\n\n- **Off**, the default: no app can connect.\n- **Read only**: apps can read what you can see.\n- **Read and write**: apps can also make changes to your own\n  records.\n\n## Turning AI connections on\n\nOnly the owner can change the setting. Org admins see it but can't change it, and on the Free plan\nit stays off. Before AI connections turn on, the owner reads what the apps can do and what leaves\nFlexi Day: what an app reads goes to the company behind that app, under the member's own agreement\nwith them. Personal accounts of AI apps may keep what they read or train on it, so your\norganization's own policy decides which apps people may use.\n\nThe owner picks the level to start with under \"Start with\". The\nfirst time an AI feature is turned on, the owner accepts the AI features agreement for the\norganization, and Flexi Day records who accepted, when, and which version. If the Assistant already\naccepted the current version, AI connections don't ask again.\n\n\"Tell members\" is ticked by default and sends everyone in the organization a\nnotice in the app and on their phone. While AI connections are on, the owner can copy the same text\nfrom the AI card with \"Copy the members' notice\".\n\nGoing from Read only to\nRead and write needs no new acceptance. Lowering to\nRead only or turning AI connections off asks the owner to confirm\nfirst and names the apps and people it disconnects. Every change is recorded with who made it and\nwhen.\n\n## Connect an app\n\n1. Open Settings and find the \"AI connections\" card.\n2. Under \"Connect an AI app\", copy the server address,\n   `https://api.flexi-day.com/mcp`.\n3. In your AI app, add a custom connector with that address.\n4. The app opens a Flexi Day page that names it. Sign in as usual. If you use two-factor\n   authentication, Flexi Day asks for your code. Nothing is shared until you allow it.\n5. Pick the organization the app should work in. Each one shows the access it allows.\n   Organizations whose owner hasn't turned on AI connections, or that are on the Free plan, are\n   listed with the reason. If none allows it, go back to the app.\n6. Check the consent page and choose \"Allow\".\n\nEach connection covers one organization, and you pick it every time you connect. Connect again to\nadd another.\n\n### The consent page\n\n- When Flexi Day could check the app's address, the page says \"Address checked\" with it.\n  Otherwise it says \"Name not verified\": the name is the app's own claim.\n- When the app is a program on your computer, such as Claude Code or Cursor, a warning asks you to\n  allow it only if you started connecting from it just now.\n- \"See what you can see\" is always part of the connection. \"Make changes for you\"\n  is ticked; untick it to connect read only. On a Read only organization it isn't offered.\n\n## What a connected app can do\n\nIt can read whatever you can see in Flexi Day and look things up in the help. With Read and write\nit can also create a request, cancel your own request, and clock you in or out, only for you.\nFlexi Day makes the change at once, under the same rules as in the app. It can't approve or\nreject requests (do that in Flexi Day, or ask [the Assistant](https://www.flexi-day.com/help/assistant/)), and it can't change roles, billing or\nsettings.\n\nA change the app makes reads \"through an AI app\" in the request's history or in the\nattendance history. When it opens a Sensitive section of someone's profile, the organization's Read\nlog shows the read the same way.\n\n## Limits\n\nEach organization has a daily AI connection limit, each person a member daily limit, and each app\nlimits of its own. [Limits on AI connections](https://www.flexi-day.com/help/ai-connection-limits/) has the numbers and what\nthe app hears when it reaches one.\n\n## Your connections and Disconnect\n\nThe \"AI connections\" card in Settings lists each app you\nconnected: its address, or \"name not verified\" when Flexi Day couldn't\ncheck it, the organization, its access, and when it was last used. Last use updates at least once an hour while the app is in use.\n\nTo end one, choose \"Disconnect\" next to the app and confirm. The\napp stops at its next call. To use it again, connect it again.\n\n### What else disconnects apps\n\n- Resetting your password disconnects every app you connected, in every organization.\n- Changing your password in Settings does the same, because it also signs you out\n  everywhere else.\n- Deleting your account disconnects them all.\n- The owner turning AI connections off disconnects every app in the organization. Lowering it to\n  Read only disconnects the apps that have write access; connect\n  again to get read access.\n- Owners and org admins see each person's apps on the AI usage page and can revoke them there.\n\nSigning out, turning on two-factor authentication and a lapsed plan keep your connections. While the plan is lapsed, the app's calls are refused."
         },
         {
           "id": "allowances",
@@ -495,7 +534,7 @@
           "module": "leave",
           "roles": ["approver", "manager", "group-admin", "org-admin"],
           "routes": ["/requests", "/dashboard"],
-          "tools": [],
+          "tools": ["list_requests_to_approve", "approve_request", "reject_request"],
           "keywords": [
             "approve",
             "approval",
@@ -521,6 +560,61 @@
             "Allowances when approving"
           ],
           "body": "Requests in a group are decided by its approvers: members with the Approver permission, and the\ngroup's manager. You get an email and a notice in the app when a request waits for you.\n\n## Find waiting requests\n\n- **Dashboard:** the \"Pending approvals\" card lists what waits on you, with\n  \"Approve\" and \"Decline\" buttons.\n- **Requests:** pick the group and the months, then filter by\n  \"Pending\". Each row is one whole request, with\n  \"Approve\" and \"Reject\" buttons.\n- **The calendar:** click a request to open its details.\n\n## Decide with a reason\n\nOpen the request details to see the dates, the type, the note, the files and the history. Type a\ncomment or reason in the box, then press \"Approve\" or\n\"Decline\". The comment appears in the request's history and the member is\nnotified of the decision.\n\nA decision covers the whole request, every day of it. A declined request is final; the member books\nagain if needed. An approved request can still be cancelled later, by the member or by you.\n\nTo ask a question without deciding, write it and press \"Comment\". The member is\nnotified, and their reply notifies the approvers.\n\n## Who may decide\n\n- Members with the Approver permission and the group's manager.\n- Not organization administrators: they manage groups but decide on nobody's leave. To approve, they\n  need the Approver permission inside the group.\n- Not on records mirrored in from another group. They are decided in the group they were booked in.\n\nYou can decide your own request only if you hold the Approver permission in that group. Otherwise\nanother approver decides it.\n\n## Allowances when approving\n\nApproving checks the member's allowance for that type and year, counting only days already approved.\nA request that would take them past it can't be approved; a group admin can raise the allowance\nfirst. See [Allowances](https://www.flexi-day.com/help/allowances/)."
+        },
+        {
+          "id": "assistant-changes",
+          "language": "en",
+          "url": "https://www.flexi-day.com/help/assistant-changes/",
+          "title": "Confirm changes the Assistant prepares",
+          "summary": "How the Assistant's confirmation cards work, for your own changes and for approving or rejecting requests, and what happens when you confirm one, decline it or move on.",
+          "module": "assistant-and-mcp",
+          "roles": ["member", "approver", "manager", "group-admin", "org-admin", "owner"],
+          "routes": [],
+          "tools": [
+            "create_request",
+            "cancel_my_request",
+            "clock_in",
+            "clock_out",
+            "list_requests_to_approve",
+            "approve_request",
+            "reject_request"
+          ],
+          "keywords": [
+            "assistant",
+            "card",
+            "confirm",
+            "confirmation",
+            "not now",
+            "keep it",
+            "try again",
+            "not taken",
+            "book",
+            "cancel",
+            "clock in",
+            "clock out",
+            "note",
+            "warning",
+            "approve",
+            "reject",
+            "waiting for approval",
+            "reason"
+          ],
+          "related": [
+            "assistant",
+            "request-time-off",
+            "cancel-or-change-a-request",
+            "clock-in-and-out",
+            "approve-requests",
+            "assistant-weekly-limit"
+          ],
+          "headings": [
+            "What a card shows",
+            "Confirm or leave it",
+            "Approve or reject a request",
+            "A note written by someone else",
+            "At the Weekly limit"
+          ],
+          "body": "Ask the Assistant to book time off, cancel one of your own requests, or clock you in or out, and it\nprepares the change as a card in the chat. Approvers can also approve or reject requests this way.\nNothing changes until you confirm the card.\n\n## What a card shows\n\nThe card asks a question, such as \"Send this request?\", and lists the\ndetails Flexi Day worked out with the same rules the app uses: the type, the dates, the working\ndays, your balance before and after, and the group. A note or reason you asked for appears word for\nword, with a line saying whose words they are. The details come from Flexi Day, never from the\nAssistant's own wording. Every card says \"Marked as made through the Assistant\".\n\nIf the rules don't allow the change, for example because your balance is too low, you get no card.\nThe Assistant tells you why instead.\n\n## Confirm or leave it\n\n- \"Send request\", \"Cancel request\",\n  \"Clock in\" or \"Clock out\" makes the\n  change. Flexi Day checks the rules again at that moment. The card shrinks to one line with the\n  result and \"Open\", which opens your requests or your attendance.\n- \"Not now\", or \"Keep it\" on a cancellation, leaves\n  everything as it was.\n- If the change fails when you confirm, for example because the day was booked in the meantime, the\n  card shows the reason in red and stays open. \"Try again\" tries once more.\n- Sending a new message instead marks any card still waiting as not taken. It can't be confirmed\n  afterwards; ask again for a fresh card.\n\nWhen the Assistant prepares two changes at once, each gets its own card and you decide them one by\none. It carries on writing once you have decided them all.\n\nA change made this way reads \"through the Assistant\" in the request's history or in the\nattendance history of that day. Approvers are notified as for a request made in the app.\n\n## Approve or reject a request\n\nIf you approve time off, ask \"What's waiting for my approval?\" and the Assistant lists the requests\nwaiting for you. Ask it to approve or reject one and you get a card with the requester, the type, the\ndates, the working days, their balance before and after, the group, and the request's own note word\nfor word with who wrote it. The Assistant never recommends approving or rejecting; the decision is\nyours.\n\n- \"Approve\" approves every day of the request still waiting.\n- \"Reject\" rejects them. The card has a field for a reason the\n  requester reads; leave it empty to reject without one.\n\nThe requester is notified as when you decide in the app, and the request's history reads\n\"through the Assistant\". The same rules apply as in the app: you decide only in groups\nwhere you approve, and an approval must fit the requester's allowance. Approving and rejecting work\nonly in the Assistant, not in AI apps you connect.\n\n## A note written by someone else\n\nBefore preparing a change, the Assistant may read text other people wrote, such as the note on a\ncolleague's time off or a group event's title. When it did, the card names who wrote it and asks you\nto check that this is what you asked for. Someone could write a note meant to steer the Assistant,\nso make sure the card matches what you asked for before you confirm.\n\n## At the Weekly limit\n\nA card already shown stays confirmable when your organization reaches its Weekly limit. Confirming\nmakes the change, but the Assistant replies to it only after the limit resets, with your next\nmessage. See [Weekly limit and Usage](https://www.flexi-day.com/help/assistant-weekly-limit/)."
         },
         {
           "id": "assistant-weekly-limit",
@@ -578,7 +672,7 @@
             "not sent",
             "try again"
           ],
-          "related": ["ai-connections", "assistant-weekly-limit"],
+          "related": ["ai-connections", "assistant-weekly-limit", "assistant-changes"],
           "headings": [
             "Who can use it",
             "Using the panel",
@@ -589,7 +683,7 @@
             "Weekly limit",
             "Chats"
           ],
-          "body": "The Assistant is a chat in the Flexi Day web app. Ask it a question in English or Czech and it\nanswers from the help articles and from the data you can already see in the app. It sees exactly\nwhat you can see, nothing more.\n\n## Who can use it\n\nThe Assistant comes with the Enterprise plan. It is off until the owner turns it on in the AI card\non the Organization page. Once it is on, every member finds an \"Assistant\"\nbutton in the top bar on every page. The iPhone app doesn't have it.\n\nUntil then, members don't see the button. On a plan without Enterprise only the owner sees it, and\nit explains what Enterprise adds. On Enterprise with the Assistant off, the owner and org admins see\nit, with a link to the organization settings.\n\n## Using the panel\n\nThe button opens a panel on the right of the page, so you can keep working beside it. On a phone it\nfills the screen. A new chat suggests a few questions to start with. If more than one of your\norganizations has the Assistant, pick the organization before your first message: a chat stays in\nthe one it starts in.\n\nYou see each step the Assistant takes, such as checking your balance, above its answer. While an\nanswer is being written you can't send another message. If the connection drops, the panel says the\nanswer is still being written and picks it up again.\n\n\"Your chats\" lists your chats under Today,\nThis week and Earlier. You can delete a chat there;\nit can't be brought back. \"New chat\" starts a fresh one.\n\n## Turning it on and off\n\nOnly the owner can turn the Assistant on or off, with the switch in the AI card on the\nOrganization page. Org admins see the switch but can't change it. Before it turns on, the\nowner reads what the Assistant does and what leaves Flexi Day. The first time, they accept the AI\nfeatures agreement for the organization, and Flexi Day records who accepted, when, and which\nversion.\n\n\"Tell members\" is ticked by default and sends everyone in the organization a\nnotice in the app and on their phone. The owner can copy the same text from the AI card with\n\"Copy the members' notice\", for example into your own policy.\n\nWhen a new version of the agreement comes out, the owner sees a banner on every page until they\naccept it. The Assistant keeps working meanwhile. Turning the Assistant off takes it away from\nmembers at once; their chats stay readable until they are 180 days old.\n\n## What you can ask\n\n- How-to questions, such as how to book half a day or how to clock in. Answers from the help end\n  with \"From the help:\" links to the articles they came from.\n- Questions about your own data and what you are allowed to see: how many days you have left, who\n  is away next week, whether a request was approved, how much you worked this week.\n- For approvers, the details of a request waiting for a decision.\n\nSmall talk, \"what can you do\" and questions about plans and pricing are fine too.\n\n## What it won't answer\n\nThe Assistant answers Flexi Day questions only. Every message is checked before the Assistant sees\nit. A message about anything else, or one that tries to change the Assistant's rules, isn't sent:\nit stays in the chat marked \"Not sent to the Assistant\", followed by a short fixed reply\nsaying what the Assistant helps with. Owners and org admins see how many of each person's messages\nwere refused this week, never what anyone wrote.\n\nIf the check itself fails, nothing is sent and \"Try again\" sends the message\nagain, as \"Send again\" does after a dropped connection.\n\n- It doesn't give legal advice. Ask your HR team or your employer.\n- It doesn't write emails or letters. It offers to create the request with a short note instead.\n- It never recommends approving or rejecting someone's request. It shows the facts, and the approver\n  decides.\n- People you can't see in Flexi Day don't appear in its answers.\n- A note or name someone wrote that reads like instructions to the Assistant is hidden from it.\n- Its answers link only to Flexi Day pages and help articles. Other links show as plain text, and\n  images never show.\n\n## Changes you confirm\n\nThe Assistant can prepare a change: create a request, cancel one of your requests, approve or reject\na request, clock in or clock out. Each change shows up as a card with the exact details. Nothing\nchanges until you confirm the card. Choose \"Not now\" to drop it. A change made this way reads\n\"through the Assistant\" in the request's history or in the attendance history of that\nday.\n\n## Weekly limit\n\nEach organization has a Weekly limit on the Assistant's Usage, shared by everyone in it. It resets\nevery Monday at 00:00 UTC. The \"Weekly limit and Usage\" article explains what counts and what you\nsee as the limit nears.\n\n## Chats\n\nEach chat belongs to one organization. A chat closes when it gets too long or after 30 days without\na message; you can still read it, and you start a new chat to carry on. Chats are deleted 180 days\nafter their last message, and you can delete one yourself at any time. When you leave an\norganization, your chats in it are deleted.\n\nThe Assistant runs on Anthropic's Claude models. The AI features agreement the owner accepts\nexplains where chats are stored and for how long."
+          "body": "The Assistant is a chat in the Flexi Day web app. Ask it a question in English or Czech and it\nanswers from the help articles and from the data you can already see in the app. It sees exactly\nwhat you can see, nothing more.\n\n## Who can use it\n\nThe Assistant comes with the Enterprise plan. It is off until the owner turns it on in the AI card\non the Organization page. Once it is on, every member finds an \"Assistant\"\nbutton in the top bar on every page. The iPhone app doesn't have it.\n\nUntil then, members don't see the button. On a plan without Enterprise only the owner sees it, and\nit explains what Enterprise adds. On Enterprise with the Assistant off, the owner and org admins see\nit, with a link to the organization settings.\n\n## Using the panel\n\nThe button opens a panel on the right of the page, so you can keep working beside it. On a phone it\nfills the screen. A new chat suggests a few questions to start with. If more than one of your\norganizations has the Assistant, pick the organization before your first message: a chat stays in\nthe one it starts in.\n\nYou see each step the Assistant takes, such as checking your balance, above its answer. While an\nanswer is being written you can't send another message. If the connection drops, the panel says the\nanswer is still being written and picks it up again.\n\n\"Your chats\" lists your chats under Today,\nThis week and Earlier. You can delete a chat there;\nit can't be brought back. \"New chat\" starts a fresh one.\n\n## Turning it on and off\n\nOnly the owner can turn the Assistant on or off, with the switch in the AI card on the\nOrganization page. Org admins see the switch but can't change it. Before it turns on, the\nowner reads what the Assistant does and what leaves Flexi Day. The first time, they accept the AI\nfeatures agreement for the organization, and Flexi Day records who accepted, when, and which\nversion.\n\n\"Tell members\" is ticked by default and sends everyone in the organization a\nnotice in the app and on their phone. The owner can copy the same text from the AI card with\n\"Copy the members' notice\", for example into your own policy.\n\nWhen a new version of the agreement comes out, the owner sees a banner on every page until they\naccept it. The Assistant keeps working meanwhile. Turning the Assistant off takes it away from\nmembers at once; their chats stay readable until they are 180 days old.\n\n## What you can ask\n\n- How-to questions, such as how to book half a day or how to clock in. Answers from the help end\n  with \"From the help:\" links to the articles they came from.\n- Questions about your own data and what you are allowed to see: how many days you have left, who\n  is away next week, whether a request was approved, how much you worked this week.\n- For approvers, the details of a request waiting for a decision.\n\nSmall talk, \"what can you do\" and questions about plans and pricing are fine too.\n\n## What it won't answer\n\nThe Assistant answers Flexi Day questions only. Every message is checked before the Assistant sees\nit. A message about anything else, or one that tries to change the Assistant's rules, isn't sent:\nit stays in the chat marked \"Not sent to the Assistant\", followed by a short fixed reply\nsaying what the Assistant helps with. Owners and org admins see how many of each person's messages\nwere refused this week, never what anyone wrote.\n\nIf the check itself fails, nothing is sent and \"Try again\" sends the message\nagain, as \"Send again\" does after a dropped connection.\n\n- It doesn't give legal advice. Ask your HR team or your employer.\n- It doesn't write emails or letters. It offers to create the request with a short note instead.\n- It never recommends approving or rejecting someone's request. It shows the facts, and the approver\n  decides.\n- People you can't see in Flexi Day don't appear in its answers.\n- A note or name someone wrote that reads like instructions to the Assistant is hidden from it.\n- Its answers link only to Flexi Day pages and help articles. Other links show as plain text, and\n  images never show.\n\n## Changes you confirm\n\nThe Assistant can prepare a change, such as a request or a clock-in, as a card with the exact\ndetails. Nothing changes until you confirm the card.\n[Confirm changes the Assistant prepares](https://www.flexi-day.com/help/assistant-changes/) explains the cards.\n\n## Weekly limit\n\nEach organization has a Weekly limit on the Assistant's Usage, shared by everyone in it. It resets\nevery Monday at 00:00 UTC. The \"Weekly limit and Usage\" article explains what counts and what you\nsee as the limit nears.\n\n## Chats\n\nEach chat belongs to one organization. A chat closes when it gets too long or after 30 days without\na message; you can still read it, and you start a new chat to carry on. Chats are deleted 180 days\nafter their last message, and you can delete one yourself at any time. When you leave an\norganization, your chats in it are deleted.\n\nThe Assistant runs on Anthropic's Claude models. The AI features agreement the owner accepts\nexplains where chats are stored and for how long."
         },
         {
           "id": "attachments",
@@ -2150,6 +2244,13 @@
           "url": "https://www.flexi-day.com/cs/help/account-settings/"
         },
         {
+          "id": "ai-connection-limits",
+          "title": "Limity AI připojení",
+          "summary": "Denní limit AI připojení, denní limit člena a limity pro každou aplikaci, a co AI aplikace uslyší, když některý vyčerpá.",
+          "module": "assistant-and-mcp",
+          "url": "https://www.flexi-day.com/cs/help/ai-connection-limits/"
+        },
+        {
           "id": "ai-connections",
           "title": "Připoj k Flexi Day AI aplikaci",
           "summary": "Nech AI aplikaci, jako je Claude, ChatGPT nebo Cursor, číst tvoje údaje ve Flexi Day a dělat za tebe změny.",
@@ -2169,6 +2270,13 @@
           "summary": "Kde schvalovatelé najdou čekající žádosti, jak je schválit nebo zamítnout s důvodem a kdo smí rozhodovat.",
           "module": "leave",
           "url": "https://www.flexi-day.com/cs/help/approve-requests/"
+        },
+        {
+          "id": "assistant-changes",
+          "title": "Potvrzení změn, které připraví Asistent",
+          "summary": "Jak fungují potvrzovací karty Asistenta, u tvých změn i u schvalování a zamítání žádostí, a co se stane, když kartu potvrdíš, odmítneš nebo napíšeš dál.",
+          "module": "assistant-and-mcp",
+          "url": "https://www.flexi-day.com/cs/help/assistant-changes/"
         },
         {
           "id": "assistant-weekly-limit",
@@ -2543,6 +2651,31 @@
           "body": "Nastavení otevřeš z postranního panelu nebo z uživatelského menu v horní liště. Tato\nnastavení patří k tvému účtu, takže platí ve všech organizacích, kde pracuješ.\n\n## E-mailová oznámení\n\n„E-mailová oznámení“ řídí e-maily, které Flexi Day posílá k žádostem: žádosti o\nschválení pro schvalovatele, rozhodnutí o tvých žádostech, zrušení a komentáře. Když je vypneš,\ndostaneš tyto novinky jen v aplikaci, ve zvonečku v horní liště, a v iPhonu, pokud aplikaci\npoužíváš. E-maily k účtu, třeba potvrzení adresy nebo obnovení hesla, chodí vždy. Viz\n[Oznámení a e-maily](https://www.flexi-day.com/cs/help/notifications/).\n\n## Kalendář na přehledu\n\nKarta „Kalendář na nástěnce“ určuje, jak se kalendář na stránce Přehled\notevře:\n\n- **Rozvržení.** „Pruhy“ ukazuje v kalendáři jména.\n  „Kompaktní“ udrží měsíc kompaktní; kdo je pryč, uvidíš po výběru dne.\n  Aplikace pro iPhone používá stejnou volbu.\n- **Čí volno zobrazovat.** „Jen já“ nebo\n  „Moje skupina“. U skupiny vyber, kterou. V seznamu jsou jen skupiny, jejichž volno\n  smíš vidět; oprávnění k zobrazení ti může dát správce skupiny.\n\nNa samotném přehledu můžeš i tak pro jednu návštěvu přepnout mezi sebou a skupinou.\n\n## Jazyk a motiv\n\nMezi angličtinou a češtinou přepneš tlačítkem jazyka v horní liště; volba se uloží k tvému účtu.\nTlačítko motivu vybere světlý, tmavý nebo motiv podle systému.\n\n## Jméno a e-mailová adresa\n\nTvoje jméno a e-mailová adresa jsou ty, se kterými ses registroval. Aplikace zatím nemá pole, kde\nbys je změnil.\n\n## Další nastavení na této stránce\n\n- **Narozeniny**: jestli tvoje skupiny uvidí tvoje narozeniny ve svém kalendáři. Viz\n  [Přidání narozenin a jejich sdílení](https://www.flexi-day.com/cs/help/birthdays/).\n- **Způsoby přihlášení**, **Změnit heslo** a\n  **Dvoufázové ověření**: viz [Přihlášení do Flexi Day](https://www.flexi-day.com/cs/help/sign-in/).\n- **AI připojení**: AI aplikace, které jsi připojil, s odpojením. Viz\n  [Připoj k Flexi Day AI aplikaci](https://www.flexi-day.com/cs/help/ai-connections/).\n- **Vaše data** a **Smazat účet**: viz\n  [Stažení dat a smazání účtu](https://www.flexi-day.com/cs/help/delete-your-account/)."
         },
         {
+          "id": "ai-connection-limits",
+          "language": "cs",
+          "url": "https://www.flexi-day.com/cs/help/ai-connection-limits/",
+          "title": "Limity AI připojení",
+          "summary": "Denní limit AI připojení, denní limit člena a limity pro každou aplikaci, a co AI aplikace uslyší, když některý vyčerpá.",
+          "module": "assistant-and-mcp",
+          "roles": ["member", "approver", "manager", "group-admin", "org-admin", "owner"],
+          "routes": [],
+          "tools": [],
+          "keywords": [
+            "denní limit ai připojení",
+            "denní limit člena",
+            "limit vyčerpán",
+            "příliš mnoho volání",
+            "obnovení",
+            "půlnoc utc",
+            "ai připojení",
+            "mcp",
+            "volání denně"
+          ],
+          "related": ["ai-connections"],
+          "headings": ["Denní limity", "Limity pro každou aplikaci", "Když se limit vyčerpá"],
+          "body": "AI připojení mají limity, aby jedna aplikace nebo jeden člověk nevyčerpali, co sdílí celá\norganizace. Počítají se jen volání nástrojů. Připojení, výpis toho, co aplikace umí, a kontrola\nspojení se nepočítají.\n\n## Denní limity\n\n- **Denní limit AI připojení**: kolik volání smí za den udělat všechna AI připojení organizace\n  dohromady. 5 000 v tarifu Pro, 20 000 v tarifech Enterprise a Custom.\n- **Denní limit člena**: 1 000 na člověka v každé organizaci, aby jedna zacyklená aplikace\n  nevyčerpala den celé organizace.\n\nOba se obnovují o půlnoci UTC. Vlastník vidí obě čísla, když zapíná AI připojení v kartě AI na\nstránce Organizace.\n\n## Limity pro každou aplikaci\n\nKaždá aplikace, kterou někdo připojil, smí udělat 300 volání nástrojů za 5 minut a 30 změn za\nhodinu. Změna je vytvoření nebo zrušení žádosti, příchod nebo odchod; každá může poslat e-maily,\na proto mají změny nižší limit. Druhá aplikace téhož člověka má vlastní limity.\n\n## Když se limit vyčerpá\n\nAplikace dostane zprávu v jazyce tvé aplikace, který limit vyčerpala a kdy se obnoví, aby ti to\nmohla říct. Do té doby se její volání odmítají. Flexi Day samotné funguje dál, stejně jako tvoje\ndalší aplikace, pokud organizace nevyčerpala denní limit AI připojení, který sdílí všechny\naplikace v ní. Nikomu nepřijde e-mail ani upozornění."
+        },
+        {
           "id": "ai-connections",
           "language": "cs",
           "url": "https://www.flexi-day.com/cs/help/ai-connections/",
@@ -2576,7 +2709,7 @@
             "smlouva",
             "dát vědět členům"
           ],
-          "related": ["assistant"],
+          "related": ["assistant", "ai-connection-limits"],
           "headings": [
             "Než začneš",
             "Zapnutí AI připojení",
@@ -2587,7 +2720,7 @@
             "Tvoje připojení a odpojení",
             "Co dalšího aplikace odpojí"
           ],
-          "body": "AI připojení umožní AI aplikaci, kterou už používáš, třeba Claude, ChatGPT nebo Cursor, pracovat s\ntvými údaji ve Flexi Day. Aplikace jedná jako ty, v jedné organizaci a se stejnými oprávněními, jaká\nmáš v aplikaci.\n\n## Než začneš\n\nAI připojení fungují v každém placeném tarifu: Pro, Enterprise i Custom. Vlastník vybere jedno ze\ntří nastavení pro „AI připojení“ v kartě AI na stránce\nOrganizace:\n\n- **Vypnuto**, výchozí stav: žádná aplikace se nepřipojí.\n- **Jen čtení**: aplikace čtou to, co vidíš ty.\n- **Čtení a zápis**: aplikace navíc můžou měnit tvoje vlastní\n  záznamy.\n\n## Zapnutí AI připojení\n\nNastavení může změnit jen vlastník. Správci organizace ho vidí, ale změnit ho nemůžou, a v tarifu\nFree zůstává vypnuté. Než se AI připojení zapnou, vlastník si přečte, co aplikace umí a co opouští\nFlexi Day: co aplikace přečte, jde ke společnosti, která za ní stojí, podle vlastní smlouvy člena s\nní. Osobní účty AI aplikací si mohou přečtená data uchovat nebo na nich trénovat, takže které\naplikace můžou lidé používat, určují pravidla vaší organizace.\n\nÚroveň, se kterou začne, vybere vlastník v části „Začít s“.\nKdyž se nějaká funkce AI zapíná poprvé, vlastník přijme za organizaci Smlouvu o funkcích AI a Flexi\nDay zaznamená, kdo ji přijal, kdy a kterou verzi. Pokud aktuální verzi už přijal při zapnutí\nAsistenta, AI připojení se znovu neptají.\n\n„Dát vědět členům“ je ve výchozím stavu zaškrtnuté a pošle všem v organizaci\nupozornění v aplikaci a v telefonu. Dokud jsou AI připojení zapnutá, vlastník zkopíruje stejný text\nz karty AI tlačítkem „Zkopírovat upozornění pro členy“.\n\nPřechod z Jen čtení na\nČtení a zápis nové přijetí smlouvy nepotřebuje. Snížení na\nJen čtení nebo vypnutí AI připojení musí vlastník nejdřív\npotvrdit a dialog vyjmenuje aplikace a lidi, které odpojí. Každá změna se zaznamená i s tím, kdo ji\nudělal a kdy.\n\n## Připojení aplikace\n\n1. Otevři Nastavení a najdi kartu „AI připojení“.\n2. V části „Připojit AI aplikaci“ zkopíruj adresu serveru,\n   `https://api.flexi-day.com/mcp`.\n3. V AI aplikaci přidej vlastní konektor s touto adresou.\n4. Aplikace otevře stránku Flexi Day, která ji jmenuje. Přihlas se jako obvykle. Pokud používáš\n   dvoufázové ověření, Flexi Day si řekne o kód. Dokud přístup nepovolíš, nic se nesdílí.\n5. Vyber organizaci, ve které má aplikace pracovat. U každé vidíš, jaký přístup povoluje.\n   Organizace, kde vlastník AI připojení nezapnul nebo které mají tarif Free, jsou uvedené i s\n   důvodem. Pokud to nepovoluje žádná, vrať se do aplikace.\n6. Zkontroluj stránku se souhlasem a zvol „Povolit“.\n\nKaždé připojení platí pro jednu organizaci a vybíráš ji při každém připojení. Další přidáš novým\npřipojením.\n\n### Stránka se souhlasem\n\n- Když Flexi Day mohl adresu aplikace ověřit, stránka ukáže „Adresa ověřena“ i s adresou. Jinak\n  napíše „Název není ověřený“: název uvádí sama aplikace.\n- Když je aplikace program v tvém počítači, třeba Claude Code nebo Cursor, upozornění tě požádá,\n  abys ji povolil jen tehdy, když jsi připojení z ní právě spustil.\n- „Vidět, co vidíte vy“ je součástí každého připojení. „Provádět změny za vás“ je\n  zaškrtnuté; odškrtni ho a připojíš jen pro čtení. V organizaci s nastavením Jen čtení se nenabízí.\n\n## Co připojená aplikace umí\n\nČte všechno, co ve Flexi Day vidíš ty, a hledá v nápovědě. Při nastavení Čtení a zápis navíc\nvytvoří žádost, zruší tvoji žádost a zaznamená tvůj příchod nebo odchod, jen za tebe. Změna proběhne hned, podle pravidel aplikace. Žádosti schvalovat ani\nzamítat neumí (to udělej ve Flexi Day nebo požádej [Asistenta](https://www.flexi-day.com/cs/help/assistant/)) a nemění role, fakturaci ani\nnastavení.\n\nZměna od aplikace má v historii žádosti nebo docházky poznámku\n„přes AI aplikaci“. Když otevře citlivou sekci něčího profilu, ukáže se toto čtení stejně\ni v Záznamu o čtení organizace.\n\n## Limity\n\nKaždá organizace má denní limit AI připojení: 5 000 volání denně v tarifu Pro a 20 000 v tarifu\nEnterprise. Každý člověk má navíc denní limit člena 1 000 volání. Oba se obnovují o půlnoci UTC.\nKdyž aplikace limit vyčerpá, dostane zprávu, o který limit jde a kdy se obnoví.\n\n## Tvoje připojení a odpojení\n\nKarta „AI připojení“ v Nastavení ukazuje každou aplikaci,\nkterou jsi připojil: její adresu, nebo „název neověřen“, když ji\nFlexi Day nemohl ověřit, organizaci, přístup a kdy byla naposledy použita. Poslední použití se u používané\naplikace aktualizuje aspoň jednou za hodinu.\n\nPřipojení ukončíš tak, že u aplikace zvolíš „Odpojit“ a\npotvrdíš to. Aplikace přestane fungovat při svém dalším volání. Pokud ji chceš používat znovu,\npřipoj ji znovu.\n\n### Co dalšího aplikace odpojí\n\n- Obnovení hesla odpojí všechny aplikace, které jsi připojil, ve všech organizacích.\n- Změna hesla v Nastavení udělá totéž, protože tě zároveň odhlásí všude jinde.\n- Smazání účtu je odpojí všechny.\n- Když vlastník AI připojení vypne, odpojí se všechny aplikace v organizaci. Když nastavení sníží na\n  Jen čtení, odpojí se aplikace s přístupem k zápisu; novým\n  připojením získáš přístup ke čtení.\n- Vlastník a správci organizace vidí aplikace každého člověka na stránce Využití AI a můžou je tam\n  odebrat.\n\nOdhlášení, zapnutí dvoufázového ověření ani propadlý tarif tvoje připojení nezruší. Dokud je tarif propadlý, aplikace dostává na svá volání odmítnutí."
+          "body": "AI připojení umožní AI aplikaci, kterou už používáš, třeba Claude, ChatGPT nebo Cursor, pracovat s\ntvými údaji ve Flexi Day. Aplikace jedná jako ty, v jedné organizaci a se stejnými oprávněními, jaká\nmáš v aplikaci.\n\n## Než začneš\n\nAI připojení fungují v každém placeném tarifu: Pro, Enterprise i Custom. Vlastník vybere jedno ze\ntří nastavení pro „AI připojení“ v kartě AI na stránce\nOrganizace:\n\n- **Vypnuto**, výchozí stav: žádná aplikace se nepřipojí.\n- **Jen čtení**: aplikace čtou to, co vidíš ty.\n- **Čtení a zápis**: aplikace navíc můžou měnit tvoje vlastní\n  záznamy.\n\n## Zapnutí AI připojení\n\nNastavení může změnit jen vlastník. Správci organizace ho vidí, ale změnit ho nemůžou, a v tarifu\nFree zůstává vypnuté. Než se AI připojení zapnou, vlastník si přečte, co aplikace umí a co opouští\nFlexi Day: co aplikace přečte, jde ke společnosti, která za ní stojí, podle vlastní smlouvy člena s\nní. Osobní účty AI aplikací si mohou přečtená data uchovat nebo na nich trénovat, takže které\naplikace můžou lidé používat, určují pravidla vaší organizace.\n\nÚroveň, se kterou začne, vybere vlastník v části „Začít s“.\nKdyž se nějaká funkce AI zapíná poprvé, vlastník přijme za organizaci Smlouvu o funkcích AI a Flexi\nDay zaznamená, kdo ji přijal, kdy a kterou verzi. Pokud aktuální verzi už přijal při zapnutí\nAsistenta, AI připojení se znovu neptají.\n\n„Dát vědět členům“ je ve výchozím stavu zaškrtnuté a pošle všem v organizaci\nupozornění v aplikaci a v telefonu. Dokud jsou AI připojení zapnutá, vlastník zkopíruje stejný text\nz karty AI tlačítkem „Zkopírovat upozornění pro členy“.\n\nPřechod z Jen čtení na\nČtení a zápis nové přijetí smlouvy nepotřebuje. Snížení na\nJen čtení nebo vypnutí AI připojení musí vlastník nejdřív\npotvrdit a dialog vyjmenuje aplikace a lidi, které odpojí. Každá změna se zaznamená i s tím, kdo ji\nudělal a kdy.\n\n## Připojení aplikace\n\n1. Otevři Nastavení a najdi kartu „AI připojení“.\n2. V části „Připojit AI aplikaci“ zkopíruj adresu serveru,\n   `https://api.flexi-day.com/mcp`.\n3. V AI aplikaci přidej vlastní konektor s touto adresou.\n4. Aplikace otevře stránku Flexi Day, která ji jmenuje. Přihlas se jako obvykle. Pokud používáš\n   dvoufázové ověření, Flexi Day si řekne o kód. Dokud přístup nepovolíš, nic se nesdílí.\n5. Vyber organizaci, ve které má aplikace pracovat. U každé vidíš, jaký přístup povoluje.\n   Organizace, kde vlastník AI připojení nezapnul nebo které mají tarif Free, jsou uvedené i s\n   důvodem. Pokud to nepovoluje žádná, vrať se do aplikace.\n6. Zkontroluj stránku se souhlasem a zvol „Povolit“.\n\nKaždé připojení platí pro jednu organizaci a vybíráš ji při každém připojení. Další přidáš novým\npřipojením.\n\n### Stránka se souhlasem\n\n- Když Flexi Day mohl adresu aplikace ověřit, stránka ukáže „Adresa ověřena“ i s adresou. Jinak\n  napíše „Název není ověřený“: název uvádí sama aplikace.\n- Když je aplikace program v tvém počítači, třeba Claude Code nebo Cursor, upozornění tě požádá,\n  abys ji povolil jen tehdy, když jsi připojení z ní právě spustil.\n- „Vidět, co vidíte vy“ je součástí každého připojení. „Provádět změny za vás“ je\n  zaškrtnuté; odškrtni ho a připojíš jen pro čtení. V organizaci s nastavením Jen čtení se nenabízí.\n\n## Co připojená aplikace umí\n\nČte všechno, co ve Flexi Day vidíš ty, a hledá v nápovědě. Při nastavení Čtení a zápis navíc\nvytvoří žádost, zruší tvoji žádost a zaznamená tvůj příchod nebo odchod, jen za tebe. Změna proběhne hned, podle pravidel aplikace. Žádosti schvalovat ani\nzamítat neumí (to udělej ve Flexi Day nebo požádej [Asistenta](https://www.flexi-day.com/cs/help/assistant/)) a nemění role, fakturaci ani\nnastavení.\n\nZměna od aplikace má v historii žádosti nebo docházky poznámku\n„přes AI aplikaci“. Když otevře citlivou sekci něčího profilu, ukáže se toto čtení stejně\ni v Záznamu o čtení organizace.\n\n## Limity\n\nKaždá organizace má denní limit AI připojení, každý člověk denní limit člena a každá aplikace navíc\nvlastní limity. V článku [Limity AI připojení](https://www.flexi-day.com/cs/help/ai-connection-limits/) najdeš čísla a co\naplikace uslyší, když některý vyčerpá.\n\n## Tvoje připojení a odpojení\n\nKarta „AI připojení“ v Nastavení ukazuje každou aplikaci,\nkterou jsi připojil: její adresu, nebo „název neověřen“, když ji\nFlexi Day nemohl ověřit, organizaci, přístup a kdy byla naposledy použita. Poslední použití se u používané\naplikace aktualizuje aspoň jednou za hodinu.\n\nPřipojení ukončíš tak, že u aplikace zvolíš „Odpojit“ a\npotvrdíš to. Aplikace přestane fungovat při svém dalším volání. Pokud ji chceš používat znovu,\npřipoj ji znovu.\n\n### Co dalšího aplikace odpojí\n\n- Obnovení hesla odpojí všechny aplikace, které jsi připojil, ve všech organizacích.\n- Změna hesla v Nastavení udělá totéž, protože tě zároveň odhlásí všude jinde.\n- Smazání účtu je odpojí všechny.\n- Když vlastník AI připojení vypne, odpojí se všechny aplikace v organizaci. Když nastavení sníží na\n  Jen čtení, odpojí se aplikace s přístupem k zápisu; novým\n  připojením získáš přístup ke čtení.\n- Vlastník a správci organizace vidí aplikace každého člověka na stránce Využití AI a můžou je tam\n  odebrat.\n\nOdhlášení, zapnutí dvoufázového ověření ani propadlý tarif tvoje připojení nezruší. Dokud je tarif propadlý, aplikace dostává na svá volání odmítnutí."
         },
         {
           "id": "allowances",
@@ -2631,7 +2764,7 @@
           "module": "leave",
           "roles": ["approver", "manager", "group-admin", "org-admin"],
           "routes": ["/requests", "/dashboard"],
-          "tools": [],
+          "tools": ["list_requests_to_approve", "approve_request", "reject_request"],
           "keywords": [
             "schválit",
             "schválení",
@@ -2656,6 +2789,61 @@
             "Nároky při schvalování"
           ],
           "body": "O žádostech ve skupině rozhodují její schvalovatelé: členové s oprávněním Schvalovatel a manažer\nskupiny. Když na tebe žádost čeká, dostaneš e-mail a upozornění v aplikaci.\n\n## Kde najdeš čekající žádosti\n\n- **Přehled:** karta „Čekající schválení“ vypisuje, co čeká na tebe, s\n  tlačítky „Schválit“ a „Zamítnout“.\n- **Žádosti:** vyber skupinu a měsíce a pak filtr „Čekající“.\n  Každý řádek je jedna celá žádost s tlačítky „Schválit“ a „Zamítnout“.\n- **Kalendář:** klikni na žádost a otevřou se její podrobnosti.\n\n## Rozhodnutí s důvodem\n\nV podrobnostech žádosti uvidíš data, typ, poznámku, soubory a historii. Napiš do pole komentář nebo\ndůvod a stiskni „Schválit“ nebo „Zamítnout“. Komentář se\nobjeví v historii žádosti a člen dostane upozornění na rozhodnutí.\n\nRozhodnutí platí pro celou žádost, pro každý její den. Zamítnutí je konečné; člen si v případě\npotřeby zadá žádost znovu. Schválenou žádost jde později ještě zrušit, a to členem i tebou.\n\nChceš-li se jen na něco zeptat, napiš to a stiskni „Komentovat“. Člen dostane\nupozornění a na jeho odpověď zase schvalovatelé.\n\n## Kdo smí rozhodovat\n\n- Členové s oprávněním Schvalovatel a manažer skupiny.\n- Ne správci organizace: skupiny spravují, ale o ničím volnu nerozhodují. Ke schvalování potřebují\n  oprávnění Schvalovatel přímo ve skupině.\n- Ne o záznamech zrcadlených z jiné skupiny. O těch se rozhoduje ve skupině, kde byly zadané.\n\nO vlastní žádosti můžeš rozhodnout jen s oprávněním Schvalovatel v dané skupině. Jinak o ní rozhodne\njiný schvalovatel.\n\n## Nároky při schvalování\n\nSchválení zkontroluje nárok člena na daný typ a rok, a počítá přitom jen už schválené dny. Žádost,\nse kterou by nárok překročil, schválit nejde; správce skupiny může nárok nejdřív navýšit. Viz\n[Nároky](https://www.flexi-day.com/cs/help/allowances/)."
+        },
+        {
+          "id": "assistant-changes",
+          "language": "cs",
+          "url": "https://www.flexi-day.com/cs/help/assistant-changes/",
+          "title": "Potvrzení změn, které připraví Asistent",
+          "summary": "Jak fungují potvrzovací karty Asistenta, u tvých změn i u schvalování a zamítání žádostí, a co se stane, když kartu potvrdíš, odmítneš nebo napíšeš dál.",
+          "module": "assistant-and-mcp",
+          "roles": ["member", "approver", "manager", "group-admin", "org-admin", "owner"],
+          "routes": [],
+          "tools": [
+            "create_request",
+            "cancel_my_request",
+            "clock_in",
+            "clock_out",
+            "list_requests_to_approve",
+            "approve_request",
+            "reject_request"
+          ],
+          "keywords": [
+            "asistent",
+            "karta",
+            "potvrdit",
+            "potvrzení",
+            "teď ne",
+            "ponechat",
+            "zkusit znovu",
+            "nepoužito",
+            "zadat volno",
+            "zrušit",
+            "příchod",
+            "odchod",
+            "poznámka",
+            "upozornění",
+            "schválit",
+            "zamítnout",
+            "čeká na schválení",
+            "důvod"
+          ],
+          "related": [
+            "assistant",
+            "request-time-off",
+            "cancel-or-change-a-request",
+            "clock-in-and-out",
+            "approve-requests",
+            "assistant-weekly-limit"
+          ],
+          "headings": [
+            "Co karta ukazuje",
+            "Potvrdit, nebo nechat být",
+            "Schválit, nebo zamítnout žádost",
+            "Poznámka od někoho jiného",
+            "Při Týdenním limitu"
+          ],
+          "body": "Požádej Asistenta, ať ti zadá volno, zruší některou z tvých žádostí nebo zaznamená příchod či\nodchod, a on změnu připraví jako kartu v chatu. Schvalovatelé takhle můžou i schvalovat a zamítat\nžádosti. Nic se nezmění, dokud kartu nepotvrdíš.\n\n## Co karta ukazuje\n\nKarta položí otázku, třeba „Odeslat tuto žádost?“, a vypíše údaje, které Flexi\nDay spočítalo podle stejných pravidel jako aplikace: typ, termín, pracovní dny, tvůj zůstatek před a\npo a skupinu. Poznámka nebo důvod, o které jsi požádal(a), se ukáže doslovně, s řádkem, čí jsou to\nslova. Údaje pocházejí z Flexi Day, nikdy z vlastních slov Asistenta. Každá karta nese text\n„Označeno jako provedené přes Asistenta“.\n\nKdyž pravidla změnu nedovolí, třeba protože ti nezbývá dost dní, kartu nedostaneš. Asistent ti\nmísto toho řekne proč.\n\n## Potvrdit, nebo nechat být\n\n- „Odeslat žádost“, „Zrušit žádost“,\n  „Zaznamenat příchod“ nebo „Zaznamenat odchod“ změnu\n  provede. Flexi Day v tu chvíli pravidla zkontroluje znovu. Karta se zmenší na jeden řádek s\n  výsledkem a odkazem „Otevřít“, který otevře tvoje žádosti nebo docházku.\n- „Teď ne“, u zrušení „Ponechat“, nechá všechno, jak\n  bylo.\n- Když se změna při potvrzení nepovede, třeba protože mezitím někdo ten den obsadil, karta ukáže\n  důvod červeně a zůstane otevřená. „Zkusit znovu“ to zkusí ještě jednou.\n- Když místo toho pošleš novou zprávu, každá karta, která ještě čeká, se označí jako nepoužitá.\n  Potom už ji potvrdit nejde; o novou kartu požádej znovu.\n\nKdyž Asistent připraví dvě změny najednou, každá dostane vlastní kartu a rozhodneš je jednu po\ndruhé. Psát pokračuje, až rozhodneš všechny.\n\nZměna provedená touto cestou má v historii žádosti nebo v historii docházky toho dne poznámku\n„přes Asistenta“. Schvalovatelé dostanou stejná upozornění jako u žádosti z\naplikace.\n\n## Schválit, nebo zamítnout žádost\n\nKdyž schvaluješ volno, zeptej se „Co čeká na moje schválení?“ a Asistent vypíše žádosti, které čekají\nna tebe. Požádej ho, ať některou schválí nebo zamítne, a dostaneš kartu se žadatelem, typem,\ntermínem, pracovními dny, jeho zůstatkem před a po, skupinou a vlastní poznámkou žádosti doslovně, s\ntím, kdo ji napsal. Asistent nikdy nedoporučuje schválit ani zamítnout; rozhodnutí je na tobě.\n\n- „Schválit“ schválí všechny dny žádosti, které ještě čekají.\n- „Zamítnout“ je zamítne. Na kartě je pole pro důvod, který si\n  žadatel přečte; když ho necháš prázdné, žádost se zamítne bez důvodu.\n\nŽadatel dostane upozornění jako při rozhodnutí v aplikaci a historie žádosti uvede\n„přes Asistenta“. Platí stejná pravidla jako v aplikaci: rozhoduješ jen ve\nskupinách, kde schvaluješ, a schválení se musí vejít do nároku žadatele. Schvalování a zamítání\nfunguje jen v Asistentovi, ne v AI aplikacích, které připojíš.\n\n## Poznámka od někoho jiného\n\nNež Asistent změnu připraví, může číst text, který napsali jiní, třeba poznámku u volna kolegy nebo\nnázev skupinové události. Pokud ho četl, karta uvede, kdo ho napsal, a požádá tě, ať zkontroluješ,\nže jde o to, o co jsi žádal(a). Někdo by mohl napsat poznámku, která má Asistenta navést jinam, a\nproto si před potvrzením ověř, že karta odpovídá tomu, o co jsi žádal(a).\n\n## Při Týdenním limitu\n\nKarta, která už se ukázala, jde potvrdit i poté, co tvoje organizace vyčerpá Týdenní limit.\nPotvrzení změnu provede, ale Asistent na ni odpoví až po obnovení limitu, s tvou další zprávou.\nViz [Týdenní limit a využití](https://www.flexi-day.com/cs/help/assistant-weekly-limit/)."
         },
         {
           "id": "assistant-weekly-limit",
@@ -2717,7 +2905,7 @@
             "neodesláno",
             "zkusit znovu"
           ],
-          "related": ["ai-connections", "assistant-weekly-limit"],
+          "related": ["ai-connections", "assistant-weekly-limit", "assistant-changes"],
           "headings": [
             "Kdo ho může používat",
             "Jak se panel používá",
@@ -2728,7 +2916,7 @@
             "Týdenní limit",
             "Chaty"
           ],
-          "body": "Asistent je chat ve webové aplikaci Flexi Day. Zeptej se ho česky nebo anglicky a odpoví ti z\nčlánků nápovědy a z údajů, které už v aplikaci vidíš. Vidí přesně to, co vidíš ty, nic víc.\n\n## Kdo ho může používat\n\nAsistent je součástí tarifu Enterprise. Je vypnutý, dokud ho vlastník nezapne v kartě AI na stránce\nOrganizace. Jakmile je zapnutý, najde každý člen tlačítko „Asistent“ v\nhorní liště na každé stránce. Aplikace pro iPhone ho nemá.\n\nDo té doby členové tlačítko nevidí. Na tarifu bez Enterprise ho vidí jen vlastník a dozví se z něj,\nco Enterprise přidává. Na Enterprise s vypnutým Asistentem ho vidí vlastník a správci organizace, s\nodkazem na nastavení organizace.\n\n## Jak se panel používá\n\nTlačítko otevře panel na pravé straně stránky, takže můžeš vedle něj dál pracovat. V telefonu\nzabere celou obrazovku. Nový chat ti nabídne pár otázek na začátek. Pokud má Asistenta víc tvých\norganizací, vyber organizaci před první zprávou: chat zůstává v té, ve které začal.\n\nNad odpovědí vidíš každý krok, který Asistent udělal, třeba kontrolu zůstatku. Dokud se odpověď\npíše, další zprávu poslat nemůžeš. Když spojení vypadne, panel ukáže, že se odpověď ještě píše, a\nnaváže na ni.\n\n„Tvoje chaty“ ukazuje tvoje chaty v částech Dnes,\nTento týden a Dříve. Chat tam můžeš smazat; vrátit\nho nepůjde. „Nový chat“ začne nový.\n\n## Zapnutí a vypnutí\n\nAsistenta může zapnout nebo vypnout jen vlastník, přepínačem v kartě AI na stránce\nOrganizace. Správci organizace přepínač vidí, ale nemůžou ho změnit. Než se Asistent\nzapne, přečte si vlastník, co Asistent dělá a co opouští Flexi Day. Napoprvé přijme za organizaci\nSmlouvu o funkcích AI a Flexi Day zaznamená, kdo ji přijal, kdy a kterou verzi.\n\nVolba „Dát vědět členům“ je ve výchozím stavu zaškrtnutá a pošle všem v\norganizaci upozornění v aplikaci a v telefonu. Stejný text si vlastník zkopíruje v kartě AI tlačítkem\n„Zkopírovat upozornění pro členy“, třeba do vašich vnitřních pravidel.\n\nKdyž vyjde nová verze smlouvy, uvidí vlastník na každé stránce banner, dokud ji nepřijme. Asistent\nmezitím funguje dál. Vypnutím o Asistenta členové hned přijdou; jejich chaty zůstanou čitelné, dokud\nnebudou 180 dní staré.\n\n## Na co se můžeš ptát\n\n- Jak něco udělat, třeba jak si vzít půl dne volna nebo jak zaznamenat příchod. Odpovědi z\n  nápovědy končí odkazy „Z nápovědy:“ na články, ze kterých vycházejí.\n- Na tvoje vlastní údaje a na to, co smíš vidět: kolik dní ti zbývá, kdo je příští týden pryč, jestli\n  byla žádost schválená, kolik jsi tento týden odpracoval.\n- Schvalovatelé se můžou ptát na podrobnosti žádosti, která čeká na rozhodnutí.\n\nMůžeš se ho zeptat i na to, co umí, prohodit pár slov nebo se zeptat na tarify a ceny.\n\n## Na co neodpoví\n\nAsistent odpovídá jen na otázky k Flexi Day. Každá zpráva se zkontroluje dřív, než ji Asistent\nuvidí. Zpráva o něčem jiném nebo zpráva, která se snaží změnit pravidla Asistenta, se neodešle:\nzůstane v chatu s označením „Asistentovi neodesláno“ a pod ní krátká pevná odpověď, s\nčím Asistent pomáhá. Vlastník a správci organizace vidí, kolik zpráv kterého člověka bylo tento\ntýden odmítnuto, nikdy ne to, co kdo napsal.\n\nKdyž selže samotná kontrola, nic se neodešle a „Zkusit znovu“ zprávu pošle\nznovu, stejně jako „Odeslat znovu“ po výpadku připojení.\n\n- Neradí v právních otázkách. Obrať se na personální oddělení nebo zaměstnavatele.\n- Nepíše e-maily ani dopisy. Místo toho nabídne, že vytvoří žádost s krátkou poznámkou.\n- Nikdy nedoporučuje cizí žádost schválit ani zamítnout. Ukáže fakta a rozhodne schvalovatel.\n- Lidé, které ve Flexi Day nevidíš, se v jeho odpovědích neobjeví.\n- Poznámku nebo jméno, které někdo napsal a které se tváří jako pokyn pro Asistenta, před ním\n  skryje.\n- V odpovědích odkazuje jen na stránky Flexi Day a články nápovědy. Jiné odkazy se ukážou jako\n  prostý text a obrázky se nezobrazí nikdy.\n\n## Změny, které potvrdíš\n\nAsistent umí připravit změnu: vytvořit žádost, zrušit tvoji žádost, schválit nebo zamítnout žádost,\nzaznamenat příchod nebo odchod. Každá změna se ukáže jako karta s přesnými údaji. Nic se nezmění,\ndokud kartu nepotvrdíš. Volbou „Teď ne“ ji zahodíš. Změna provedená touto cestou má v historii\nžádosti nebo v historii docházky toho dne poznámku „přes Asistenta“.\n\n## Týdenní limit\n\nKaždá organizace má na využití Asistenta Týdenní limit, společný pro všechny její členy. Obnoví se\nkaždé pondělí v 00:00 UTC. Článek „Týdenní limit a využití“ vysvětluje, co se počítá a co uvidíš,\nkdyž se limit blíží.\n\n## Chaty\n\nKaždý chat patří k jedné organizaci. Chat se uzavře, když je příliš dlouhý nebo po 30 dnech bez\nzprávy; dál si ho přečteš a v novém chatu pokračuješ. Chaty se mažou 180 dní po poslední zprávě a\nkterýkoli můžeš kdykoli smazat sám. Když z organizace odejdeš, tvoje chaty v ní se smažou.\n\nAsistent běží na modelech Claude od společnosti Anthropic. Kde se chaty ukládají a jak dlouho,\nvysvětluje Smlouva o funkcích AI, kterou přijímá vlastník."
+          "body": "Asistent je chat ve webové aplikaci Flexi Day. Zeptej se ho česky nebo anglicky a odpoví ti z\nčlánků nápovědy a z údajů, které už v aplikaci vidíš. Vidí přesně to, co vidíš ty, nic víc.\n\n## Kdo ho může používat\n\nAsistent je součástí tarifu Enterprise. Je vypnutý, dokud ho vlastník nezapne v kartě AI na stránce\nOrganizace. Jakmile je zapnutý, najde každý člen tlačítko „Asistent“ v\nhorní liště na každé stránce. Aplikace pro iPhone ho nemá.\n\nDo té doby členové tlačítko nevidí. Na tarifu bez Enterprise ho vidí jen vlastník a dozví se z něj,\nco Enterprise přidává. Na Enterprise s vypnutým Asistentem ho vidí vlastník a správci organizace, s\nodkazem na nastavení organizace.\n\n## Jak se panel používá\n\nTlačítko otevře panel na pravé straně stránky, takže můžeš vedle něj dál pracovat. V telefonu\nzabere celou obrazovku. Nový chat ti nabídne pár otázek na začátek. Pokud má Asistenta víc tvých\norganizací, vyber organizaci před první zprávou: chat zůstává v té, ve které začal.\n\nNad odpovědí vidíš každý krok, který Asistent udělal, třeba kontrolu zůstatku. Dokud se odpověď\npíše, další zprávu poslat nemůžeš. Když spojení vypadne, panel ukáže, že se odpověď ještě píše, a\nnaváže na ni.\n\n„Tvoje chaty“ ukazuje tvoje chaty v částech Dnes,\nTento týden a Dříve. Chat tam můžeš smazat; vrátit\nho nepůjde. „Nový chat“ začne nový.\n\n## Zapnutí a vypnutí\n\nAsistenta může zapnout nebo vypnout jen vlastník, přepínačem v kartě AI na stránce\nOrganizace. Správci organizace přepínač vidí, ale nemůžou ho změnit. Než se Asistent\nzapne, přečte si vlastník, co Asistent dělá a co opouští Flexi Day. Napoprvé přijme za organizaci\nSmlouvu o funkcích AI a Flexi Day zaznamená, kdo ji přijal, kdy a kterou verzi.\n\nVolba „Dát vědět členům“ je ve výchozím stavu zaškrtnutá a pošle všem v\norganizaci upozornění v aplikaci a v telefonu. Stejný text si vlastník zkopíruje v kartě AI tlačítkem\n„Zkopírovat upozornění pro členy“, třeba do vašich vnitřních pravidel.\n\nKdyž vyjde nová verze smlouvy, uvidí vlastník na každé stránce banner, dokud ji nepřijme. Asistent\nmezitím funguje dál. Vypnutím o Asistenta členové hned přijdou; jejich chaty zůstanou čitelné, dokud\nnebudou 180 dní staré.\n\n## Na co se můžeš ptát\n\n- Jak něco udělat, třeba jak si vzít půl dne volna nebo jak zaznamenat příchod. Odpovědi z\n  nápovědy končí odkazy „Z nápovědy:“ na články, ze kterých vycházejí.\n- Na tvoje vlastní údaje a na to, co smíš vidět: kolik dní ti zbývá, kdo je příští týden pryč, jestli\n  byla žádost schválená, kolik jsi tento týden odpracoval.\n- Schvalovatelé se můžou ptát na podrobnosti žádosti, která čeká na rozhodnutí.\n\nMůžeš se ho zeptat i na to, co umí, prohodit pár slov nebo se zeptat na tarify a ceny.\n\n## Na co neodpoví\n\nAsistent odpovídá jen na otázky k Flexi Day. Každá zpráva se zkontroluje dřív, než ji Asistent\nuvidí. Zpráva o něčem jiném nebo zpráva, která se snaží změnit pravidla Asistenta, se neodešle:\nzůstane v chatu s označením „Asistentovi neodesláno“ a pod ní krátká pevná odpověď, s\nčím Asistent pomáhá. Vlastník a správci organizace vidí, kolik zpráv kterého člověka bylo tento\ntýden odmítnuto, nikdy ne to, co kdo napsal.\n\nKdyž selže samotná kontrola, nic se neodešle a „Zkusit znovu“ zprávu pošle\nznovu, stejně jako „Odeslat znovu“ po výpadku připojení.\n\n- Neradí v právních otázkách. Obrať se na personální oddělení nebo zaměstnavatele.\n- Nepíše e-maily ani dopisy. Místo toho nabídne, že vytvoří žádost s krátkou poznámkou.\n- Nikdy nedoporučuje cizí žádost schválit ani zamítnout. Ukáže fakta a rozhodne schvalovatel.\n- Lidé, které ve Flexi Day nevidíš, se v jeho odpovědích neobjeví.\n- Poznámku nebo jméno, které někdo napsal a které se tváří jako pokyn pro Asistenta, před ním\n  skryje.\n- V odpovědích odkazuje jen na stránky Flexi Day a články nápovědy. Jiné odkazy se ukážou jako\n  prostý text a obrázky se nezobrazí nikdy.\n\n## Změny, které potvrdíš\n\nAsistent umí připravit změnu, třeba žádost nebo příchod, jako kartu s přesnými údaji. Nic se\nnezmění, dokud kartu nepotvrdíš. Karty vysvětluje článek\n[Potvrzení změn, které připraví Asistent](https://www.flexi-day.com/cs/help/assistant-changes/).\n\n## Týdenní limit\n\nKaždá organizace má na využití Asistenta Týdenní limit, společný pro všechny její členy. Obnoví se\nkaždé pondělí v 00:00 UTC. Článek „Týdenní limit a využití“ vysvětluje, co se počítá a co uvidíš,\nkdyž se limit blíží.\n\n## Chaty\n\nKaždý chat patří k jedné organizaci. Chat se uzavře, když je příliš dlouhý nebo po 30 dnech bez\nzprávy; dál si ho přečteš a v novém chatu pokračuješ. Chaty se mažou 180 dní po poslední zprávě a\nkterýkoli můžeš kdykoli smazat sám. Když z organizace odejdeš, tvoje chaty v ní se smažou.\n\nAsistent běží na modelech Claude od společnosti Anthropic. Kde se chaty ukládají a jak dlouho,\nvysvětluje Smlouva o funkcích AI, kterou přijímá vlastník."
         },
         {
           "id": "attachments",
@@ -4284,6 +4472,20 @@
     },
     {
       "language": "en",
+      "articleId": "ai-connection-limits",
+      "question": "My AI app says Flexi Day's daily limit is reached. When can it call again?",
+      "expectedArticles": ["ai-connection-limits"],
+      "mustMention": ["midnight UTC"]
+    },
+    {
+      "language": "en",
+      "articleId": "ai-connection-limits",
+      "question": "How many calls a day can our organization's AI apps make?",
+      "expectedArticles": ["ai-connection-limits"],
+      "mustMention": ["5,000 on Pro", "20,000 on Enterprise and Custom", "1,000 per person"]
+    },
+    {
+      "language": "en",
       "articleId": "ai-connections",
       "question": "How do I connect ChatGPT to Flexi Day?",
       "expectedArticles": ["ai-connections"],
@@ -4343,6 +4545,27 @@
     },
     {
       "language": "en",
+      "articleId": "assistant-changes",
+      "question": "Can the Assistant book a day off for me?",
+      "expectedArticles": ["assistant-changes", "assistant"],
+      "mustMention": ["you confirm the card", "nothing changes before you confirm"]
+    },
+    {
+      "language": "en",
+      "articleId": "assistant-changes",
+      "question": "Why does a card say the Assistant read a note written by someone else?",
+      "expectedArticles": ["assistant-changes"],
+      "mustMention": ["check that the card matches what you asked for"]
+    },
+    {
+      "language": "en",
+      "articleId": "assistant-changes",
+      "question": "Can the Assistant approve a request for me?",
+      "expectedArticles": ["assistant-changes", "approve-requests"],
+      "mustMention": ["approve or reject card", "never recommends"]
+    },
+    {
+      "language": "en",
       "articleId": "assistant-weekly-limit",
       "question": "Why did the Assistant stop answering for our organization this week?",
       "expectedArticles": ["assistant-weekly-limit"],
@@ -4354,13 +4577,6 @@
       "question": "The Assistant says it is unavailable. Did we use up our limit?",
       "expectedArticles": ["assistant-weekly-limit"],
       "mustMention": ["the AI provider can't answer", "not your organization's limit"]
-    },
-    {
-      "language": "en",
-      "articleId": "assistant",
-      "question": "Can the Assistant book a day off for me?",
-      "expectedArticles": ["assistant"],
-      "mustMention": ["you confirm the card", "nothing changes before you confirm"]
     },
     {
       "language": "en",
@@ -5211,6 +5427,24 @@
     },
     {
       "language": "cs",
+      "articleId": "ai-connection-limits",
+      "question": "Moje AI aplikace hlásí, že je vyčerpaný denní limit Flexi Day. Kdy může volat znovu?",
+      "expectedArticles": ["ai-connection-limits"],
+      "mustMention": ["o půlnoci UTC"]
+    },
+    {
+      "language": "cs",
+      "articleId": "ai-connection-limits",
+      "question": "Kolik volání denně můžou udělat AI aplikace naší organizace?",
+      "expectedArticles": ["ai-connection-limits"],
+      "mustMention": [
+        "5 000 v tarifu Pro",
+        "20 000 v tarifech Enterprise a Custom",
+        "1 000 na člověka"
+      ]
+    },
+    {
+      "language": "cs",
       "articleId": "ai-connections",
       "question": "Jak připojím ChatGPT k Flexi Day?",
       "expectedArticles": ["ai-connections"],
@@ -5267,6 +5501,27 @@
     },
     {
       "language": "cs",
+      "articleId": "assistant-changes",
+      "question": "Může mi Asistent zadat den volna?",
+      "expectedArticles": ["assistant-changes", "assistant"],
+      "mustMention": ["kartu potvrdíš", "nic se nezmění před potvrzením"]
+    },
+    {
+      "language": "cs",
+      "articleId": "assistant-changes",
+      "question": "Proč karta píše, že Asistent četl poznámku od někoho jiného?",
+      "expectedArticles": ["assistant-changes"],
+      "mustMention": ["zkontroluj", "že karta odpovídá tomu", "o co jsi žádal(a)"]
+    },
+    {
+      "language": "cs",
+      "articleId": "assistant-changes",
+      "question": "Může za mě Asistent schválit žádost?",
+      "expectedArticles": ["assistant-changes", "approve-requests"],
+      "mustMention": ["karta pro schválení nebo zamítnutí", "nikdy nedoporučuje"]
+    },
+    {
+      "language": "cs",
       "articleId": "assistant-weekly-limit",
       "question": "Proč nám Asistent tento týden přestal odpovídat?",
       "expectedArticles": ["assistant-weekly-limit"],
@@ -5278,13 +5533,6 @@
       "question": "Asistent píše, že není k dispozici. Vyčerpali jsme limit?",
       "expectedArticles": ["assistant-weekly-limit"],
       "mustMention": ["neodpovídá poskytovatel AI", "nejde o limit organizace"]
-    },
-    {
-      "language": "cs",
-      "articleId": "assistant",
-      "question": "Může mi Asistent zadat den volna?",
-      "expectedArticles": ["assistant"],
-      "mustMention": ["kartu potvrdíš", "nic se nezmění před potvrzením"]
     },
     {
       "language": "cs",

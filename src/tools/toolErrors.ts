@@ -89,6 +89,11 @@ const GUARD_MESSAGES_CS: Record<string, string> = {
   "You are not allowed to cancel one or more of these vacations":
     "Některé dny této žádosti nemůžete zrušit.",
   "One or more of these requests has already been cancelled": "Žádost už byla zrušena.",
+  "You are not allowed to approve one or more of these requests": "Tuto žádost nemůžete schválit.",
+  "You are not allowed to reject one or more of these requests": "Tuto žádost nemůžete zamítnout.",
+  "You cannot decide on your own leave request": "O vlastní žádosti rozhodnout nemůžete.",
+  "This request has already been decided": "O žádosti už bylo rozhodnuto.",
+  "One or more of these requests has already been decided": "O žádosti už bylo rozhodnuto.",
   "You are already clocked in": "Příchod už máte zaznamenaný.",
   "You are not clocked in": "Nemáte zaznamenaný příchod.",
   "This employment has ended": "Tento pracovní poměr skončil.",

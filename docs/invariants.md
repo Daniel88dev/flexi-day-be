@@ -283,6 +283,11 @@ the app, inside one organization.
   consent for user, client and organization claim, the user, and `aiEligibility`. Disconnecting,
   leaving the organization or a lapsed plan take effect on the next call, not when the token
   expires.
+- **Approve and reject never run over `/mcp`.** They carry `assistantOnly`: `toolsFor` leaves them
+  out of `tools/list`, `/mcp` answers a call to them as an unknown tool, and `runTool` and
+  `previewTool` refuse them on any channel but `assistant`. Deciding on someone else's request
+  needs the Assistant's confirmation card; an external app has no such step.
+  `mcpWriteTools.e2e.test.ts` covers all three.
 - **Tool errors carry no user text or arguments.** A guard's refusal reaches the model with its
   public message and public context only; anything else is one fixed message. Invalid arguments
   name the schema's field paths, never the values.
@@ -333,6 +338,9 @@ the app, inside one organization.
   result, "declined", or "not taken" when the user's next admitted message settles it. Card text
   comes from the stored preview, never the model, and card previews are never logged.
   `assistantCards.e2e.test.ts` pins every path.
+- **A reject reason typed on the card never reaches the session.** The user writes it in the card,
+  where no screen runs, so `reject_request`'s result says only `reasonGiven`. Putting the text in
+  the result would hand the model unscreened input. `assistantDecisionCards.e2e.test.ts` checks it.
 - **A round of tool results goes to the session whole, and only through the meter.** Answers wait in
   `assistant_held_answers` until no card of their model response is open; taking them (a delete
   that returns the rows) is the claim, so two advances can't both send them. A round the meter

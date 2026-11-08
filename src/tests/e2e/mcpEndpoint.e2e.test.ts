@@ -214,6 +214,7 @@ describe("/mcp", () => {
         "list_directory_people",
         "list_group_events",
         "list_my_requests",
+        "list_requests_to_approve",
         "list_who_is_away",
         "read_doc",
         "search_docs",

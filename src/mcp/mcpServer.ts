@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { KB_LANGUAGES, type KbBundle } from "../services/knowledgeBase/bundle.js";
 import { knowledgeBase } from "../services/knowledgeBase/knowledgeBase.js";
-import { findTool, toolDescription, toolInputJsonSchema, toolsFor } from "../tools/registry.js";
+import { findMcpTool, toolDescription, toolInputJsonSchema, toolsFor } from "../tools/registry.js";
 import { isToolAllowed, runTool } from "../tools/runTool.js";
 import { spendMcpCall } from "./mcpLimits.js";
 import { toolMessage, type ToolError } from "../tools/toolErrors.js";
@@ -61,7 +61,7 @@ const callTool = async (
   args: unknown
 ): Promise<CallToolResult> => {
   const { context } = principal;
-  const tool = findTool(name);
+  const tool = findMcpTool(name);
   if (!tool) return errorResult(toolMessage("UNKNOWN_TOOL", context.language));
   if (!isToolAllowed(tool, context.access)) {
     return errorResult(toolMessage("READ_ONLY", context.language));

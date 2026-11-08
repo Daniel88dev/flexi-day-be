@@ -134,7 +134,7 @@ describe("/mcp write tools", () => {
   let server: LoopbackServer;
   let restoreFetch: () => void;
   let s: Seeded;
-  const token = {} as Record<"jana" | "petr" | "janaReadOnly" | "janaBeta", string>;
+  const token = {} as Record<"jana" | "petr" | "janaReadOnly" | "janaBeta" | "olga", string>;
   const savedSwitches = config.aiFeatures;
 
   beforeAll(async () => {
@@ -149,6 +149,7 @@ describe("/mcp write tools", () => {
     token.petr = await connect(s.petr.email, s.acme.id);
     token.janaReadOnly = await connect(s.jana.email, s.acme.id, "flexiday.read offline_access");
     token.janaBeta = await connect(s.jana.email, s.beta.id);
+    token.olga = await connect(s.olga.email, s.acme.id);
   });
 
   afterAll(async () => {
@@ -210,7 +211,66 @@ describe("/mcp write tools", () => {
 
     it("never offers approve or reject", async () => {
       const names = (await toolNames(token.jana)).map((tool) => tool.name);
-      expect(names.filter((name) => /approve|reject|decide/.test(name))).toEqual([]);
+      expect(names.filter((name) => /approve|reject|decide/.test(name))).toEqual([
+        "list_requests_to_approve",
+      ]);
+    });
+  });
+
+  describe("approve and reject, the Assistant's alone", () => {
+    it("lists what waits on an approver, but neither offers nor runs a decision", async () => {
+      const requestId = uuidv4();
+      const day = juneWeekday(14);
+      const vacationId = await addLeave(s.acme.team, s.jana.id, day, {
+        approved: false,
+        requestId,
+      });
+
+      const names = (await toolNames(token.olga)).map((tool) => tool.name);
+      expect(names).toContain("list_requests_to_approve");
+      expect(names).not.toContain("approve_request");
+      expect(names).not.toContain("reject_request");
+
+      const waiting = await okOf(token.olga, "list_requests_to_approve");
+      expect(waiting.requests).toEqual([
+        expect.objectContaining({ requestId, firstDay: day, lastDay: day, days: 1 }),
+      ]);
+
+      for (const name of ["approve_request", "reject_request"]) {
+        expect(await errorOf(token.olga, name, { requestId })).toMatchObject({
+          message: "There is no tool with this name.",
+        });
+      }
+      const [row] = await db.select().from(vacation).where(eq(vacation.id, vacationId));
+      expect(row).toMatchObject({ approvedAt: null, rejectedAt: null, deletedAt: null });
+      await db.delete(vacation).where(eq(vacation.id, vacationId));
+    });
+
+    it("refuses an Assistant-only tool run in process on channel mcp", async () => {
+      const tool = findTool("approve_request")!;
+      const ctx: ToolContext = {
+        auth: {
+          sessionId: "mcp-approve",
+          userId: s.olga.id,
+          userName: "Olga Owner",
+          userEmail: s.olga.email,
+          emailVerified: true,
+          channel: "mcp",
+        },
+        organizationId: s.acme.id,
+        access: "write",
+        language: "en",
+      };
+      for (const answer of [
+        await runTool(tool, ctx, { requestId: uuidv4() }),
+        await previewTool(tool, ctx, { requestId: uuidv4() }),
+      ]) {
+        expect(answer).toMatchObject({
+          ok: false,
+          outcome: "refused",
+          error: { message: "There is no tool with this name." },
+        });
+      }
     });
   });
 

@@ -630,6 +630,8 @@ export type PendingApprovalRow = {
   vacationType: CalendarRecordType;
   requestedDay: string;
   note: string | null;
+  /** Who booked it on the requester's behalf, else null. */
+  createdByUserId: string | null;
   submittedAt: Date;
 };
 
@@ -642,7 +644,8 @@ export type PendingApprovalRow = {
  * endpoints would accept them (see `mayDecideOwn`).
  */
 export const getPendingApprovalsForApprover = async (
-  approverUserId: string
+  approverUserId: string,
+  options: { organizationId?: string } = {}
 ): Promise<PendingApprovalRow[]> => {
   const approverMembership = alias(groupUsers, "approverMembership");
 
@@ -670,6 +673,7 @@ export const getPendingApprovalsForApprover = async (
       vacationType: vacation.vacationType,
       requestedDay: vacation.requestedDay,
       note: vacation.note,
+      createdByUserId: vacation.createdByUserId,
       submittedAt: vacation.createdAt,
     })
     .from(vacation)
@@ -689,6 +693,7 @@ export const getPendingApprovalsForApprover = async (
         isNull(vacation.approvedAt),
         isNull(vacation.rejectedAt),
         isNull(groups.deletedAt),
+        options.organizationId ? eq(groups.organizationId, options.organizationId) : undefined,
         or(
           ne(vacation.userId, approverUserId),
           and(eq(approverMembership.approverAccess, true), not(mirroredIntoGroup))
@@ -729,6 +734,7 @@ export const getPendingRequestsForRequester = async (userId: string): Promise<Ow
       vacationType: vacation.vacationType,
       requestedDay: vacation.requestedDay,
       note: vacation.note,
+      createdByUserId: vacation.createdByUserId,
       submittedAt: vacation.createdAt,
       deletedAt: vacation.deletedAt,
       approvedAt: vacation.approvedAt,

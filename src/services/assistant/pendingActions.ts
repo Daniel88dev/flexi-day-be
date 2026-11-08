@@ -110,6 +110,8 @@ export const settleCard = async (
   action: PendingActionRow,
   settled: {
     status: "confirmed" | "declined" | "not_taken";
+    /** The arguments the write ran with, when the card changed them (a reject reason). */
+    input?: Record<string, unknown>;
     result?: Record<string, unknown>;
     answer: Omit<ToolAnswer, "toolUseId">;
   }
@@ -119,6 +121,7 @@ export const settleCard = async (
       .update(assistantPendingActions)
       .set({
         status: settled.status,
+        ...(settled.input ? { input: settled.input } : {}),
         result: settled.result ?? null,
         error: null,
         decidedAt: new Date(),

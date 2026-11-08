@@ -46,6 +46,9 @@ const admit = (
   ctx: ToolContext,
   args: unknown
 ): { ok: true; input: Record<string, unknown> } | Refusal => {
+  if (tool.assistantOnly && ctx.auth.channel !== "assistant") {
+    return { ok: false, outcome: "refused", error: toolMessage("UNKNOWN_TOOL", ctx.language) };
+  }
   if (!isToolAllowed(tool, ctx.access)) {
     return { ok: false, outcome: "read_only", error: toolMessage("READ_ONLY", ctx.language) };
   }

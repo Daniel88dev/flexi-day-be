@@ -2,7 +2,11 @@ import { Router, type Request } from "express";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import { requireAiFeature } from "../middleware/aiFeatureGuard.js";
-import { validateCreateChat, validateSendMessage } from "../services/assistant/types.js";
+import {
+  validateCardConfirm,
+  validateCreateChat,
+  validateSendMessage,
+} from "../services/assistant/types.js";
 import {
   handleDeleteChat,
   handleGetAssistantOrganizations,
@@ -567,6 +571,11 @@ export const assistantRouter = (): Router => {
    *       and the Assistant writes on (`turnRunning`). At the Weekly limit
    *       the write still runs and the card settles, but the result is held
    *       and sent with the user's next admitted message.
+   *
+   *       A reject card (`reject_request`) takes the requester's reason from
+   *       the body, replacing the one the Assistant proposed; blank or null
+   *       rejects without one. The session hears only whether a reason was
+   *       given, never its text.
    *     operationId: handleConfirmPendingAction
    *     security:
    *       - bearerAuth: []
@@ -577,6 +586,18 @@ export const assistantRouter = (): Router => {
    *         schema:
    *           type: string
    *           format: uuid
+   *     requestBody:
+   *       required: false
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               reason:
+   *                 type: string
+   *                 nullable: true
+   *                 maxLength: 1000
+   *                 description: Reject cards only. The reason the requester reads.
    *     responses:
    *       '200':
    *         description: The card after the decision
@@ -597,11 +618,16 @@ export const assistantRouter = (): Router => {
    *           `PENDING_ACTION_SETTLED` with `status`: the card was already
    *           decided or not taken. `ASSISTANT_TURN_RUNNING`: another answer
    *           of the caller's is being written.
+   *       '422':
+   *         description: |
+   *           A `reason` longer than 1000 characters, or a `reason` on a card
+   *           other than a reject (`REASON_NOT_ALLOWED`).
    *       '503':
    *         description: '`ASSISTANT_UNAVAILABLE`: Anthropic refused for its spend limit or credits.'
    */
   app.post(
     "/pending-actions/:pendingActionId/confirm",
+    bodyValidationMiddleware(validateCardConfirm),
     tryCatch(handlePostCardDecision("confirm"))
   );
 

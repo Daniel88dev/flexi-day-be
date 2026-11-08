@@ -20,6 +20,13 @@ export const validateSendMessage = z.object({
 
 export type ValidatedSendMessage = z.infer<typeof validateSendMessage>;
 
+/** Confirm's body: a reject card's reason for the requester, as the user left it. */
+export const validateCardConfirm = z
+  .object({ reason: z.string().max(1000).nullable().optional() })
+  .optional();
+
+export type ValidatedCardConfirm = z.infer<typeof validateCardConfirm>;
+
 export const validateStreamQuery = z.object({
   after: z
     .string()

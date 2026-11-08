@@ -448,3 +448,28 @@ export const previewCancelRequestBatch = async (params: {
   const vacationIds = Array.from(new Set(params.vacationIds));
   return db.transaction((tx) => guardTransition(cancelBatchGuards(params.auth, vacationIds), tx));
 };
+
+/**
+ * Runs the guards of {@link approveRequestBatch} or {@link rejectRequestBatch}
+ * on a transaction that changes nothing, and answers the rows it would decide.
+ */
+export const previewDecisionBatch = async (params: {
+  auth: AuthSession;
+  vacationIds: string[];
+  decision: Decision;
+}): Promise<LiveVacationType[]> => {
+  const { auth, decision } = params;
+  const vacationIds = Array.from(new Set(params.vacationIds));
+  return db.transaction((tx) =>
+    guardTransition(
+      {
+        load: loadMany(vacationIds),
+        requestedCount: vacationIds.length,
+        notFound: someNotFound(auth, vacationIds),
+        authorize: mayDecide(auth, decision),
+        assertWithinQuota: decision === "approve" ? assertApprovalWithinQuota : undefined,
+      },
+      tx
+    )
+  );
+};

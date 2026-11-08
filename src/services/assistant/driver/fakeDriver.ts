@@ -164,6 +164,17 @@ const nextWeekday = (today: Date) => {
 export const scriptFor = (message: string, today = new Date()): Script => {
   const text = message.toLowerCase();
   const year = today.getUTCFullYear();
+  // "approve <requestId>" / "reject <requestId>" decide that request.
+  const requestId = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/.exec(
+    text
+  )?.[0];
+  if (requestId && /\bapprove|schval/.test(text)) {
+    return { tool: "approve_request", input: { requestId } };
+  }
+  if (requestId && /\breject|zamítn/.test(text)) {
+    return { tool: "reject_request", input: { requestId } };
+  }
+  if (/approv|schválen/.test(text)) return { tool: "list_requests_to_approve", input: {} };
   if (/clock (me )?in\b|příchod/.test(text)) return { tool: "clock_in", input: {} };
   if (/clock (me )?out\b|odchod/.test(text)) return { tool: "clock_out", input: {} };
   if (/\bbook\b|day off|zarezervuj|vezmi.*volno/.test(text)) {
@@ -197,6 +208,8 @@ const COPY = {
     days: "days",
     done: "Done. The change is made.",
     left: "Okay, I left everything as it was.",
+    toApprove: (n: number) =>
+      n === 0 ? "Nothing is waiting for your approval." : "Waiting for your approval:",
   },
   cs: {
     hello:
@@ -210,6 +223,7 @@ const COPY = {
     days: "dní",
     done: "Hotovo, změna je provedená.",
     left: "Dobře, nechal jsem všechno, jak to bylo.",
+    toApprove: (n: number) => (n === 0 ? "Na tvé schválení nic nečeká." : "Na tvé schválení čeká:"),
   },
 };
 
@@ -218,7 +232,14 @@ const plain = (value: unknown): string =>
     ? String(value.user_text)
     : String(value);
 
-const WRITES = new Set(["create_request", "cancel_my_request", "clock_in", "clock_out"]);
+const WRITES = new Set([
+  "create_request",
+  "cancel_my_request",
+  "clock_in",
+  "clock_out",
+  "approve_request",
+  "reject_request",
+]);
 
 /** The scripted answer to one tool result, written from the result like a model would. */
 export const answerFor = (
@@ -262,6 +283,23 @@ export const answerFor = (
       ...(absences.length > 0 ? [""] : []),
       ...absences.map(
         (a) => `- **${plain(a.personName)}**, ${a.type}, ${a.firstDay} – ${a.lastDay}`
+      ),
+    ].join("\n");
+  }
+  if (result.name === "list_requests_to_approve") {
+    const waiting = (parsed.requests ?? []) as {
+      requestId: string;
+      requester: { name: unknown };
+      type: string;
+      firstDay: string;
+      lastDay: string;
+    }[];
+    return [
+      copy.toApprove(waiting.length),
+      ...(waiting.length > 0 ? [""] : []),
+      ...waiting.map(
+        (r) =>
+          `- **${plain(r.requester.name)}**, ${r.type}, ${r.firstDay} – ${r.lastDay} (\`${r.requestId}\`)`
       ),
     ].join("\n");
   }

@@ -26,6 +26,18 @@ export type AllowanceChange = {
 };
 
 /**
+ * The requester's balance as the app shows it, allocated minus approved days,
+ * before and after the decision. A rejection leaves it as it is.
+ */
+export type BalanceChange = {
+  year: number;
+  type: string;
+  allocated: number;
+  remainingBefore: number;
+  remainingAfter: number;
+};
+
+/**
  * The `details` of every write tool's preview, one shape per tool, keyed by
  * `action`. Confirmation cards are built from these, never from the model's
  * words. Strings people wrote arrive wrapped as `{"user_text": "…"}` at the
@@ -59,6 +71,24 @@ export type WritePreview =
       note: string | null;
       reason: string | null;
       allowances: AllowanceChange[];
+    }
+  | {
+      action: "approve_request" | "reject_request";
+      requestId: string;
+      requester: { id: string; name: string };
+      group: { id: string; name: string };
+      type: string;
+      firstDay: string;
+      lastDay: string;
+      /** The waiting days the decision covers. */
+      decidedDays: string[];
+      days: number;
+      /** The request's own note, and who wrote it. */
+      note: string | null;
+      noteAuthor: string | null;
+      /** Reject only: the reason for the requester the model passed; the card may change it. */
+      reason: string | null;
+      balances: BalanceChange[];
     }
   | {
       action: "clock_in";
@@ -102,6 +132,19 @@ export const allowanceChanges = (standings: Standing[], sign: 1 | -1): Allowance
       pending: standing.pending,
       availableBefore,
       availableAfter: round(availableBefore + sign * standing.days),
+    };
+  });
+
+/** `approved` is true when the decision approves the standing's days. */
+export const balanceChanges = (standings: Standing[], approved: boolean): BalanceChange[] =>
+  standings.map((standing) => {
+    const remainingBefore = round(standing.allocated - standing.approved);
+    return {
+      year: standing.year,
+      type: standing.vacationType,
+      allocated: standing.allocated,
+      remainingBefore,
+      remainingAfter: approved ? round(remainingBefore - standing.days) : remainingBefore,
     };
   });
 

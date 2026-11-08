@@ -21,6 +21,7 @@ import {
 import {
   ASSISTANT_NOTICE,
   validateStreamQuery,
+  type ValidatedCardConfirm,
   type ValidatedCreateChat,
   type ValidatedSendMessage,
 } from "../../services/assistant/types.js";
@@ -146,5 +147,8 @@ export const handlePostCardDecision =
   (decision: "confirm" | "decline") => async (req: Request, res: Response) => {
     const auth = getAuth(req);
     const pendingActionId = requirePathParam(req.params.pendingActionId, "pendingActionId");
-    res.status(200).json(await decideCard({ auth, pendingActionId, decision }));
+    const body = req.body as ValidatedCardConfirm;
+    res
+      .status(200)
+      .json(await decideCard({ auth, pendingActionId, decision, reason: body?.reason }));
   };

@@ -853,6 +853,26 @@ const cardSettled = (status: string) =>
     publicContext: { code: PENDING_ACTION_SETTLED, status },
   });
 
+const REJECT_TOOL = "reject_request";
+
+/** The stored arguments, with a reject card's reason replaced by the one the user confirmed. */
+const inputWithReason = (
+  action: PendingActionRow,
+  reason: string | null | undefined
+): Record<string, unknown> => {
+  if (reason === undefined) return action.input;
+  if (action.toolName !== REJECT_TOOL) {
+    throw new AppError({
+      message: "Only a reject card takes a reason",
+      code: 422,
+      publicContext: { code: "REASON_NOT_ALLOWED" },
+    });
+  }
+  const { reason: _proposed, ...rest } = action.input;
+  const typed = reason?.trim();
+  return typed ? { ...rest, reason: typed } : rest;
+};
+
 /**
  * Confirms or declines one of the caller's cards. Confirm runs the stored
  * arguments with fresh guards on channel `assistant`; a refusal keeps the
@@ -866,12 +886,15 @@ export const decideCard = async (args: {
   auth: AuthSession;
   pendingActionId: string;
   decision: "confirm" | "decline";
+  /** A reject card's reason as the user left it; `undefined` keeps the proposed one. */
+  reason?: string | null;
 }): Promise<CardDecision> => {
   const { auth } = args;
   const action = await pendingActionById(args.pendingActionId);
   if (!action || action.userId !== auth.userId) throw cardNotFound();
   const chat = await getOwnChat({ userId: auth.userId, chatId: action.chatId });
   if (action.status !== "open") throw cardSettled(action.status);
+  const input = inputWithReason(action, args.decision === "confirm" ? args.reason : undefined);
   await assertAiEligible({
     userId: auth.userId,
     organizationId: chat.organizationId,
@@ -890,7 +913,7 @@ export const decideCard = async (args: {
         organizationId: chat.organizationId,
         language,
         name: action.toolName,
-        input: action.input,
+        input,
       });
       if (!write.ok) {
         const code = write.error.context?.code;
@@ -902,6 +925,7 @@ export const decideCard = async (args: {
       }
       settled = await settleCard(action, {
         status: "confirmed",
+        input,
         result: write.result,
         answer: { text: write.text, isError: false },
       });
