@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../../../middleware/logger.js";
+import { asSearchResultBlocks } from "../../../tools/docs/docsTools.js";
 import AppError from "../../../utils/appError.js";
 import { errorName } from "../../../utils/errorName.js";
 import {
@@ -141,6 +142,15 @@ const screenRequest = async (
   return { json: JSON.parse(block.text) as unknown, usage };
 };
 
+/** `read_doc` answers with `search_result` blocks, which turn on citations; any other result is text. */
+const searchResultsIn = (text: string) => {
+  try {
+    return asSearchResultBlocks(JSON.parse(text));
+  } catch {
+    return null;
+  }
+};
+
 export const createManagedDriver = (args: {
   client: Anthropic;
   agentId: string;
@@ -259,7 +269,9 @@ export const createManagedDriver = (args: {
         {
           type: "user.custom_tool_result",
           custom_tool_use_id: toolUseId,
-          content: [{ type: "text", text: result.text }],
+          content: (!result.isError && searchResultsIn(result.text)) || [
+            { type: "text", text: result.text },
+          ],
           is_error: result.isError,
         },
       ]);

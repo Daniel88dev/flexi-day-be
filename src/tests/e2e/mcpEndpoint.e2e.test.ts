@@ -215,6 +215,8 @@ describe("/mcp", () => {
         "list_group_events",
         "list_my_requests",
         "list_who_is_away",
+        "read_doc",
+        "search_docs",
         "show_directory_section",
       ]);
       for (const tool of tools) {

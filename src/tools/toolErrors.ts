@@ -53,6 +53,9 @@ export const toolMessage = (key: ToolMessage, language: ToolLanguage): ToolError
  */
 const GUARD_MESSAGES_CS: Record<string, string> = {
   "Group not found": "Skupina nebyla nalezena.",
+  "Help article not found": "Článek nápovědy nebyl nalezen.",
+  "The help articles aren't available right now. Try again later.":
+    "Články nápovědy teď nejsou k dispozici. Zkuste to později.",
   "Person not found": "Osoba nebyla nalezena.",
   "No access to view this group's records": "Záznamy této skupiny nemáte oprávnění zobrazit.",
   "No employment in this organization": "V této organizaci nemáte pracovní poměr.",

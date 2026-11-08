@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { readDocTool, searchDocsTool } from "./docs/docsTools.js";
 import { getMyAttendanceTool, getMyWorkedTimeTool } from "./reads/attendance.js";
 import { getMyBalancesTool } from "./reads/balances.js";
 import { listBirthdaysTool } from "./reads/birthdays.js";
@@ -31,6 +32,8 @@ export const TOOLS: readonly Tool[] = [
   listDirectoryPeopleTool,
   getDirectoryProfileTool,
   showDirectorySectionTool,
+  searchDocsTool,
+  readDocTool,
   createRequestTool,
   cancelMyRequestTool,
   clockInTool,

@@ -178,6 +178,33 @@ describe("the managed driver", () => {
     });
   });
 
+  it("answers read_doc with search_result blocks, so the session can cite the article", async () => {
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
+    const call = api.emit(sessionId, {
+      type: "agent.custom_tool_use",
+      name: "read_doc",
+      input: { id: "half-days-and-times" },
+    });
+    const block = {
+      type: "search_result",
+      source: "https://www.flexi-day.com/help/half-days-and-times/",
+      title: "Book half a day or add times",
+      content: [{ type: "text", text: "## Half a day\n\nTick Half day." }],
+      citations: { enabled: true },
+    };
+
+    const answer = await driver.answerToolCall(sessionId, String(call.id), {
+      text: JSON.stringify([block]),
+      isError: false,
+    });
+
+    expect(answer).toMatchObject({ type: "user.custom_tool_result", content: [block] });
+  });
+
   it("reads the session's cumulative usage with the cache split", async () => {
     const { sessionId } = await driver.createSession({
       chatId: "c",

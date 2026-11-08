@@ -179,6 +179,13 @@ type AssistantConfig = {
   stepOutputReserve: number;
 };
 
+type KnowledgeBaseConfig = {
+  /** The frontend's `/help/kb.json` (`KB_BUNDLE_URL`); the docs tools, MCP and the agent prompt read it. */
+  bundleUrl: string;
+  /** How often the bundle is revalidated by ETag. */
+  refreshMs: number;
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
@@ -207,6 +214,7 @@ type Config = {
   apns?: ApnsConfig;
   aiFeatures: AiFeaturesConfig;
   assistant: AssistantConfig;
+  knowledgeBase: KnowledgeBaseConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -674,6 +682,17 @@ export const config: Config = {
   apns: parseApns(),
   aiFeatures: parseAiFeatures(),
   assistant: parseAssistant(),
+  knowledgeBase: {
+    bundleUrl: process.env.KB_BUNDLE_URL || `${appUrl.replace(/\/+$/, "")}/help/kb.json`,
+    refreshMs: 5 * 60_000,
+  },
 };
 
-export type { AiFeaturesConfig, ApnsConfig, AssistantConfig, CalendarSyncConfig, PaddleConfig };
+export type {
+  AiFeaturesConfig,
+  ApnsConfig,
+  AssistantConfig,
+  CalendarSyncConfig,
+  KnowledgeBaseConfig,
+  PaddleConfig,
+};
