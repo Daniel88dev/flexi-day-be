@@ -62,4 +62,31 @@ describe("sesEmailSender", () => {
 
     expect(sendMock).not.toHaveBeenCalled();
   });
+
+  it("sends a false language flag and the reply address of the sub-processor notice", async () => {
+    await sesEmailSender.sendTemplated({
+      to: "owner@example.com",
+      replyTo: "support@flexi-day.com",
+      template: "subprocessor-notice",
+      data: {
+        czech: false,
+        name: "Olga",
+        organizationName: "Northwind",
+        startDate: "20 December 2026",
+      },
+    });
+
+    const input = sendMock.mock.calls[0]![0].input as {
+      ReplyToAddresses?: string[];
+      Content: { Template: { TemplateData: string } };
+    };
+    expect(input.ReplyToAddresses).toEqual(["support@flexi-day.com"]);
+    expect(JSON.parse(input.Content.Template.TemplateData)).toMatchObject({ czech: false });
+  });
+
+  it("sets no reply address on mail that names none", async () => {
+    await sesEmailSender.sendTemplated(validEmail);
+
+    expect(sendMock.mock.calls[0]![0].input.ReplyToAddresses).toBeUndefined();
+  });
 });

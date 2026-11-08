@@ -251,7 +251,7 @@ writes a file, a secret, a GitHub setting or AWS runs until you confirm it.
 | `eval`           | the eval workspace and its limits, the eval key into the `assistant-eval` environment and `.env.eval`                           |
 | `prod`           | the prod workspace, limits and members, both secrets, the prod provision, the webhook, OTel, Sentry's budget, the preview apply |
 | `required-check` | `assistant-eval` as a required check on `main`, once the eval workflow runs there                                               |
-| `launch`         | AI connections on (day 0), then the Assistant on (day 30 after the notice, with a passing baseline)                             |
+| `launch`         | the texts, the notice email and AI connections (day 0), then the Assistant (day 30 after the notice, with a passing baseline)   |
 
 The `prod` stage, in order:
 
@@ -280,11 +280,18 @@ turn.
 1. Day 0, the texts: set the frontend's `NEXT_PUBLIC_AI_TEXTS_PUBLISHED` repository variable to
    the day (`YYYY-MM-DD`) and re-run its latest CI run on `main`. The legal pages build with the AI
    wording and that date as "Last updated"; without the variable they keep today's wording.
-2. Day 0, once the pages are live and the notice email has gone out (record the send time): set
-   `privacy_banner_from` to the same day and `ai_connections_enabled = true`, and apply. Every user
-   then sees the Privacy banner for 30 days, until they dismiss it.
-3. Day 30 after that send, with a passing eval baseline on `main`: set `assistant_enabled = true`
-   and apply.
+2. Day 0, the sub-processor notice: `pnpm run subprocessor-notice --dry-run` lists every owner who
+   would get it, and `--send` emails each of them once from the `flexi-day-subprocessor-notice`
+   template and records the send in `subprocessor_notices`. A re-run skips owners already sent and
+   retries failed sends. The command prints the first send time and the day the Assistant may open,
+   30 days later; record both on the launch task. `--send` needs an interactive terminal. The
+   wizard's `launch` stage runs both against production with the database URL from Secrets Manager
+   and the prod template.
+3. Day 0, once the pages are live and the notice email has gone out: set `privacy_banner_from` to
+   the same day and `ai_connections_enabled = true`, and apply. Every user then sees the Privacy
+   banner for 30 days, until they dismiss it.
+4. Day 30 after the first send, with a passing eval baseline on `main`: set
+   `assistant_enabled = true` and apply.
 
 Each flip changes only the App Runner env, which rolls out a new deployment.
 

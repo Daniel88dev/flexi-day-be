@@ -205,7 +205,7 @@ finish() {
 #   scripts/assistant-setup.sh eval             eval workspace, eval key into GitHub and .env.eval
 #   scripts/assistant-setup.sh prod             prod workspace, secrets, agent, webhook, OTel, preview
 #   scripts/assistant-setup.sh required-check   assistant-eval as a required check on main
-#   scripts/assistant-setup.sh launch           AI connections on, then the Assistant on
+#   scripts/assistant-setup.sh launch           texts, notice email, AI connections, then the Assistant
 #
 # Every write (a file, a GitHub setting or secret, Secrets Manager, terraform
 # apply) waits for a yes. Keys are read from 1Password into a variable, checked
@@ -668,9 +668,40 @@ stages_required_check() {
 
 # ── launch ───────────────────────────────────────────────────────────────────
 
+# notice_env_url prints the production DATABASE URL with the RDS CA pinned, as
+# scripts/db-migrate.sh builds it. The caller keeps it in a variable, never on a
+# command line.
+notice_env_url() {
+  local url ca_dir ca_path sep="?"
+  need_tool aws || return 1
+  url="$(aws secretsmanager get-secret-value --secret-id flexi-day-be-production-database-url \
+    --region eu-central-1 --query SecretString --output text 2>/dev/null)" || return 1
+  [[ "$url" == postgres* ]] || return 1
+  ca_dir="${XDG_CACHE_HOME:-$HOME/.cache}/flexi-day"
+  ca_path="$ca_dir/rds-global-bundle.pem"
+  if [[ ! -s "$ca_path" ]]; then
+    mkdir -p "$ca_dir"
+    curl -fsS -o "$ca_path" https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem ||
+      return 1
+  fi
+  [[ "$url" == *\?* ]] && sep="&"
+  printf '%s' "${url}${sep}sslmode=verify-full&sslrootcert=${ca_path}"
+}
+
+# subprocessor_notice ARG runs the notice command against production: its
+# database and the prod SES template. The URL reaches pnpm through the
+# environment only. The empty DEV_TOOLS_ENABLED beats .env (dotenv never
+# overrides), since dev tools refuse to boot against a database that isn't local.
+subprocessor_notice() {
+  DATABASE="$PROD_DATABASE" DEV_TOOLS_ENABLED="" \
+    EMAIL_TEMPLATE_STAGE=prod EMAIL_FROM=no-reply@flexi-day.com \
+    SES_CONFIGURATION_SET=flexi-day-emails-production AWS_REGION=eu-central-1 \
+    pnpm run --silent subprocessor-notice "$1"
+}
+
 stages_launch() {
-  local sent_at="" sent_epoch now_epoch days day0=""
-  TOTAL_STAGES=3
+  local sent_at="" sent_epoch now_epoch days day0="" PROD_DATABASE="" notice_status=0
+  TOTAL_STAGES=4
   banner "Assistant setup: launch"
 
   stage "Day 0: publish the texts"
@@ -699,11 +730,48 @@ stages_launch() {
   step "the \"AI connections\" section, and that /dpa/ lists Anthropic."
   pause
 
+  stage "Day 0: the notice email"
+  say "The notice goes once to the owner of every organization, on every plan, and each send"
+  say "is recorded. The first send starts the Assistant's 30 days. A re-run skips every owner"
+  say "who already has it, so run this stage again to retry a failed send."
+  if ! aws sesv2 get-email-template --template-name flexi-day-subprocessor-notice-prod \
+    --region eu-central-1 >/dev/null 2>&1; then
+    warn "flexi-day-subprocessor-notice-prod is not in SES; merge flexi-day-emails first."
+    skip "the notice email (no prod template)"
+    pause
+    finish
+    return 0
+  fi
+  if ! PROD_DATABASE="$(notice_env_url)"; then
+    skip "the notice email (could not read the production database URL)"
+    pause
+    finish
+    return 0
+  fi
+  say "The recipients, from the production database. Nothing is sent yet:"
+  if ! subprocessor_notice --dry-run; then
+    skip "the notice email (the dry run failed)"
+    pause
+    finish
+    return 0
+  fi
+  if confirm "Send the notice to the owners listed as \"would send\"?"; then
+    subprocessor_notice --send || notice_status=$?
+    if ((notice_status != 0)); then
+      warn "Some sends failed. Re-run this stage to retry them."
+      SKIPPED+=("the notice email to the owners whose send failed")
+    fi
+    step "Put the \"First notice sent\" time on the launch task. Day 30 counts from it."
+  else
+    skip "the notice email"
+  fi
+  PROD_DATABASE=""
+  pause
+
   stage "Day 0: the banner and AI connections"
   say "Before this flip:"
-  step "The pages from the last stage are live."
-  step "The notice email has gone to every owner (its command, dry run first), and you"
-  step "recorded the send time on the launch task."
+  step "The pages from the first stage are live."
+  step "The notice email has gone to every owner, and its send time is on the launch task."
   say "privacy_banner_from shows every user the Privacy banner for 30 days from $day0,"
   say "but only once AI connections is on."
   note "privacy_banner_from is now $(current_tfvar privacy_banner_from)."

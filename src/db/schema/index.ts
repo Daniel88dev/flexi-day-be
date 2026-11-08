@@ -50,6 +50,7 @@ import {
   aiConnectionMemberDailyCalls,
 } from "./ai-connection-usage-schema.js";
 import { aiUsageOrganizationWeeks, aiUsageUserWeeks } from "./ai-usage-weeks-schema.js";
+import { subprocessorNotices } from "./subprocessor-notice-schema.js";
 import { organizationUsers } from "./organization-users-schema.js";
 import { subscriptions } from "./subscription-schema.js";
 import { paddleEvents } from "./paddle-event-schema.js";
@@ -154,4 +155,5 @@ export const schema = {
   aiConnectionMemberDailyCalls,
   aiUsageUserWeeks,
   aiUsageOrganizationWeeks,
+  subprocessorNotices,
 };

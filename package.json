@@ -36,7 +36,8 @@
     "db:status:prod": "./scripts/db-migrate.sh prod --status",
     "rekey:organization": "tsx src/scripts/rekeyOrganization.ts",
     "assistant:provision": "tsx src/scripts/assistantProvision.ts",
-    "assistant:reconcile": "tsx src/scripts/assistantReconcile.ts"
+    "assistant:reconcile": "tsx src/scripts/assistantReconcile.ts",
+    "subprocessor-notice": "tsx src/scripts/subprocessorNotice.ts"
   },
   "repository": {
     "type": "git",

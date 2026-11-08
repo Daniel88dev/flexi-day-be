@@ -18,6 +18,7 @@ export type {
   GroupInviteData,
   SubscriptionGraceData,
   TwoFactorCodeData,
+  SubprocessorNoticeData,
 } from "./emailSender.js";
 
 /**
