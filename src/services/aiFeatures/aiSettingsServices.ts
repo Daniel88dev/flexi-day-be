@@ -2,21 +2,29 @@ import { eq } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { aiAgreementAcceptances } from "../../db/schema/ai-agreement-schema.js";
-import { organizations } from "../../db/schema/organization-schema.js";
+import { aiConnectionsChanges } from "../../db/schema/ai-connections-change-schema.js";
+import { aiConnectionsLevel, organizations } from "../../db/schema/organization-schema.js";
 import AppError, { refuse } from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
-import { assertAssistantPlan, isAssistantPlan, planForOrganization } from "../billing/guards.js";
+import {
+  assertAiConnectionsPlan,
+  assertAssistantPlan,
+  isAiConnectionsPlan,
+  isAssistantPlan,
+  planForOrganization,
+} from "../billing/guards.js";
 import { lockOrganization } from "../organization/organizationServices.js";
 import { personName } from "../person/personName.js";
 import type { OrganizationType } from "../organization/types.js";
 import { AI_AGREEMENT_VERSION } from "./aiAgreement.js";
-import { readAgreement } from "./aiAgreementState.js";
+import { anyAiFeatureOn, readAgreement } from "./aiAgreementState.js";
 import { isAiFeatureAvailable } from "./aiFeatureServices.js";
 import {
+  aiConnectionsMemberNotice,
   assistantMemberNotice,
-  planAssistantNotices,
-  type AssistantNotice,
-} from "./assistantNotice.js";
+  planMemberNotices,
+  type MemberNotice,
+} from "./memberNotices.js";
 
 type Actor = { organizationId: string; userId: string };
 
@@ -29,6 +37,7 @@ const readOrganization = async (organizationId: string, tx?: DbTransaction) => {
       ownerName: personName(user, { organizationId }),
       assistantEnabled: organizations.assistantEnabled,
       assistantEnabledAt: organizations.assistantEnabledAt,
+      aiConnections: organizations.aiConnections,
     })
     .from(organizations)
     .innerJoin(user, eq(user.id, organizations.ownerUserId))
@@ -61,8 +70,15 @@ export const readAiSettings = async (
       enabledAt: organization.assistantEnabledAt,
       planAllows: isAssistantPlan(plan),
     },
-    agreement: await readAgreement(input.organizationId, organization.assistantEnabled, tx),
-    memberNotice: { assistant: assistantMemberNotice(organization.name) },
+    aiConnections: {
+      level: organization.aiConnections,
+      planAllows: isAiConnectionsPlan(plan),
+    },
+    agreement: await readAgreement(input.organizationId, anyAiFeatureOn(organization), tx),
+    memberNotice: {
+      assistant: assistantMemberNotice(organization.name),
+      aiConnections: aiConnectionsMemberNotice(organization.name),
+    },
   };
 };
 
@@ -114,7 +130,7 @@ const assertOwner = (
 export const enableAssistant = async (
   input: Actor & { agreementVersion: number; tellMembers: boolean },
   tx: DbTransaction
-): Promise<AssistantNotice[]> => {
+): Promise<MemberNotice[]> => {
   const { organizationId, userId } = input;
   if (!isAiFeatureAvailable("assistant", organizationId)) {
     throw new AppError({ message: "Not found", code: 404 });
@@ -135,8 +151,8 @@ export const enableAssistant = async (
   await recordAcceptance(input, tx);
 
   return input.tellMembers
-    ? planAssistantNotices(
-        { organizationId, organizationName: organization.name, actorUserId: userId },
+    ? planMemberNotices(
+        { organizationId, actorUserId: userId, copy: assistantMemberNotice(organization.name) },
         tx
       )
     : [];
@@ -162,11 +178,108 @@ export const acceptAiAgreement = async (
   await lockOrganization(organizationId, tx);
   const organization = await readOrganization(organizationId, tx);
   assertOwner(organization, userId);
-  if (!organization.assistantEnabled) {
+  if (!anyAiFeatureOn(organization)) {
     throw refuse(409, "AI_FEATURES_OFF", "Turn an AI feature on to accept its agreement", {
       organizationId,
     });
   }
   assertCurrentAgreement(input.agreementVersion, { organizationId });
   await recordAcceptance(input, tx);
+};
+
+const notFoundUnlessAvailable = (organizationId: string) => {
+  if (!isAiFeatureAvailable("aiConnections", organizationId)) {
+    throw new AppError({ message: "Not found", code: 404 });
+  }
+};
+
+/** Sets the level and writes the setting change log row, in the caller's transaction. */
+const changeAiConnections = async (
+  { organizationId, userId }: Actor,
+  before: aiConnectionsLevel,
+  after: aiConnectionsLevel,
+  tx: DbTransaction
+) => {
+  await tx
+    .update(organizations)
+    .set({ aiConnections: after, aiConnectionsChangedAt: new Date() })
+    .where(eq(organizations.id, organizationId));
+  await tx.insert(aiConnectionsChanges).values({
+    id: generateRandomUUID(),
+    organizationId,
+    changedByUserId: userId,
+    before,
+    after,
+  });
+};
+
+/**
+ * Turns AI connections on at the chosen level and records the acceptance of the
+ * current agreement version, once per version, like the Assistant. Any Paid
+ * plan. Answers 404 while AI connections are unavailable to the organization.
+ * Returns the members' notices to send after the commit when `tellMembers` is set.
+ */
+export const enableAiConnections = async (
+  input: Actor & {
+    level: aiConnectionsLevel.Read | aiConnectionsLevel.Write;
+    agreementVersion: number;
+    tellMembers: boolean;
+  },
+  tx: DbTransaction
+): Promise<MemberNotice[]> => {
+  const { organizationId, userId } = input;
+  notFoundUnlessAvailable(organizationId);
+  await lockOrganization(organizationId, tx);
+  const organization = await readOrganization(organizationId, tx);
+  assertOwner(organization, userId);
+  await assertAiConnectionsPlan(organizationId, tx);
+  if (organization.aiConnections !== aiConnectionsLevel.Off) {
+    throw refuse(409, "AI_CONNECTIONS_ALREADY_ON", "AI connections are already on", {
+      organizationId,
+    });
+  }
+  assertCurrentAgreement(input.agreementVersion, { organizationId });
+
+  await changeAiConnections(input, aiConnectionsLevel.Off, input.level, tx);
+  await recordAcceptance(input, tx);
+
+  return input.tellMembers
+    ? planMemberNotices(
+        { organizationId, actorUserId: userId, copy: aiConnectionsMemberNotice(organization.name) },
+        tx
+      )
+    : [];
+};
+
+/**
+ * Moves AI connections between Read only and Read and write while they are on.
+ * Raising needs a Paid plan and the feature available, and no new acceptance;
+ * lowering works on any plan. The same level again changes nothing.
+ */
+export const setAiConnectionsLevel = async (
+  input: Actor & { level: aiConnectionsLevel.Read | aiConnectionsLevel.Write },
+  tx: DbTransaction
+) => {
+  const { organizationId, userId, level } = input;
+  await lockOrganization(organizationId, tx);
+  const organization = await readOrganization(organizationId, tx);
+  assertOwner(organization, userId);
+  if (organization.aiConnections === aiConnectionsLevel.Off) {
+    throw refuse(409, "AI_CONNECTIONS_OFF", "Turn AI connections on first", { organizationId });
+  }
+  if (organization.aiConnections === level) return;
+  if (level === aiConnectionsLevel.Write) {
+    notFoundUnlessAvailable(organizationId);
+    await assertAiConnectionsPlan(organizationId, tx);
+  }
+  await changeAiConnections(input, organization.aiConnections, level, tx);
+};
+
+/** Turns AI connections off. Owner only, on every plan, whatever the kill switch says. */
+export const disableAiConnections = async (input: Actor, tx: DbTransaction) => {
+  await lockOrganization(input.organizationId, tx);
+  const organization = await readOrganization(input.organizationId, tx);
+  assertOwner(organization, input.userId);
+  if (organization.aiConnections === aiConnectionsLevel.Off) return;
+  await changeAiConnections(input, organization.aiConnections, aiConnectionsLevel.Off, tx);
 };

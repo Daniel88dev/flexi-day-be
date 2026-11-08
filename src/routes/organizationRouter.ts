@@ -30,8 +30,13 @@ import { handleGetAiSettings } from "../controllers/aiFeatures/handleGetAiSettin
 import { handlePostEnableAssistant } from "../controllers/aiFeatures/handlePostEnableAssistant.js";
 import { handlePostDisableAssistant } from "../controllers/aiFeatures/handlePostDisableAssistant.js";
 import { handlePostAcceptAiAgreement } from "../controllers/aiFeatures/handlePostAcceptAiAgreement.js";
+import { handlePostEnableAiConnections } from "../controllers/aiFeatures/handlePostEnableAiConnections.js";
+import { handlePostAiConnectionsLevel } from "../controllers/aiFeatures/handlePostAiConnectionsLevel.js";
+import { handlePostDisableAiConnections } from "../controllers/aiFeatures/handlePostDisableAiConnections.js";
 import {
   validateAiAgreementBody,
+  validateAiConnectionsLevelBody,
+  validateEnableAiConnectionsBody,
   validateEnableAssistantBody,
 } from "../services/aiFeatures/types.js";
 
@@ -924,7 +929,8 @@ export const organizationRouter = (): Router => {
    *   schemas:
    *     AiSettings:
    *       type: object
-   *       required: [organizationId, isOwner, ownerName, plan, assistant, agreement, memberNotice]
+   *       required:
+   *         [organizationId, isOwner, ownerName, plan, assistant, aiConnections, agreement, memberNotice]
    *       properties:
    *         organizationId:
    *           type: string
@@ -951,6 +957,19 @@ export const organizationRouter = (): Router => {
    *             planAllows:
    *               type: boolean
    *               description: Enterprise or Custom, so the owner may turn it on.
+   *         aiConnections:
+   *           type: object
+   *           required: [level, planAllows]
+   *           properties:
+   *             level:
+   *               type: string
+   *               enum: [off, read, write]
+   *               description: |
+   *                 The owner's setting: Off (default), Read only or Read and
+   *                 write. A lapsed plan keeps it; the MCP calls are refused.
+   *             planAllows:
+   *               type: boolean
+   *               description: Any Paid plan (Pro, Enterprise, Custom, grace included).
    *         agreement:
    *           type: object
    *           required: [currentVersion, acceptedVersion, acceptedAt, acceptedByName, newVersionReady]
@@ -970,7 +989,9 @@ export const organizationRouter = (): Router => {
    *               nullable: true
    *             newVersionReady:
    *               type: boolean
-   *               description: An AI feature is on and the newest acceptance is older than the current version.
+   *               description: |
+   *                 The Assistant or AI connections is on and the newest
+   *                 acceptance is older than the current version.
    *         memberNotice:
    *           type: object
    *           description: |
@@ -978,6 +999,13 @@ export const organizationRouter = (): Router => {
    *             the owner can copy the same text.
    *           properties:
    *             assistant:
+   *               type: object
+   *               properties:
+   *                 en:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *                 cs:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *             aiConnections:
    *               type: object
    *               properties:
    *                 en:
@@ -1003,8 +1031,8 @@ export const organizationRouter = (): Router => {
    *     summary: The AI settings, the AI features agreement and the members' notice
    *     description: |
    *       Organization admins only, owner and delegate alike. Answers the
-   *       Assistant setting, whether the plan allows it, the agreement state
-   *       and the text "Tell members" sends. Says nothing about the kill
+   *       Assistant and AI connections settings, whether the plan allows each,
+   *       the agreement state and the texts "Tell members" sends. Says nothing about the kill
    *       switches; `GET /api/ai-features/availability` does.
    *     security:
    *       - bearerAuth: []
@@ -1151,7 +1179,7 @@ export const organizationRouter = (): Router => {
    *       - Organization
    *     summary: Accept a new version of the AI features agreement
    *     description: |
-   *       Owner only, on every plan, while an AI feature is on. Records an
+   *       Owner only, on every plan, while the Assistant or AI connections is on. Records an
    *       acceptance of the current version once. Until the owner accepts,
    *       nothing pauses; the web shows the owner a banner.
    *     security:
@@ -1188,7 +1216,7 @@ export const organizationRouter = (): Router => {
    *         description: No such organization
    *       '409':
    *         description: |
-   *           `AI_FEATURES_OFF` while no AI feature is on, or
+   *           `AI_FEATURES_OFF` while the Assistant and AI connections are both off, or
    *           `AGREEMENT_VERSION_STALE`.
    *       '422':
    *         description: Invalid body
@@ -1198,6 +1226,185 @@ export const organizationRouter = (): Router => {
     bodyValidationMiddleware(validateAiAgreementBody),
     tryCatch(handlePostAcceptAiAgreement)
   );
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/enable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn AI connections on and accept the AI features agreement
+   *     description: |
+   *       Owner only, on any Paid plan (Pro, Enterprise, Custom, grace
+   *       included). Turns AI connections on at `level` ("Start with") and
+   *       records an acceptance of the current AI features agreement version,
+   *       once per organization and version: a version the Assistant's
+   *       turn-on already accepted writes no second row. Writes a setting
+   *       change log row.
+   *
+   *       With `tellMembers`, after the commit every person with a bound open
+   *       Employment, Deleted accounts and the owner aside, gets one
+   *       `ai_connections_enabled` Notification linking to Settings, in-app and
+   *       pushed passively, never mailed. Its text is
+   *       `memberNotice.aiConnections` in the reader's language.
+   *
+   *       Answers 404 while AI connections are unavailable to the
+   *       organization: `AI_CONNECTIONS_ENABLED` off and the organization not
+   *       in `AI_PREVIEW_ORGANIZATION_IDS`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - level
+   *               - agreementVersion
+   *             properties:
+   *               level:
+   *                 type: string
+   *                 enum: [read, write]
+   *                 description: The level to start with.
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *                 description: The agreement version the owner was shown.
+   *               tellMembers:
+   *                 type: boolean
+   *                 default: false
+   *                 description: Send the members' notice once AI connections are on.
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '400':
+   *         description: No unambiguous default organization
+   *       '402':
+   *         description: |
+   *           The plan is Free (`reason: PLAN_LIMIT`,
+   *           `code: AI_CONNECTIONS_PLAN_REQUIRED`).
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization, or AI connections are unavailable to it
+   *       '409':
+   *         description: |
+   *           `AI_CONNECTIONS_ALREADY_ON`, or `AGREEMENT_VERSION_STALE` when the
+   *           version sent is not the current one.
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/connections/enable",
+    bodyValidationMiddleware(validateEnableAiConnectionsBody),
+    tryCatch(handlePostEnableAiConnections)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/level:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Switch AI connections between Read only and Read and write
+   *     description: |
+   *       Owner only, while AI connections are on. Raising to `write` needs a
+   *       Paid plan and AI connections available to the organization, and no
+   *       new agreement acceptance. Lowering to `read` works on every plan,
+   *       whatever the kill switch says. Each change writes a setting change
+   *       log row; sending the current level changes nothing.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - level
+   *             properties:
+   *               level:
+   *                 type: string
+   *                 enum: [read, write]
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '402':
+   *         description: |
+   *           Raising on Free (`reason: PLAN_LIMIT`,
+   *           `code: AI_CONNECTIONS_PLAN_REQUIRED`).
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization, or raising while AI connections are unavailable to it
+   *       '409':
+   *         description: "`AI_CONNECTIONS_OFF`: turn AI connections on first."
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/connections/level",
+    bodyValidationMiddleware(validateAiConnectionsLevelBody),
+    tryCatch(handlePostAiConnectionsLevel)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/disable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn AI connections off
+   *     description: |
+   *       Owner only, on every plan, whatever the kill switch says. Writes a
+   *       setting change log row. Calling it while AI connections are off
+   *       changes nothing.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization
+   */
+  app.post("/ai/connections/disable", tryCatch(handlePostDisableAiConnections));
 
   return app;
 };

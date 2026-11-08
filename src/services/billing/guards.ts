@@ -457,3 +457,24 @@ export const assertAssistantPlan = async (
     });
   }
 };
+
+export const AI_CONNECTIONS_PLAN_REQUIRED = "AI_CONNECTIONS_PLAN_REQUIRED";
+
+/** Any Paid plan, grace included: Pro, Enterprise or a Custom override. */
+export const isAiConnectionsPlan = (plan: Entitlements["plan"]): boolean => plan !== "FREE";
+
+/** Throws 402 on Free. Guards raising the AI connections setting; lowering never calls it. */
+export const assertAiConnectionsPlan = async (
+  organizationId: string,
+  tx?: DbTransaction
+): Promise<void> => {
+  if (!isAiConnectionsPlan(await planForOrganization(organizationId, tx))) {
+    throw new AppError({
+      message: "AI connections require a paid plan",
+      logging: true,
+      code: 402,
+      context: { organizationId },
+      publicContext: { reason: "PLAN_LIMIT", code: AI_CONNECTIONS_PLAN_REQUIRED },
+    });
+  }
+};

@@ -1,5 +1,18 @@
-import { boolean, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
 import { user } from "./auth-schema.js";
+
+/** The owner's AI connections setting: what members' AI apps may do in the organization. */
+export enum aiConnectionsLevel {
+  Off = "off",
+  Read = "read",
+  Write = "write",
+}
+
+export const aiConnectionsLevelEnum = pgEnum(
+  "ai_connections_level",
+  enumToPgEnum(aiConnectionsLevel)
+);
 
 /**
  * Billing owner sitting above `groups`, so "who pays" is decoupled from "who
@@ -29,6 +42,12 @@ export const organizations = pgTable(
     // decide whether members reach it; this is only the owner's choice.
     assistantEnabled: boolean("assistant_enabled").notNull().default(false),
     assistantEnabledAt: timestamp("assistant_enabled_at", { withTimezone: true }),
+    // Owner-only; any Paid plan to raise. A lapsed plan refuses every call but
+    // keeps the setting and the grants.
+    aiConnections: aiConnectionsLevelEnum("ai_connections")
+      .notNull()
+      .default(aiConnectionsLevel.Off),
+    aiConnectionsChangedAt: timestamp("ai_connections_changed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()

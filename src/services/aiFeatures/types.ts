@@ -22,3 +22,16 @@ export type AiAgreementState = {
   /** An AI feature is on and the newest acceptance is older than the current version. */
   newVersionReady: boolean;
 };
+
+const raisedLevel = z.enum(["read", "write"]);
+
+export const validateEnableAiConnectionsBody = validateEnableAssistantBody.extend({
+  /** "Start with": the level the setting turns on at. */
+  level: raisedLevel,
+});
+
+export type EnableAiConnectionsBody = z.infer<typeof validateEnableAiConnectionsBody>;
+
+export const validateAiConnectionsLevelBody = z.object({ level: raisedLevel });
+
+export type AiConnectionsLevelBody = z.infer<typeof validateAiConnectionsLevelBody>;

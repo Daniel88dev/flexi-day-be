@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { aiAgreementAcceptances } from "../../db/schema/ai-agreement-schema.js";
-import { organizations } from "../../db/schema/organization-schema.js";
+import { aiConnectionsLevel, organizations } from "../../db/schema/organization-schema.js";
 import { personName } from "../person/personName.js";
 import { AI_AGREEMENT_VERSION } from "./aiAgreement.js";
 import type { AiAgreementState } from "./types.js";
@@ -24,6 +24,13 @@ const latestAcceptance = async (organizationId: string, tx?: DbTransaction) => {
 
 const newVersionReady = (anyFeatureOn: boolean, acceptedVersion: number | null) =>
   anyFeatureOn && acceptedVersion !== null && acceptedVersion < AI_AGREEMENT_VERSION;
+
+/** Whether any AI feature is on: the Assistant, or AI connections at any level. */
+export const anyAiFeatureOn = (organization: {
+  assistantEnabled: boolean;
+  aiConnections: aiConnectionsLevel;
+}): boolean =>
+  organization.assistantEnabled || organization.aiConnections !== aiConnectionsLevel.Off;
 
 export const readAgreement = async (
   organizationId: string,
@@ -47,13 +54,17 @@ export const readAgreement = async (
  */
 export const ownedNewAgreementVersions = async (userId: string): Promise<Set<string>> => {
   const owned = await db
-    .select({ id: organizations.id, assistantEnabled: organizations.assistantEnabled })
+    .select({
+      id: organizations.id,
+      assistantEnabled: organizations.assistantEnabled,
+      aiConnections: organizations.aiConnections,
+    })
     .from(organizations)
     .where(eq(organizations.ownerUserId, userId));
   const ready = new Set<string>();
   for (const organization of owned) {
     const latest = await latestAcceptance(organization.id);
-    if (newVersionReady(organization.assistantEnabled, latest?.version ?? null)) {
+    if (newVersionReady(anyAiFeatureOn(organization), latest?.version ?? null)) {
       ready.add(organization.id);
     }
   }

@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { db } from "../../db/db.js";
 import { enableAssistant, readAiSettings } from "../../services/aiFeatures/aiSettingsServices.js";
-import { sendAssistantNotices } from "../../services/aiFeatures/assistantNotice.js";
+import { notificationType } from "../../db/schema/notification-schema.js";
+import { sendMemberNotices } from "../../services/aiFeatures/memberNotices.js";
 import type { EnableAssistantBody } from "../../services/aiFeatures/types.js";
 import { aiSettingsActor } from "./aiSettingsActor.js";
 
@@ -11,7 +12,7 @@ export const handlePostEnableAssistant = async (req: Request, res: Response) => 
   const notices = await db.transaction((tx) =>
     enableAssistant({ ...actor, agreementVersion, tellMembers: tellMembers ?? false }, tx)
   );
-  await sendAssistantNotices(actor.organizationId, notices);
+  await sendMemberNotices(notificationType.AssistantEnabled, actor.organizationId, notices);
   res
     .status(200)
     .json(
