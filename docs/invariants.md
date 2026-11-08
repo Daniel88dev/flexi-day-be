@@ -290,6 +290,31 @@ the app, inside one organization.
   channel and outcome only (`src/tools/tests/toolSpan.test.ts`), `instrument.ts` sets
   `dataCollection.mcp` off, and `toToolError` logs an internal error by class name.
 
+## The Assistant's turns (`src/services/assistant/`)
+
+- **A turn advances in one idempotent step, keyed on session event ids.** `advanceTurn` lists the
+  turn's events, records each Assistant message once (unique on chat and event id) and answers each
+  waiting tool call once: the tool display row keyed on the tool-use event id is the claim, written
+  before the tool runs. The relay, the webhook and opening a chat may all run it at once without a
+  tool running twice. Recording or answering by anything else (the stream's arrival order, a counter)
+  would run a write twice the day two of them race.
+- **The webhook at `/api/webhooks/anthropic` trusts the signature alone.** It sits before the JSON
+  parser and outside `authSession`, and checks the Standard Webhooks signature over the raw bytes
+  with `ANTHROPIC_WEBHOOK_SECRET`. Without the secret the route answers 404, as it does while the
+  Assistant is off for everyone. Each event id is stored in `assistant_webhook_events`; a failed
+  advance deletes its row so Anthropic's retry runs again. `assistantWebhook.e2e.test.ts` pins it.
+- **Opening a chat catches up on missed webhooks, nothing polls.** `resumeStalledTurns` advances a
+  turn whose tool call has waited past `MISSED_WEBHOOK_GRACE_MS` with no relay in this process, logs
+  `assistant.webhook_missed`, then follows the turn. The grace keeps a relay on another instance
+  from counting as a miss, which would page someone.
+- **An older build never rolls the agent back.** The agent's metadata carries
+  `AGENT_CONFIG_VERSION`; a sync skips an agent stamped higher and updates with the version it read,
+  so a racing writer gets a 409, which is ignored. Bump the constant with any prompt or tool change;
+  `agentConfig.test.ts` pins the hash it stands for.
+- **The managed driver logs failures by status and type only.** An API error message can quote a
+  prompt or a tool result, so `assistant.provider_error` carries the operation, HTTP status, error
+  type and class name, and the caller sees 503 `ASSISTANT_UNAVAILABLE`.
+
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 
 `/api/dev/*` seeds verified users, teams, quotas and vacations, and issues session cookies, so the
@@ -401,7 +426,7 @@ under-protects the endpoints that matter:
 | `passwordResetLimiter` | `request-password-reset`                                                         | IP                             | 5 / 15 min               |
 | `otpSendLimiter`       | `two-factor/send-otp`                                                            | challenge cookie, IP fallback  | 10 / 15 min              |
 | `calendarFeedLimiter`  | `/calendars/:token.ics`                                                          | feed token                     | 120 / hour               |
-| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed`                             | IP                             | 5000 / 5 min             |
+| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/webhooks/anthropic`, `/api/attachments/processed`  | IP                             | 5000 / 5 min             |
 
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs

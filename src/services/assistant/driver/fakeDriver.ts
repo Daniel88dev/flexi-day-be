@@ -365,6 +365,7 @@ export const fakeDriver: AssistantDriver = {
     signal.addEventListener("abort", stop, { once: true });
 
     return {
+      ready: Promise.resolve(),
       async *[Symbol.asyncIterator]() {
         try {
           while (!signal.aborted) {

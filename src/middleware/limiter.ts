@@ -180,7 +180,7 @@ export const calendarFeedLimiter = rateLimit({
 });
 
 /**
- * Signed webhooks (Paddle, the attachment processor's callback) carry no
+ * Signed webhooks (Paddle, Anthropic, the attachment processor's callback) carry no
  * session by design — the HMAC signature is the real gate — so this is only
  * a backstop against a garbage-blast doing signature work at flood volume.
  *

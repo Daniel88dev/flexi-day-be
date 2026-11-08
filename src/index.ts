@@ -7,6 +7,7 @@ import { startQuotaRolloverJob, stopQuotaRolloverJob } from "./jobs/quotaRollove
 import { startCalendarSyncQueue, stopCalendarSyncQueue } from "./jobs/calendarSyncQueueJob.js";
 import { startPersonExportQueue, stopPersonExportQueue } from "./jobs/personExportQueueJob.js";
 import { runAuthSecretCheck } from "./jobs/authSecretCheckJob.js";
+import { syncAssistantAgent } from "./services/assistant/agent/agentSync.js";
 import http from "http";
 
 const app = createServer();
@@ -26,6 +27,7 @@ server.listen(config.api.port, () => {
   startQuotaRolloverJob();
   void startCalendarSyncQueue();
   void startPersonExportQueue();
+  void syncAssistantAgent();
 
   const shutdown = () => {
     logger.info("Shutting down HTTP server...");

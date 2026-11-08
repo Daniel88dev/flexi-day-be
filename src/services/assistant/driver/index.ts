@@ -1,20 +1,22 @@
 import { config } from "../../../config.js";
-import AppError from "../../../utils/appError.js";
+import { anthropicClient, assistantUnavailable } from "./anthropicClient.js";
 import { fakeDriver } from "./fakeDriver.js";
+import { createManagedDriver } from "./managedDriver.js";
 import type { AssistantDriver } from "./types.js";
 
+let managed: AssistantDriver | null = null;
+
 /**
- * The driver `ASSISTANT_DRIVER` names. The managed driver is T-721's module;
- * until it lands, `managed` answers every call with 503.
+ * The driver `ASSISTANT_DRIVER` names. `managed` without a key, agent or
+ * environment id answers every call with 503 `ASSISTANT_UNAVAILABLE`.
  */
 export const assistantDriver = (): AssistantDriver => {
   if (config.assistant.driver === "fake") return fakeDriver;
-  throw new AppError({
-    message: "The Assistant is unavailable right now",
-    code: 503,
-    logging: true,
-    publicContext: { code: "ASSISTANT_UNAVAILABLE" },
-  });
+  if (managed) return managed;
+  const { agentId, environmentId } = config.assistant;
+  if (!agentId || !environmentId) throw assistantUnavailable();
+  managed = createManagedDriver({ client: anthropicClient(), agentId, environmentId });
+  return managed;
 };
 
 export type * from "./types.js";

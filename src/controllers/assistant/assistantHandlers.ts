@@ -11,7 +11,11 @@ import {
 } from "../../services/assistant/chatServices.js";
 import { projectTurn, type ChatStreamSink } from "../../services/assistant/chatStream.js";
 import { assistantDriver } from "../../services/assistant/driver/index.js";
-import { prepareTurn, sendTurn } from "../../services/assistant/turnServices.js";
+import {
+  prepareTurn,
+  resumeStalledTurns,
+  sendTurn,
+} from "../../services/assistant/turnServices.js";
 import {
   ASSISTANT_NOTICE,
   validateStreamQuery,
@@ -53,6 +57,7 @@ export const handleGetAssistantOrganizations = async (req: Request, res: Respons
 
 export const handleGetChats = async (req: Request, res: Response) => {
   const { userId } = getAuth(req);
+  await resumeStalledTurns({ userId });
   res.status(200).json({ chats: await listChats(userId) });
 };
 
@@ -65,6 +70,7 @@ export const handlePostChat = async (req: Request, res: Response) => {
 export const handleGetChat = async (req: Request, res: Response) => {
   const { userId } = getAuth(req);
   const chatId = requirePathParam(req.params.chatId, "chatId");
+  await resumeStalledTurns({ userId, chatId });
   res.status(200).json(await getChatDetail({ userId, chatId }));
 };
 

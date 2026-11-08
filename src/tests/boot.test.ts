@@ -39,6 +39,9 @@ vi.mock("../jobs/personExportQueueJob.js", () => ({
   stopPersonExportQueue: vi.fn(),
 }));
 vi.mock("../jobs/authSecretCheckJob.js", () => ({ runAuthSecretCheck: checkMock }));
+vi.mock("../services/assistant/agent/agentSync.js", () => ({
+  syncAssistantAgent: vi.fn(() => Promise.resolve(null)),
+}));
 
 describe("boot", () => {
   it("finishes the auth secret check before the server listens", async () => {

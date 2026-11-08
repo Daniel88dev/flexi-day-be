@@ -1,0 +1,45 @@
+import type { Request, Response } from "express";
+import { Webhook } from "standardwebhooks";
+import { z } from "zod";
+import { config } from "../../config.js";
+import { logger } from "../../middleware/logger.js";
+import { handleAssistantWebhook } from "../../services/assistant/webhookServices.js";
+import AppError from "../../utils/appError.js";
+import { errorName } from "../../utils/errorName.js";
+
+const payloadSchema = z.object({
+  id: z.string().min(1).max(200),
+  data: z.object({ id: z.string().min(1).max(200), type: z.string().min(1).max(100) }),
+});
+
+const headerOf = (req: Request, name: string): string => {
+  const value = req.headers[name];
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+};
+
+/**
+ * Anthropic's webhook. Reached before body parsing and outside session auth;
+ * the Standard Webhooks signature over the raw body is the only credential.
+ * Without `ANTHROPIC_WEBHOOK_SECRET` the route does not exist.
+ */
+export const handleAnthropicWebhook = async (req: Request, res: Response) => {
+  const secret = config.assistant.webhookSecret;
+  if (!secret) throw new AppError({ message: "Not found", code: 404 });
+
+  const body = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+  let verified: unknown;
+  try {
+    verified = new Webhook(secret).verify(body, {
+      "webhook-id": headerOf(req, "webhook-id"),
+      "webhook-timestamp": headerOf(req, "webhook-timestamp"),
+      "webhook-signature": headerOf(req, "webhook-signature"),
+    });
+  } catch (error) {
+    logger.warn("assistant.webhook_rejected", { reason: errorName(error) });
+    throw new AppError({ message: "Invalid signature", code: 401 });
+  }
+
+  const payload = payloadSchema.safeParse(verified);
+  if (!payload.success) throw new AppError({ message: "Invalid payload", code: 400 });
+  res.status(200).json({ status: await handleAssistantWebhook(payload.data) });
+};

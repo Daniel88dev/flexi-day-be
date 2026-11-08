@@ -75,6 +75,7 @@ export const projectTurn = async (args: {
         );
         break;
       case "session.error":
+        if (event.error.retry_status?.type === "retrying") break;
         sink("error", { code: ASSISTANT_NOTICE.ERROR }, event.id);
         break;
     }
@@ -88,6 +89,7 @@ export const projectTurn = async (args: {
   }, TURN_CHECK_MS);
 
   try {
+    await live.ready;
     const afterId = typeof args.afterId === "function" ? await args.afterId() : args.afterId;
     for (const event of await driver.listEvents(args.sessionId, { afterId })) {
       emit(event);

@@ -25,6 +25,14 @@ const BASE = {
   AI_CONNECTIONS_ENABLED: "",
   AI_PREVIEW_ORGANIZATION_IDS: "",
   ASSISTANT_DRIVER: "",
+  ASSISTANT_MODEL: "",
+  ASSISTANT_EFFORT: "",
+  ANTHROPIC_API_KEY: "",
+  ASSISTANT_AGENT_ID: "",
+  ASSISTANT_ENVIRONMENT_ID: "",
+  ANTHROPIC_WEBHOOK_SECRET: "",
+  ASSISTANT_CHAT_TOKEN_CEILING: "",
+  ASSISTANT_STEP_OUTPUT_RESERVE: "",
 };
 
 const PRODUCTION = {
@@ -52,7 +60,60 @@ describe("config AI features", () => {
       aiConnectionsEnabled: false,
       previewOrganizationIds: [],
     });
-    expect(config.assistant).toEqual({ driver: "fake" });
+    expect(config.assistant).toEqual({
+      driver: "fake",
+      model: "claude-sonnet-5-5",
+      effort: "medium",
+      chatTokenCeiling: 100_000,
+      stepOutputReserve: 4096,
+    });
+    expect(config.assistant.apiKey).toBeUndefined();
+    expect(config.assistant.webhookSecret).toBeUndefined();
+  });
+
+  it("reads the managed driver's model, ids and limits", async () => {
+    const config = await loadConfig({
+      ...BASE,
+      ASSISTANT_MODEL: "claude-haiku-5-5",
+      ASSISTANT_EFFORT: "low",
+      ASSISTANT_AGENT_ID: "agent_01Test",
+      ASSISTANT_ENVIRONMENT_ID: "env_01Test",
+      ASSISTANT_CHAT_TOKEN_CEILING: "50000",
+      ASSISTANT_STEP_OUTPUT_RESERVE: "2048",
+    });
+    expect(config.assistant).toMatchObject({
+      model: "claude-haiku-5-5",
+      effort: "low",
+      agentId: "agent_01Test",
+      environmentId: "env_01Test",
+      chatTokenCeiling: 50_000,
+      stepOutputReserve: 2048,
+    });
+  });
+
+  it("keeps the key and the webhook secret out of anything that prints the config", async () => {
+    const config = await loadConfig({
+      ...BASE,
+      ANTHROPIC_API_KEY: "sk-ant-test-not-a-key",
+      ANTHROPIC_WEBHOOK_SECRET: "whsec_dGVzdC1ub3QtYS1zZWNyZXQ=",
+    });
+    expect(config.assistant.apiKey).toBe("sk-ant-test-not-a-key");
+    expect(config.assistant.webhookSecret).toBe("whsec_dGVzdC1ub3QtYS1zZWNyZXQ=");
+    const printed = JSON.stringify({ ...config.assistant, all: config.assistant });
+    expect(printed).not.toContain("sk-ant");
+    expect(printed).not.toContain("whsec_");
+  });
+
+  it("rejects an unknown effort, a webhook secret without its prefix and a bad limit", async () => {
+    await expect(loadConfig({ ...BASE, ASSISTANT_EFFORT: "extreme" })).rejects.toThrow(
+      'Invalid ASSISTANT_EFFORT: "extreme"'
+    );
+    await expect(loadConfig({ ...BASE, ANTHROPIC_WEBHOOK_SECRET: "secret" })).rejects.toThrow(
+      "ANTHROPIC_WEBHOOK_SECRET must start with whsec_"
+    );
+    await expect(loadConfig({ ...BASE, ASSISTANT_CHAT_TOKEN_CEILING: "-1" })).rejects.toThrow(
+      'Invalid ASSISTANT_CHAT_TOKEN_CEILING: "-1"'
+    );
   });
 
   it("turns each switch on with the literal true", async () => {

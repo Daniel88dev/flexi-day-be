@@ -56,6 +56,10 @@ export const assistantChats = pgTable(
   (table) => [
     index("idx_assistant_chats_user_last_message").on(table.userId, table.lastMessageAt),
     index("idx_assistant_chats_organization").on(table.organizationId),
+    // The webhook names a session, never a chat.
+    uniqueIndex("uq_assistant_chats_session")
+      .on(table.sessionId)
+      .where(sql`${table.sessionId} IS NOT NULL`),
     // One running turn per user, whichever chat it is in.
     uniqueIndex("uq_assistant_chats_running_turn_per_user")
       .on(table.userId)
@@ -92,3 +96,10 @@ export const assistantChatMessages = pgTable(
       .where(sql`${table.eventId} IS NOT NULL`),
   ]
 );
+
+/** Anthropic webhook deliveries already handled, by event id; a retry or replay finds its row and stops. */
+export const assistantWebhookEvents = pgTable("assistant_webhook_events", {
+  eventId: text("event_id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+});

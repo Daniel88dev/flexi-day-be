@@ -1,6 +1,7 @@
 import { and, eq, lt } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { assistantChatMessages, assistantChats } from "../../db/schema/assistant-schema.js";
+import { user } from "../../db/schema/auth-schema.js";
 import { appLanguage } from "../../db/schema/user-settings-schema.js";
 import type { AuthSession } from "../../middleware/authSession.js";
 import { logger } from "../../middleware/logger.js";
@@ -9,6 +10,7 @@ import AppError from "../../utils/appError.js";
 import { errorName } from "../../utils/errorName.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAiEligible } from "../aiFeatures/aiEligibility.js";
+import { isAiFeatureAvailable } from "../aiFeatures/aiFeatureServices.js";
 import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 import { answerAssistantToolCall } from "./assistantTools.js";
 import { getOwnChat, roleIn, type ChatRow } from "./chatServices.js";
@@ -234,7 +236,7 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
       const text = event.content.map((block) => block.text).join("");
       await record(turn.chatId, { kind: "assistant", text, eventId: event.id });
     }
-    if (event.type === "session.error") {
+    if (event.type === "session.error" && event.error.retry_status?.type !== "retrying") {
       await record(turn.chatId, {
         kind: "notice",
         code: ASSISTANT_NOTICE.ERROR,
@@ -297,23 +299,32 @@ const failTurn = async (chatId: string, reason: string, error?: unknown) => {
   await releaseTurn(chatId);
 };
 
+/** Pause before attaching to a session stream again after it closed mid-turn. */
+const REATTACH_MS = 1_000;
+
 /**
  * Drives a turn to its end in this process, whether or not anyone watches:
- * advance at every idle until the session ends the turn. The webhook (T-721)
- * calls `advanceTurn` when no relay is running.
+ * advance at every idle until the session ends the turn. A stream the API
+ * closes mid-turn is attached again. The webhook and opening the chat call
+ * `advanceTurn` when no relay is running.
  */
 const relay = async (turn: Advance): Promise<void> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TURN_TIMEOUT_MS);
   try {
-    const live = turn.driver.stream(turn.sessionId, controller.signal);
-    if (await advanceTurn(turn)) return;
-    for await (const item of live) {
-      if (item.kind !== "event") continue;
-      const { type } = item.event;
-      if (type !== "session.status_idle" && type !== "session.status_terminated") continue;
+    for (let attached = 0; !controller.signal.aborted; attached++) {
+      if (attached > 0) await new Promise((resolve) => setTimeout(resolve, REATTACH_MS));
+      const live = turn.driver.stream(turn.sessionId, controller.signal);
+      await live.ready;
       if (await advanceTurn(turn)) return;
-      // Deleted mid-turn: the chat and its turn are gone.
+      for await (const item of live) {
+        if (item.kind !== "event") continue;
+        const { type } = item.event;
+        if (type !== "session.status_idle" && type !== "session.status_terminated") continue;
+        if (await advanceTurn(turn)) return;
+        // Deleted mid-turn: the chat and its turn are gone.
+        if (!(await isTurnRunning(turn.chatId))) return;
+      }
       if (!(await isTurnRunning(turn.chatId))) return;
     }
     if (await isTurnRunning(turn.chatId)) await failTurn(turn.chatId, "timeout");
@@ -323,6 +334,13 @@ const relay = async (turn: Advance): Promise<void> => {
     clearTimeout(timer);
     controller.abort();
   }
+};
+
+/** Follows a turn in this process unless a relay here already does. */
+const startRelay = (turn: Advance) => {
+  if (relays.has(turn.chatId)) return;
+  const running = relay(turn).finally(() => relays.delete(turn.chatId));
+  relays.set(turn.chatId, running);
 };
 
 /** Sends the prepared input into the session and starts the relay. Answers the turn's first event id. */
@@ -339,11 +357,114 @@ export const sendTurn = async (turn: PreparedTurn): Promise<string> => {
     await failTurn(turn.chatId, "send_failed", error);
     throw error;
   }
-  if (!relays.has(turn.chatId)) {
-    const running = relay({ ...turn, startEventId }).finally(() => relays.delete(turn.chatId));
-    relays.set(turn.chatId, running);
-  }
+  startRelay({ ...turn, startEventId });
   return startEventId;
+};
+
+/**
+ * A running turn rebuilt from its chat, to advance it outside the request
+ * that started it. `null` when no turn runs or the user is gone.
+ */
+const turnOf = async (chat: typeof assistantChats.$inferSelect): Promise<Advance | null> => {
+  if (chat.turnStatus !== "running" || !chat.sessionId || !chat.turnStartEventId) return null;
+  const [owner] = await db
+    .select({ name: user.name, email: user.email, emailVerified: user.emailVerified })
+    .from(user)
+    .where(eq(user.id, chat.userId))
+    .limit(1);
+  if (!owner) return null;
+  return {
+    auth: {
+      sessionId: `assistant:${chat.id}`,
+      userId: chat.userId,
+      userName: owner.name,
+      userEmail: owner.email,
+      emailVerified: Boolean(owner.emailVerified),
+      channel: "assistant",
+    },
+    chatId: chat.id,
+    organizationId: chat.organizationId,
+    sessionId: chat.sessionId,
+    startEventId: chat.turnStartEventId,
+    language: await toolLanguage(chat.userId),
+    driver: assistantDriver(),
+  };
+};
+
+/**
+ * The `session.status_idled` webhook's step: advance the running turn of the
+ * chat that owns the session. `ignored` when no chat or no turn matches.
+ */
+export const advanceIdledSession = async (sessionId: string): Promise<"advanced" | "ignored"> => {
+  const [chat] = await db
+    .select()
+    .from(assistantChats)
+    .where(eq(assistantChats.sessionId, sessionId))
+    .limit(1);
+  const turn = chat ? await turnOf(chat) : null;
+  if (!turn) return "ignored";
+  await advanceTurn(turn);
+  return "advanced";
+};
+
+/**
+ * How long a tool call may wait for its webhook before opening the chat
+ * counts it as missed. The relay or the webhook answers within seconds.
+ */
+export const MISSED_WEBHOOK_GRACE_MS = 10_000;
+
+/** When the session last stopped for tool calls it still waits on, or `null`. */
+const waitingSince = (events: SessionEvent[]): Date | null => {
+  const last = events.findLast(
+    (event) => event.type === "session.status_idle" || event.type === "session.status_terminated"
+  );
+  if (last?.type !== "session.status_idle" || last.stop_reason.type !== "requires_action") {
+    return null;
+  }
+  const answered = new Set(
+    events.flatMap((event) =>
+      event.type === "user.custom_tool_result" ? [event.custom_tool_use_id] : []
+    )
+  );
+  if (last.stop_reason.event_ids.every((id) => answered.has(id))) return null;
+  return new Date(last.processed_at);
+};
+
+/**
+ * Opening a chat, or the chat list, catches up on missed webhooks: a turn
+ * that has waited on an unanswered tool call past the grace, with no relay in
+ * this process, is advanced and then followed to its end. No polling. Never
+ * throws; a failure leaves the chat as it was.
+ */
+export const resumeStalledTurns = async (args: {
+  userId: string;
+  chatId?: string;
+}): Promise<void> => {
+  const chats = await db
+    .select()
+    .from(assistantChats)
+    .where(
+      and(
+        eq(assistantChats.userId, args.userId),
+        eq(assistantChats.turnStatus, "running"),
+        args.chatId ? eq(assistantChats.id, args.chatId) : undefined
+      )
+    );
+  for (const chat of chats) {
+    if (relays.has(chat.id) || !isAiFeatureAvailable("assistant", chat.organizationId)) continue;
+    try {
+      const turn = await turnOf(chat);
+      if (!turn) continue;
+      const events = await turn.driver.listEvents(turn.sessionId, { afterId: turn.startEventId });
+      const since = waitingSince(events);
+      if (!since || Date.now() - since.getTime() < MISSED_WEBHOOK_GRACE_MS) continue;
+      logger.warn("assistant.webhook_missed", { chatId: chat.id });
+      if (await advanceTurn(turn)) continue;
+      startRelay(turn);
+    } catch (error) {
+      logger.error("assistant.resume_failed", { chatId: chat.id, error: errorName(error) });
+    }
+  }
 };
 
 /** Waits for every relay this process runs; tests and shutdown use it. */

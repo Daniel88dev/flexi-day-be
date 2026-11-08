@@ -148,9 +148,25 @@ type AiFeaturesConfig = {
   previewOrganizationIds: string[];
 };
 
+export const ASSISTANT_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type AssistantEffort = (typeof ASSISTANT_EFFORTS)[number];
+
 type AssistantConfig = {
   /** `fake` scripts sessions with no Anthropic call; production runs `managed`. */
   driver: "managed" | "fake";
+  /** The agent's model and effort. A change is a new agent version and reaches new chats only. */
+  model: string;
+  effort: AssistantEffort;
+  /** The managed driver's key, agent and environment (`pnpm run assistant:provision` prints the ids). */
+  apiKey?: string;
+  agentId?: string;
+  environmentId?: string;
+  /** Standard Webhooks `whsec_` secret; without one `/api/webhooks/anthropic` answers 404. */
+  webhookSecret?: string;
+  /** Context tokens at which a chat closes, well below the harness's compaction (T-711). */
+  chatTokenCeiling: number;
+  /** Output tokens one step reserves. Agents take no `max_tokens`, so this is an allowance, not a cap. */
+  stepOutputReserve: number;
 };
 
 type Config = {
@@ -517,6 +533,16 @@ const parseAiFeatures = (): AiFeaturesConfig => {
   };
 };
 
+const parsePositiveInt = (key: string, fallback: number): number => {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${key}: "${raw}". Expected a positive integer`);
+  }
+  return value;
+};
+
 const parseAssistant = (): AssistantConfig => {
   const driver =
     process.env.ASSISTANT_DRIVER || (environment === "production" ? "managed" : "fake");
@@ -526,7 +552,31 @@ const parseAssistant = (): AssistantConfig => {
   if (environment === "production" && driver === "fake") {
     throw new Error("ASSISTANT_DRIVER=fake must never be set when NODE_ENV=production");
   }
-  return { driver };
+  const effort = process.env.ASSISTANT_EFFORT || "medium";
+  if (!(ASSISTANT_EFFORTS as readonly string[]).includes(effort)) {
+    throw new Error(
+      `Invalid ASSISTANT_EFFORT: "${effort}". Expected ${ASSISTANT_EFFORTS.join(", ")}`
+    );
+  }
+  const webhookSecret = process.env.ANTHROPIC_WEBHOOK_SECRET || undefined;
+  if (webhookSecret && !webhookSecret.startsWith("whsec_")) {
+    throw new Error("ANTHROPIC_WEBHOOK_SECRET must start with whsec_");
+  }
+  const assistant: AssistantConfig = {
+    driver,
+    model: process.env.ASSISTANT_MODEL || "claude-sonnet-5-5",
+    effort: effort as AssistantEffort,
+    agentId: process.env.ASSISTANT_AGENT_ID || undefined,
+    environmentId: process.env.ASSISTANT_ENVIRONMENT_ID || undefined,
+    chatTokenCeiling: parsePositiveInt("ASSISTANT_CHAT_TOKEN_CEILING", 100_000),
+    stepOutputReserve: parsePositiveInt("ASSISTANT_STEP_OUTPUT_RESERVE", 4096),
+  };
+  // Non-enumerable, so a test diff, a log line or a spread of this block never carries them.
+  // The e2e setup loads `.env`, which holds the dev key.
+  return Object.defineProperties(assistant, {
+    apiKey: { value: process.env.ANTHROPIC_API_KEY || undefined, enumerable: false },
+    webhookSecret: { value: webhookSecret, enumerable: false },
+  });
 };
 
 const authSecrets = parseAuthSecrets();

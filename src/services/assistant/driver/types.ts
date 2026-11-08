@@ -58,7 +58,15 @@ export type SessionEvent = Stamped &
     | { type: "agent.custom_tool_use"; name: string; input: Record<string, unknown> }
     | { type: "session.usage"; usage: SessionUsage }
     | { type: "session.status_idle"; stop_reason: StopReason }
-    | { type: "session.error"; error: { type: string; message: string } }
+    | {
+        type: "session.error";
+        /** `retrying` means the session carries on by itself; only the other two end the step. */
+        error: {
+          type: string;
+          message: string;
+          retry_status?: { type: "retrying" | "exhausted" | "terminal" };
+        };
+      }
     | { type: "session.status_terminated" }
   );
 
@@ -71,6 +79,12 @@ export type SessionEventType = SessionEvent["type"];
  */
 export type StreamItem =
   { kind: "event"; event: SessionEvent } | { kind: "text_delta"; text: string };
+
+/**
+ * A live stream. `ready` settles once the stream is attached (or has failed,
+ * which iteration then throws): a send before that could log events nobody sees.
+ */
+export type LiveStream = AsyncIterable<StreamItem> & { ready: Promise<void> };
 
 /** The screen's answer for one user message (T-722 wires it into the turn). */
 export type ScreenVerdict = { inScope: boolean; attack: boolean } | { refused: true };
@@ -98,7 +112,7 @@ export interface AssistantDriver {
    * Live items from now on, until `signal` aborts. Events logged before the
    * stream opened are not replayed; list them first and dedupe by id.
    */
-  stream(sessionId: string, signal: AbortSignal): AsyncIterable<StreamItem>;
+  stream(sessionId: string, signal: AbortSignal): LiveStream;
   /** Answers one `agent.custom_tool_use` event. */
   answerToolCall(
     sessionId: string,

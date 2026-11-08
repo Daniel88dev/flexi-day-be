@@ -41,6 +41,7 @@ import { directoryRouter } from "./routes/directoryRouter.js";
 import { directoryListRouter } from "./routes/directoryListRouter.js";
 import { attendanceRouter } from "./routes/attendanceRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
+import { handleAnthropicWebhook } from "./controllers/assistant/handleAnthropicWebhook.js";
 import { supportRouter } from "./routes/supportRouter.js";
 import { attachmentRouter } from "./routes/attachmentRouter.js";
 import { localAttachmentRouter } from "./routes/localAttachmentRouter.js";
@@ -95,6 +96,78 @@ export const createServer = () => {
     express.raw({ type: "application/json" }),
     signedWebhookLimiter,
     tryCatch(handlePaddleWebhook)
+  );
+
+  /**
+   * @openapi
+   * /api/webhooks/anthropic:
+   *   post:
+   *     tags:
+   *       - Assistant
+   *     summary: Anthropic's webhook for the Assistant's sessions
+   *     description: |
+   *       Outside session auth and ahead of the JSON parser: the Standard Webhooks
+   *       signature (`webhook-id`, `webhook-timestamp`, `webhook-signature`) over the raw
+   *       body, checked with `ANTHROPIC_WEBHOOK_SECRET`, is the only credential.
+   *       `session.status_idled` advances the running turn of the chat that owns the
+   *       session: it answers the tool calls the session waits on and records the
+   *       Assistant's text. Each event id is handled once; a failed advance forgets the
+   *       id so the retry runs again. Every other event type is acknowledged and ignored.
+   *     operationId: handleAnthropicWebhook
+   *     security: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [id, data]
+   *             properties:
+   *               id:
+   *                 type: string
+   *                 description: The event id, the dedupe key
+   *               type:
+   *                 type: string
+   *                 example: event
+   *               created_at:
+   *                 type: string
+   *                 format: date-time
+   *               data:
+   *                 type: object
+   *                 required: [id, type]
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                     description: The session id
+   *                   type:
+   *                     type: string
+   *                     example: session.status_idled
+   *     responses:
+   *       '200':
+   *         description: Handled
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   enum: [advanced, ignored, duplicate]
+   *       '400':
+   *         description: Signed, but not an event this route reads
+   *       '401':
+   *         description: Missing or wrong signature, or a timestamp outside the tolerance
+   *       '404':
+   *         description: The Assistant is off and no organization is on the preview list, or no webhook secret is set
+   *       '429':
+   *         description: Too many deliveries from one IP (`signedWebhookLimiter`)
+   */
+  app.post(
+    "/api/webhooks/anthropic",
+    requireAiFeature("assistant", "public"),
+    express.raw({ type: "application/json" }),
+    signedWebhookLimiter,
+    tryCatch(handleAnthropicWebhook)
   );
 
   // The attachment processor's callback: same shape as the Paddle webhook,
