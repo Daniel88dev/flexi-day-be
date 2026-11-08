@@ -53,6 +53,8 @@ export const toolMessage = (key: ToolMessage, language: ToolLanguage): ToolError
  */
 const GUARD_MESSAGES_CS: Record<string, string> = {
   "Group not found": "Skupina nebyla nalezena.",
+  "One or more days in the requested range are already booked":
+    "Některé dny ve zvoleném rozsahu už máte zadané.",
   "Help article not found": "Článek nápovědy nebyl nalezen.",
   "The help articles aren't available right now. Try again later.":
     "Články nápovědy teď nejsou k dispozici. Zkuste to později.",

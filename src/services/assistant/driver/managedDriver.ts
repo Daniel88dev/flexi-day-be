@@ -151,6 +151,15 @@ const searchResultsIn = (text: string) => {
   }
 };
 
+const toolResult = (toolUseId: string, result: { text: string; isError: boolean }) => ({
+  type: "user.custom_tool_result",
+  custom_tool_use_id: toolUseId,
+  content: (!result.isError && searchResultsIn(result.text)) || [
+    { type: "text", text: result.text },
+  ],
+  is_error: result.isError,
+});
+
 export const createManagedDriver = (args: {
   client: Anthropic;
   agentId: string;
@@ -184,7 +193,19 @@ export const createManagedDriver = (args: {
         return { sessionId: session.id, agentVersion: session.agent.version };
       }),
 
-    sendEvents: (sessionId, events) => send(sessionId, events),
+    // A message can carry held tool results ahead of it; they go out as `answerToolCall` sends them.
+    sendEvents: (sessionId, events) =>
+      send(
+        sessionId,
+        events.map((event) =>
+          event.type === "user.custom_tool_result"
+            ? toolResult(event.custom_tool_use_id, {
+                text: event.content.map((block) => block.text).join(""),
+                isError: event.is_error ?? false,
+              })
+            : event
+        )
+      ),
 
     setBudget: (sessionId, budgetMicroUsd) =>
       call("set_budget", async () => {
@@ -265,16 +286,7 @@ export const createManagedDriver = (args: {
     },
 
     answerToolCall: async (sessionId, toolUseId, result) => {
-      const [event] = await send(sessionId, [
-        {
-          type: "user.custom_tool_result",
-          custom_tool_use_id: toolUseId,
-          content: (!result.isError && searchResultsIn(result.text)) || [
-            { type: "text", text: result.text },
-          ],
-          is_error: result.isError,
-        },
-      ]);
+      const [event] = await send(sessionId, [toolResult(toolUseId, result)]);
       return event!;
     },
 

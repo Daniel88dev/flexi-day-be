@@ -39,6 +39,8 @@ import { aiConnectionsChanges } from "./ai-connections-change-schema.js";
 import {
   assistantChatMessages,
   assistantChats,
+  assistantHeldAnswers,
+  assistantPendingActions,
   assistantRejectedTurns,
   assistantWebhookEvents,
 } from "./assistant-schema.js";
@@ -140,5 +142,7 @@ export const schema = {
   assistantChatMessages,
   assistantRejectedTurns,
   assistantWebhookEvents,
+  assistantPendingActions,
+  assistantHeldAnswers,
   assistantModelCalls,
 };

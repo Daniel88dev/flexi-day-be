@@ -1,5 +1,8 @@
 import { z } from "zod";
-import type { AssistantMessageKind } from "../../db/schema/assistant-schema.js";
+import type {
+  AssistantMessageKind,
+  PendingActionStatus,
+} from "../../db/schema/assistant-schema.js";
 import type { AiIneligibleReason } from "../aiFeatures/aiEligibility.js";
 
 export const MESSAGE_MAX_LENGTH = 4000;
@@ -41,8 +44,41 @@ export type DisplayMessage = {
   toolName: string | null;
   toolOutcome: string | null;
   code: string | null;
+  /** A write's confirmation card, on its tool line (`toolOutcome` `card`). */
+  card: PendingCard | null;
   createdAt: string;
 };
+
+/**
+ * A confirmation card as the panel shows it. Its text comes from the write's
+ * `preview` (a `WritePreview`), never from the model.
+ */
+export type PendingCard = {
+  id: string;
+  chatId: string;
+  /** The `agent.custom_tool_use` event; the stream's `tool` events share it. */
+  toolUseId: string;
+  tool: string;
+  status: PendingActionStatus;
+  preview: Record<string, unknown>;
+  /** People other than the user whose notes the Assistant read before suggesting it. */
+  authorNames: string[];
+  /** The write's result once confirmed. */
+  result: Record<string, unknown> | null;
+  /** Why the last confirm was refused; the card stays open. */
+  error: { message: string; code: string | null } | null;
+  createdAt: string;
+  decidedAt: string | null;
+};
+
+/** What confirm and decline answer: the card, and whether the Assistant now writes on. */
+export type CardDecision = { card: PendingCard; turnRunning: boolean };
+
+/** The tool line of a write parked as a card. */
+export const TOOL_CARD = "card";
+
+/** Confirm or decline of a card that is no longer open. */
+export const PENDING_ACTION_SETTLED = "PENDING_ACTION_SETTLED";
 
 export type ChatDetail = { chat: ChatSummary; messages: DisplayMessage[] };
 

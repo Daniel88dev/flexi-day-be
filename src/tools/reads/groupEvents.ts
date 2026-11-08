@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { listGroupEventsForMonth } from "../../services/groupEvent/groupEventAccess.js";
 import { occurrences } from "../../services/groupEvent/occurrences.js";
+import { authorsOf, withTextAuthors } from "../textAuthors.js";
 import { defineTool } from "../types.js";
 import { cursorField, page } from "./requestRows.js";
 import { monthDays, monthFields, monthOf } from "./monthInput.js";
@@ -55,6 +56,17 @@ export const listGroupEventsTool = defineTool({
     );
 
     const { items, nextCursor } = page(events, input.cursor);
-    return { year, month, events: items, nextCursor };
+    const creators = new Map(views.map((view) => [view.id, view.createdBy]));
+    return withTextAuthors(
+      { year, month, events: items, nextCursor },
+      authorsOf(
+        items,
+        (event) => [event.title, event.note],
+        (event) => {
+          const creator = creators.get(event.id);
+          return creator ? { userId: creator.id, name: creator.name } : null;
+        }
+      )
+    );
   },
 });

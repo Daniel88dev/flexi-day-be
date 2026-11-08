@@ -12,6 +12,7 @@ import { isAssistantPlan, planForOrganization } from "../billing/guards.js";
 import { isOrganizationAdmin } from "../organization/organizationServices.js";
 import { assistantDriver } from "./driver/index.js";
 import { readWeeklyUsage } from "./meter/meter.js";
+import { cardsOf } from "./pendingActions.js";
 import type {
   AssistantOrganization,
   AssistantRole,
@@ -110,6 +111,7 @@ export const readDisplayRecord = async (chatId: string): Promise<DisplayMessage[
     .from(assistantChatMessages)
     .where(eq(assistantChatMessages.chatId, chatId))
     .orderBy(asc(assistantChatMessages.seq));
+  const cards = await cardsOf(chatId);
   return rows.map((row) => ({
     id: row.id,
     kind: row.kind,
@@ -117,6 +119,7 @@ export const readDisplayRecord = async (chatId: string): Promise<DisplayMessage[
     toolName: row.toolName,
     toolOutcome: row.toolOutcome,
     code: row.code,
+    card: (row.kind === "tool" && row.eventId && cards.get(row.eventId)) || null,
     createdAt: row.createdAt.toISOString(),
   }));
 };

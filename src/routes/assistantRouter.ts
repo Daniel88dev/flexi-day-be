@@ -9,6 +9,7 @@ import {
   handleGetChat,
   handleGetChats,
   handleGetChatStream,
+  handlePostCardDecision,
   handlePostChat,
   handlePostChatMessage,
 } from "../controllers/assistant/assistantHandlers.js";
@@ -58,8 +59,10 @@ export const assistantRouter = (): Router => {
    *         One row of the display record, in order. `user` and `assistant`
    *         carry `text`; `tool` is an activity line with the tool's name and
    *         outcome (`ok`, `refused`, `failed`, `invalid_arguments`, `read_only`,
+   *         `card` for a write waiting on or settled by its confirmation card,
    *         `stopped` when the Weekly limit or the turn's 10 model calls stopped
-   *         the turn before its result was sent, or null while it runs);
+   *         the turn before its result was sent (the next message carries it),
+   *         or null while it runs);
    *         `notice` is a fixed message by `code` (`ASSISTANT_ERROR`,
    *         `ASSISTANT_TOPIC_REFUSAL`, `ASSISTANT_MODEL_REFUSAL`,
    *         `ASSISTANT_WEEKLY_LIMIT_REACHED`, `ASSISTANT_STEP_LIMIT`,
@@ -86,9 +89,87 @@ export const assistantRouter = (): Router => {
    *         code:
    *           type: string
    *           nullable: true
+   *         card:
+   *           nullable: true
+   *           description: On a write's tool line (`toolOutcome` `card`), its confirmation card.
+   *           allOf:
+   *             - $ref: '#/components/schemas/AssistantCard'
    *         createdAt:
    *           type: string
    *           format: date-time
+   *     AssistantCard:
+   *       type: object
+   *       description: |
+   *         A write the Assistant asked for, waiting on the user: a pending
+   *         action. Its content is the write tool's preview, a dry run of the
+   *         same guards, never the model's words. `status` is `open` until the
+   *         user confirms or declines it, or `not_taken` once the user sent a
+   *         new message instead. `error` is the reason the last confirm was
+   *         refused; the card stays open to try again. `authorNames` lists the
+   *         people other than the user whose notes the Assistant read earlier
+   *         in the turn.
+   *       required: [id, chatId, toolUseId, tool, status, preview, authorNames, result, error, createdAt, decidedAt]
+   *       properties:
+   *         id:
+   *           type: string
+   *           format: uuid
+   *         chatId:
+   *           type: string
+   *           format: uuid
+   *         toolUseId:
+   *           type: string
+   *           description: The session's tool call; `tool` stream events carry the same id.
+   *         tool:
+   *           type: string
+   *           enum: [create_request, cancel_my_request, clock_in, clock_out]
+   *         status:
+   *           type: string
+   *           enum: [open, confirmed, declined, not_taken]
+   *         preview:
+   *           type: object
+   *           description: The tool's preview, keyed by `action` (the tool name), with user-written strings plain.
+   *           additionalProperties: true
+   *         authorNames:
+   *           type: array
+   *           items:
+   *             type: string
+   *         result:
+   *           type: object
+   *           nullable: true
+   *           description: The write's result once confirmed.
+   *           additionalProperties: true
+   *         error:
+   *           type: object
+   *           nullable: true
+   *           required: [message, code]
+   *           properties:
+   *             message:
+   *               type: string
+   *               description: In the user's app language.
+   *             code:
+   *               type: string
+   *               nullable: true
+   *         createdAt:
+   *           type: string
+   *           format: date-time
+   *         decidedAt:
+   *           type: string
+   *           format: date-time
+   *           nullable: true
+   *     AssistantCardDecision:
+   *       type: object
+   *       required: [card, turnRunning]
+   *       properties:
+   *         card:
+   *           $ref: '#/components/schemas/AssistantCard'
+   *         turnRunning:
+   *           type: boolean
+   *           description: |
+   *             The decision sent the card's round and the Assistant is writing
+   *             on; follow it with `GET /chats/{chatId}/stream`. False while
+   *             another card of the same response is open, after a refused
+   *             confirm, or when the Weekly limit holds the result for the next
+   *             message.
    *     AssistantChatStream:
    *       type: string
    *       description: |
@@ -100,7 +181,9 @@ export const assistantRouter = (): Router => {
    *           replaces the deltas before it.
    *         - `tool` `{ eventId, name, status }`: a tool call, `status` is
    *           `running`, then `done` or `failed` under the same `eventId`.
-   *         - `card`: a confirmation card (pending actions, not sent yet).
+   *         - `card` (`AssistantCard`): a write waiting on the user's
+   *           confirmation, sent once the response's calls are handled. The
+   *           answer then ends with `done`; nothing runs until a decision.
    *         - `error` `{ code }`: a fixed message key: `ASSISTANT_ERROR`,
    *           `ASSISTANT_TOPIC_REFUSAL` (the screen rejected the message, which
    *           never reached the session) or `ASSISTANT_MODEL_REFUSAL` (the
@@ -468,6 +551,105 @@ export const assistantRouter = (): Router => {
    *         description: Not the caller's chat, or the Assistant is unavailable in its organization
    */
   app.get("/chats/:chatId/stream", tryCatch(handleGetChatStream));
+
+  /**
+   * @openapi
+   * /api/assistant/pending-actions/{pendingActionId}/confirm:
+   *   post:
+   *     tags:
+   *       - Assistant
+   *     summary: Confirm a card; the write runs
+   *     description: |
+   *       Runs the card's stored arguments with fresh guards, marked as made
+   *       through the Assistant. A refusal by the guards answers 200 with the
+   *       card still `open` and `error` set, to try again. Once every card of
+   *       the Assistant's response is decided, the results go to the session
+   *       and the Assistant writes on (`turnRunning`). At the Weekly limit
+   *       the write still runs and the card settles, but the result is held
+   *       and sent with the user's next admitted message.
+   *     operationId: handleConfirmPendingAction
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: pendingActionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: The card after the decision
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AssistantCardDecision'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           `AI_ORGANIZATION_NOT_ELIGIBLE` with `reason` `NO_STANDING`,
+   *           `TURNED_OFF` or `PLAN`
+   *       '404':
+   *         description: Not the caller's card, or the Assistant is unavailable in its organization
+   *       '409':
+   *         description: |
+   *           `PENDING_ACTION_SETTLED` with `status`: the card was already
+   *           decided or not taken. `ASSISTANT_TURN_RUNNING`: another answer
+   *           of the caller's is being written.
+   *       '503':
+   *         description: '`ASSISTANT_UNAVAILABLE`: Anthropic refused for its spend limit or credits.'
+   */
+  app.post(
+    "/pending-actions/:pendingActionId/confirm",
+    tryCatch(handlePostCardDecision("confirm"))
+  );
+
+  /**
+   * @openapi
+   * /api/assistant/pending-actions/{pendingActionId}/decline:
+   *   post:
+   *     tags:
+   *       - Assistant
+   *     summary: Decline a card ("Not now", "Keep it")
+   *     description: |
+   *       Nothing changes. The card settles as `declined` and the Assistant
+   *       is told the user declined, once every card of its response is
+   *       decided.
+   *     operationId: handleDeclinePendingAction
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: pendingActionId
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *     responses:
+   *       '200':
+   *         description: The card after the decision
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AssistantCardDecision'
+   *       '401':
+   *         description: Not signed in
+   *       '403':
+   *         description: |
+   *           `AI_ORGANIZATION_NOT_ELIGIBLE` with `reason` `NO_STANDING`,
+   *           `TURNED_OFF` or `PLAN`
+   *       '404':
+   *         description: Not the caller's card, or the Assistant is unavailable in its organization
+   *       '409':
+   *         description: '`PENDING_ACTION_SETTLED` or `ASSISTANT_TURN_RUNNING`'
+   *       '503':
+   *         description: '`ASSISTANT_UNAVAILABLE`: Anthropic refused for its spend limit or credits.'
+   */
+  app.post(
+    "/pending-actions/:pendingActionId/decline",
+    tryCatch(handlePostCardDecision("decline"))
+  );
 
   return app;
 };

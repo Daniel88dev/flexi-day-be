@@ -13,6 +13,7 @@ import { projectTurn, type ChatStreamSink } from "../../services/assistant/chatS
 import { providerRefusedRecently } from "../../services/assistant/meter/meter.js";
 import { assistantDriver } from "../../services/assistant/driver/index.js";
 import {
+  decideCard,
   prepareTurn,
   resumeStalledTurns,
   sendTurn,
@@ -140,3 +141,10 @@ export const handleGetChatStream = async (req: Request, res: Response) => {
     finishWithError(res, sink, error);
   }
 };
+
+export const handlePostCardDecision =
+  (decision: "confirm" | "decline") => async (req: Request, res: Response) => {
+    const auth = getAuth(req);
+    const pendingActionId = requirePathParam(req.params.pendingActionId, "pendingActionId");
+    res.status(200).json(await decideCard({ auth, pendingActionId, decision }));
+  };

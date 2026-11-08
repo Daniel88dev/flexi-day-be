@@ -363,8 +363,19 @@ describe("The Assistant's meter and Weekly limit", () => {
     expect(await usedInLedger()).toBeLessThanOrEqual(TEN_DOLLARS);
     const sessionEvents = fakeDriverControls.events(rows[0]!.sessionId!);
     expect(sessionEvents.filter((e) => e.type === "span.model_request_start")).toHaveLength(1);
-    expect(sessionEvents.some((e) => e.type === "user.interrupt")).toBe(true);
+    expect(sessionEvents.some((e) => e.type === "user.interrupt")).toBe(false);
     expect(sessionEvents.some((e) => e.type === "user.custom_tool_result")).toBe(false);
+
+    // The week resets; the next admitted message carries the held result ahead of itself.
+    await db.delete(assistantModelCalls).where(eq(assistantModelCalls.userId, ben!.id));
+    const thanks = await send(ann!.id, chatId, "Thanks");
+    expect(thanks.status).toBe(200);
+    await thanks.text();
+    await settleRelays();
+    const log = fakeDriverControls.events(rows[0]!.sessionId!);
+    const carried = log.findIndex((e) => e.type === "user.custom_tool_result");
+    expect(carried).toBeGreaterThan(-1);
+    expect(carried).toBeLessThan(log.findLastIndex((e) => e.type === "user.message"));
   });
 
   it("settles both steps of a turn with a tool call from the session's usage", async () => {

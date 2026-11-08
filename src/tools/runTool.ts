@@ -4,6 +4,7 @@ import {
   assertPeopleInOrganization,
 } from "../services/aiFeatures/organizationFence.js";
 import AppError from "../utils/appError.js";
+import { textAuthorsOf, type TextAuthor } from "./textAuthors.js";
 import { toToolError, toolMessage, type ToolError } from "./toolErrors.js";
 import type { Tool, ToolContext } from "./types.js";
 import { serializeToolResult } from "./userText.js";
@@ -11,7 +12,12 @@ import { serializeToolResult } from "./userText.js";
 export type ToolOutcome = "ok" | "invalid_arguments" | "read_only" | "refused" | "failed";
 
 export type ToolRun =
-  | { ok: true; result: unknown }
+  | {
+      ok: true;
+      result: unknown;
+      /** Who wrote the free text in the result, as the handler declared it. */
+      authors: TextAuthor[];
+    }
   | { ok: false; outcome: Exclude<ToolOutcome, "ok">; error: ToolError };
 
 /** Whether a tool is offered to, and may run for, this access. */
@@ -72,7 +78,11 @@ const execute = async (tool: Tool, ctx: ToolContext, args: unknown): Promise<Too
   try {
     await fence(tool, ctx, admitted.input);
     const result = await tool.handler(ctx, admitted.input);
-    return { ok: true, result: serializeToolResult(result, tool.userText) };
+    return {
+      ok: true,
+      result: serializeToolResult(result, tool.userText),
+      authors: textAuthorsOf(result),
+    };
   } catch (error) {
     return refusalOf(error, tool, ctx);
   }

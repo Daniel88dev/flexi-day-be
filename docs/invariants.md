@@ -326,6 +326,19 @@ the app, inside one organization.
   `[withheld: looked like instructions]`. Answering a tool call before its screen would hand the
   model the very text the screen exists to stop. The screen logs (`assistant.screen_failed`,
   `assistant.tool_text_withheld`) carry ids, reasons and counts, never the text.
+- **A write from the Assistant never runs before its card is confirmed.** `answerAssistantToolCall`
+  only previews a write; `advanceTurn` parks it in `assistant_pending_actions` with its validated
+  arguments, and only `decideCard` runs those exact arguments, with fresh guards. A refused confirm
+  keeps the card open and answers nothing, so every tool call is answered once: by the confirmed
+  result, "declined", or "not taken" when the user's next admitted message settles it. Card text
+  comes from the stored preview, never the model, and card previews are never logged.
+  `assistantCards.e2e.test.ts` pins every path.
+- **A round of tool results goes to the session whole, and only through the meter.** Answers wait in
+  `assistant_held_answers` until no card of their model response is open; taking them (a delete
+  that returns the rows) is the claim, so two advances can't both send them. A round the meter
+  refuses keeps its answers held, and the next admitted message carries them ahead of its text.
+  Answering a round's reads while its card is open, or interrupting the session, would leave a tool
+  call unanswered or start a model call nobody reserved.
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 

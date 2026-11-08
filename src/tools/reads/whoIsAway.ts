@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { listViewableGroups, listWhoIsAway } from "../../services/vacation/requestReads.js";
+import { authorsOf, withTextAuthors } from "../textAuthors.js";
 import { defineTool } from "../types.js";
 import {
   cursorField,
@@ -53,10 +54,17 @@ export const listWhoIsAwayTool = defineTool({
     absences.sort((a, b) => a.firstDay.localeCompare(b.firstDay));
 
     const { items, nextCursor } = page(absences, input.cursor);
-    return {
-      groups: viewable.filter((group) => groupIds.includes(group.groupId)),
-      absences: items,
-      nextCursor,
-    };
+    return withTextAuthors(
+      {
+        groups: viewable.filter((group) => groupIds.includes(group.groupId)),
+        absences: items,
+        nextCursor,
+      },
+      authorsOf(
+        items,
+        (entry) => [entry.note],
+        (entry) => ({ userId: entry.personId, name: entry.personName })
+      )
+    );
   },
 });

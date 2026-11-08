@@ -18,13 +18,15 @@ import {
  * The scripted driver behind `ASSISTANT_DRIVER=fake`: no Anthropic call and no
  * key. Sessions live in memory; one the process no longer knows (after a
  * restart) comes back empty. Each user message runs one scripted model step,
- * which either answers or calls one read tool picked by keywords, then answers
- * from that tool's result once it arrives.
+ * which either answers or calls one tool picked by keywords, then answers
+ * from that tool's result once it arrives. Tests queue whole steps in `steps`.
  */
 
 type ScreenFailure = "error" | "timeout" | null;
 
-type Script = { tool: string; input: Record<string, unknown> } | null;
+type ToolCall = { tool: string; input: Record<string, unknown> };
+
+type Script = ToolCall | null;
 
 type FakeSession = {
   events: SessionEvent[];
@@ -51,6 +53,12 @@ const randomId = (prefix: string) =>
 export const fakeDriverControls = {
   chunkDelayMs: 15,
   stepDelayMs: 120,
+  /**
+   * Scripted model steps, taken first one per step: the tool calls each step
+   * makes, all in one response. A step with no queued entry answers or picks
+   * a tool by keywords.
+   */
+  steps: [] as ToolCall[][],
   /** Text a tool step writes before its tool call, as a model often does. */
   leadText: null as string | null,
   /**
@@ -90,6 +98,7 @@ export const fakeDriverControls = {
   },
   reset(): void {
     this.release?.();
+    this.steps = [];
     this.leadText = null;
     this.providerRefusal = null;
     sessions.clear();
@@ -144,10 +153,24 @@ const textOf = (event: { content: { text: string }[] }) =>
 
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
 
+/** The next weekday after `today`, for "book a day off" by hand. */
+const nextWeekday = (today: Date) => {
+  const day = new Date(today.getTime() + 86_400_000);
+  while (day.getUTCDay() === 0 || day.getUTCDay() === 6) day.setTime(day.getTime() + 86_400_000);
+  return isoDay(day);
+};
+
 /** Picks the tool a message asks for, by keywords in English or Czech. */
 export const scriptFor = (message: string, today = new Date()): Script => {
   const text = message.toLowerCase();
   const year = today.getUTCFullYear();
+  if (/clock (me )?in\b|příchod/.test(text)) return { tool: "clock_in", input: {} };
+  if (/clock (me )?out\b|odchod/.test(text)) return { tool: "clock_out", input: {} };
+  if (/\bbook\b|day off|zarezervuj|vezmi.*volno/.test(text)) {
+    // "book 2026-11-12 off" books that day; otherwise the next weekday.
+    const day = /\b\d{4}-\d{2}-\d{2}\b/.exec(text)?.[0] ?? nextWeekday(today);
+    return { tool: "create_request", input: { from: day, to: day } };
+  }
   if (/balance|left|zůst|zbýv|kolik.*dn/.test(text)) {
     return { tool: "get_my_balances", input: {} };
   }
@@ -172,6 +195,8 @@ const COPY = {
     requests: (n: number) =>
       n === 0 ? "You have no requests this year." : `You have ${n.toString()} requests this year.`,
     days: "days",
+    done: "Done. The change is made.",
+    left: "Okay, I left everything as it was.",
   },
   cs: {
     hello:
@@ -183,6 +208,8 @@ const COPY = {
     requests: (n: number) =>
       n === 0 ? "Letos nemáš žádné žádosti." : `Letos máš ${n.toString()} žádostí.`,
     days: "dní",
+    done: "Hotovo, změna je provedená.",
+    left: "Dobře, nechal jsem všechno, jak to bylo.",
   },
 };
 
@@ -190,6 +217,8 @@ const plain = (value: unknown): string =>
   typeof value === "object" && value !== null && "user_text" in value
     ? String(value.user_text)
     : String(value);
+
+const WRITES = new Set(["create_request", "cancel_my_request", "clock_in", "clock_out"]);
 
 /** The scripted answer to one tool result, written from the result like a model would. */
 export const answerFor = (
@@ -203,6 +232,8 @@ export const answerFor = (
     const error = (parsed.error ?? parsed) as { message?: string };
     return copy.failed(error.message ?? "");
   }
+  if (parsed.outcome === "declined" || parsed.outcome === "not_taken") return copy.left;
+  if (WRITES.has(result.name)) return copy.done;
   if (result.name === "get_my_balances") {
     const buckets = (parsed.buckets ?? []) as {
       type: string;
@@ -291,7 +322,10 @@ const listCost = (usage: SessionUsage): number =>
     outputTokens: usage.output_tokens,
   });
 
-const runStep = async (session: FakeSession, input: { script: Script; inputChars: number }) => {
+const runStep = async (
+  session: FakeSession,
+  input: { calls: ToolCall[] | null; inputChars: number }
+) => {
   if (listCost(session.usage) >= session.budgetMicroUsd) {
     log(session, { type: "session.status_idle", stop_reason: { type: "budget_reached" } });
     return;
@@ -316,21 +350,26 @@ const runStep = async (session: FakeSession, input: { script: Script; inputChars
     output = "";
     session.results = [];
     stop = { type: "refusal" };
-  } else if (input.script) {
-    output = JSON.stringify(input.script.input);
+  } else if (input.calls && input.calls.length > 0) {
+    output = JSON.stringify(input.calls);
+    session.results = [];
     const lead = fakeDriverControls.leadText;
     if (lead) {
       await emitText(session, lead);
       log(session, { type: "agent.message", content: [{ type: "text", text: lead }] });
       output += lead;
     }
-    const call = log(session, {
-      type: "agent.custom_tool_use",
-      name: input.script.tool,
-      input: input.script.input,
-    });
-    session.pending.set(call.id, input.script.tool);
-    stop = { type: "requires_action", event_ids: [call.id] };
+    const ids: string[] = [];
+    for (const script of input.calls) {
+      const call = log(session, {
+        type: "agent.custom_tool_use",
+        name: script.tool,
+        input: script.input,
+      });
+      session.pending.set(call.id, script.tool);
+      ids.push(call.id);
+    }
+    stop = { type: "requires_action", event_ids: ids };
   } else {
     const [result] = session.results;
     output = answerFor(session.language, result ?? null);
@@ -352,7 +391,7 @@ const runStep = async (session: FakeSession, input: { script: Script; inputChars
   log(session, { type: "session.status_idle", stop_reason: stop });
 };
 
-const run = (session: FakeSession, input: { script: Script; inputChars: number }) => {
+const run = (session: FakeSession, input: { calls: ToolCall[] | null; inputChars: number }) => {
   void runStep(session, input).catch((error: unknown) => {
     log(session, {
       type: "session.error",
@@ -369,11 +408,6 @@ const ingest = (session: FakeSession, events: SessionInputEvent[]): SessionEvent
   if (system && /language:\s*(czech|cs)/i.test(textOf(system))) session.language = "cs";
   if (system && /language:\s*(english|en)\b/i.test(textOf(system))) session.language = "en";
 
-  if (user) {
-    const message = textOf(user);
-    run(session, { script: scriptFor(message), inputChars: message.length });
-    return logged;
-  }
   for (const event of events) {
     if (event.type !== "user.custom_tool_result") continue;
     const name = session.pending.get(event.custom_tool_use_id);
@@ -381,9 +415,20 @@ const ingest = (session: FakeSession, events: SessionInputEvent[]): SessionEvent
     session.pending.delete(event.custom_tool_use_id);
     session.results.push({ name, text: textOf(event), isError: event.is_error ?? false });
   }
+  if (user) {
+    // Results that arrive with a new message are history; the step answers the message.
+    session.results = [];
+    const message = textOf(user);
+    const script = scriptFor(message);
+    run(session, {
+      calls: fakeDriverControls.steps.shift() ?? (script ? [script] : null),
+      inputChars: message.length,
+    });
+    return logged;
+  }
   if (session.pending.size === 0 && session.results.length > 0) {
     run(session, {
-      script: null,
+      calls: fakeDriverControls.steps.shift() ?? null,
       inputChars: session.results.reduce((sum, r) => sum + r.text.length, 0),
     });
   }

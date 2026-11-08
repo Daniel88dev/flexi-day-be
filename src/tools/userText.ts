@@ -44,3 +44,18 @@ export const serializeToolResult = (result: unknown, userTextPaths: readonly str
   for (const path of userTextPaths) value = applyAt(value, parsePath(path));
   return value;
 };
+
+/** The reverse of the wrapping: every `{"user_text": "…"}` back to its plain string, for people to read. */
+export const plainUserText = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(plainUserText);
+  if (typeof value !== "object" || value === null) return value;
+  const entries = Object.entries(value);
+  if (
+    entries.length === 1 &&
+    entries[0]![0] === USER_TEXT_KEY &&
+    typeof entries[0]![1] === "string"
+  ) {
+    return entries[0]![1];
+  }
+  return Object.fromEntries(entries.map(([key, child]) => [key, plainUserText(child)]));
+};

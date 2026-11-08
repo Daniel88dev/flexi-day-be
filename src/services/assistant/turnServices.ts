@@ -1,4 +1,4 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, lt, ne } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { assistantChatMessages, assistantChats } from "../../db/schema/assistant-schema.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -12,7 +12,7 @@ import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAiEligible } from "../aiFeatures/aiEligibility.js";
 import { isAiFeatureAvailable } from "../aiFeatures/aiFeatureServices.js";
 import { getUserLanguage } from "../userSettings/userSettingsServices.js";
-import { answerAssistantToolCall } from "./assistantTools.js";
+import { answerAssistantToolCall, runConfirmedWrite } from "./assistantTools.js";
 import { getOwnChat, roleIn, type ChatRow } from "./chatServices.js";
 import { assistantDriver } from "./driver/index.js";
 import {
@@ -35,9 +35,35 @@ import {
   voidReservation,
   type Reservation,
 } from "./meter/meter.js";
+import {
+  DECLINED_ANSWER,
+  NOT_TAKEN_ANSWER,
+  dropHeldAnswers,
+  heldAnswersOf,
+  heldToolUseIds,
+  holdAnswers,
+  openCardsInRound,
+  openCardsOf,
+  parkPendingAction,
+  pendingActionById,
+  presentCard,
+  recordCardError,
+  settleCard,
+  takeRoundAnswers,
+  type PendingActionRow,
+  type ToolAnswer,
+} from "./pendingActions.js";
 import { recordRejectedTurn } from "./screen/rejectedTurns.js";
 import { screenMessage, screenToolResults } from "./screen/screenServices.js";
-import { ASSISTANT_NOTICE, REJECTED_MESSAGE, SCREEN_FAILED, TITLE_MAX_LENGTH } from "./types.js";
+import {
+  ASSISTANT_NOTICE,
+  PENDING_ACTION_SETTLED,
+  REJECTED_MESSAGE,
+  SCREEN_FAILED,
+  TITLE_MAX_LENGTH,
+  TOOL_CARD,
+  type CardDecision,
+} from "./types.js";
 
 /** A turn older than this is taken for dead (a crashed process) and may be reclaimed. */
 export const STALE_TURN_MS = 5 * 60_000;
@@ -182,10 +208,19 @@ export type PreparedTurn = {
   driver: AssistantDriver;
   /** The meter's reservation for this send. */
   reservationId: string;
+  /** Held tool results the send answers before the message; dropped once sent. */
+  carriedToolUseIds: string[];
 };
 
 const textOf = (events: SessionInputEvent[]) =>
   events.flatMap((event) => event.content.map((block) => block.text)).join("\n");
+
+const resultEvent = (answer: ToolAnswer): SessionInputEvent => ({
+  type: "user.custom_tool_result",
+  custom_tool_use_id: answer.toolUseId,
+  content: [{ type: "text", text: answer.text }],
+  is_error: answer.isError,
+});
 
 /**
  * Everything a send checks and writes before its stream opens: the chat is
@@ -195,6 +230,8 @@ const textOf = (events: SessionInputEvent[]) =>
  * screen is 503 with nothing written), the Weekly limit has room for the step
  * (429, nothing written), then the user's text in the display record and the
  * session, created on first use with the reservation as its spend ceiling.
+ * An admitted message also carries every tool result the chat still holds,
+ * and answers every open card as not taken, ahead of the user's text.
  */
 export const prepareTurn = async (args: {
   auth: AuthSession;
@@ -244,7 +281,13 @@ export const prepareTurn = async (args: {
       return { rejected: true, chatId: chat.id, code: ASSISTANT_NOTICE.TOPIC_REFUSAL };
     }
 
+    const openCards = chat.sessionId ? await openCardsOf(chat.id) : [];
+    const carried: ToolAnswer[] = [
+      ...(chat.sessionId ? await heldAnswersOf(chat.id) : []),
+      ...openCards.map((card) => ({ toolUseId: card.toolUseId, ...NOT_TAKEN_ANSWER })),
+    ];
     const input: SessionInputEvent[] = [
+      ...carried.map(resultEvent),
       { type: "user.message", content: [{ type: "text", text: args.text }] },
     ];
     if (!chat.sessionId || utcDay(chat.lastMessageAt) !== utcDay(now)) {
@@ -276,6 +319,9 @@ export const prepareTurn = async (args: {
     }
 
     written = true;
+    for (const card of openCards) {
+      await settleCard(card, { status: "not_taken", answer: NOT_TAKEN_ANSWER });
+    }
     await record(chat.id, { kind: "user", text: args.text });
     await db
       .update(assistantChats)
@@ -291,6 +337,7 @@ export const prepareTurn = async (args: {
       input,
       driver,
       reservationId: reservation.id,
+      carriedToolUseIds: carried.map((answer) => answer.toolUseId),
     };
   } catch (error) {
     if (reservation) await voidReservation(reservation.id);
@@ -382,8 +429,10 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
     return false;
   }
 
-  // The reads of one model response run first, so one screen call covers all their user text.
-  const answers: { toolUseId: string; text: string; isError: boolean }[] = [];
+  // One round: every tool call of one model response. Reads run at once and
+  // writes become cards; the answers wait until no card of the round is open.
+  const authorNames = await authorsEarlierInTurn(turn, last.stop_reason.event_ids);
+  const answers: ToolAnswer[] = [];
   for (const toolUseId of last.stop_reason.event_ids) {
     if (answered.has(toolUseId)) continue;
     const call = events.find((event) => event.id === toolUseId);
@@ -394,107 +443,203 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
       eventId: call.id,
     });
     if (!claimed) continue;
-    const answer = await answerAssistantToolCall({
+    const step = await answerAssistantToolCall({
       auth: turn.auth,
       organizationId: turn.organizationId,
       language: turn.language,
       name: call.name,
       input: call.input,
     });
-    await db
-      .update(assistantChatMessages)
-      .set({ toolOutcome: answer.outcome })
-      .where(
-        and(
-          eq(assistantChatMessages.chatId, turn.chatId),
-          eq(assistantChatMessages.eventId, call.id)
-        )
-      );
-    answers.push({ toolUseId: call.id, text: answer.text, isError: answer.isError });
+    if (step.kind === "card") {
+      await parkPendingAction({
+        chatId: turn.chatId,
+        organizationId: turn.organizationId,
+        userId: turn.auth.userId,
+        sessionId: turn.sessionId,
+        roundEventId: last.id,
+        toolUseId: call.id,
+        toolName: call.name,
+        input: step.input,
+        preview: step.preview,
+        authorNames,
+      });
+      await setToolLine(turn.chatId, call.id, { toolOutcome: TOOL_CARD });
+      continue;
+    }
+    await setToolLine(turn.chatId, call.id, {
+      toolOutcome: step.outcome,
+      textAuthors: step.authors.length > 0 ? step.authors : null,
+    });
+    answers.push({ toolUseId: call.id, text: step.text, isError: step.isError });
   }
-  if (answers.length === 0) return false;
-  const texts = await screenToolResults({
-    driver: turn.driver,
-    chatId: turn.chatId,
-    organizationId: turn.organizationId,
-    userId: turn.auth.userId,
-    texts: answers.map((answer) => answer.text),
-  });
-  return sendToolResults(turn, {
-    idle: last,
-    events,
-    answers: answers.map((answer, index) => ({ ...answer, text: texts[index]! })),
-    readUsage,
-  });
+  if (answers.length > 0) {
+    // One screen call covers the user text of every read in the response.
+    const texts = await screenToolResults({
+      driver: turn.driver,
+      chatId: turn.chatId,
+      organizationId: turn.organizationId,
+      userId: turn.auth.userId,
+      texts: answers.map((answer) => answer.text),
+    });
+    await holdAnswers(
+      turn.chatId,
+      last.id,
+      answers.map((answer, index) => ({ ...answer, text: texts[index]! }))
+    );
+  }
+  return advanceRound(turn, { idle: last, events, readUsage });
+};
+
+const setToolLine = async (
+  chatId: string,
+  toolUseId: string,
+  values: Pick<typeof assistantChatMessages.$inferInsert, "toolOutcome" | "textAuthors">
+) => {
+  await db
+    .update(assistantChatMessages)
+    .set(values)
+    .where(
+      and(eq(assistantChatMessages.chatId, chatId), eq(assistantChatMessages.eventId, toolUseId))
+    );
 };
 
 /**
- * Sends one round of tool results as a metered step, or stops the turn when
- * the meter refuses it: the fixed notice is written, the results are never
- * sent, and the session is interrupted so no model call runs unreserved.
+ * Who, other than the user, wrote free text the Assistant read earlier in
+ * this turn: since the user's last message, before this round.
  */
-const sendToolResults = async (
-  turn: Advance,
-  round: {
-    idle: SessionEvent;
-    events: SessionEvent[];
-    answers: { toolUseId: string; text: string; isError: boolean }[];
-    readUsage: () => Promise<SessionUsage>;
+const authorsEarlierInTurn = async (turn: Advance, roundToolUseIds: string[]) => {
+  const [lastMessage] = await db
+    .select({ seq: assistantChatMessages.seq })
+    .from(assistantChatMessages)
+    .where(
+      and(eq(assistantChatMessages.chatId, turn.chatId), eq(assistantChatMessages.kind, "user"))
+    )
+    .orderBy(desc(assistantChatMessages.seq))
+    .limit(1);
+  const rows = await db
+    .select({
+      eventId: assistantChatMessages.eventId,
+      textAuthors: assistantChatMessages.textAuthors,
+    })
+    .from(assistantChatMessages)
+    .where(
+      and(
+        eq(assistantChatMessages.chatId, turn.chatId),
+        eq(assistantChatMessages.kind, "tool"),
+        isNotNull(assistantChatMessages.textAuthors),
+        lastMessage ? gt(assistantChatMessages.seq, lastMessage.seq) : undefined
+      )
+    )
+    .orderBy(assistantChatMessages.seq);
+  const names = new Set<string>();
+  for (const row of rows) {
+    if (row.eventId && roundToolUseIds.includes(row.eventId)) continue;
+    for (const author of row.textAuthors ?? []) {
+      if (author.userId !== turn.auth.userId) names.add(author.name);
+    }
   }
-): Promise<boolean> => {
+  return [...names];
+};
+
+type Round = {
+  idle: Extract<SessionEvent, { type: "session.status_idle" }>;
+  /** The turn's events, which count its model calls. */
+  events: SessionEvent[];
+  readUsage: () => Promise<SessionUsage>;
+};
+
+const requiresAction = (idle: Round["idle"]): string[] =>
+  idle.stop_reason.type === "requires_action" ? idle.stop_reason.event_ids : [];
+
+/**
+ * Sends the round once every tool call in it has its answer held. While a
+ * card in it is open the turn ends here: the user decides, and the composer
+ * is free. Answers whether the turn has ended.
+ */
+const advanceRound = async (turn: Advance, round: Round): Promise<boolean> => {
+  if ((await openCardsInRound(turn.chatId, round.idle.id)) > 0) {
+    await releaseTurn(turn.chatId);
+    return true;
+  }
+  const answered = new Set(
+    round.events.flatMap((event) =>
+      event.type === "user.custom_tool_result" ? [event.custom_tool_use_id] : []
+    )
+  );
+  const held = await heldToolUseIds(turn.chatId, round.idle.id);
+  // Another advance is still running one of the calls; it sends the round.
+  if (requiresAction(round.idle).some((id) => !answered.has(id) && !held.has(id))) return false;
+  return (await sendRound(turn, round)).ended;
+};
+
+/**
+ * Sends a round's held answers as one metered step, or keeps holding them
+ * when the meter refuses it (Weekly limit, 10 model calls): the fixed notice
+ * is written and the turn ends, and the user's next admitted message carries
+ * them, so no model call runs unreserved and no tool call is left unanswered.
+ */
+const sendRound = async (
+  turn: Advance,
+  round: Round
+): Promise<{ ended: boolean; firstEventId: string | null }> => {
+  const { answers, restore } = await takeRoundAnswers(turn.chatId, round.idle.id);
+  if (answers.length === 0) return { ended: false, firstEventId: null };
   const metered = await reserveToolRound({
     organizationId: turn.organizationId,
     userId: turn.auth.userId,
     chatId: turn.chatId,
     sessionId: turn.sessionId,
     triggerEventId: round.idle.id,
-    appendedText: round.answers.map((answer) => answer.text).join("\n"),
+    appendedText: answers.map((answer) => answer.text).join("\n"),
     modelCallsThisTurn: round.events.filter((event) => event.type === "span.model_request_start")
       .length,
   });
   if (metered.kind === "refused") {
-    for (const answer of round.answers) {
+    await restore(new Set());
+    for (const answer of answers) {
       await db
         .update(assistantChatMessages)
         .set({ toolOutcome: TOOL_STOPPED })
         .where(
           and(
             eq(assistantChatMessages.chatId, turn.chatId),
-            eq(assistantChatMessages.eventId, answer.toolUseId)
+            eq(assistantChatMessages.eventId, answer.toolUseId),
+            ne(assistantChatMessages.toolOutcome, TOOL_CARD)
           )
         );
     }
-    try {
-      await turn.driver.interrupt(turn.sessionId);
-    } catch (error) {
-      logger.error("assistant.interrupt_failed", { chatId: turn.chatId, error: errorName(error) });
-    }
     await releaseTurn(turn.chatId);
-    return true;
+    return { ended: true, firstEventId: null };
   }
 
-  let delivered = false;
+  const sent = new Set<string>();
+  let firstEventId: string | null = null;
   try {
     if (metered.kind === "reserved") {
       const used = sessionCost(await round.readUsage());
       await turn.driver.setBudget(turn.sessionId, used + metered.reservation.reservedMicroUsd);
     }
-    for (const [index, answer] of round.answers.entries()) {
-      const sent = await turn.driver.answerToolCall(turn.sessionId, answer.toolUseId, {
+    for (const answer of answers) {
+      const event = await turn.driver.answerToolCall(turn.sessionId, answer.toolUseId, {
         text: answer.text,
         isError: answer.isError,
       });
-      delivered = true;
-      if (index === 0 && metered.kind === "reserved") {
+      sent.add(answer.toolUseId);
+      if (firstEventId) continue;
+      firstEventId = event.id;
+      if (metered.kind === "reserved") {
         await attachStepEvent(metered.reservation.id, {
           sessionId: turn.sessionId,
-          eventId: sent.id,
+          eventId: event.id,
         });
       }
     }
   } catch (error) {
+    await restore(sent);
     // Nothing reached the session, so no model call ran on this reservation.
-    if (metered.kind === "reserved" && !delivered) await voidReservation(metered.reservation.id);
+    if (metered.kind === "reserved" && sent.size === 0) {
+      await voidReservation(metered.reservation.id);
+    }
     if (!(error instanceof ProviderRefusedError)) throw error;
     noteProviderRefused("tool_results");
     await record(turn.chatId, {
@@ -503,9 +648,9 @@ const sendToolResults = async (
       eventId: round.idle.id,
     });
     await releaseTurn(turn.chatId);
-    return true;
+    return { ended: true, firstEventId };
   }
-  return false;
+  return { ended: false, firstEventId };
 };
 
 const relays = new Map<string, Promise<void>>();
@@ -562,12 +707,14 @@ const startRelay = (turn: Advance) => {
   relays.set(turn.chatId, running);
 };
 
-/** Sends the prepared input into the session and starts the relay. Answers the turn's first event id. */
+/** Sends the prepared input into the session and starts the relay. Answers the turn's start: its message's event id. */
 export const sendTurn = async (turn: PreparedTurn): Promise<string> => {
   let startEventId: string;
   try {
     const sent = await turn.driver.sendEvents(turn.sessionId, turn.input);
-    startEventId = sent[0]!.id;
+    // Carried tool results go first; the turn, and its step, start at the message.
+    startEventId = (sent.find((event) => event.type === "user.message") ?? sent[0]!).id;
+    await dropHeldAnswers(turn.chatId, turn.carriedToolUseIds);
     await attachStepEvent(turn.reservationId, { sessionId: turn.sessionId, eventId: startEventId });
     await db
       .update(assistantChats)
@@ -695,4 +842,118 @@ export const resumeStalledTurns = async (args: {
 /** Waits for every relay this process runs; tests and shutdown use it. */
 export const settleRelays = async (): Promise<void> => {
   await Promise.allSettled([...relays.values()]);
+};
+
+const cardNotFound = () => new AppError({ message: "Card not found", code: 404 });
+
+const cardSettled = (status: string) =>
+  new AppError({
+    message: "This card is already decided",
+    code: 409,
+    publicContext: { code: PENDING_ACTION_SETTLED, status },
+  });
+
+/**
+ * Confirms or declines one of the caller's cards. Confirm runs the stored
+ * arguments with fresh guards on channel `assistant`; a refusal keeps the
+ * card open with the reason, to try again, and answers nothing. Either
+ * decision settles the card and holds its answer; the last open card of a
+ * round sends the round, and the Assistant writes on as a turn the client
+ * follows with `GET .../stream`. Refused (403) when the organization no
+ * longer allows the Assistant, 409 while another answer of the caller's runs.
+ */
+export const decideCard = async (args: {
+  auth: AuthSession;
+  pendingActionId: string;
+  decision: "confirm" | "decline";
+}): Promise<CardDecision> => {
+  const { auth } = args;
+  const action = await pendingActionById(args.pendingActionId);
+  if (!action || action.userId !== auth.userId) throw cardNotFound();
+  const chat = await getOwnChat({ userId: auth.userId, chatId: action.chatId });
+  if (action.status !== "open") throw cardSettled(action.status);
+  await assertAiEligible({
+    userId: auth.userId,
+    organizationId: chat.organizationId,
+    feature: "assistant",
+  });
+  if (providerRefusedRecently()) throw providerUnavailable();
+  await claimTurn(chat.id, auth.userId);
+
+  let running = false;
+  try {
+    const language = await toolLanguage(auth.userId);
+    let settled: PendingActionRow | null;
+    if (args.decision === "confirm") {
+      const write = await runConfirmedWrite({
+        auth,
+        organizationId: chat.organizationId,
+        language,
+        name: action.toolName,
+        input: action.input,
+      });
+      if (!write.ok) {
+        const code = write.error.context?.code;
+        const row = await recordCardError(action.id, {
+          message: write.error.message,
+          code: typeof code === "string" ? code : null,
+        });
+        return { card: presentCard(row), turnRunning: false };
+      }
+      settled = await settleCard(action, {
+        status: "confirmed",
+        result: write.result,
+        answer: { text: write.text, isError: false },
+      });
+    } else {
+      settled = await settleCard(action, { status: "declined", answer: DECLINED_ANSWER });
+    }
+    if (!settled) throw cardSettled("decided");
+
+    const turn: Advance = {
+      auth: { ...auth, channel: "assistant" },
+      chatId: chat.id,
+      organizationId: chat.organizationId,
+      sessionId: action.sessionId,
+      startEventId: action.roundEventId,
+      language,
+      driver: assistantDriver(),
+    };
+    const sent = await sendDecidedRound(turn, action);
+    if (sent) {
+      await db
+        .update(assistantChats)
+        .set({ turnStartEventId: sent })
+        .where(eq(assistantChats.id, chat.id));
+      running = true;
+      startRelay({ ...turn, startEventId: sent });
+    }
+    return { card: presentCard(settled), turnRunning: running };
+  } finally {
+    if (!running) await unclaimTurn(chat.id);
+  }
+};
+
+/**
+ * Sends the card's round when no card in it is open any more. Answers the
+ * first sent event, where the Assistant's next turn starts, or `null` when
+ * nothing was sent (cards still open, or the meter refused and holds it).
+ */
+const sendDecidedRound = async (
+  turn: Advance,
+  action: PendingActionRow
+): Promise<string | null> => {
+  if ((await openCardsInRound(turn.chatId, action.roundEventId)) > 0) return null;
+  const all = await turn.driver.listEvents(turn.sessionId);
+  const at = all.findIndex((event) => event.id === action.roundEventId);
+  const idle = all[at];
+  if (idle?.type !== "session.status_idle") return null;
+  // The model calls since the user's message count toward the turn's 10.
+  const asked = all.slice(0, at).findLastIndex((event) => event.type === "user.message");
+  const sent = await sendRound(turn, {
+    idle,
+    events: all.slice(asked + 1, at + 1),
+    readUsage: () => turn.driver.readUsage(turn.sessionId),
+  });
+  return sent.ended ? null : sent.firstEventId;
 };

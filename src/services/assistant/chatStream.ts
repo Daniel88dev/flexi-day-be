@@ -1,17 +1,21 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { assistantChatMessages } from "../../db/schema/assistant-schema.js";
+import { findTool } from "../../tools/registry.js";
 import { isProviderRefusal, type AssistantDriver, type SessionEvent } from "./driver/types.js";
+import { cardsOf } from "./pendingActions.js";
 import { isTurnRunning } from "./turnServices.js";
 import { ASSISTANT_NOTICE } from "./types.js";
 
-/** The five events the chat stream speaks. `card` belongs to pending actions (T-724). */
+/** The five events the chat stream speaks. */
 export type ChatStreamEvent = "text" | "tool" | "card" | "error" | "done";
 
 export type ChatStreamSink = (event: ChatStreamEvent, data: object, id?: string) => void;
 
 /** How often a tail checks whether the turn ended without the session saying so (a dead relay). */
 const TURN_CHECK_MS = 2_000;
+/** After a response with a write, how often the tail checks whether the turn ended at its cards. */
+const CARD_CHECK_MS = 100;
 
 const isTurnEnd = (event: SessionEvent): boolean =>
   (event.type === "session.status_idle" && event.stop_reason.type !== "requires_action") ||
@@ -22,7 +26,8 @@ const isTurnEnd = (event: SessionEvent): boolean =>
  * `afterId`, then the live tail, each event at most once (deduped by its id),
  * until the turn ends. Live text goes out as `text` deltas with no id; each
  * finished Assistant message as a `text` with its event id, which replaces
- * the deltas before it. Ends with `done`. A reconnect is the same projection
+ * the deltas before it. A write's confirmation card follows as `card` once
+ * the turn stops for it. Ends with `done`. A reconnect is the same projection
  * with the last event id the client saw.
  */
 export const projectTurn = async (args: {
@@ -69,6 +74,8 @@ export const projectTurn = async (args: {
         sink("tool", { eventId: event.id, name: event.name, status: "running" }, event.id);
         break;
       case "user.custom_tool_result":
+        // A result carried in with a new message answers a call of an earlier turn.
+        if (!toolNames.has(event.custom_tool_use_id)) break;
         sink(
           "tool",
           {
@@ -101,16 +108,30 @@ export const projectTurn = async (args: {
         ) {
           rounds.push(event.id);
         }
+        if (
+          event.stop_reason.type === "requires_action" &&
+          event.stop_reason.event_ids.some(
+            (id) => findTool(toolNames.get(id) ?? "")?.kind === "write"
+          )
+        ) {
+          watchCards();
+        }
         break;
     }
     if (isTurnEnd(event)) ended = true;
   };
 
-  const watchdog = setInterval(() => {
+  const checkTurn = () => {
     void isTurnRunning(args.chatId).then((running) => {
       if (!running) stop();
     });
-  }, TURN_CHECK_MS);
+  };
+  const watchdog = setInterval(checkTurn, TURN_CHECK_MS);
+  // A response with a write may end the turn at its cards, which the session never says.
+  let cardWatch: NodeJS.Timeout | undefined;
+  const watchCards = () => {
+    cardWatch ??= setInterval(checkTurn, CARD_CHECK_MS);
+  };
 
   try {
     await live.ready;
@@ -127,6 +148,7 @@ export const projectTurn = async (args: {
     }
   } finally {
     clearInterval(watchdog);
+    clearInterval(cardWatch);
     args.signal.removeEventListener("abort", stop);
     tail.abort();
   }
@@ -134,6 +156,11 @@ export const projectTurn = async (args: {
   // The relay writes the display record at the same idle; wait for it so a refetch after `done` sees it.
   for (let i = 0; i < 30 && (await isTurnRunning(args.chatId)); i++) {
     await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  const cards = await cardsOf(args.chatId, [...toolNames.keys()]);
+  for (const toolUseId of toolNames.keys()) {
+    const card = cards.get(toolUseId);
+    if (card) sink("card", card);
   }
   // A round the meter refused, or the provider turned away, ends the turn with its fixed notice.
   if (rounds.length > 0) {

@@ -17,7 +17,8 @@ import {
   type AllowanceStanding,
 } from "./quotaGuard.js";
 import { assertGroupWritable, assertSickDayRequestable } from "../billing/guards.js";
-import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
+import { CalendarRecordType, vacation } from "../../db/schema/vacation-schema.js";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { assertGroupAdmin } from "../groupUser/groupAccess.js";
 import { getGroup } from "../group/groupServices.js";
 import { getGroupUser } from "../groupUser/groupUserServices.js";
@@ -249,6 +250,33 @@ export type RequestCreationPreview = {
  * Runs every guard {@link createRequest} runs, the in-transaction ones on a
  * transaction of their own that writes nothing, and answers what would be booked.
  */
+/**
+ * The insert's own conflict, checked ahead for the preview: a day the person
+ * already holds a live row on (pending or approved, in any group). Same
+ * refusal as `postVacationBulk`.
+ */
+const assertDaysFree = async (plan: RequestPlan, tx: DbTransaction) => {
+  const days = plan.records.map((record) => record.requestedDay);
+  if (days.length === 0) return;
+  const taken = await tx
+    .select({ requestedDay: vacation.requestedDay })
+    .from(vacation)
+    .where(
+      and(
+        eq(vacation.userId, plan.targetUserId),
+        inArray(vacation.requestedDay, days),
+        isNull(vacation.deletedAt),
+        isNull(vacation.rejectedAt)
+      )
+    );
+  if (taken.length === 0) return;
+  throw new AppError({
+    code: 409,
+    message: "One or more days in the requested range are already booked",
+    publicContext: { conflictingDays: taken.map((row) => row.requestedDay).sort() },
+  });
+};
+
 export const previewCreateRequest = async (params: {
   auth: AuthSession;
   input: ValidatedPostVacationType;
@@ -256,6 +284,7 @@ export const previewCreateRequest = async (params: {
   const plan = await planRequest(params);
   const allowances = await db.transaction(async (tx) => {
     await assertPlanWritable(plan, tx);
+    await assertDaysFree(plan, tx);
     return allowanceStandings(plan.records, tx);
   });
   return {

@@ -421,6 +421,13 @@
       "when": 1794151879517,
       "tag": "0059_assistant_meter",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794153390789,
+      "tag": "0060_assistant_pending_actions",
+      "breakpoints": true
     }
   ]
 }

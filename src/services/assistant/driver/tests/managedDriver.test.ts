@@ -205,6 +205,39 @@ describe("the managed driver", () => {
     expect(answer).toMatchObject({ type: "user.custom_tool_result", content: [block] });
   });
 
+  it("sends a held read_doc result carried with a new message as search_result blocks too", async () => {
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
+    const call = api.emit(sessionId, {
+      type: "agent.custom_tool_use",
+      name: "read_doc",
+      input: { id: "half-days-and-times" },
+    });
+    const block = {
+      type: "search_result",
+      source: "https://www.flexi-day.com/help/half-days-and-times/",
+      title: "Book half a day or add times",
+      content: [{ type: "text", text: "## Half a day\n\nTick Half day." }],
+      citations: { enabled: true },
+    };
+
+    const [carried, message] = await driver.sendEvents(sessionId, [
+      {
+        type: "user.custom_tool_result",
+        custom_tool_use_id: String(call.id),
+        content: text(JSON.stringify([block])),
+        is_error: false,
+      },
+      { type: "user.message", content: text("Thanks") },
+    ]);
+
+    expect(carried).toMatchObject({ type: "user.custom_tool_result", content: [block] });
+    expect(message).toMatchObject({ type: "user.message", content: text("Thanks") });
+  });
+
   it("reads the session's cumulative usage with the cache split", async () => {
     const { sessionId } = await driver.createSession({
       chatId: "c",
