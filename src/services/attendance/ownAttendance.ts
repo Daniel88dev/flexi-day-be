@@ -8,6 +8,10 @@ import {
   getAttendanceDay,
   getAttendanceMonth,
   getAttendanceState,
+  previewClockIn,
+  previewClockOut,
+  type ClockInPreview,
+  type ClockOutPreview,
 } from "./attendanceServices.js";
 import type {
   AttendanceDayType,
@@ -40,6 +44,30 @@ export const clockOutOwn = async (params: {
     return clockOut(subject, auth, tx);
   });
 };
+
+/** {@link clockInOwn} as a dry run: the same checks, nothing written. */
+export const previewClockInOwn = async (params: {
+  auth: AuthSession;
+  organizationId: string | undefined;
+}): Promise<ClockInPreview> =>
+  db.transaction(async (tx) =>
+    previewClockIn(
+      await beginAttendanceWrite(params.auth.userId, params.organizationId, tx, "OPEN"),
+      tx
+    )
+  );
+
+/** {@link clockOutOwn} as a dry run: the same checks, nothing written. */
+export const previewClockOutOwn = async (params: {
+  auth: AuthSession;
+  organizationId: string | undefined;
+}): Promise<ClockOutPreview> =>
+  db.transaction(async (tx) =>
+    previewClockOut(
+      await beginAttendanceWrite(params.auth.userId, params.organizationId, tx, "CLOSE"),
+      tx
+    )
+  );
 
 /** The clock widget's read. Never gated by the plan, so a lapsed organization still reads `active: false`. */
 export const readOwnAttendanceState = async (params: {

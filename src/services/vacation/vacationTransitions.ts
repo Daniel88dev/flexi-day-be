@@ -69,6 +69,26 @@ type Transition = {
   notify: (rows: TransitionRows) => Promise<void>;
 };
 
+/** Every check a transition runs before it changes anything; answers the loaded rows. */
+const guardTransition = async (
+  transition: Pick<
+    Transition,
+    "load" | "requestedCount" | "notFound" | "authorize" | "assertWithinQuota"
+  >,
+  tx: DbTransaction
+): Promise<LiveVacationType[]> => {
+  const loaded = await transition.load(tx);
+  if (loaded.length !== transition.requestedCount) throw transition.notFound(loaded);
+
+  await transition.authorize(loaded, tx);
+  await assertGroupsWritable(
+    loaded.map((row) => row.groupId),
+    tx
+  );
+  await transition.assertWithinQuota?.(loaded, tx);
+  return loaded;
+};
+
 /**
  * The sequence every vacation transition follows. Holding it in one place is
  * what keeps the event in the same transaction as the change it records, and
@@ -76,15 +96,7 @@ type Transition = {
  */
 const runTransition = async (transition: Transition): Promise<TransitionRows> => {
   const rows = await db.transaction(async (tx) => {
-    const loaded = await transition.load(tx);
-    if (loaded.length !== transition.requestedCount) throw transition.notFound(loaded);
-
-    await transition.authorize(loaded, tx);
-    await assertGroupsWritable(
-      loaded.map((row) => row.groupId),
-      tx
-    );
-    await transition.assertWithinQuota?.(loaded, tx);
+    const loaded = await guardTransition(transition, tx);
 
     const changed = (await transition.mutate?.(tx)) ?? loaded;
     if (transition.lostRace && changed.length !== loaded.length) {
@@ -373,6 +385,22 @@ export const cancelRequest = async (params: {
   });
 };
 
+const cancelBatchGuards = (auth: AuthSession, vacationIds: string[]) => ({
+  load: loadMany(vacationIds),
+  requestedCount: vacationIds.length,
+  notFound: someNotFound(auth, vacationIds),
+  authorize: mayCancel(
+    auth,
+    (unauthorized) =>
+      new AppError({
+        code: 403,
+        message: "You are not allowed to cancel one or more of these vacations",
+        logging: true,
+        context: { auth, unauthorized: unauthorized.map((row) => row.id) },
+      })
+  ),
+});
+
 export const cancelRequestBatch = async (params: {
   auth: AuthSession;
   vacationIds: string[];
@@ -382,19 +410,7 @@ export const cancelRequestBatch = async (params: {
   const vacationIds = Array.from(new Set(params.vacationIds));
 
   const { changed } = await runTransition({
-    load: loadMany(vacationIds),
-    requestedCount: vacationIds.length,
-    notFound: someNotFound(auth, vacationIds),
-    authorize: mayCancel(
-      auth,
-      (unauthorized) =>
-        new AppError({
-          code: 403,
-          message: "You are not allowed to cancel one or more of these vacations",
-          logging: true,
-          context: { auth, unauthorized: unauthorized.map((row) => row.id) },
-        })
-    ),
+    ...cancelBatchGuards(auth, vacationIds),
     mutate: (tx) => cancelVacationsBulk(vacationIds, auth.userId, tx),
     lostRace: someAlreadyCancelled(auth, vacationIds),
     appendEvents: appendEventsInOneInsert(auth, vacationEventType.Cancelled, reason),
@@ -419,4 +435,16 @@ export const commentOnRequest = async (params: {
     appendEvents: appendEventsRowByRow(auth, vacationEventType.Comment, message),
     notify: notifyFirstLoaded((row) => notifyVacationComment(row, actorOf(auth), message)),
   });
+};
+
+/**
+ * Runs the guards of {@link cancelRequestBatch} on a transaction that changes
+ * nothing, and answers the rows it would cancel.
+ */
+export const previewCancelRequestBatch = async (params: {
+  auth: AuthSession;
+  vacationIds: string[];
+}): Promise<LiveVacationType[]> => {
+  const vacationIds = Array.from(new Set(params.vacationIds));
+  return db.transaction((tx) => guardTransition(cancelBatchGuards(params.auth, vacationIds), tx));
 };

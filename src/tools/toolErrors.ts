@@ -64,6 +64,31 @@ const GUARD_MESSAGES_CS: Record<string, string> = {
   "You are not one of this organization's people": "Mezi lidi této organizace nepatříte.",
   "You can't read this Section": "Tuto sekci nemůžete číst.",
   "The Personal Section applies to employees only": "Osobní údaje se týkají jen zaměstnanců.",
+  "No access for related group": "V této skupině si volno zadávat nemůžete.",
+  "You book time off in more than one group here, so the group has to be named":
+    "Volno si zadáváte ve více skupinách této organizace, takže je potřeba skupinu uvést.",
+  "This request is not valid": "Tato žádost není platná.",
+  "Selected day is a public holiday": "Vybraný den je státní svátek.",
+  "Selected day is not a working day": "Vybraný den není pracovní.",
+  "Selected range contains no working days": "Vybrané období neobsahuje žádný pracovní den.",
+  "This would exceed the allowance for that leave type":
+    "Tím byste překročili nárok na tento typ volna.",
+  "External workers book only leave that draws on no allowance":
+    "Externí pracovníci si zadávají jen volno, které nečerpá z nároku.",
+  "This group is read-only on your current plan":
+    "Tato skupina je ve vašem současném tarifu jen pro čtení.",
+  "The Sick day benefit is not enabled for this organization":
+    "Benefit zdravotního volna není v této organizaci zapnutý.",
+  "Request not found": "Žádost nebyla nalezena.",
+  "One or more vacations not found": "Některé dny žádosti nebyly nalezeny.",
+  "You are not allowed to cancel one or more of these vacations":
+    "Některé dny této žádosti nemůžete zrušit.",
+  "One or more of these requests has already been cancelled": "Žádost už byla zrušena.",
+  "You are already clocked in": "Příchod už máte zaznamenaný.",
+  "You are not clocked in": "Nemáte zaznamenaný příchod.",
+  "This employment has ended": "Tento pracovní poměr skončil.",
+  "External workers don't record attendance": "Externí pracovníci docházku nezaznamenávají.",
+  "Attendance requires a paid plan": "Docházka vyžaduje placený tarif.",
 };
 
 /**

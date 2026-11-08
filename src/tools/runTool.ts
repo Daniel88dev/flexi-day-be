@@ -32,7 +32,14 @@ const fence = async (tool: Tool, ctx: ToolContext, input: Record<string, unknown
   await assertPeopleInOrganization(ctx.organizationId, people);
 };
 
-const execute = async (tool: Tool, ctx: ToolContext, args: unknown): Promise<ToolRun> => {
+type Refusal = Extract<ToolRun, { ok: false }>;
+
+/** The checks before a handler or a preview: access, then the input schema. */
+const admit = (
+  tool: Tool,
+  ctx: ToolContext,
+  args: unknown
+): { ok: true; input: Record<string, unknown> } | Refusal => {
   if (!isToolAllowed(tool, ctx.access)) {
     return { ok: false, outcome: "read_only", error: toolMessage("READ_ONLY", ctx.language) };
   }
@@ -47,18 +54,27 @@ const execute = async (tool: Tool, ctx: ToolContext, args: unknown): Promise<Too
       error: { ...error, context: { ...error.context, fields } },
     };
   }
-  const input = parsed.data;
+  return { ok: true, input: parsed.data };
+};
+
+const refusalOf = (error: unknown, tool: Tool, ctx: ToolContext): Refusal => {
+  const refused = error instanceof AppError && error.statusCode < 500;
+  return {
+    ok: false,
+    outcome: refused ? "refused" : "failed",
+    error: toToolError(error, ctx.language, tool.name),
+  };
+};
+
+const execute = async (tool: Tool, ctx: ToolContext, args: unknown): Promise<ToolRun> => {
+  const admitted = admit(tool, ctx, args);
+  if (!admitted.ok) return admitted;
   try {
-    await fence(tool, ctx, input);
-    const result = await tool.handler(ctx, input);
+    await fence(tool, ctx, admitted.input);
+    const result = await tool.handler(ctx, admitted.input);
     return { ok: true, result: serializeToolResult(result, tool.userText) };
   } catch (error) {
-    const refused = error instanceof AppError && error.statusCode < 500;
-    return {
-      ok: false,
-      outcome: refused ? "refused" : "failed",
-      error: toToolError(error, ctx.language, tool.name),
-    };
+    return refusalOf(error, tool, ctx);
   }
 };
 
@@ -88,3 +104,40 @@ export const runTool = (tool: Tool, ctx: ToolContext, args: unknown): Promise<To
       return run;
     }
   );
+
+export type ToolPreviewRun =
+  | {
+      ok: true;
+      /** The validated arguments: what a confirmed write runs with. */
+      input: Record<string, unknown>;
+      /** The tool's `WritePreview`, user-written strings wrapped. */
+      details: unknown;
+    }
+  | Refusal;
+
+/**
+ * A write tool's dry run: the same access check, input validation and
+ * organization fence as {@link runTool}, then the tool's `preview`, which runs
+ * the service's guards and writes nothing. A guard's refusal comes back as the
+ * write would answer it. A read tool has no preview and is refused as `failed`.
+ */
+export const previewTool = async (
+  tool: Tool,
+  ctx: ToolContext,
+  args: unknown
+): Promise<ToolPreviewRun> => {
+  const admitted = admit(tool, ctx, args);
+  if (!admitted.ok) return admitted;
+  try {
+    if (!tool.preview) throw new Error(`Tool ${tool.name} has no preview`);
+    await fence(tool, ctx, admitted.input);
+    const preview = await tool.preview(ctx, admitted.input);
+    return {
+      ok: true,
+      input: admitted.input,
+      details: serializeToolResult(preview.details, preview.userText),
+    };
+  } catch (error) {
+    return refusalOf(error, tool, ctx);
+  }
+};

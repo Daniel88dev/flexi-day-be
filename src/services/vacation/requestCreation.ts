@@ -1,16 +1,21 @@
 import type { AuthSession } from "../../middleware/authSession.js";
-import type { ValidatedPostVacationType, VacationType } from "./types.js";
+import type { ValidatedPostVacationType, VacationInsertType, VacationType } from "./types.js";
+import type { GroupType } from "../group/types.js";
 import AppError from "../../utils/appError.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { expandDateRangeInclusive, formatDateToISOString } from "../../utils/dateFunc.js";
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import { vacationEventType } from "../../db/schema/vacation-event-schema.js";
 import {
   notifyVacationBookedOnBehalf,
   notifyVacationDecision,
   notifyVacationRequested,
 } from "./vacationNotifier.js";
-import { assertRequestWithinQuota } from "./quotaGuard.js";
+import {
+  allowanceStandings,
+  assertRequestWithinQuota,
+  type AllowanceStanding,
+} from "./quotaGuard.js";
 import { assertGroupWritable, assertSickDayRequestable } from "../billing/guards.js";
 import { CalendarRecordType } from "../../db/schema/vacation-schema.js";
 import { assertGroupAdmin } from "../groupUser/groupAccess.js";
@@ -34,11 +39,23 @@ const earliestBookableDay = (today: Date): string => `${today.getUTCFullYear().t
 const latestBookableDay = (today: Date): string =>
   `${(today.getUTCFullYear() + 1).toString()}-12-31`;
 
-/** Books a Request for the caller, or for a member on their behalf when `input.userId` is set. */
-export const createRequest = async (params: {
+type RequestPlan = {
+  auth: AuthSession;
+  data: ValidatedPostVacationType;
+  fromIso: string;
+  toIso: string;
+  targetUserId: string;
+  onBehalf: boolean;
+  group: GroupType;
+  workingDays: string[];
+  records: VacationInsertType[];
+};
+
+/** Every check that runs before the write transaction, and the rows the Request would write. */
+const planRequest = async (params: {
   auth: AuthSession;
   input: ValidatedPostVacationType;
-}): Promise<VacationType[]> => {
+}): Promise<RequestPlan> => {
   const { auth, input: data } = params;
 
   const fromIso = formatDateToISOString(data.from);
@@ -174,42 +191,92 @@ export const createRequest = async (params: {
     ...approvalStamp,
   }));
 
+  return { auth, data, fromIso, toIso, targetUserId, onBehalf, group, workingDays, records };
+};
+
+/** The checks that run inside the write transaction, against its snapshot. */
+const assertPlanWritable = async (plan: RequestPlan, tx: DbTransaction): Promise<void> => {
+  const { auth, data, targetUserId, onBehalf, records } = plan;
+  // Inside the write transaction, not before it: a downgrade committing
+  // between the check and the insert would otherwise let this request write
+  // into a group that has just become read-only.
+  await assertGroupWritable(data.groupId, tx);
+
+  // Same timing for the Sick day benefit: dormancy is derived from the live
+  // subscription, so it too is asserted on the tx snapshot.
+  if (data.vacationType === CalendarRecordType.SickDay) {
+    await assertSickDayRequestable(data.groupId, tx);
+  }
+
+  if (onBehalf) {
+    // Same reasoning for delegated authority: the pre-transaction checks
+    // fail fast for the client, but a revocation committing in between must
+    // still abort the write, so both are re-asserted on the tx snapshot.
+    await assertGroupAdmin(auth.userId, data.groupId, tx);
+    const liveAccess = await getGroupUser(targetUserId, data.groupId, tx);
+    if (!liveAccess?.controlledUser) {
+      throw new AppError({
+        message: "That member cannot book leave in this group",
+        logging: true,
+        code: 403,
+        context: { targetUserId, groupId: data.groupId },
+      });
+    }
+  }
+
+  await assertNotDeletedAccount(targetUserId, tx, {
+    message: "That person deleted their account",
+    context: { targetUserId, groupId: data.groupId },
+    status: 403,
+    publicCode: null,
+  });
+
+  await assertRequestWithinQuota(records, tx);
+};
+
+/** What {@link createRequest} would book, from the same guards, writing nothing. */
+export type RequestCreationPreview = {
+  group: { id: string; name: string };
+  userId: string;
+  vacationType: CalendarRecordType;
+  /** The days that would be booked: the range without its non-working days and holidays. */
+  days: string[];
+  /** The allowances the Request draws on, before it; empty for a type without one. */
+  allowances: AllowanceStanding[];
+};
+
+/**
+ * Runs every guard {@link createRequest} runs, the in-transaction ones on a
+ * transaction of their own that writes nothing, and answers what would be booked.
+ */
+export const previewCreateRequest = async (params: {
+  auth: AuthSession;
+  input: ValidatedPostVacationType;
+}): Promise<RequestCreationPreview> => {
+  const plan = await planRequest(params);
+  const allowances = await db.transaction(async (tx) => {
+    await assertPlanWritable(plan, tx);
+    return allowanceStandings(plan.records, tx);
+  });
+  return {
+    group: { id: plan.group.id, name: plan.group.groupName },
+    userId: plan.targetUserId,
+    vacationType: plan.data.vacationType,
+    days: plan.workingDays,
+    allowances,
+  };
+};
+
+/** Books a Request for the caller, or for a member on their behalf when `input.userId` is set. */
+export const createRequest = async (params: {
+  auth: AuthSession;
+  input: ValidatedPostVacationType;
+}): Promise<VacationType[]> => {
+  const plan = await planRequest(params);
+  const { auth, data, fromIso, toIso, targetUserId, onBehalf, records } = plan;
+
   const created = await db.transaction(async (tx) => {
-    // Inside the write transaction, not before it: a downgrade committing
-    // between the check and the insert would otherwise let this request write
-    // into a group that has just become read-only.
-    await assertGroupWritable(data.groupId, tx);
-
-    // Same timing for the Sick day benefit: dormancy is derived from the live
-    // subscription, so it too is asserted on the tx snapshot.
-    if (data.vacationType === CalendarRecordType.SickDay) {
-      await assertSickDayRequestable(data.groupId, tx);
-    }
-
-    if (onBehalf) {
-      // Same reasoning for delegated authority: the pre-transaction checks
-      // fail fast for the client, but a revocation committing in between must
-      // still abort the write, so both are re-asserted on the tx snapshot.
-      await assertGroupAdmin(auth.userId, data.groupId, tx);
-      const liveAccess = await getGroupUser(targetUserId, data.groupId, tx);
-      if (!liveAccess?.controlledUser) {
-        throw new AppError({
-          message: "That member cannot book leave in this group",
-          logging: true,
-          code: 403,
-          context: { targetUserId, groupId: data.groupId },
-        });
-      }
-    }
-
-    await assertNotDeletedAccount(targetUserId, tx, {
-      message: "That person deleted their account",
-      context: { targetUserId, groupId: data.groupId },
-      status: 403,
-      publicCode: null,
-    });
-
-    await assertRequestWithinQuota(records, tx);
+    await assertPlanWritable(plan, tx);
 
     const rows = await postVacationBulk(records, tx);
     await createVacationEvents(

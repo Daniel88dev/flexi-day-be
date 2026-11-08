@@ -136,12 +136,8 @@ const assertOne = async (
   }
 };
 
-const assertGrouped = async (
-  rows: QuotaRow[],
-  excludeVacationIds: string[],
-  countPending: boolean,
-  tx: DbTransaction
-): Promise<void> => {
+/** One bucket per member, group, year and quota-bearing type, ordered by key. */
+const bucketsOf = (rows: QuotaRow[], excludeVacationIds: string[]): QuotaCheck[] => {
   // A range can straddle a year boundary and a bulk decision several people.
   const buckets = new Map<string, QuotaCheck>();
 
@@ -162,9 +158,18 @@ const assertGrouped = async (
   }
 
   // Ordered so overlapping batches take their locks alike and cannot deadlock.
-  const ordered = Array.from(buckets.entries())
+  return Array.from(buckets.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([, bucket]) => bucket);
+};
+
+const assertGrouped = async (
+  rows: QuotaRow[],
+  excludeVacationIds: string[],
+  countPending: boolean,
+  tx: DbTransaction
+): Promise<void> => {
+  const ordered = bucketsOf(rows, excludeVacationIds);
 
   for (const bucket of ordered) await lockAllowance(bucket, tx);
   const allocationOf = await loadAllocations(ordered, tx);
@@ -223,4 +228,53 @@ export const assertApprovalWithinQuota = async (
     false,
     tx
   );
+};
+
+/** Where one allowance stands, with the days of the rows it was asked about. */
+export type AllowanceStanding = {
+  groupId: string;
+  year: number;
+  vacationType: CalendarRecordType;
+  allocated: number;
+  approved: number;
+  pending: number;
+  /** The weighted days of the rows given, in this bucket. */
+  days: number;
+};
+
+/**
+ * The allowances `rows` draw on, read the way the booking guard reads them
+ * (approved and pending both count), without locking or asserting. Types with
+ * no allowance are left out.
+ */
+export const allowanceStandings = async (
+  rows: QuotaRow[],
+  tx: DbTransaction
+): Promise<AllowanceStanding[]> => {
+  const ordered = bucketsOf(rows, []);
+  const allocationOf = await loadAllocations(ordered, tx);
+  const standings: AllowanceStanding[] = [];
+  for (const bucket of ordered) {
+    const { allocation, policy } = allocationOf(bucket);
+    const allowance = allowanceFor(allocation, bucket.calendarRecordType, policy);
+    if (!allowance) continue;
+    const { approved, pending } = await sumCountedDaysForQuota(
+      bucket.userId,
+      bucket.groupId,
+      bucket.year,
+      bucket.calendarRecordType,
+      [],
+      tx
+    );
+    standings.push({
+      groupId: bucket.groupId,
+      year: bucket.year,
+      vacationType: bucket.calendarRecordType,
+      allocated: totalAllowance(allowance),
+      approved,
+      pending,
+      days: bucket.requestedDays,
+    });
+  }
+  return standings;
 };

@@ -32,6 +32,7 @@ vi.mock("../../services/email/index.js", () => ({
 
 const ON = { assistantEnabled: false, aiConnectionsEnabled: true, previewOrganizationIds: [] };
 const MODERN = "2026-07-28";
+const WRITE_TOOLS = ["cancel_my_request", "clock_in", "clock_out", "create_request"];
 const ERAS = [
   { era: "2025 (initialize)", mode: "legacy" as const },
   { era: "2026-07-28 (server/discover)", mode: { pin: MODERN } },
@@ -196,11 +197,15 @@ describe("/mcp", () => {
   const MARCH = { from: day(3, 1), to: day(3, 31) };
 
   describe.each(ERAS)("in the $era era", ({ mode }) => {
-    it("lists every read tool and runs the request reads for the token's organization", async () => {
+    it("lists every tool and runs the request reads for the token's organization", async () => {
       const client = await connect(janaAcmeToken, mode);
 
       const { tools } = await client.listTools();
       expect(tools.map((tool) => tool.name).sort()).toEqual([
+        "cancel_my_request",
+        "clock_in",
+        "clock_out",
+        "create_request",
         "get_directory_profile",
         "get_my_attendance",
         "get_my_balances",
@@ -213,7 +218,9 @@ describe("/mcp", () => {
         "show_directory_section",
       ]);
       for (const tool of tools) {
-        expect(tool.annotations?.readOnlyHint).toBe(true);
+        const write = WRITE_TOOLS.includes(tool.name);
+        expect(tool.annotations?.readOnlyHint).toBe(!write);
+        expect(tool.annotations?.destructiveHint ?? false).toBe(write);
         expect(tool.inputSchema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
       }
 

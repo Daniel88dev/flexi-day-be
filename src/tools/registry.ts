@@ -11,6 +11,8 @@ import { listGroupEventsTool } from "./reads/groupEvents.js";
 import { listMyRequestsTool } from "./reads/myRequests.js";
 import { listWhoIsAwayTool } from "./reads/whoIsAway.js";
 import { isToolAllowed } from "./runTool.js";
+import { clockInTool, clockOutTool } from "./writes/attendance.js";
+import { cancelMyRequestTool, createRequestTool } from "./writes/requests.js";
 import type { Tool, ToolContext } from "./types.js";
 import { USER_TEXT_KEY } from "./userText.js";
 
@@ -29,6 +31,10 @@ export const TOOLS: readonly Tool[] = [
   listDirectoryPeopleTool,
   getDirectoryProfileTool,
   showDirectorySectionTool,
+  createRequestTool,
+  cancelMyRequestTool,
+  clockInTool,
+  clockOutTool,
 ];
 
 export const findTool = (name: string): Tool | undefined =>

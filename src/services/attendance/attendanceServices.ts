@@ -648,6 +648,37 @@ export const clockOut = async (
   return view ?? { ...session, breaks: [] };
 };
 
+/** What {@link clockIn} would start, from the same checks, writing nothing. */
+export type ClockInPreview = { at: Date; businessDate: string; timezone: string };
+
+export const previewClockIn = async (
+  subject: AttendanceSubject & { timezone: string },
+  tx: DbTransaction
+): Promise<ClockInPreview> => {
+  const open = await getOpenSession(subject.employment.id, tx);
+  if (open) throw sessionAlreadyOpen(open);
+  const at = new Date();
+  return { at, businessDate: businessDateInZone(at, subject.timezone), timezone: subject.timezone };
+};
+
+/** What {@link clockOut} would end, from the same checks, writing nothing. */
+export type ClockOutPreview = {
+  at: Date;
+  session: AttendanceSessionType;
+  /** An open break ends with the session. */
+  onBreak: boolean;
+};
+
+export const previewClockOut = async (
+  subject: AttendanceSubject,
+  tx: DbTransaction
+): Promise<ClockOutPreview> => {
+  const open = await getOpenSession(subject.employment.id, tx);
+  if (!open) throw noOpenSession(subject.employment.id);
+  const openBreak = await getOpenBreak(open.id, tx);
+  return { at: new Date(), session: open, onBreak: openBreak !== undefined };
+};
+
 export const startBreak = async (
   subject: AttendanceSubject,
   actor: ChangeActor,
