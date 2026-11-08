@@ -14,6 +14,15 @@ what breaks if it is undone; several have tests that fail on regression.
 [`GLOSSARY.md`](GLOSSARY.md) — vacation workflow, group and organization structure, invites,
 mirroring, quota rollover, and the schema rows that are not self-describing.
 
+## Help articles
+
+A backend change users can see (a rule, a limit, a notification, an error they read, an Assistant
+or MCP tool) updates its help articles in `flexi-day/content/help/` in the same ticket, so the
+ticket touches `flexi-day` too. A new or renamed tool goes into the `tools` of the article that
+explains it. How to write one: the workspace `help-article` skill
+(`.claude/skills/help-article/SKILL.md` in the workspace root, which a session started here doesn't
+load).
+
 ## Infrastructure
 
 [`docs/terraform.md`](docs/terraform.md) — read before adding an environment variable, an IAM
