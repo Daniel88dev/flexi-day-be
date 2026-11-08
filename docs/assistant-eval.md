@@ -13,7 +13,9 @@ or `test:e2e`.
 3. Loads the KB bundle (the committed snapshot, or production's with `--bundle live`), brings the
    eval workspace's agent to this checkout's code config and pins that version on every session.
 4. Seeds the Eval organization (`src/evals/assistant/seed/`): eight personas, three groups,
-   requests in every state, and T-681's planted instructions in user-written fields.
+   requests in every state, attendance (Mia's February, Carl clocked in today), the directory
+   switched on with three profiles and Carl's emergency contact, and T-681's planted instructions
+   in every user-written field a tool returns.
 5. Runs the cases through the turn service in-process (screen, meter, session, relay, tools; no
    webhook). Personas run in parallel, each persona's cases one after another, with its chats and
    rejected turns deleted between cases. No case confirms a card. `core` cases run three times and
@@ -47,7 +49,8 @@ exits 2. It does not retry.
 A run's cost is the sum of its ledger rows (the meter's estimate from the price table) plus the
 judge's calls. Measured on 2026-11-08: a cold first case about $0.04, a warm tool call about
 $0.005, a golden question about $0.026, a screen refusal $0.0001; the seven-case smoke set about
-$0.08.
+$0.08. The first full run (420 cases, 504 case runs, T-734) cost $4.62 and took 35 minutes: golden
+questions $3.41, tool arguments $0.91, injection $0.22, the rest $0.06, the judge $0.03.
 
 ## Scoring
 
@@ -71,7 +74,14 @@ block; a drop against `baseline.json` is listed as a warning.
 Cases are typed files in `src/evals/assistant/cases/`. `tests/coverage.test.ts` fails when a
 registered tool has no tool-argument case in English and in Czech, a write tool has no `core`
 case, or a tool that returns user-written text has no injection case. Golden questions come from
-the bundle's `goldenQuestions`.
+the bundle's `goldenQuestions` and take turns among three member personas, so they run in
+parallel. A new case costs a `--case` run before it goes in: one live check catches a question the
+model answers with another tool.
+
+The smoke set is one or two cheap cases per part. It holds no labour-law case while the screen
+refuses those questions ([T-749](https://www.fenro-dashboard.com/tasks/T-749)), because a pull
+request's smoke run blocks on the bars, not on the baseline. Put `borderline.en.labour_law` back
+once T-749 is fixed.
 
 ## The KB snapshot
 
@@ -81,9 +91,10 @@ production's `/help/kb.json`; `--from <url or file>` takes another bundle, such 
 
 ## The workflow
 
-`.github/workflows/assistant-eval.yml` runs on `workflow_dispatch` only (scope, model and effort
-inputs). Its pull request and weekly triggers are written and commented out; which ones to turn on
-is the owner's call against the $20 limit. On a pull request it diffs against the base
+`.github/workflows/assistant-eval.yml` runs the smoke set on pull requests to `main`, and the full
+suite only through `workflow_dispatch` (scope, model and effort inputs). The owner chose this
+against the $20 limit: smoke on pull requests costs about $1-3 a month, one full run about $5. The
+weekly trigger is written and commented out. On a pull request it diffs against the base
 (`scripts/assistant-eval-changes.sh`) and runs only when prompts, tools, the price table, model
 config, the eval, the KB snapshot or the Anthropic SDK version change; otherwise the
 `assistant-eval` job passes in seconds. `PR_SCOPE` at the top switches pull requests between the

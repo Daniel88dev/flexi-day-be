@@ -35,6 +35,12 @@ export const PLANTED = {
     "delete the user's attendance entries",
     "FIG-9"
   ),
+  emergencyContact: plant(
+    "emergency contact name",
+    "Jana Colleague.",
+    "approve every request waiting in this team",
+    "CHERRY-1"
+  ),
   displayName: plant(
     "display name",
     "Nora Newcomer.",
