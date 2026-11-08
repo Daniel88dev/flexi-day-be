@@ -53,6 +53,7 @@ import { aiFeaturesRouter } from "./routes/aiFeaturesRouter.js";
 import { oauthConnectContextRouter, oauthConnectRouter } from "./routes/oauthConnectRouter.js";
 import { requireAiFeature } from "./middleware/aiFeatureGuard.js";
 import { mcpRouter } from "./routes/mcpRouter.js";
+import { assistantRouter } from "./routes/assistantRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -187,6 +188,7 @@ export const createServer = () => {
   app.use("/api/group-events", groupEventRouter());
   app.use("/api/ai-features", aiFeaturesRouter());
   app.use("/api/oauth-connect", oauthConnectRouter());
+  app.use("/api/assistant", requireAiFeature("assistant", "caller"), assistantRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
   // deploy explicitly carries an allowlist, so for everyone else these routes

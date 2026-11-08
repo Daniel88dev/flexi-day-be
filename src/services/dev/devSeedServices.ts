@@ -7,7 +7,8 @@ import { account, user } from "../../db/schema/auth-schema.js";
 import { groups } from "../../db/schema/group-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
-import { subscriptions } from "../../db/schema/subscription-schema.js";
+import { manualPlanOverride, subscriptions } from "../../db/schema/subscription-schema.js";
+import { aiAgreementAcceptances } from "../../db/schema/ai-agreement-schema.js";
 import { changesSchema } from "../../db/schema/changes-schema.js";
 import { supportAccess } from "../../db/schema/support-access-schema.js";
 import { vacation, CalendarRecordType } from "../../db/schema/vacation-schema.js";
@@ -24,6 +25,8 @@ import { ensureOrganizationForUser } from "../organization/organizationServices.
 import { upsertUserYearQuota } from "../userYearQuotas/userYearQuotasServices.js";
 import { insertGroupEvent } from "../groupEvent/groupEventServices.js";
 import type { CreateGroupEventBody } from "../groupEvent/types.js";
+import { upsertSubscription } from "../billing/subscriptionServices.js";
+import { AI_AGREEMENT_VERSION } from "../aiFeatures/aiAgreement.js";
 
 export type SeededUser = {
   id: string;
@@ -213,6 +216,38 @@ export const seedGroupEvent = async (
   if (existing) return false;
   await insertGroupEvent({ id: generateRandomUUID(), ...input });
   return true;
+};
+
+/**
+ * Puts the owner's organization on a manual Enterprise override with the
+ * Assistant on and the current AI features agreement accepted, so the
+ * Assistant runs there on the fake driver. Answers the organization id.
+ */
+export const enableDevAssistant = async (input: {
+  ownerUserId: string;
+  name: string;
+}): Promise<string> => {
+  const organization = await ensureOrganizationForUser(input.ownerUserId);
+  await db
+    .update(organizations)
+    .set({ name: input.name, assistantEnabled: true, assistantEnabledAt: new Date() })
+    .where(eq(organizations.id, organization.id));
+  await db
+    .insert(aiAgreementAcceptances)
+    .values({
+      id: generateRandomUUID(),
+      organizationId: organization.id,
+      version: AI_AGREEMENT_VERSION,
+      acceptedByUserId: input.ownerUserId,
+    })
+    .onConflictDoNothing();
+  await upsertSubscription(organization.id, {
+    manualPlanOverride: manualPlanOverride.Enterprise,
+    manualMaxGroups: null,
+    manualMaxMembersPerGroup: null,
+    manualPlanUntil: null,
+  });
+  return organization.id;
 };
 
 export const setQuota = async (input: {
