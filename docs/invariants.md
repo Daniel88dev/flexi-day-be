@@ -314,6 +314,18 @@ the app, inside one organization.
 - **The managed driver logs failures by status and type only.** An API error message can quote a
   prompt or a tool result, so `assistant.provider_error` carries the operation, HTTP status, error
   type and class name, and the caller sees 503 `ASSISTANT_UNAVAILABLE`.
+- **The screen fails closed, and a rejected message never reaches the session.** `prepareTurn`
+  screens each message after claiming the turn and before creating or sending to a session. A
+  failure or a timeout (`ASSISTANT_SCREEN_TIMEOUT_MS`) answers 503 `ASSISTANT_SCREEN_FAILED` with
+  nothing written; an off-topic message, an attack or Haiku's own refusal is recorded as a rejected
+  turn and answered with the fixed refusal. Sending first and screening beside it would let an attack
+  reach the model whenever the screen is slow. `assistantScreen.e2e.test.ts` pins every path.
+- **Text people wrote is screened before the model reads it.** `advanceTurn` runs the reads of one
+  model response, then one screen call over every `user_text` value in their results, then answers
+  them. A flagged value, or every value when the call fails, becomes
+  `[withheld: looked like instructions]`. Answering a tool call before its screen would hand the
+  model the very text the screen exists to stop. The screen logs (`assistant.screen_failed`,
+  `assistant.tool_text_withheld`) carry ids, reasons and counts, never the text.
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 

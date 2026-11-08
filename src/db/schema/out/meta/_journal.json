@@ -407,6 +407,13 @@
       "when": 1794146574282,
       "tag": "0057_assistant_webhook",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794149920005,
+      "tag": "0058_assistant_rejected_turns",
+      "breakpoints": true
     }
   ]
 }

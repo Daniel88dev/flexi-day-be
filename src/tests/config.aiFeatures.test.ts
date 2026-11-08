@@ -64,6 +64,8 @@ describe("config AI features", () => {
       driver: "fake",
       model: "claude-sonnet-5-5",
       effort: "medium",
+      screenModel: "claude-haiku-5-5",
+      screenTimeoutMs: 5000,
       chatTokenCeiling: 100_000,
       stepOutputReserve: 4096,
     });
@@ -80,8 +82,12 @@ describe("config AI features", () => {
       ASSISTANT_ENVIRONMENT_ID: "env_01Test",
       ASSISTANT_CHAT_TOKEN_CEILING: "50000",
       ASSISTANT_STEP_OUTPUT_RESERVE: "2048",
+      ASSISTANT_SCREEN_MODEL: "claude-haiku-5-5-test",
+      ASSISTANT_SCREEN_TIMEOUT_MS: "3000",
     });
     expect(config.assistant).toMatchObject({
+      screenModel: "claude-haiku-5-5-test",
+      screenTimeoutMs: 3000,
       model: "claude-haiku-5-5",
       effort: "low",
       agentId: "agent_01Test",
@@ -113,6 +119,9 @@ describe("config AI features", () => {
     );
     await expect(loadConfig({ ...BASE, ASSISTANT_CHAT_TOKEN_CEILING: "-1" })).rejects.toThrow(
       'Invalid ASSISTANT_CHAT_TOKEN_CEILING: "-1"'
+    );
+    await expect(loadConfig({ ...BASE, ASSISTANT_SCREEN_TIMEOUT_MS: "soon" })).rejects.toThrow(
+      'Invalid ASSISTANT_SCREEN_TIMEOUT_MS: "soon"'
     );
   });
 

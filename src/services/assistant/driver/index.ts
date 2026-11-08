@@ -15,7 +15,12 @@ export const assistantDriver = (): AssistantDriver => {
   if (managed) return managed;
   const { agentId, environmentId } = config.assistant;
   if (!agentId || !environmentId) throw assistantUnavailable();
-  managed = createManagedDriver({ client: anthropicClient(), agentId, environmentId });
+  managed = createManagedDriver({
+    client: anthropicClient(),
+    agentId,
+    environmentId,
+    screenModel: config.assistant.screenModel,
+  });
   return managed;
 };
 

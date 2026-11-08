@@ -47,6 +47,8 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
   const calls: { method: string; path: string; body: Json | null }[] = [];
   /** Makes the next agent update answer 409, as a racing writer would. */
   const state = { conflictNextUpdate: false };
+  /** Canned Messages API answers for the screen, taken in order; none left answers 500. */
+  const messageReplies: Json[] = [];
 
   const logEvent = (session: FakeSession, event: Json): Json => {
     const logged = { id: nextId("sevt"), processed_at: now(), ...event };
@@ -59,6 +61,10 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
 
   const route = (method: string, url: URL, body: Json | null): Response => {
     const path = url.pathname;
+    if (path === "/v1/messages" && method === "POST") {
+      const reply = messageReplies.shift();
+      return reply ? json(200, reply) : apiError(500, "api_error", "no canned message");
+    }
     let match: RegExpMatchArray | null;
 
     if (method === "GET" && path === "/v1/agents") {
@@ -238,6 +244,7 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
     agentVersions,
     environments,
     sessions,
+    messageReplies,
     client: () =>
       new Anthropic({
         apiKey: "sk-ant-test-not-a-real-key",

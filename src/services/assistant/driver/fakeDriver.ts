@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type {
   AssistantDriver,
   ModelUsage,
+  ScreenInput,
   ScreenVerdict,
   SessionEvent,
   SessionInputEvent,
@@ -17,6 +18,8 @@ import type {
  * which either answers or calls one read tool picked by keywords, then answers
  * from that tool's result once it arrives.
  */
+
+type ScreenFailure = "error" | "timeout" | null;
 
 type Script = { tool: string; input: Record<string, unknown> } | null;
 
@@ -45,6 +48,14 @@ export const fakeDriverControls = {
   stepDelayMs: 120,
   gate: null as Promise<void> | null,
   release: null as (() => void) | null,
+  /** Fails every message screen: `error` at once, `timeout` by never answering until aborted. */
+  screenFailure: null as ScreenFailure,
+  /** The same for the screen of tool results. */
+  toolTextScreenFailure: null as ScreenFailure,
+  /** The next model step ends with the model's own refusal instead of an answer. */
+  modelRefusal: false,
+  /** Every message screen input, in order. */
+  screened: [] as ScreenInput[],
   hold(): () => void {
     let release!: () => void;
     this.gate = new Promise<void>((resolve) => {
@@ -67,6 +78,10 @@ export const fakeDriverControls = {
   reset(): void {
     this.release?.();
     sessions.clear();
+    this.screenFailure = null;
+    this.toolTextScreenFailure = null;
+    this.modelRefusal = false;
+    this.screened = [];
   },
 };
 
@@ -259,7 +274,12 @@ const runStep = async (session: FakeSession, input: { script: Script; inputChars
 
   let stop: StopReason;
   let output: string;
-  if (input.script) {
+  if (fakeDriverControls.modelRefusal) {
+    fakeDriverControls.modelRefusal = false;
+    output = "";
+    session.results = [];
+    stop = { type: "refusal" };
+  } else if (input.script) {
     output = JSON.stringify(input.script.input);
     const call = log(session, {
       type: "agent.custom_tool_use",
@@ -328,6 +348,36 @@ const ingest = (session: FakeSession, events: SessionInputEvent[]): SessionEvent
 };
 
 const ATTACK = /ignore (all |your |the |previous )*(instructions|rules)|ignoruj/i;
+/** Off-topic in the fake screen's eyes, so the refusal can be tried by hand too. */
+const OFF_TOPIC = /\b(recipe|weather|capital of|python)\b|recept|počasí/i;
+/** Haiku's own refusal, as the spike saw it on an encoded attack. */
+const SCREEN_REFUSAL = /base64|aWdub3Jl/i;
+
+const screenUsage = (chars: number): SessionUsage => ({
+  input_tokens: Math.ceil(chars / 4) + 20,
+  output_tokens: 12,
+  cache_read_input_tokens: 2400,
+  cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 },
+});
+
+/** Answers a screen call the way the controls say: a verdict, an error, or nothing until aborted. */
+const screenCall = <T>(
+  failure: ScreenFailure,
+  signal: AbortSignal,
+  answer: () => T
+): Promise<T> => {
+  if (failure === "error") {
+    return Promise.reject(new Error("fake screen failure"));
+  }
+  if (failure === "timeout") {
+    return new Promise<T>((_, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("fake screen aborted")), {
+        once: true,
+      });
+    });
+  }
+  return Promise.resolve(answer());
+};
 
 export const fakeDriver: AssistantDriver = {
   name: "fake",
@@ -416,7 +466,23 @@ export const fakeDriver: AssistantDriver = {
     return Promise.resolve();
   },
 
-  screen(input): Promise<ScreenVerdict> {
-    return Promise.resolve({ inScope: true, attack: ATTACK.test(input.message) });
+  screen(input, signal) {
+    fakeDriverControls.screened.push(input);
+    return screenCall(fakeDriverControls.screenFailure, signal, () => {
+      const verdict: ScreenVerdict = SCREEN_REFUSAL.test(input.message)
+        ? { refused: true }
+        : { inScope: !OFF_TOPIC.test(input.message), attack: ATTACK.test(input.message) };
+      const chars = input.message.length + (input.previousAssistantMessage?.length ?? 0);
+      return { verdict, usage: screenUsage(chars) };
+    });
+  },
+
+  screenToolText(input, signal) {
+    return screenCall(fakeDriverControls.toolTextScreenFailure, signal, () => ({
+      verdict: {
+        flagged: input.values.flatMap((value, index) => (ATTACK.test(value) ? [index] : [])),
+      },
+      usage: screenUsage(input.values.join("").length),
+    }));
   },
 };

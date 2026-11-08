@@ -86,6 +86,13 @@ export const handlePostChatMessage = async (req: Request, res: Response) => {
   const chatId = requirePathParam(req.params.chatId, "chatId");
   const { text } = req.body as ValidatedSendMessage;
   const turn = await prepareTurn({ auth, chatId, text });
+  if (turn.rejected) {
+    const { sink } = openStream(res);
+    sink("error", { code: turn.code });
+    sink("done", {});
+    res.end();
+    return;
+  }
 
   const { sink, signal } = openStream(res);
   try {

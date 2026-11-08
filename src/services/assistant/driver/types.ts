@@ -38,7 +38,9 @@ export type StopReason =
   | { type: "end_turn" }
   /** `event_ids` are the `agent.custom_tool_use` events waiting for a result. */
   | { type: "requires_action"; event_ids: string[] }
-  | { type: "budget_reached" };
+  | { type: "budget_reached" }
+  /** The model's own refusal; the turn ends with a fixed message and is never retried. */
+  | { type: "refusal" };
 
 type Stamped = { id: string; processed_at: string };
 
@@ -86,13 +88,30 @@ export type StreamItem =
  */
 export type LiveStream = AsyncIterable<StreamItem> & { ready: Promise<void> };
 
-/** The screen's answer for one user message (T-722 wires it into the turn). */
+/** The screen's verdict on one user message. `refused` is Haiku's own refusal, which counts as an attack. */
 export type ScreenVerdict = { inScope: boolean; attack: boolean } | { refused: true };
 
 export type ScreenInput = {
   message: string;
   previousAssistantMessage: string | null;
   language: "en" | "cs";
+  /** The help article index, the screen's definition of what is in scope; `null` before a bundle loads. */
+  articleIndex: string | null;
+};
+
+/** The screen's verdict and what the call used, which the meter settles. */
+export type ScreenAnswer = { verdict: ScreenVerdict; usage: SessionUsage };
+
+/** The text people wrote that one model response's tool results carry, in order. */
+export type ToolTextScreenInput = { values: string[] };
+
+/**
+ * Which of the values look like instructions, by index. `refused` is Haiku's
+ * own refusal, which withholds every value like a failed call.
+ */
+export type ToolTextScreenAnswer = {
+  verdict: { flagged: number[] } | { refused: true };
+  usage: SessionUsage;
 };
 
 export type CreatedSession = {
@@ -122,6 +141,8 @@ export interface AssistantDriver {
   readUsage(sessionId: string): Promise<SessionUsage>;
   /** Deletes the session; a session that is already gone is not an error. */
   deleteSession(sessionId: string): Promise<void>;
-  /** The Haiku screen; unused until T-722. */
-  screen(input: ScreenInput): Promise<ScreenVerdict>;
+  /** The Haiku screen of a user message, before it reaches the session. Fails on `signal`. */
+  screen(input: ScreenInput, signal: AbortSignal): Promise<ScreenAnswer>;
+  /** The Haiku screen of the user-written values in one model response's tool results. */
+  screenToolText(input: ToolTextScreenInput, signal: AbortSignal): Promise<ToolTextScreenAnswer>;
 }

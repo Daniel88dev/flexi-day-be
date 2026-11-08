@@ -59,7 +59,10 @@ export const assistantRouter = (): Router => {
    *         carry `text`; `tool` is an activity line with the tool's name and
    *         outcome (`ok`, `refused`, `failed`, `invalid_arguments`, `read_only`,
    *         or null while it runs); `notice` is a fixed message by `code`
-   *         (`ASSISTANT_ERROR`).
+   *         (`ASSISTANT_ERROR`, `ASSISTANT_TOPIC_REFUSAL`,
+   *         `ASSISTANT_MODEL_REFUSAL`). A `user` row with `code` `REJECTED` is
+   *         a message the screen kept from the session; the topic refusal
+   *         notice follows it.
    *       required: [id, kind, text, toolName, toolOutcome, code, createdAt]
    *       properties:
    *         id:
@@ -95,7 +98,10 @@ export const assistantRouter = (): Router => {
    *         - `tool` `{ eventId, name, status }`: a tool call, `status` is
    *           `running`, then `done` or `failed` under the same `eventId`.
    *         - `card`: a confirmation card (pending actions, not sent yet).
-   *         - `error` `{ code }`: a fixed message key, `ASSISTANT_ERROR`.
+   *         - `error` `{ code }`: a fixed message key: `ASSISTANT_ERROR`,
+   *           `ASSISTANT_TOPIC_REFUSAL` (the screen rejected the message, which
+   *           never reached the session) or `ASSISTANT_MODEL_REFUSAL` (the
+   *           model refused; the turn ends without a retry).
    *         - `done` `{}`: the turn ended; the display record has it all.
    */
 
@@ -311,9 +317,12 @@ export const assistantRouter = (): Router => {
    *       Checks the organization again (standing, Assistant on, plan), so a
    *       chat stays readable after the Assistant is turned off but takes no
    *       more messages. One answer at a time per user, across chats: a send
-   *       while another runs gets 409. The answer streams as server-sent
-   *       events (`AssistantChatStream`) until `done`. Closing the connection
-   *       does not stop the answer; reconnect with `GET .../stream`.
+   *       while another runs gets 409. The screen then checks the message
+   *       first: off topic or an attack, the message is recorded as rejected
+   *       and the stream answers `error` `ASSISTANT_TOPIC_REFUSAL` then `done`,
+   *       and nothing reaches the session. Otherwise the answer streams as
+   *       server-sent events (`AssistantChatStream`) until `done`. Closing the
+   *       connection does not stop the answer; reconnect with `GET .../stream`.
    *     operationId: handlePostChatMessage
    *     security:
    *       - bearerAuth: []
@@ -356,7 +365,10 @@ export const assistantRouter = (): Router => {
    *       '409':
    *         description: '`ASSISTANT_TURN_RUNNING`: another answer of the caller''s is being written'
    *       '503':
-   *         description: '`ASSISTANT_UNAVAILABLE`: no driver can run the Assistant'
+   *         description: |
+   *           `ASSISTANT_UNAVAILABLE`: no driver can run the Assistant.
+   *           `ASSISTANT_SCREEN_FAILED`: the screen failed or timed out; the
+   *           message was neither recorded nor sent, so send it again.
    */
   app.post(
     "/chats/:chatId/messages",

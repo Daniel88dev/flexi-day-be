@@ -78,6 +78,11 @@ export const projectTurn = async (args: {
         if (event.error.retry_status?.type === "retrying") break;
         sink("error", { code: ASSISTANT_NOTICE.ERROR }, event.id);
         break;
+      case "session.status_idle":
+        if (event.stop_reason.type === "refusal") {
+          sink("error", { code: ASSISTANT_NOTICE.MODEL_REFUSAL }, event.id);
+        }
+        break;
     }
     if (isTurnEnd(event)) ended = true;
   };

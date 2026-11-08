@@ -16,7 +16,9 @@ import { answerAssistantToolCall } from "./assistantTools.js";
 import { getOwnChat, roleIn, type ChatRow } from "./chatServices.js";
 import { assistantDriver } from "./driver/index.js";
 import type { AssistantDriver, SessionEvent, SessionInputEvent } from "./driver/types.js";
-import { ASSISTANT_NOTICE, TITLE_MAX_LENGTH } from "./types.js";
+import { recordRejectedTurn } from "./screen/rejectedTurns.js";
+import { screenMessage, screenToolResults } from "./screen/screenServices.js";
+import { ASSISTANT_NOTICE, REJECTED_MESSAGE, SCREEN_FAILED, TITLE_MAX_LENGTH } from "./types.js";
 
 /** A turn older than this is taken for dead (a crashed process) and may be reclaimed. */
 export const STALE_TURN_MS = 5 * 60_000;
@@ -128,8 +130,19 @@ const contextMessage = async (args: {
   return { type: "system.message", content: [{ type: "text", text }] };
 };
 
+const screenFailed = () =>
+  new AppError({
+    message: "Your message couldn't be checked, so it wasn't sent",
+    code: 503,
+    publicContext: { code: SCREEN_FAILED },
+  });
+
+/** A message the screen kept from the session; the chat shows it with the fixed refusal. */
+export type RejectedTurn = { rejected: true; chatId: string; code: string };
+
 /** What a send hands from its checks to its stream. */
 export type PreparedTurn = {
+  rejected?: false;
   auth: AuthSession;
   chatId: string;
   organizationId: string;
@@ -142,14 +155,16 @@ export type PreparedTurn = {
 /**
  * Everything a send checks and writes before its stream opens: the chat is
  * the caller's, the organization still allows the Assistant (403 with the
- * reason otherwise), no other turn of the caller's runs (409), then the
- * user's text in the display record and the session, created on first use.
+ * reason otherwise), no other turn of the caller's runs (409), the screen
+ * passes the message (a rejected turn is recorded and answered here; a failed
+ * screen is 503 with nothing written), then the user's text in the display
+ * record and the session, created on first use.
  */
 export const prepareTurn = async (args: {
   auth: AuthSession;
   chatId: string;
   text: string;
-}): Promise<PreparedTurn> => {
+}): Promise<PreparedTurn | RejectedTurn> => {
   const { auth } = args;
   const chat = await getOwnChat({ userId: auth.userId, chatId: args.chatId });
   await assertAiEligible({
@@ -163,6 +178,26 @@ export const prepareTurn = async (args: {
     const driver = assistantDriver();
     const now = new Date();
     const language = await toolLanguage(auth.userId);
+
+    const screen = await screenMessage({ driver, chatId: chat.id, message: args.text, language });
+    if (screen.outcome === "failed") throw screenFailed();
+    if (screen.outcome === "rejected") {
+      await record(chat.id, { kind: "user", text: args.text, code: REJECTED_MESSAGE });
+      await record(chat.id, { kind: "notice", code: ASSISTANT_NOTICE.TOPIC_REFUSAL });
+      await recordRejectedTurn({
+        organizationId: chat.organizationId,
+        userId: auth.userId,
+        chatId: chat.id,
+        reason: screen.reason,
+      });
+      await db
+        .update(assistantChats)
+        .set({ title: chat.title ?? args.text.slice(0, TITLE_MAX_LENGTH) })
+        .where(eq(assistantChats.id, chat.id));
+      await releaseTurn(chat.id);
+      return { rejected: true, chatId: chat.id, code: ASSISTANT_NOTICE.TOPIC_REFUSAL };
+    }
+
     let sessionId = chat.sessionId;
     if (!sessionId) {
       const created = await driver.createSession({
@@ -250,6 +285,13 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
   );
   if (!last) return false;
   if (isTurnEnd(last)) {
+    if (last.type === "session.status_idle" && last.stop_reason.type === "refusal") {
+      await record(turn.chatId, {
+        kind: "notice",
+        code: ASSISTANT_NOTICE.MODEL_REFUSAL,
+        eventId: last.id,
+      });
+    }
     await releaseTurn(turn.chatId);
     return true;
   }
@@ -257,6 +299,8 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
     return false;
   }
 
+  // The reads of one model response run first, so one screen call covers all their user text.
+  const answers: { toolUseId: string; text: string; isError: boolean }[] = [];
   for (const toolUseId of last.stop_reason.event_ids) {
     if (answered.has(toolUseId)) continue;
     const call = events.find((event) => event.id === toolUseId);
@@ -283,8 +327,16 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
           eq(assistantChatMessages.eventId, call.id)
         )
       );
-    await turn.driver.answerToolCall(turn.sessionId, call.id, {
-      text: answer.text,
+    answers.push({ toolUseId: call.id, text: answer.text, isError: answer.isError });
+  }
+  const texts = await screenToolResults({
+    driver: turn.driver,
+    chatId: turn.chatId,
+    texts: answers.map((answer) => answer.text),
+  });
+  for (const [index, answer] of answers.entries()) {
+    await turn.driver.answerToolCall(turn.sessionId, answer.toolUseId, {
+      text: texts[index]!,
       isError: answer.isError,
     });
   }

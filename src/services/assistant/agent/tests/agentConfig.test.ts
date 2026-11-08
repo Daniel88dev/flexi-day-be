@@ -8,6 +8,7 @@ import { AGENT_CONFIG_VERSION, codeConfigHash } from "../agentConfig.js";
  */
 const PINNED: Record<number, string> = {
   1: "513cb443086e7496dd966d96197581e94c176c7ecd48c1ebc4c7cd7ad04f0bda",
+  2: "3401c2e334453380a79c7494b635e1c0df1bbb62696c7f395ca8fa4948e9f91a",
 };
 
 describe("agent config version", () => {

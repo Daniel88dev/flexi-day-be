@@ -103,3 +103,37 @@ export const assistantWebhookEvents = pgTable("assistant_webhook_events", {
   eventType: text("event_type").notNull(),
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const assistantRejectionReasons = ["off_topic", "attack"] as const;
+export type AssistantRejectionReason = (typeof assistantRejectionReasons)[number];
+export const assistantRejectionReasonEnum = pgEnum(
+  "assistant_rejection_reason",
+  assistantRejectionReasons
+);
+
+/**
+ * One message the screen kept from the session, counted per person per week
+ * on the usage page. No content: the message itself stays in the display
+ * record, and deleting the chat keeps the count.
+ */
+export const assistantRejectedTurns = pgTable(
+  "assistant_rejected_turns",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").references(() => assistantChats.id, { onDelete: "set null" }),
+    reason: assistantRejectionReasonEnum("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_assistant_rejected_turns_organization_created").on(
+      table.organizationId,
+      table.createdAt
+    ),
+  ]
+);

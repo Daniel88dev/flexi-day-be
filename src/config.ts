@@ -157,6 +157,10 @@ type AssistantConfig = {
   /** The agent's model and effort. A change is a new agent version and reaches new chats only. */
   model: string;
   effort: AssistantEffort;
+  /** The screen's model (`ASSISTANT_SCREEN_MODEL`), run with thinking off on every user message. */
+  screenModel: string;
+  /** A screen call that takes longer fails closed: nothing is sent. */
+  screenTimeoutMs: number;
   /** The managed driver's key, agent and environment (`pnpm run assistant:provision` prints the ids). */
   apiKey?: string;
   agentId?: string;
@@ -566,6 +570,8 @@ const parseAssistant = (): AssistantConfig => {
     driver,
     model: process.env.ASSISTANT_MODEL || "claude-sonnet-5-5",
     effort: effort as AssistantEffort,
+    screenModel: process.env.ASSISTANT_SCREEN_MODEL || "claude-haiku-5-5",
+    screenTimeoutMs: parsePositiveInt("ASSISTANT_SCREEN_TIMEOUT_MS", 5000),
     agentId: process.env.ASSISTANT_AGENT_ID || undefined,
     environmentId: process.env.ASSISTANT_ENVIRONMENT_ID || undefined,
     chatTokenCeiling: parsePositiveInt("ASSISTANT_CHAT_TOKEN_CEILING", 100_000),

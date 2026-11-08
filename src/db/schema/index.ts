@@ -39,6 +39,7 @@ import { aiConnectionsChanges } from "./ai-connections-change-schema.js";
 import {
   assistantChatMessages,
   assistantChats,
+  assistantRejectedTurns,
   assistantWebhookEvents,
 } from "./assistant-schema.js";
 import { organizationUsers } from "./organization-users-schema.js";
@@ -136,5 +137,6 @@ export const schema = {
   aiConnectionsChanges,
   assistantChats,
   assistantChatMessages,
+  assistantRejectedTurns,
   assistantWebhookEvents,
 };

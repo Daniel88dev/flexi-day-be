@@ -111,6 +111,9 @@ export const syncAgent = async (args: {
 
 let knowledge: AgentKnowledge | null = null;
 
+/** The knowledge base the loader last handed over; the screen reads its index as the scope. */
+export const currentAgentKnowledge = (): AgentKnowledge | null => knowledge;
+
 /** The agent as this build describes it, with the knowledge base the loader last handed over. */
 export const desiredAgentConfig = (): AgentConfig =>
   buildAgentConfig({

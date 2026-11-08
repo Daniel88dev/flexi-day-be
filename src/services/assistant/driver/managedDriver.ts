@@ -2,6 +2,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { logger } from "../../../middleware/logger.js";
 import AppError from "../../../utils/appError.js";
 import { errorName } from "../../../utils/errorName.js";
+import {
+  MESSAGE_SCREEN_SCHEMA,
+  TOOL_TEXT_SCREEN_INSTRUCTION,
+  TOOL_TEXT_SCREEN_SCHEMA,
+  messageScreenInput,
+  messageScreenSystem,
+  toolTextScreenInput,
+} from "../screen/screenPrompt.js";
 import { assistantUnavailable } from "./anthropicClient.js";
 import type {
   AssistantDriver,
@@ -76,12 +84,54 @@ const usageOf = (raw: Raw | undefined): SessionUsage => {
   };
 };
 
+/**
+ * One screen call on the Messages API: thinking off, JSON-schema output, the
+ * instruction as a cached system block, no retry (the screen fails closed).
+ * Answers the JSON text, or `null` for a refusal, which carries no content.
+ */
+const screenRequest = async (
+  client: Anthropic,
+  request: {
+    model: string;
+    system: string;
+    input: string;
+    schema: { [key: string]: unknown };
+    maxTokens: number;
+  },
+  signal: AbortSignal
+): Promise<{ json: unknown; usage: SessionUsage }> => {
+  const message = await client.messages.create(
+    {
+      model: request.model,
+      max_tokens: request.maxTokens,
+      thinking: { type: "disabled" },
+      output_config: { format: { type: "json_schema", schema: request.schema } },
+      system: [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: request.input }],
+    },
+    { signal, maxRetries: 0 }
+  );
+  const usage = usageOf(message.usage as unknown as Raw);
+  if (
+    usage.cache_creation.ephemeral_5m_input_tokens +
+      usage.cache_creation.ephemeral_1h_input_tokens ===
+    0
+  ) {
+    usage.cache_creation.ephemeral_5m_input_tokens = message.usage.cache_creation_input_tokens ?? 0;
+  }
+  const block = message.content.find((item) => item.type === "text");
+  if (message.stop_reason === "refusal" || !block) return { json: null, usage };
+  return { json: JSON.parse(block.text) as unknown, usage };
+};
+
 export const createManagedDriver = (args: {
   client: Anthropic;
   agentId: string;
   environmentId: string;
+  /** The screen's model; the screen runs on the Messages API, outside any session. */
+  screenModel: string;
 }): AssistantDriver => {
-  const { client, agentId, environmentId } = args;
+  const { client, agentId, environmentId, screenModel } = args;
   const sessions = client.beta.sessions;
 
   const send = (sessionId: string, events: Raw[]): Promise<SessionEvent[]> =>
@@ -204,7 +254,46 @@ export const createManagedDriver = (args: {
         }
       }),
 
-    // The screen is T-722's; until then a managed chat sends nothing through it.
-    screen: () => Promise.reject(assistantUnavailable()),
+    screen: (input, signal) =>
+      call("screen", async () => {
+        const { json, usage } = await screenRequest(
+          client,
+          {
+            model: screenModel,
+            system: messageScreenSystem(input.articleIndex),
+            input: messageScreenInput(input),
+            schema: MESSAGE_SCREEN_SCHEMA,
+            maxTokens: 64,
+          },
+          signal
+        );
+        if (json === null) return { verdict: { refused: true }, usage };
+        const verdict = json as { inScope?: unknown; attack?: unknown };
+        if (typeof verdict.inScope !== "boolean" || typeof verdict.attack !== "boolean") {
+          throw new Error("The screen answered without a verdict");
+        }
+        return { verdict: { inScope: verdict.inScope, attack: verdict.attack }, usage };
+      }),
+
+    screenToolText: (input, signal) =>
+      call("screen_tool_text", async () => {
+        const { json, usage } = await screenRequest(
+          client,
+          {
+            model: screenModel,
+            system: TOOL_TEXT_SCREEN_INSTRUCTION,
+            input: toolTextScreenInput(input.values),
+            schema: TOOL_TEXT_SCREEN_SCHEMA,
+            maxTokens: 64 + 8 * input.values.length,
+          },
+          signal
+        );
+        if (json === null) return { verdict: { refused: true }, usage };
+        const flagged = (json as { flagged?: unknown }).flagged;
+        if (!Array.isArray(flagged) || !flagged.every((index) => Number.isInteger(index))) {
+          throw new Error("The screen answered without a list");
+        }
+        return { verdict: { flagged: flagged as number[] }, usage };
+      }),
   };
 };

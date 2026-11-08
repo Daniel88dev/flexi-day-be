@@ -64,4 +64,14 @@ export type AssistantOrganization = {
 export const ASSISTANT_NOTICE = {
   /** The session failed or the turn timed out. */
   ERROR: "ASSISTANT_ERROR",
+  /** The screen kept the message from the session: off topic or an attack. */
+  TOPIC_REFUSAL: "ASSISTANT_TOPIC_REFUSAL",
+  /** The model refused; the turn ends and is not retried. */
+  MODEL_REFUSAL: "ASSISTANT_MODEL_REFUSAL",
 } as const;
+
+/** The `code` on a user row the screen rejected; the message was never sent. */
+export const REJECTED_MESSAGE = "REJECTED";
+
+/** The screen failed or timed out: 503 before the stream opens, nothing written or sent. */
+export const SCREEN_FAILED = "ASSISTANT_SCREEN_FAILED";
