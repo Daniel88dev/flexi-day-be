@@ -150,7 +150,12 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
     }
 
     if (method === "POST" && path === "/v1/sessions") {
-      const agent = agents.get(String(body?.agent));
+      const requested = body?.agent as string | { id: string; version?: number } | undefined;
+      const current = agents.get(typeof requested === "object" ? requested.id : String(requested));
+      const agent =
+        typeof requested === "object" && requested.version && current
+          ? agentVersions.get(current.id)?.find((v) => v.version === requested.version)
+          : current;
       if (!agent) return apiError(404, "not_found_error", "agent not found");
       if (!environments.has(String(body?.environment_id))) {
         return apiError(404, "not_found_error", "environment not found");

@@ -51,6 +51,26 @@ describe("the managed driver", () => {
     expect(api.sessions.get(second.sessionId)!.agent.version).toBe(2);
   });
 
+  it("pins every session to the version it was given, however the agent moved since", async () => {
+    await api.client().beta.agents.update(agentId, { system: "changed", version: 1 });
+    const pinned = createManagedDriver({
+      client: api.client(),
+      agentId,
+      environmentId: [...api.environments.keys()][0]!,
+      screenModel: "claude-haiku-5-5",
+      agentVersion: 1,
+    });
+
+    const { sessionId, agentVersion } = await pinned.createSession({
+      chatId: "chat-1",
+      organizationId: "org-1",
+      budgetMicroUsd: 90_000,
+    });
+
+    expect(agentVersion).toBe(1);
+    expect(api.sessions.get(sessionId)!.agent.system).not.toBe("changed");
+  });
+
   it("sends the user message with the context last and answers the logged events", async () => {
     const { sessionId } = await driver.createSession({
       chatId: "c",

@@ -179,3 +179,6 @@ lambda/attachment-processor/*.zip
 
 # macOS
 .DS_Store
+
+# Assistant eval runs (pnpm run eval:assistant)
+eval-results/

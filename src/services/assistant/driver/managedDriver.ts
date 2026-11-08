@@ -166,8 +166,10 @@ export const createManagedDriver = (args: {
   environmentId: string;
   /** The screen's model; the screen runs on the Messages API, outside any session. */
   screenModel: string;
+  /** Pins every session to this agent version instead of the one current at creation. */
+  agentVersion?: number;
 }): AssistantDriver => {
-  const { client, agentId, environmentId, screenModel } = args;
+  const { client, agentId, environmentId, screenModel, agentVersion } = args;
   const sessions = client.beta.sessions;
 
   const send = (sessionId: string, events: Raw[]): Promise<SessionEvent[]> =>
@@ -185,7 +187,7 @@ export const createManagedDriver = (args: {
       call("create_session", async () => {
         // The bare agent id pins the version current right now; the chat keeps it for life.
         const session = await sessions.create({
-          agent: agentId,
+          agent: agentVersion ? { type: "agent", id: agentId, version: agentVersion } : agentId,
           environment_id: environmentId,
           metadata: { chat_id: input.chatId, organization_id: input.organizationId },
           budget: budgetOf(input.budgetMicroUsd),

@@ -19,6 +19,9 @@ export default [
       "eslint.config.js",
       "vitest.config.ts",
       "vitest.e2e.config.ts",
+      "vitest.eval.config.ts",
+      // The Assistant eval is test code, typechecked through tsconfig.test.json.
+      "src/evals/**",
       "**/tests/**",
       "**/*.test.ts",
       "**/*.spec.ts",

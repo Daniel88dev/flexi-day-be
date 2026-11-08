@@ -37,7 +37,9 @@
     "rekey:organization": "tsx src/scripts/rekeyOrganization.ts",
     "assistant:provision": "tsx src/scripts/assistantProvision.ts",
     "assistant:reconcile": "tsx src/scripts/assistantReconcile.ts",
-    "subprocessor-notice": "tsx src/scripts/subprocessorNotice.ts"
+    "subprocessor-notice": "tsx src/scripts/subprocessorNotice.ts",
+    "eval:assistant": "tsx src/evals/assistant/cli.ts",
+    "eval:kb-sync": "tsx src/evals/assistant/kbSync.ts"
   },
   "repository": {
     "type": "git",
