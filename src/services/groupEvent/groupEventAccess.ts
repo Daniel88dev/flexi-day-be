@@ -55,19 +55,23 @@ export const loadGroupForGroupEvents = async (
 /**
  * `GET /api/group-events`: the padded month of one group's events, or of every
  * group the caller is a live member of. Never gated on the plan.
+ * `organizationId` keeps the groups to one organization (the tools' fence).
  */
 export const listGroupEventsForMonth = async (params: {
   auth: AuthSession;
   query: { year: number; month: number; groupId?: string };
+  organizationId?: string;
 }): Promise<GroupEventView[]> => {
-  const { query } = params;
+  const { query, organizationId } = params;
   const { userId } = params.auth;
   const targets = query.groupId
     ? [await loadGroupForGroupEvents(userId, query.groupId)]
     : await Promise.all(
-        (await getAllGroups((await getScopeEntries(userId)).map((entry) => entry.groupId))).map(
-          async (group) => ({ group, access: await resolveGroupAccess(userId, group) })
-        )
+        (await getAllGroups((await getScopeEntries(userId)).map((entry) => entry.groupId)))
+          .filter(
+            (group) => organizationId === undefined || group.organizationId === organizationId
+          )
+          .map(async (group) => ({ group, access: await resolveGroupAccess(userId, group) }))
       );
 
   const byGroup = new Map(targets.map((target) => [target.group.id, target]));

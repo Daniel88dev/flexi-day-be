@@ -1,5 +1,13 @@
 import { z } from "zod";
+import { getMyAttendanceTool, getMyWorkedTimeTool } from "./reads/attendance.js";
 import { getMyBalancesTool } from "./reads/balances.js";
+import { listBirthdaysTool } from "./reads/birthdays.js";
+import {
+  getDirectoryProfileTool,
+  listDirectoryPeopleTool,
+  showDirectorySectionTool,
+} from "./reads/directory.js";
+import { listGroupEventsTool } from "./reads/groupEvents.js";
 import { listMyRequestsTool } from "./reads/myRequests.js";
 import { listWhoIsAwayTool } from "./reads/whoIsAway.js";
 import { isToolAllowed } from "./runTool.js";
@@ -10,7 +18,18 @@ import { USER_TEXT_KEY } from "./userText.js";
  * Every tool, the same list for every user: permissions live in the handlers'
  * services, and a per-role list would split the Assistant's prompt cache.
  */
-export const TOOLS: readonly Tool[] = [getMyBalancesTool, listMyRequestsTool, listWhoIsAwayTool];
+export const TOOLS: readonly Tool[] = [
+  getMyBalancesTool,
+  listMyRequestsTool,
+  listWhoIsAwayTool,
+  getMyAttendanceTool,
+  getMyWorkedTimeTool,
+  listGroupEventsTool,
+  listBirthdaysTool,
+  listDirectoryPeopleTool,
+  getDirectoryProfileTool,
+  showDirectorySectionTool,
+];
 
 export const findTool = (name: string): Tool | undefined =>
   TOOLS.find((tool) => tool.name === name);

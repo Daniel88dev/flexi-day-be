@@ -55,6 +55,15 @@ const GUARD_MESSAGES_CS: Record<string, string> = {
   "Group not found": "Skupina nebyla nalezena.",
   "Person not found": "Osoba nebyla nalezena.",
   "No access to view this group's records": "Záznamy této skupiny nemáte oprávnění zobrazit.",
+  "No employment in this organization": "V této organizaci nemáte pracovní poměr.",
+  "No access to this group's events": "K událostem této skupiny nemáte přístup.",
+  "Organization not found": "Organizace nebyla nalezena.",
+  "The people directory requires the Enterprise plan":
+    "Adresář lidí je součástí tarifu Enterprise.",
+  "The directory is off in this organization": "Adresář je v této organizaci vypnutý.",
+  "You are not one of this organization's people": "Mezi lidi této organizace nepatříte.",
+  "You can't read this Section": "Tuto sekci nemůžete číst.",
+  "The Personal Section applies to employees only": "Osobní údaje se týkají jen zaměstnanců.",
 };
 
 /**

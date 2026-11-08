@@ -196,14 +196,21 @@ describe("/mcp", () => {
   const MARCH = { from: day(3, 1), to: day(3, 31) };
 
   describe.each(ERAS)("in the $era era", ({ mode }) => {
-    it("lists the three read tools and runs each for the token's organization", async () => {
+    it("lists every read tool and runs the request reads for the token's organization", async () => {
       const client = await connect(janaAcmeToken, mode);
 
       const { tools } = await client.listTools();
       expect(tools.map((tool) => tool.name).sort()).toEqual([
+        "get_directory_profile",
+        "get_my_attendance",
         "get_my_balances",
+        "get_my_worked_time",
+        "list_birthdays",
+        "list_directory_people",
+        "list_group_events",
         "list_my_requests",
         "list_who_is_away",
+        "show_directory_section",
       ]);
       for (const tool of tools) {
         expect(tool.annotations?.readOnlyHint).toBe(true);
