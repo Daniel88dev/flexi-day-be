@@ -35,3 +35,6 @@ export type EnableAiConnectionsBody = z.infer<typeof validateEnableAiConnections
 export const validateAiConnectionsLevelBody = z.object({ level: raisedLevel });
 
 export type AiConnectionsLevelBody = z.infer<typeof validateAiConnectionsLevelBody>;
+
+/** A past week on the AI usage page, named by its Monday. */
+export const validateUsageWeekStart = z.iso.date();

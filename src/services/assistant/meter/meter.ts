@@ -34,8 +34,11 @@ const calls = assistantModelCalls;
 
 const currentWeek = sql`(date_trunc('week', now() AT TIME ZONE 'UTC'))::date`;
 
-const usedSum = sql<number>`coalesce(sum(case when ${calls.status} = 'settled'
-  then ${calls.settledMicroUsd} else ${calls.reservedMicroUsd} end), 0)::float8`;
+/** A ledger row's share of "used this week": the settled amount once settled, the reservation before. */
+export const usedAmount = sql<number>`case when ${calls.status} = 'settled'
+  then ${calls.settledMicroUsd} else ${calls.reservedMicroUsd} end`;
+
+export const usedSum = sql<number>`coalesce(sum(${usedAmount}), 0)::float8`;
 
 /** A conservative token count for text we append to a prompt: three UTF-8 bytes a token. */
 export const textTokens = (text: string): number => Math.ceil(Buffer.byteLength(text, "utf8") / 3);
@@ -77,6 +80,9 @@ const mainWorstCase = (previousTokens: number, appendedText: string) =>
     outputTokens: config.assistant.stepOutputReserve,
   });
 
+/** The cheapest first step of a turn: once used plus this passes the limit, no turn can start. */
+export const smallestStepMicroUsd = (): number => mainWorstCase(0, "");
+
 export type WeeklyUsage = {
   usedMicroUsd: number;
   limitMicroUsd: number;
@@ -106,7 +112,7 @@ export const readWeeklyUsage = async (
     .groupBy(calls.organizationId);
   const resetsAt = await nextReset(db);
   const limit = config.assistant.weeklyLimitMicroUsd;
-  const smallestStep = mainWorstCase(0, "");
+  const smallestStep = smallestStepMicroUsd();
   for (const organizationId of organizationIds) {
     const used = rows.find((row) => row.organizationId === organizationId)?.used ?? 0;
     result.set(organizationId, {

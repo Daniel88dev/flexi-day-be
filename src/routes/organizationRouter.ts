@@ -33,6 +33,9 @@ import { handlePostAcceptAiAgreement } from "../controllers/aiFeatures/handlePos
 import { handlePostEnableAiConnections } from "../controllers/aiFeatures/handlePostEnableAiConnections.js";
 import { handlePostAiConnectionsLevel } from "../controllers/aiFeatures/handlePostAiConnectionsLevel.js";
 import { handlePostDisableAiConnections } from "../controllers/aiFeatures/handlePostDisableAiConnections.js";
+import { handleGetAiUsage } from "../controllers/aiFeatures/handleGetAiUsage.js";
+import { handleGetAiUsageWeek } from "../controllers/aiFeatures/handleGetAiUsageWeek.js";
+import { handleDeleteOrganizationAiConnection } from "../controllers/aiFeatures/handleDeleteOrganizationAiConnection.js";
 import {
   validateAiAgreementBody,
   validateAiConnectionsLevelBody,
@@ -1441,6 +1444,295 @@ export const organizationRouter = (): Router => {
    *         description: No such organization
    */
   app.post("/ai/connections/disable", tryCatch(handlePostDisableAiConnections));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     AiUsageApp:
+   *       type: object
+   *       required: [grantId, app, access, connectedAt, lastUsedAt]
+   *       properties:
+   *         grantId:
+   *           type: string
+   *         app:
+   *           $ref: '#/components/schemas/AiConnectionApp'
+   *         access:
+   *           type: string
+   *           enum: [read, write]
+   *         connectedAt:
+   *           type: string
+   *           format: date-time
+   *         lastUsedAt:
+   *           type: string
+   *           format: date-time
+   *           description: The consent, or the grant's newest refresh, whichever is later.
+   *     AiUsagePerson:
+   *       type: object
+   *       required: [userId, name, assistantMicroUsd, refusedTurns]
+   *       properties:
+   *         userId:
+   *           type: string
+   *           nullable: true
+   *           description: Null for Usage whose account link was erased.
+   *         name:
+   *           type: string
+   *           nullable: true
+   *           description: |
+   *             The name the organization shows. Null shows as "Deleted
+   *             account": an erased link, or a Deleted account the
+   *             organization keeps no copy of.
+   *         assistantMicroUsd:
+   *           type: integer
+   *           description: Assistant Usage in the week, settled plus reserved, in micro-USD.
+   *         refusedTurns:
+   *           type: integer
+   *           description: Rejected turns in the week, off topic and attack together. No content.
+   *     AiUsage:
+   *       type: object
+   *       required: [organizationId, organizationName, assistant, aiConnections, people]
+   *       properties:
+   *         organizationId:
+   *           type: string
+   *         organizationName:
+   *           type: string
+   *         assistant:
+   *           type: object
+   *           required:
+   *             [on, weekStart, usedMicroUsd, limitMicroUsd, resetsAt, reached, limitReachedAt, weeks]
+   *           properties:
+   *             on:
+   *               type: boolean
+   *               description: Turned on, on a plan that includes it, and available to the organization.
+   *             weekStart:
+   *               type: string
+   *               format: date
+   *               description: Monday of the current UTC week, from the database clock.
+   *             usedMicroUsd:
+   *               type: integer
+   *               description: |
+   *                 Used this week: settled plus reserved, the same figure the
+   *                 meter checks, so answers being written count.
+   *             limitMicroUsd:
+   *               type: integer
+   *               description: The Weekly limit.
+   *             resetsAt:
+   *               type: string
+   *               format: date-time
+   *               description: Next Monday 00:00 UTC.
+   *             reached:
+   *               type: boolean
+   *               description: No turn can start until the reset; the Assistant is paused for everyone.
+   *             limitReachedAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *               description: When this week's Usage first passed that point.
+   *             weeks:
+   *               type: array
+   *               description: |
+   *                 Past weeks with Usage in the last year, newest first. A
+   *                 week counts as limit-reached by the same rule as `reached`.
+   *               items:
+   *                 type: object
+   *                 required: [weekStart, usedMicroUsd, limitReachedAt, perPerson]
+   *                 properties:
+   *                   weekStart:
+   *                     type: string
+   *                     format: date
+   *                   usedMicroUsd:
+   *                     type: integer
+   *                   limitReachedAt:
+   *                     type: string
+   *                     format: date-time
+   *                     nullable: true
+   *                   perPerson:
+   *                     type: boolean
+   *                     description: Within 180 days, so the week opens to a per-person split.
+   *         aiConnections:
+   *           type: object
+   *           required: [on, dailyLimit, memberDailyLimit, callsToday, resetsAt, days]
+   *           properties:
+   *             on:
+   *               type: boolean
+   *               description: Read only or Read and write, on a Paid plan, and available.
+   *             dailyLimit:
+   *               type: integer
+   *               description: The daily AI connection limit (0 on Free).
+   *             memberDailyLimit:
+   *               type: integer
+   *             callsToday:
+   *               type: integer
+   *               description: Counted `tools/call` requests this UTC day.
+   *             resetsAt:
+   *               type: string
+   *               format: date-time
+   *               description: Next UTC midnight.
+   *             days:
+   *               type: array
+   *               description: The last 14 UTC days, oldest first, today last; days with no calls read 0.
+   *               items:
+   *                 type: object
+   *                 required: [day, calls, limitReachedAt]
+   *                 properties:
+   *                   day:
+   *                     type: string
+   *                     format: date
+   *                   calls:
+   *                     type: integer
+   *                   limitReachedAt:
+   *                     type: string
+   *                     format: date-time
+   *                     nullable: true
+   *                     description: The first call the daily AI connection limit refused that day.
+   *         people:
+   *           type: array
+   *           description: |
+   *             Everyone with Assistant Usage or a rejected turn this week, AI
+   *             connection calls today, or an AI connection in the
+   *             organization. By Usage, then calls; Deleted accounts last.
+   *           items:
+   *             allOf:
+   *               - $ref: '#/components/schemas/AiUsagePerson'
+   *               - type: object
+   *                 required: [callsToday, apps]
+   *                 properties:
+   *                   callsToday:
+   *                     type: integer
+   *                     description: Calls today, against the member daily limit.
+   *                   apps:
+   *                     type: array
+   *                     items:
+   *                       $ref: '#/components/schemas/AiUsageApp'
+   */
+
+  /**
+   * @openapi
+   * /api/organization/ai/usage:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: The AI usage page
+   *     description: |
+   *       Owner and org admins. This week's Assistant Usage against the
+   *       Weekly limit and past weeks from the ledger, AI connection calls
+   *       for the last 14 days from the daily counters, and one row per
+   *       person with Usage, rejected turns, calls today and their AI
+   *       connections. No message content.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The organization's AI usage
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiUsage'
+   *       '400':
+   *         description: |
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization, or the caller has none yet
+   */
+  app.get("/ai/usage", tryCatch(handleGetAiUsage));
+
+  /**
+   * @openapi
+   * /api/organization/ai/usage/weeks/{weekStart}:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: One past week of Assistant Usage, per person
+   *     description: |
+   *       Owner and org admins. The week's total, and the per-person split
+   *       while the week started within the last 180 days; `people` is null
+   *       for older weeks.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: weekStart
+   *         required: true
+   *         description: The week's Monday.
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The week
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [weekStart, usedMicroUsd, people]
+   *               properties:
+   *                 weekStart:
+   *                   type: string
+   *                   format: date
+   *                 usedMicroUsd:
+   *                   type: integer
+   *                 people:
+   *                   type: array
+   *                   nullable: true
+   *                   description: By Usage; Deleted accounts last.
+   *                   items:
+   *                     $ref: '#/components/schemas/AiUsagePerson'
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization
+   *       '422':
+   *         description: "`weekStart` is not a date"
+   */
+  app.get("/ai/usage/weeks/:weekStart", tryCatch(handleGetAiUsageWeek));
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/{grantId}:
+   *   delete:
+   *     tags:
+   *       - Organization
+   *     summary: Revoke a member's AI connection
+   *     description: |
+   *       Owner and org admins, whatever the setting or the kill switch.
+   *       Deletes the grant's consent and every refresh and access token for
+   *       the same member, app and organization, in one transaction. The
+   *       app's next MCP call answers 401 `invalid_token` and its next
+   *       refresh `invalid_grant`. The member can connect it again while AI
+   *       connections are on.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: grantId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '204':
+   *         description: Revoked
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization, or no such grant in it
+   */
+  app.delete("/ai/connections/:grantId", tryCatch(handleDeleteOrganizationAiConnection));
 
   return app;
 };

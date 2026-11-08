@@ -111,15 +111,20 @@ const deleteTokensOf = async (
     .where(or(...owned.map((grant) => sameGrant(oauthAccessToken, grant))));
 };
 
-/** The caller's AI connections, newest first. */
-export const listUserGrants = async (userId: string): Promise<UserGrant[]> => {
-  const lastToken = sql<Date | null>`(
+/** The newest refresh token of the consent's grant, for "last used". */
+const lastToken = () =>
+  sql<Date | null>`(
     select max(${oauthRefreshToken.createdAt}) from ${oauthRefreshToken}
     where ${oauthRefreshToken.userId} = ${oauthConsent.userId}
       and ${oauthRefreshToken.clientId} = ${oauthConsent.clientId}
       and ${oauthRefreshToken.referenceId} = ${oauthConsent.referenceId}
   )`.mapWith((value: string | Date | null) => (value === null ? null : new Date(value)));
 
+const lastUsedOf = (row: { lastToken: Date | null; updatedAt: Date }): Date =>
+  row.lastToken && row.lastToken > row.updatedAt ? row.lastToken : row.updatedAt;
+
+/** The caller's AI connections, newest first. */
+export const listUserGrants = async (userId: string): Promise<UserGrant[]> => {
   const rows = await db
     .select({
       grantId: oauthConsent.id,
@@ -128,7 +133,7 @@ export const listUserGrants = async (userId: string): Promise<UserGrant[]> => {
       createdAt: oauthConsent.createdAt,
       updatedAt: oauthConsent.updatedAt,
       organizationName: organizations.name,
-      lastToken,
+      lastToken: lastToken(),
       ...appColumns,
     })
     .from(oauthConsent)
@@ -147,12 +152,29 @@ export const listUserGrants = async (userId: string): Promise<UserGrant[]> => {
             organizationName: row.organizationName,
             access: accessOf(row.scopes),
             connectedAt: row.createdAt,
-            lastUsedAt:
-              row.lastToken && row.lastToken > row.updatedAt ? row.lastToken : row.updatedAt,
+            lastUsedAt: lastUsedOf(row),
           },
         ]
       : []
   );
+};
+
+const endGrant = async (where: SQL | undefined, grantId: string) => {
+  await db.transaction(async (tx) => {
+    const [gone] = await tx.delete(oauthConsent).where(where).returning({
+      userId: oauthConsent.userId,
+      clientId: oauthConsent.clientId,
+      referenceId: oauthConsent.referenceId,
+    });
+    if (!gone) {
+      throw new AppError({
+        message: "AI connection not found",
+        code: 404,
+        context: { grantId },
+      });
+    }
+    await deleteTokensOf([gone], tx);
+  });
 };
 
 /**
@@ -160,26 +182,22 @@ export const listUserGrants = async (userId: string): Promise<UserGrant[]> => {
  * token for the same user, client and organization, in one transaction.
  * Answers 404 for a grant that is not the caller's.
  */
-export const disconnectGrant = async (args: { userId: string; grantId: string }) => {
-  await db.transaction(async (tx) => {
-    const [gone] = await tx
-      .delete(oauthConsent)
-      .where(and(eq(oauthConsent.id, args.grantId), eq(oauthConsent.userId, args.userId)))
-      .returning({
-        userId: oauthConsent.userId,
-        clientId: oauthConsent.clientId,
-        referenceId: oauthConsent.referenceId,
-      });
-    if (!gone) {
-      throw new AppError({
-        message: "AI connection not found",
-        code: 404,
-        context: { grantId: args.grantId },
-      });
-    }
-    await deleteTokensOf([gone], tx);
-  });
-};
+export const disconnectGrant = (args: { userId: string; grantId: string }) =>
+  endGrant(
+    and(eq(oauthConsent.id, args.grantId), eq(oauthConsent.userId, args.userId)),
+    args.grantId
+  );
+
+/**
+ * An owner or org admin ending a member's grant in their organization, the
+ * same way as {@link disconnectGrant}. Answers 404 for a grant of another
+ * organization.
+ */
+export const revokeOrganizationGrant = (args: { organizationId: string; grantId: string }) =>
+  endGrant(
+    and(eq(oauthConsent.id, args.grantId), eq(oauthConsent.referenceId, args.organizationId)),
+    args.grantId
+  );
 
 /**
  * Every grant the user holds, in every organization: password reset, password
@@ -263,4 +281,48 @@ export const listOrganizationGrants = async (
     personName: row.personName,
     access: accessOf(row.scopes),
   }));
+};
+
+export type OrganizationConnection = {
+  grantId: string;
+  userId: string;
+  app: GrantApp;
+  access: GrantAccess;
+  connectedAt: Date;
+  lastUsedAt: Date;
+};
+
+/** The organization's grants with their dates, for the AI usage page, oldest first. */
+export const listOrganizationConnections = async (
+  organizationId: string
+): Promise<OrganizationConnection[]> => {
+  const rows = await db
+    .select({
+      grantId: oauthConsent.id,
+      userId: oauthConsent.userId,
+      scopes: oauthConsent.scopes,
+      createdAt: oauthConsent.createdAt,
+      updatedAt: oauthConsent.updatedAt,
+      lastToken: lastToken(),
+      ...appColumns,
+    })
+    .from(oauthConsent)
+    .innerJoin(oauthClient, eq(oauthClient.clientId, oauthConsent.clientId))
+    .where(eq(oauthConsent.referenceId, organizationId))
+    .orderBy(oauthConsent.createdAt, oauthConsent.id);
+
+  return rows.flatMap((row) =>
+    row.userId
+      ? [
+          {
+            grantId: row.grantId,
+            userId: row.userId,
+            app: appOf(row),
+            access: accessOf(row.scopes),
+            connectedAt: row.createdAt,
+            lastUsedAt: lastUsedOf(row),
+          },
+        ]
+      : []
+  );
 };

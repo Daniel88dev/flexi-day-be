@@ -247,6 +247,9 @@ not Off, a Paid plan.
   and access token for the same user, client and organization (`reference_id`), and ending one
   deletes them all in one transaction (`src/services/aiConnections/grants.ts`).
   - Disconnect in Settings: that one grant (`DELETE /api/users/me/ai-connections/:grantId`).
+  - Revoke on the AI usage page: that one grant, by the owner or an org admin of the grant's
+    organization (`DELETE /api/organization/ai/connections/:grantId`, 404 for another
+    organization's grant). `src/tests/e2e/aiUsage.e2e.test.ts` checks the next MCP call fails.
   - Password reset: every grant the user holds, in `onPasswordReset`, whether or not the address
     was verified.
   - Password change with `revokeOtherSessions`: every grant the user holds, in the
