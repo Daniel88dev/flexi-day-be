@@ -170,6 +170,9 @@ the organization's groups (soft-deleted ones too) and the organization itself:
 - their Person exports, and the organization's Organization exports, which hold them too. A
   build in progress holds an advisory lock the erase waits on, so no ZIP lands after its row is
   gone.
+- their AI usage under their name: the Assistant's ledger rows and weekly totals lose the user and
+  keep the cost, and their daily AI connection counts and rejected turns go, so the organization's
+  totals stay the same ([`assistant-usage.md`](assistant-usage.md#erase-and-account-deletion)).
 
 After the commit the attachment files and export ZIPs are deleted from their stores. A store
 failure is logged and the erase stands. On S3 the old versions stay behind a delete marker until

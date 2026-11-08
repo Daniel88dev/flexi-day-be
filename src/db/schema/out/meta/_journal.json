@@ -435,6 +435,13 @@
       "when": 1794156869427,
       "tag": "0061_ai_connection_daily_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1794160064132,
+      "tag": "0062_ai_usage_weeks",
+      "breakpoints": true
     }
   ]
 }

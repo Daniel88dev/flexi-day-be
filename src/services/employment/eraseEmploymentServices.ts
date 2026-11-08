@@ -13,6 +13,7 @@ import { vacation } from "../../db/schema/vacation-schema.js";
 import { logger } from "../../middleware/logger.js";
 import { refuse } from "../../utils/appError.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
+import { eraseAiUsage } from "../aiFeatures/aiUsageRetention.js";
 import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
@@ -225,6 +226,8 @@ export const eraseEmployment = async (
         eq(organizationUsers.userId, userId)
       )
     );
+
+  await eraseAiUsage({ organizationId, userId }, tx);
 
   // Attendance sessions, breaks and events cascade from the Employment.
   const removedEmployments = await tx

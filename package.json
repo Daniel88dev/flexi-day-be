@@ -35,7 +35,8 @@
     "db:baseline:prod": "./scripts/db-migrate.sh prod --baseline",
     "db:status:prod": "./scripts/db-migrate.sh prod --status",
     "rekey:organization": "tsx src/scripts/rekeyOrganization.ts",
-    "assistant:provision": "tsx src/scripts/assistantProvision.ts"
+    "assistant:provision": "tsx src/scripts/assistantProvision.ts",
+    "assistant:reconcile": "tsx src/scripts/assistantReconcile.ts"
   },
   "repository": {
     "type": "git",

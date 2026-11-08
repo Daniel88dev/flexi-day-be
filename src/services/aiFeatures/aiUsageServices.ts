@@ -4,6 +4,10 @@ import { user } from "../../db/schema/auth-schema.js";
 import { assistantModelCalls } from "../../db/schema/assistant-meter-schema.js";
 import { assistantRejectedTurns } from "../../db/schema/assistant-schema.js";
 import { aiConnectionMemberDailyCalls } from "../../db/schema/ai-connection-usage-schema.js";
+import {
+  aiUsageOrganizationWeeks,
+  aiUsageUserWeeks,
+} from "../../db/schema/ai-usage-weeks-schema.js";
 import { aiConnectionsLevel, organizations } from "../../db/schema/organization-schema.js";
 import { isAiConnectionsPlan, isAssistantPlan, planForOrganization } from "../billing/guards.js";
 import {
@@ -20,15 +24,22 @@ import {
 } from "../aiConnections/grants.js";
 import { DELETED_ACCOUNT_NAME, personName } from "../person/personName.js";
 import { isAiFeatureAvailable } from "./aiFeatureServices.js";
+import { perPersonFrom, weekInLedger } from "./aiUsageRetention.js";
 
-/** Per-person usage is kept this long; older weeks show the organization total only. */
-export const PER_PERSON_DAYS = 180;
 const PAST_WEEKS = 52;
 const CALL_DAYS = 14;
 
 const calls = assistantModelCalls;
 const currentWeek = sql`(date_trunc('week', now() AT TIME ZONE 'UTC'))::date`;
 const today = sql`(date_trunc('day', now() AT TIME ZONE 'UTC'))::date`;
+
+const rollups = aiUsageOrganizationWeeks;
+
+/** The week's ledger rows may be gone, so its rollup is the record. */
+const rolledOut = (organizationId: string, weekStart: SQL | string) => sql`exists (
+  select 1 from ${rollups}
+  where ${rollups.organizationId} = ${organizationId} and ${rollups.weekStart} = ${weekStart}
+    and not ${weekInLedger(weekStart)})`;
 
 const toDate = (value: string | Date): Date => (value instanceof Date ? value : new Date(value));
 const toDateOrNull = (value: string | Date | null): Date | null =>
@@ -44,10 +55,11 @@ export type UsageWeek = {
 };
 
 /**
- * Every week of the organization's ledger in the last year, newest first,
- * the current one included. A week counts as limit-reached by the rule
+ * Every week of the organization's Usage in the last year, newest first, the
+ * current one included: from the ledger while it holds the week, then from
+ * the week's rollup. A week counts as limit-reached by the rule
  * `readWeeklyUsage` uses for `reached`, and the moment is the ledger row whose
- * running total crossed it.
+ * running total crossed it (the rollup kept it).
  */
 const readWeeks = async (organizationId: string, limitMicroUsd: number): Promise<UsageWeek[]> => {
   const threshold = limitMicroUsd - smallestStepMicroUsd();
@@ -63,6 +75,7 @@ const readWeeks = async (organizationId: string, limitMicroUsd: number): Promise
       from ${calls}
       where ${calls.organizationId} = ${organizationId}
         and ${calls.weekStart} >= ${currentWeek} - ${PAST_WEEKS * 7}::int
+        and not ${rolledOut(organizationId, sql`${calls.weekStart}`)}
     ), running as (
       select week_start, created_at,
         sum(used) over (partition by week_start order by created_at, id
@@ -71,9 +84,16 @@ const readWeeks = async (organizationId: string, limitMicroUsd: number): Promise
     )
     select week_start::text as week_start, max(total)::float8 as used,
       min(created_at) filter (where total > ${threshold}::float8) as reached_at,
-      week_start >= ${currentWeek} - ${PER_PERSON_DAYS}::int as per_person
+      week_start >= ${perPersonFrom()} as per_person
     from running
     group by week_start
+    union all
+    select ${rollups.weekStart}::text, ${rollups.usedMicroUsd}::float8, ${rollups.limitReachedAt},
+      ${rollups.weekStart} >= ${perPersonFrom()}
+    from ${rollups}
+    where ${rollups.organizationId} = ${organizationId}
+      and ${rollups.weekStart} >= ${currentWeek} - ${PAST_WEEKS * 7}::int
+      and not ${weekInLedger(sql`${rollups.weekStart}`)}
     order by week_start desc`);
   return rows.map((row) => ({
     weekStart: row.week_start,
@@ -136,12 +156,28 @@ const byNameLast =
     return compare(a, b) || (a.name ?? "").localeCompare(b.name ?? "");
   };
 
-const spendByPerson = async (organizationId: string, weekStart: SQLDate) => {
-  const rows = await db
-    .select({ userId: calls.userId, used: usedSum.mapWith(Number) })
-    .from(calls)
-    .where(and(eq(calls.organizationId, organizationId), eq(calls.weekStart, weekStart)))
-    .groupBy(calls.userId);
+const spendByPerson = async (organizationId: string, weekStart: SQLDate, rolled = false) => {
+  const rows = rolled
+    ? await db
+        .select({
+          userId: aiUsageUserWeeks.userId,
+          used: sql<number>`coalesce(sum(${aiUsageUserWeeks.usedMicroUsd}), 0)::float8`.mapWith(
+            Number
+          ),
+        })
+        .from(aiUsageUserWeeks)
+        .where(
+          and(
+            eq(aiUsageUserWeeks.organizationId, organizationId),
+            eq(aiUsageUserWeeks.weekStart, weekStart)
+          )
+        )
+        .groupBy(aiUsageUserWeeks.userId)
+    : await db
+        .select({ userId: calls.userId, used: usedSum.mapWith(Number) })
+        .from(calls)
+        .where(and(eq(calls.organizationId, organizationId), eq(calls.weekStart, weekStart)))
+        .groupBy(calls.userId);
   return new Map<PersonKey, number>(rows.map((row) => [row.userId, row.used]));
 };
 
@@ -263,18 +299,29 @@ export type UsageWeekPerson = Pick<
  * week is within the per-person retention, `people: null` after it.
  */
 export const readAiUsageWeek = async (organizationId: string, weekStart: string) => {
-  const [total] = await db
-    .select({
-      used: usedSum.mapWith(Number),
-      perPerson: sql<boolean>`${weekStart}::date >= ${currentWeek} - ${PER_PERSON_DAYS}::int`,
-    })
-    .from(calls)
-    .where(and(eq(calls.organizationId, organizationId), eq(calls.weekStart, weekStart)));
-  if (!total!.perPerson) {
-    return { weekStart, usedMicroUsd: total!.used, people: null };
+  const perPerson = sql<boolean>`${weekStart}::date >= ${perPersonFrom()}`;
+  const [rollup] = await db
+    .select({ used: rollups.usedMicroUsd, perPerson })
+    .from(rollups)
+    .where(
+      and(
+        eq(rollups.organizationId, organizationId),
+        eq(rollups.weekStart, weekStart),
+        sql`not ${weekInLedger(weekStart)}`
+      )
+    );
+  const [ledger] = rollup
+    ? []
+    : await db
+        .select({ used: usedSum.mapWith(Number), perPerson })
+        .from(calls)
+        .where(and(eq(calls.organizationId, organizationId), eq(calls.weekStart, weekStart)));
+  const total = rollup ?? ledger!;
+  if (!total.perPerson) {
+    return { weekStart, usedMicroUsd: total.used, people: null };
   }
 
-  const spend = await spendByPerson(organizationId, weekStart);
+  const spend = await spendByPerson(organizationId, weekStart, rollup !== undefined);
   const from = sql`${weekStart}::date AT TIME ZONE 'UTC'`;
   const until = sql`(${weekStart}::date + 7) AT TIME ZONE 'UTC'`;
   const refusedRows = await db
@@ -303,5 +350,5 @@ export const readAiUsageWeek = async (organizationId: string, weekStart: string)
       refusedTurns: refused.get(userId) ?? 0,
     }))
     .sort(byNameLast((a, b) => b.assistantMicroUsd - a.assistantMicroUsd));
-  return { weekStart, usedMicroUsd: total!.used, people };
+  return { weekStart, usedMicroUsd: total.used, people };
 };
