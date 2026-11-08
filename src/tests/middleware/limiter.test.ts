@@ -12,8 +12,11 @@ import {
   calendarFeedLimiter,
   CREDENTIAL_GUESSING_PATHS,
   credentialsLimiter,
+  dcrDailyLimiter,
   floodLimiter,
+  mirrorRetryAfter,
   otpSendKey,
+  windowBudget,
 } from "../../middleware/limiter.js";
 import { listenOnLoopback } from "../loopbackServer.js";
 
@@ -78,6 +81,17 @@ describe("floodLimiter", () => {
     const preflight = await request(url).options("/api/vacation");
     expect(preflight.status).toBe(204);
     expect(preflight.headers["ratelimit-remaining"]).toBeUndefined();
+  });
+
+  it("does not count /mcp, which has limiters of its own", async () => {
+    const url = await appWith((a) => {
+      a.use(floodLimiter);
+      a.post("/mcp", (_, res) => res.status(401).json({ error: "no token" }));
+    });
+
+    const res = await request(url).post("/mcp");
+    expect(res.status).toBe(401);
+    expect(res.headers["ratelimit-remaining"]).toBeUndefined();
   });
 
   it("counts ordinary requests", async () => {
@@ -347,6 +361,106 @@ describe("calendarFeedLimiter", () => {
     expect(Number(second.headers["ratelimit-remaining"])).toBe(
       Number(first.headers["ratelimit-remaining"]) - 1
     );
+  });
+});
+
+describe("dcrDailyLimiter", () => {
+  it("refuses the 1,001st registration of the day from any IP with Retry-After", async () => {
+    const url = await appWith((a) => {
+      a.post("/api/auth/oauth2/register", dcrDailyLimiter, (_, res) =>
+        res.status(201).json({ client_id: "c" })
+      );
+    });
+
+    const statuses: number[] = [];
+    for (let i = 0; i < 1001; i++) {
+      // A different address each time: the ceiling is global, not per IP.
+      const res = await request(url)
+        .post("/api/auth/oauth2/register")
+        .set("X-Forwarded-For", `198.51.${Math.floor(i / 250)}.${i % 250}`);
+      statuses.push(res.status);
+    }
+
+    expect(statuses.slice(0, 1000).every((s) => s === 201)).toBe(true);
+    const blocked = await request(url).post("/api/auth/oauth2/register");
+    expect(statuses.at(-1)).toBe(429);
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+
+  it("does not count a refused registration", async () => {
+    const url = await appWith((a) => {
+      a.post("/api/auth/oauth2/register", dcrDailyLimiter, (_, res) =>
+        res.status(400).json({ error: "invalid_redirect_uri" })
+      );
+    });
+
+    const first = await request(url).post("/api/auth/oauth2/register");
+    const second = await request(url).post("/api/auth/oauth2/register");
+
+    expect(second.headers["ratelimit-remaining"]).toBe(first.headers["ratelimit-remaining"]);
+  });
+});
+
+describe("mirrorRetryAfter", () => {
+  it("copies better-auth's X-Retry-After onto a 429 as Retry-After", async () => {
+    const url = await appWith((a) => {
+      a.use(mirrorRetryAfter);
+      a.post("/api/auth/oauth2/token", (_, res) => {
+        res.setHeader("X-Retry-After", "42");
+        res.status(429).json({ message: "Too many requests. Please try again later." });
+      });
+    });
+
+    const res = await request(url).post("/api/auth/oauth2/token");
+
+    expect(res.status).toBe(429);
+    expect(res.headers["retry-after"]).toBe("42");
+  });
+
+  it("leaves other answers alone", async () => {
+    const url = await appWith((a) => {
+      a.use(mirrorRetryAfter);
+      a.post("/api/auth/oauth2/token", (_, res) => res.status(400).json({ error: "bad" }));
+    });
+
+    const res = await request(url).post("/api/auth/oauth2/token");
+
+    expect(res.headers["retry-after"]).toBeUndefined();
+  });
+});
+
+describe("windowBudget", () => {
+  it("allows the limit in one window, then refuses until the window ends", async () => {
+    const budget = windowBudget({ windowMs: 60_000, limit: 3 });
+    const before = Date.now();
+
+    const hits = [];
+    for (let i = 0; i < 4; i++) hits.push(await budget.hit("user-1:client-1"));
+
+    expect(hits.map((hit) => hit.allowed)).toEqual([true, true, true, false]);
+    const resetAt = hits[3]!.resetAt.getTime();
+    expect(resetAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(resetAt).toBeLessThanOrEqual(Date.now() + 60_000);
+  });
+
+  it("keeps a separate count per key", async () => {
+    const budget = windowBudget({ windowMs: 60_000, limit: 1 });
+
+    expect((await budget.hit("a")).allowed).toBe(true);
+    expect((await budget.hit("b")).allowed).toBe(true);
+    expect((await budget.hit("a")).allowed).toBe(false);
+  });
+
+  it("reports a spent key without counting", async () => {
+    const budget = windowBudget({ windowMs: 60_000, limit: 2 });
+
+    expect(await budget.spent("a")).toBe(false);
+    await budget.hit("a");
+    expect(await budget.spent("a")).toBe(false);
+    await budget.hit("a");
+    expect(await budget.spent("a")).toBe(true);
+    expect(await budget.spent("b")).toBe(false);
   });
 });
 

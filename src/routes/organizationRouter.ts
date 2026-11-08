@@ -962,7 +962,7 @@ export const organizationRouter = (): Router => {
    *               description: The organization's Weekly limit on Assistant Usage, in micro-USD.
    *         aiConnections:
    *           type: object
-   *           required: [level, planAllows, grants]
+   *           required: [level, planAllows, dailyLimit, memberDailyLimit, grants]
    *           properties:
    *             level:
    *               type: string
@@ -973,6 +973,15 @@ export const organizationRouter = (): Router => {
    *             planAllows:
    *               type: boolean
    *               description: Any Paid plan (Pro, Enterprise, Custom, grace included).
+   *             dailyLimit:
+   *               type: integer
+   *               description: |
+   *                 The daily AI connection limit: tool calls over `/mcp` per
+   *                 UTC day for the whole organization. Pro 5000, Enterprise
+   *                 and Custom 20000, 0 on Free.
+   *             memberDailyLimit:
+   *               type: integer
+   *               description: The member daily limit, tool calls per member per UTC day (1000).
    *             grants:
    *               type: array
    *               description: |

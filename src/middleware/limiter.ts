@@ -1,10 +1,11 @@
 import { createHash } from "crypto";
-import type { Request, Response } from "express";
-import { ipKeyGenerator, rateLimit } from "express-rate-limit";
+import type { NextFunction, Request, Response } from "express";
+import { ipKeyGenerator, MemoryStore, rateLimit } from "express-rate-limit";
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const ONE_HOUR = 60 * 60 * 1000;
+const ONE_DAY = 24 * ONE_HOUR;
 
 const shared = {
   statusCode: 429,
@@ -18,7 +19,7 @@ const shared = {
   },
 } as const;
 
-const ipKey = (req: Request) => ipKeyGenerator(req.ip ?? "");
+export const ipKey = (req: Request) => ipKeyGenerator(req.ip ?? "");
 
 /**
  * Outermost backstop against floods. Deliberately far above anything a real
@@ -31,8 +32,13 @@ export const floodLimiter = rateLimit({
   limit: 5000,
   keyGenerator: ipKey,
   // Preflights are not attack surface (CORS `maxAge` already caches them) and
-  // the health check must not spend a caller's budget.
-  skip: (req) => req.method === "OPTIONS" || req.path === "/health",
+  // the health check must not spend a caller's budget. `/mcp` has limiters of
+  // its own: every Claude user calls it from Anthropic's few egress addresses.
+  skip: (req) =>
+    req.method === "OPTIONS" ||
+    req.path === "/health" ||
+    req.path === "/mcp" ||
+    req.path.startsWith("/mcp/"),
 });
 
 /**
@@ -196,3 +202,77 @@ export const signedWebhookLimiter = rateLimit({
   limit: 5000,
   keyGenerator: ipKey,
 });
+
+/**
+ * Dynamic Client Registration across every address. The provider's own rule
+ * bounds one address to 5 a minute; this is the ceiling a distributed flood of
+ * registrations meets. Only registrations that succeed count.
+ */
+export const dcrDailyLimiter = rateLimit({
+  ...shared,
+  windowMs: ONE_DAY,
+  limit: 1000,
+  skipFailedRequests: true,
+  keyGenerator: () => "oauth2-register",
+});
+
+/**
+ * better-auth answers its own 429 with `X-Retry-After` only. Copies it to the
+ * standard `Retry-After` before the head goes out.
+ */
+export const mirrorRetryAfter = (_req: Request, res: Response, next: NextFunction) => {
+  const writeHead = res.writeHead.bind(res) as (...args: unknown[]) => Response;
+  res.writeHead = ((...args: unknown[]) => {
+    const status = typeof args[0] === "number" ? args[0] : res.statusCode;
+    const value = res.getHeader("x-retry-after");
+    if (status === 429 && value !== undefined && !res.hasHeader("retry-after")) {
+      res.setHeader("Retry-After", String(value));
+    }
+    return writeHead(...args);
+  }) as Response["writeHead"];
+  next();
+};
+
+export type BudgetHit = { allowed: boolean; resetAt: Date };
+
+/**
+ * A fixed-window counter outside the middleware chain, for limits decided
+ * after the request is read (an MCP tool call, a token that failed to verify).
+ * In memory, like every limiter here.
+ */
+export const windowBudget = ({ windowMs, limit }: { windowMs: number; limit: number }) => {
+  const store = new MemoryStore();
+  store.init({ windowMs } as Parameters<MemoryStore["init"]>[0]);
+  return {
+    limit,
+    windowMs,
+    hit: async (key: string): Promise<BudgetHit> => {
+      const { totalHits, resetTime } = await store.increment(key);
+      return {
+        allowed: totalHits <= limit,
+        resetAt: resetTime ?? new Date(Date.now() + windowMs),
+      };
+    },
+    spent: async (key: string): Promise<boolean> => {
+      const info = await store.get(key);
+      return (info?.totalHits ?? 0) >= limit;
+    },
+    resetAt: async (key: string): Promise<Date> =>
+      (await store.get(key))?.resetTime ?? new Date(Date.now() + windowMs),
+  };
+};
+
+export type WindowBudget = ReturnType<typeof windowBudget>;
+
+/**
+ * `/mcp` requests from one address that carried no token or one that failed
+ * verification. Once spent, only such requests are refused: a valid token
+ * never is, because every Claude user shares a few Anthropic egress addresses.
+ */
+export const mcpUnauthBudget = windowBudget({ windowMs: FIVE_MINUTES, limit: 2000 });
+
+/** Tool calls per user and OAuth client, every tool. */
+export const mcpCallBudget = windowBudget({ windowMs: FIVE_MINUTES, limit: 300 });
+
+/** Write-tool calls per user and OAuth client: each one can email approvers. */
+export const mcpWriteBudget = windowBudget({ windowMs: ONE_HOUR, limit: 30 });

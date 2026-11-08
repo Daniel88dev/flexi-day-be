@@ -3,7 +3,10 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { eq } from "drizzle-orm";
 import { db } from "../db/db.js";
 import { session as sessionTable } from "../db/schema/auth-schema.js";
+import { logger } from "../middleware/logger.js";
+import { pruneUnusedOAuthClients } from "../services/aiConnections/oauthClients.js";
 import { aiEligibility } from "../services/aiFeatures/aiEligibility.js";
+import { errorName } from "./errorName.js";
 
 export const FLEXIDAY_READ = "flexiday.read";
 export const FLEXIDAY_WRITE = "flexiday.write";
@@ -137,6 +140,30 @@ export const readOnlyConsentScopes = {
               },
             },
           };
+        }),
+      },
+    ],
+  },
+} satisfies BetterAuthPlugin;
+
+/**
+ * Each registration prunes the clients that never got a grant within 7 days
+ * (`pruneUnusedOAuthClients`). In the request, so no sweep job runs; a failure
+ * is logged and the registration still answers.
+ */
+export const unusedClientPruning = {
+  id: "ai-connections-unused-client-pruning",
+  hooks: {
+    after: [
+      {
+        matcher: (ctx) => ctx.path === "/oauth2/register",
+        handler: createAuthMiddleware(async (ctx) => {
+          if (ctx.context.returned instanceof Error) return;
+          try {
+            await pruneUnusedOAuthClients();
+          } catch (error) {
+            logger.error("oauth_client.prune_failed", { error: errorName(error) });
+          }
         }),
       },
     ],

@@ -9,6 +9,7 @@ import {
 import type { JWTPayload } from "jose";
 import { config } from "../config.js";
 import { loadMcpGrant } from "../services/aiConnections/mcpGrant.js";
+import { ipKey, mcpUnauthBudget } from "../middleware/limiter.js";
 import { auth } from "../utils/auth.js";
 import { updateRequestContext } from "../utils/requestStore.js";
 import { FLEXIDAY_READ, ORGANIZATION_CLAIM } from "../utils/aiConnectionsOAuth.js";
@@ -80,8 +81,8 @@ const serveVerified = async (request: Request, claims: JWTPayload): Promise<Resp
   };
   const principal: McpPrincipal =
     grant.status === "active"
-      ? { status: "active", context }
-      : { status: "refused", context, reason: grant.reason };
+      ? { status: "active", clientId, context }
+      : { status: "refused", clientId, context, reason: grant.reason };
 
   return mcpHandler.fetch(request, {
     authInfo: authInfoFor(
@@ -136,6 +137,34 @@ const send = async (res: ExpressResponse, response: Response) => {
   res.end();
 };
 
+const tooManyRequests = (resetAt: Date) =>
+  jsonRpcError(429, "Too many requests", {
+    "Retry-After": String(Math.max(1, Math.ceil((resetAt.getTime() - Date.now()) / 1000))),
+  });
+
+/** No token, a bad one, or a token whose grant is gone. */
+const unauthenticated = (response: Response) => response.status === 401 || response.status === 403;
+
+/**
+ * `mcpUnauthBudget`: answers that fail authentication count per address. Once
+ * spent, a request without a token is refused before any work, and one whose
+ * token fails gets 429 instead of 401. A valid token is never refused here.
+ */
+const withinUnauthBudget = async (
+  req: ExpressRequest,
+  request: Request,
+  serve: () => Promise<Response>
+): Promise<Response> => {
+  const address = ipKey(req);
+  if (!tokenOf(request) && (await mcpUnauthBudget.spent(address))) {
+    return tooManyRequests(await mcpUnauthBudget.resetAt(address));
+  }
+  const response = await serve();
+  if (!unauthenticated(response)) return response;
+  const hit = await mcpUnauthBudget.hit(address);
+  return hit.allowed ? response : tooManyRequests(hit.resetAt);
+};
+
 /** `POST /mcp`: the Streamable HTTP endpoint, stateless, for both protocol eras. */
 export const handleMcpPost = async (req: ExpressRequest, res: ExpressResponse) => {
   const aborted = new AbortController();
@@ -143,8 +172,12 @@ export const handleMcpPost = async (req: ExpressRequest, res: ExpressResponse) =
     if (!res.writableFinished) aborted.abort();
   });
   const request = toWebRequest(req, aborted.signal);
-  const response =
-    originValidationResponse(request, allowedOriginHostnames) ?? (await protectedMcp(request));
+  const response = await withinUnauthBudget(
+    req,
+    request,
+    async () =>
+      originValidationResponse(request, allowedOriginHostnames) ?? (await protectedMcp(request))
+  );
   await send(res, response);
 };
 

@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { dailyAiConnectionLimit, MEMBER_DAILY_LIMIT } from "../aiConnections/dailyLimits.js";
 import { config } from "../../config.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
@@ -76,6 +77,8 @@ export const readAiSettings = async (
     aiConnections: {
       level: organization.aiConnections,
       planAllows: isAiConnectionsPlan(plan),
+      dailyLimit: dailyAiConnectionLimit(plan),
+      memberDailyLimit: MEMBER_DAILY_LIMIT,
       grants: await listOrganizationGrants(input.organizationId, tx),
     },
     agreement: await readAgreement(input.organizationId, anyAiFeatureOn(organization), tx),

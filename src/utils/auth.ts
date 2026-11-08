@@ -30,6 +30,7 @@ import {
   consentOrganization,
   organizationClaim,
   readOnlyConsentScopes,
+  unusedClientPruning,
   shouldPickOrganization,
 } from "./aiConnectionsOAuth.js";
 import {
@@ -421,9 +422,19 @@ export const auth = betterAuth({
       // The connect pages name the app before sign-in; the signed query is
       // the credential.
       allowPublicClientPrelogin: true,
+      // Per address, and off under vitest with the rest of this limiter. The
+      // token endpoint is raised from 20: every Claude user's code exchange and
+      // refresh arrives from Anthropic's few egress addresses. See "Rate
+      // limiting" in `docs/invariants.md`.
+      rateLimit: {
+        token: { window: 60, max: 600 },
+        authorize: { window: 60, max: 30 },
+        register: { window: 60, max: 5 },
+      },
     }),
     cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
     readOnlyConsentScopes,
+    unusedClientPruning,
     aiConnectionGrantRevocation,
     // Last on purpose (better-auth infers session fields added by earlier
     // plugins into this callback). Rides on the session fetch the client

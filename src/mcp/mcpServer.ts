@@ -8,6 +8,7 @@ import { KB_LANGUAGES, type KbBundle } from "../services/knowledgeBase/bundle.js
 import { knowledgeBase } from "../services/knowledgeBase/knowledgeBase.js";
 import { findTool, toolDescription, toolInputJsonSchema, toolsFor } from "../tools/registry.js";
 import { isToolAllowed, runTool } from "../tools/runTool.js";
+import { spendMcpCall } from "./mcpLimits.js";
 import { toolMessage, type ToolError } from "../tools/toolErrors.js";
 import type { ToolContext } from "../tools/types.js";
 import { USER_TEXT_KEY } from "../tools/userText.js";
@@ -16,9 +17,9 @@ import { USER_TEXT_KEY } from "../tools/userText.js";
  * The caller of one `/mcp` request, settled by the route before the SDK sees
  * the request. `refused` still lists the tools; every call answers the reason.
  */
-export type McpPrincipal =
-  | { status: "active"; context: ToolContext }
-  | { status: "refused"; context: ToolContext; reason: "NO_STANDING" | "PLAN" };
+export type McpPrincipal = { clientId: string; context: ToolContext } & (
+  { status: "active" } | { status: "refused"; reason: "NO_STANDING" | "PLAN" }
+);
 
 const PRINCIPAL = "flexiDayPrincipal";
 
@@ -68,6 +69,14 @@ const callTool = async (
   if (principal.status === "refused") {
     return errorResult(toolMessage(principal.reason, context.language));
   }
+  const limited = await spendMcpCall({
+    userId: context.auth.userId,
+    clientId: principal.clientId,
+    organizationId: context.organizationId,
+    kind: tool.kind,
+    language: context.language,
+  });
+  if (limited) return errorResult(limited);
   const run = await runTool(tool, context, args);
   if (!run.ok) return errorResult(run.error);
   return { content: [{ type: "text", text: JSON.stringify(run.result) }] };

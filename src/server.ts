@@ -7,7 +7,9 @@ import {
   calendarFeedLimiter,
   CREDENTIAL_GUESSING_PATHS,
   credentialsLimiter,
+  dcrDailyLimiter,
   floodLimiter,
+  mirrorRetryAfter,
   otpSendLimiter,
   passwordResetLimiter,
   signedWebhookLimiter,
@@ -187,6 +189,9 @@ export const createServer = () => {
     ["/api/auth/oauth2", "/api/auth/jwks", "/api/auth/.well-known/oauth-authorization-server"],
     aiConnectionsReachable
   );
+  // better-auth's own per-address limits on these answer `X-Retry-After` only.
+  app.use("/api/auth/oauth2", mirrorRetryAfter);
+  app.post("/api/auth/oauth2/register", dcrDailyLimiter);
   app.get(
     [
       "/.well-known/oauth-authorization-server/api/auth",

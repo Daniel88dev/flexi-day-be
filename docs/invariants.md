@@ -442,16 +442,25 @@ read-only) to debug customer reports.
 Several limiters, not one, because a single per-IP bucket both throttles real users and
 under-protects the endpoints that matter:
 
-| Limiter                | Mounted on                                                                       | Key                            | Budget                   |
-| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------ | ------------------------ |
-| `floodLimiter`         | everything                                                                       | IP                             | 5000 / 5 min             |
-| `apiFailureLimiter`    | `/api` (before session validation), unvalidated requests only                    | IP                             | 100 **failures** / 5 min |
-| `apiLimiter`           | `/api` (after the auth and dev routes)                                           | validated user id, IP fallback | 1000 / 5 min             |
-| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link / account deletion | IP                             | 20 **failures** / 15 min |
-| `passwordResetLimiter` | `request-password-reset`                                                         | IP                             | 5 / 15 min               |
-| `otpSendLimiter`       | `two-factor/send-otp`                                                            | challenge cookie, IP fallback  | 10 / 15 min              |
-| `calendarFeedLimiter`  | `/calendars/:token.ics`                                                          | feed token                     | 120 / hour               |
-| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/webhooks/anthropic`, `/api/attachments/processed`  | IP                             | 5000 / 5 min             |
+| Limiter                      | Mounted on                                                                       | Key                            | Budget                                      |
+| ---------------------------- | -------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------- |
+| `floodLimiter`               | everything                                                                       | IP                             | 5000 / 5 min                                |
+| `apiFailureLimiter`          | `/api` (before session validation), unvalidated requests only                    | IP                             | 100 **failures** / 5 min                    |
+| `apiLimiter`                 | `/api` (after the auth and dev routes)                                           | validated user id, IP fallback | 1000 / 5 min                                |
+| `credentialsLimiter`         | sign-in / sign-up / reset-password / two-factor / invite link / account deletion | IP                             | 20 **failures** / 15 min                    |
+| `passwordResetLimiter`       | `request-password-reset`                                                         | IP                             | 5 / 15 min                                  |
+| `otpSendLimiter`             | `two-factor/send-otp`                                                            | challenge cookie, IP fallback  | 10 / 15 min                                 |
+| `calendarFeedLimiter`        | `/calendars/:token.ics`                                                          | feed token                     | 120 / hour                                  |
+| `signedWebhookLimiter`       | `/api/webhooks/paddle`, `/api/webhooks/anthropic`, `/api/attachments/processed`  | IP                             | 5000 / 5 min                                |
+| `mcpUnauthBudget`            | `/mcp`, answers of 401 or 403 only                                               | IP                             | 2000 **failures** / 5 min                   |
+| `mcpCallBudget`              | `/mcp` `tools/call`                                                              | user id + OAuth client id      | 300 / 5 min                                 |
+| `mcpWriteBudget`             | `/mcp` `tools/call` of a write tool                                              | user id + OAuth client id      | 30 / hour                                   |
+| daily AI connection limit    | `/mcp` `tools/call`, Postgres `ai_connection_daily_calls`                        | organization, UTC day          | Pro 5000, Enterprise and Custom 20000 / day |
+| member daily limit           | `/mcp` `tools/call`, Postgres `ai_connection_member_daily_calls`                 | organization + user, UTC day   | 1000 / day                                  |
+| better-auth `token` rule     | `/api/auth/oauth2/token`                                                         | IP (better-auth's own)         | 600 / min                                   |
+| better-auth `authorize` rule | `/api/auth/oauth2/authorize`                                                     | IP (better-auth's own)         | 30 / min                                    |
+| better-auth `register` rule  | `/api/auth/oauth2/register`                                                      | IP (better-auth's own)         | 5 / min                                     |
+| `dcrDailyLimiter`            | `/api/auth/oauth2/register`                                                      | one global key                 | 1000 **registrations** / day                |
 
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs
@@ -493,11 +502,56 @@ under-protects the endpoints that matter:
   signing in at 9am is unaffected while a password guesser burns the budget.
 - **`calendarFeedLimiter` keys on the token.** Google polls every subscribed feed from a handful of
   shared ranges, so an IP key would throttle all users at once.
-- **`floodLimiter` skips `OPTIONS` and `/health`.** Preflights are not attack surface (CORS `maxAge`
-  caches them) and the health check must not spend a caller's budget.
+- **`floodLimiter` skips `OPTIONS`, `/health` and `/mcp`.** Preflights are not attack surface (CORS
+  `maxAge` caches them) and the health check must not spend a caller's budget. `/mcp` is skipped
+  because Anthropic makes every Claude connector call from a few fixed egress addresses, so a
+  per-IP flood bucket there would be shared by every Claude user at once. The limits below bound
+  `/mcp` instead. `src/tests/middleware/limiter.test.ts` covers all three skips.
+- **`mcpUnauthBudget` counts only requests that fail authentication, and refuses only those.**
+  `/mcp` sits outside `/api`, so neither `apiFailureLimiter` nor `apiLimiter` sees it; discovery
+  401s and expired tokens are routine there and would trip `apiFailureLimiter` within minutes on
+  Anthropic's shared addresses. Once an address has 2000 failed answers in 5 minutes, a request
+  with no token gets 429 before any work, and one whose token fails gets 429 instead of 401. A
+  token that verifies is never refused by it, so one misbehaving client behind a shared address
+  can't lock out everyone else there. JWT verification is a local signature check, which is why a
+  flood of junk tokens is cheap enough to verify before counting. Code in `src/mcp/mcpHttp.ts`.
+- **The MCP burst budgets key on user and OAuth client together.** A user with two apps gets two
+  budgets, and two users of one app never share one. 300 calls in 5 minutes is far above what a
+  person's conversation produces and stops a looping agent; 30 write calls an hour bounds the
+  emails a write sends (a created request mails its approvers, a cancel sends notices). Both are
+  in memory: two instances double them, which is accepted.
+- **The daily limits live in Postgres, and only `tools/call` counts.** They must hold across
+  deploys and instances, unlike the burst budgets. Each call upserts the organization's row and
+  the member's row for the UTC day (`date_trunc` on the database clock, so no reset job runs); a
+  row only rises while under its limit, so concurrent calls can't pass it, and a refused call
+  counts on neither row. `initialize`, `tools/list`, resources and pings don't count, and neither
+  does the Assistant, which runs tools in-process under its own Weekly limit. The member daily
+  limit exists so one looping agent can't use the whole organization's day. The first refusal of
+  a day stamps `limit_reached_at` and logs `mcp.daily_limit_reached`, once per organization and
+  day.
+- **Burst and daily limits answer as tool results; transport limits as 429.** A refused
+  `tools/call` is a normal `isError` result naming the limit and its reset in the user's app
+  language (`src/mcp/mcpLimits.ts`), because an AI app shows a bare 429 as "connection failed" or
+  retries blindly, while a tool result reaches the model, which can tell the user.
+  `mcpUnauthBudget`, the OAuth endpoints and `dcrDailyLimiter` answer 429 with `Retry-After`.
+- **The OAuth provider's limits are better-auth's, raised where Anthropic's egress shares them.**
+  Set through `mcp({ rateLimit })` in `src/utils/auth.ts` and off under vitest like the rest of
+  better-auth's limiter (`src/tests/e2e/oauthLimits.e2e.test.ts` turns it on per test). The token
+  endpoint goes from the default 20 to 600 a minute: every Claude user's code exchange and refresh
+  comes from Anthropic's addresses, and codes and refresh tokens are long, random and bound to
+  PKCE, so the limit only bounds floods. `authorize` stays at 30, a browser redirect from the
+  user's own address. better-auth answers its 429 with `X-Retry-After` only; `mirrorRetryAfter`
+  copies it to `Retry-After`.
+- **Dynamic Client Registration stays open, with three bounds.** Cursor, VS Code and other clients
+  without a pre-registered id need it. better-auth's per-address 5 a minute (these clients
+  register from the user's machine), `dcrDailyLimiter`'s 1000 successful registrations a day
+  across every address, and each registration deleting the clients older than 7 days that hold no
+  grant (no consent, refresh or access token; `pruneUnusedOAuthClients`). Clients found through a
+  metadata document are left alone. The pruning runs in the request, so no sweep job exists.
 
-The store is in-memory: counters are per-process and reset on deploy. Running more than one instance
-multiplies the effective limits — that needs a shared store before scaling out.
+The store is in-memory, except for the two daily limits, which are Postgres rows: counters are
+per-process and reset on deploy. Running more than one instance multiplies the effective limits —
+that needs a shared store before scaling out.
 
 ## Sync pull transport (`src/routes/syncRouter.ts`)
 

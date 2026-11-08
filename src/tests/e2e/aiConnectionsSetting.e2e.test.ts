@@ -129,7 +129,13 @@ describe("The AI connections setting", () => {
       const res = await settingsAs(world.users.owner.id, world.organizationId);
 
       expect(res.status).toBe(200);
-      expect(res.body.aiConnections).toEqual({ level: "off", planAllows: true, grants: [] });
+      expect(res.body.aiConnections).toEqual({
+        level: "off",
+        planAllows: true,
+        dailyLimit: 5000,
+        memberDailyLimit: 1000,
+        grants: [],
+      });
     });
 
     it("accepts the agreement the first time and starts at the chosen level", async () => {
@@ -287,15 +293,20 @@ describe("The AI connections setting", () => {
       expect(await changesOf(world.organizationId)).toHaveLength(1);
     });
 
-    it("works on every Paid plan, grace included", async () => {
-      for (const [plan, subscription] of [
-        [subscriptionPlan.Enterprise, { status: subscriptionStatus.Active, graceEndsAt: null }],
+    it("works on every Paid plan, grace included, with that plan's daily limit", async () => {
+      for (const [plan, subscription, dailyLimit] of [
+        [
+          subscriptionPlan.Enterprise,
+          { status: subscriptionStatus.Active, graceEndsAt: null },
+          20_000,
+        ],
         [
           subscriptionPlan.Pro,
           {
             status: subscriptionStatus.PastDue,
             graceEndsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
           },
+          5_000,
         ],
       ] as const) {
         await cleanupTestData();
@@ -304,7 +315,13 @@ describe("The AI connections setting", () => {
         const res = await enable(world.users.owner.id, world.organizationId);
 
         expect(res.status).toBe(200);
-        expect(res.body.aiConnections).toEqual({ level: "read", planAllows: true, grants: [] });
+        expect(res.body.aiConnections).toEqual({
+          level: "read",
+          planAllows: true,
+          dailyLimit,
+          memberDailyLimit: 1000,
+          grants: [],
+        });
       }
     });
 
@@ -317,7 +334,7 @@ describe("The AI connections setting", () => {
       const state = await settingsAs(world.users.owner.id, world.organizationId);
       expect(state.body).toMatchObject({
         plan: "FREE",
-        aiConnections: { level: "off", planAllows: false },
+        aiConnections: { level: "off", planAllows: false, dailyLimit: 0 },
       });
       expect(await acceptancesOf(world.organizationId)).toEqual([]);
 
