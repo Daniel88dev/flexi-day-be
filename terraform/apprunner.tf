@@ -92,6 +92,8 @@ resource "aws_apprunner_service" "main" {
             ASSISTANT_ENABLED      = tostring(var.assistant_enabled)
             AI_CONNECTIONS_ENABLED = tostring(var.ai_connections_enabled)
             ASSISTANT_DRIVER       = var.assistant_driver
+            # Each organization's Weekly limit on Assistant Usage, in dollars.
+            ASSISTANT_WEEKLY_LIMIT_USD = var.assistant_weekly_limit_usd
           },
           length(var.ai_preview_organization_ids) > 0 ? {
             AI_PREVIEW_ORGANIZATION_IDS = join(",", var.ai_preview_organization_ids)

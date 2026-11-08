@@ -32,6 +32,8 @@ const BASE = {
   ASSISTANT_ENVIRONMENT_ID: "",
   ANTHROPIC_WEBHOOK_SECRET: "",
   ASSISTANT_CHAT_TOKEN_CEILING: "",
+  ASSISTANT_SCREEN_MODEL: "",
+  ASSISTANT_WEEKLY_LIMIT_USD: "",
   ASSISTANT_STEP_OUTPUT_RESERVE: "",
 };
 
@@ -68,6 +70,7 @@ describe("config AI features", () => {
       screenTimeoutMs: 5000,
       chatTokenCeiling: 100_000,
       stepOutputReserve: 4096,
+      weeklyLimitMicroUsd: 10_000_000,
     });
     expect(config.assistant.apiKey).toBeUndefined();
     expect(config.assistant.webhookSecret).toBeUndefined();
@@ -82,11 +85,11 @@ describe("config AI features", () => {
       ASSISTANT_ENVIRONMENT_ID: "env_01Test",
       ASSISTANT_CHAT_TOKEN_CEILING: "50000",
       ASSISTANT_STEP_OUTPUT_RESERVE: "2048",
-      ASSISTANT_SCREEN_MODEL: "claude-haiku-5-5-test",
+      ASSISTANT_SCREEN_MODEL: "claude-sonnet-5-5",
       ASSISTANT_SCREEN_TIMEOUT_MS: "3000",
     });
     expect(config.assistant).toMatchObject({
-      screenModel: "claude-haiku-5-5-test",
+      screenModel: "claude-sonnet-5-5",
       screenTimeoutMs: 3000,
       model: "claude-haiku-5-5",
       effort: "low",
@@ -177,5 +180,44 @@ describe("config AI features", () => {
     await expect(loadConfig({ ...BASE, ...PRODUCTION, ASSISTANT_DRIVER: "fake" })).rejects.toThrow(
       "ASSISTANT_DRIVER=fake must never be set when NODE_ENV=production"
     );
+  });
+});
+
+describe("config Assistant meter", () => {
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("defaults to Sonnet 5.5, the Haiku 5.5 screen, a $10 Weekly limit and a 4,096-token reserve", async () => {
+    const config = await loadConfig(BASE);
+    expect(config.assistant).toMatchObject({
+      model: "claude-sonnet-5-5",
+      screenModel: "claude-haiku-5-5",
+      weeklyLimitMicroUsd: 10_000_000,
+      stepOutputReserve: 4096,
+    });
+  });
+
+  it("reads the Weekly limit in dollars, cents included", async () => {
+    const config = await loadConfig({ ...BASE, ASSISTANT_WEEKLY_LIMIT_USD: "12.50" });
+    expect(config.assistant.weeklyLimitMicroUsd).toBe(12_500_000);
+  });
+
+  it("rejects a Weekly limit that is not a positive amount", async () => {
+    await expect(loadConfig({ ...BASE, ASSISTANT_WEEKLY_LIMIT_USD: "-1" })).rejects.toThrow(
+      /ASSISTANT_WEEKLY_LIMIT_USD/
+    );
+    await expect(loadConfig({ ...BASE, ASSISTANT_WEEKLY_LIMIT_USD: "ten" })).rejects.toThrow(
+      /ASSISTANT_WEEKLY_LIMIT_USD/
+    );
+  });
+
+  it("refuses to boot with a model that has no price row", async () => {
+    await expect(loadConfig({ ...BASE, ASSISTANT_MODEL: "claude-opus-5-5" })).rejects.toThrow(
+      "ASSISTANT_MODEL claude-opus-5-5 has no row in the price table"
+    );
+    await expect(
+      loadConfig({ ...BASE, ASSISTANT_SCREEN_MODEL: "claude-haiku-4-5" })
+    ).rejects.toThrow("ASSISTANT_SCREEN_MODEL claude-haiku-4-5 has no row in the price table");
   });
 });

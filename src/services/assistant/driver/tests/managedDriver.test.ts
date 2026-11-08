@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import AppError from "../../../../utils/appError.js";
+import { ProviderRefusedError } from "../types.js";
 import { buildAgentConfig } from "../../agent/agentConfig.js";
 import { provisionAssistant } from "../../agent/agentSync.js";
 import {
@@ -32,9 +33,17 @@ describe("the managed driver", () => {
   });
 
   it("pins each session to the agent version current when the chat started", async () => {
-    const first = await driver.createSession({ chatId: "chat-1", organizationId: "org-1" });
+    const first = await driver.createSession({
+      chatId: "chat-1",
+      organizationId: "org-1",
+      budgetMicroUsd: 90_000,
+    });
     await api.client().beta.agents.update(agentId, { system: "changed", version: 1 });
-    const second = await driver.createSession({ chatId: "chat-2", organizationId: "org-1" });
+    const second = await driver.createSession({
+      chatId: "chat-2",
+      organizationId: "org-1",
+      budgetMicroUsd: 90_000,
+    });
 
     expect(first.agentVersion).toBe(1);
     expect(second.agentVersion).toBe(2);
@@ -43,7 +52,11 @@ describe("the managed driver", () => {
   });
 
   it("sends the user message with the context last and answers the logged events", async () => {
-    const { sessionId } = await driver.createSession({ chatId: "c", organizationId: "o" });
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
 
     const sent = await driver.sendEvents(sessionId, [
       { type: "user.message", content: text("How many days do I have left?") },
@@ -55,7 +68,11 @@ describe("the managed driver", () => {
   });
 
   it("lists the events after one id, across pages, in order", async () => {
-    const { sessionId } = await driver.createSession({ chatId: "c", organizationId: "o" });
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
     const [start] = await driver.sendEvents(sessionId, [
       { type: "user.message", content: text("hi") },
     ]);
@@ -73,7 +90,11 @@ describe("the managed driver", () => {
   });
 
   it("streams logged events and turns message deltas into text, attached before it says ready", async () => {
-    const { sessionId } = await driver.createSession({ chatId: "c", organizationId: "o" });
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
     const controller = new AbortController();
     const live = driver.stream(sessionId, controller.signal);
     await live.ready;
@@ -113,7 +134,11 @@ describe("the managed driver", () => {
   });
 
   it("stops streaming when the caller aborts", async () => {
-    const { sessionId } = await driver.createSession({ chatId: "c", organizationId: "o" });
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
     const controller = new AbortController();
     const live = driver.stream(sessionId, controller.signal);
     await live.ready;
@@ -129,7 +154,11 @@ describe("the managed driver", () => {
   });
 
   it("answers a tool call with its result as text", async () => {
-    const { sessionId } = await driver.createSession({ chatId: "c", organizationId: "o" });
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
     const call = api.emit(sessionId, {
       type: "agent.custom_tool_use",
       name: "get_my_balances",
@@ -150,7 +179,11 @@ describe("the managed driver", () => {
   });
 
   it("reads the session's cumulative usage with the cache split", async () => {
-    const { sessionId } = await driver.createSession({ chatId: "c", organizationId: "o" });
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
 
     expect(await driver.readUsage(sessionId)).toEqual({
       input_tokens: 82,
@@ -161,7 +194,11 @@ describe("the managed driver", () => {
   });
 
   it("deletes a session, and a session already gone is no error", async () => {
-    const { sessionId } = await driver.createSession({ chatId: "c", organizationId: "o" });
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
 
     await driver.deleteSession(sessionId);
     await driver.deleteSession(sessionId);
@@ -177,6 +214,58 @@ describe("the managed driver", () => {
     expect(error).toBeInstanceOf(AppError);
     expect((error as AppError).statusCode).toBe(503);
     expect((error as AppError).errors[0]!.publicContext).toEqual({ code: "ASSISTANT_UNAVAILABLE" });
+  });
+
+  it("creates each session with a spend ceiling in whole cents, rounded up", async () => {
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 83_461,
+    });
+
+    expect(api.sessions.get(sessionId)!.budget).toEqual({
+      type: "limit",
+      max_list_cost: { amount: "9", currency: "USD" },
+    });
+  });
+
+  it("raises the ceiling before each step", async () => {
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
+
+    await driver.setBudget(sessionId, 150_000);
+
+    expect(api.sessions.get(sessionId)!.budget).toEqual({
+      type: "limit",
+      max_list_cost: { amount: "15", currency: "USD" },
+    });
+  });
+
+  it("interrupts a session with a user.interrupt event", async () => {
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
+
+    await driver.interrupt(sessionId);
+
+    expect(api.sessions.get(sessionId)!.events.map((event) => event.type)).toEqual([
+      "user.interrupt",
+    ]);
+  });
+
+  it("names a refusal for spend limit or credits, which no 503 retry fixes", async () => {
+    api.state.billingRefusal = true;
+
+    const error = await driver
+      .createSession({ chatId: "c", organizationId: "o", budgetMicroUsd: 90_000 })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProviderRefusedError);
   });
 
   describe("the screen", () => {

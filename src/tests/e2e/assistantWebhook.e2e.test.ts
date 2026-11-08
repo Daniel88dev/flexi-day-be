@@ -118,7 +118,11 @@ describe("Advancing a turn without its relay: the webhook and chat open", () => 
     const created = await (await as(jana.id)).post("/api/assistant/chats", { organizationId });
     expect(created.status).toBe(201);
     const chatId = (created.body as { chat: { id: string } }).chat.id;
-    const { sessionId } = await fakeDriver.createSession({ chatId, organizationId });
+    const { sessionId } = await fakeDriver.createSession({
+      chatId,
+      organizationId,
+      budgetMicroUsd: 1_000_000,
+    });
     const [start] = await fakeDriver.sendEvents(sessionId, [
       { type: "user.message", content: [{ type: "text", text: "How many days do I have left?" }] },
       { type: "system.message", content: [{ type: "text", text: "App language: English." }] },

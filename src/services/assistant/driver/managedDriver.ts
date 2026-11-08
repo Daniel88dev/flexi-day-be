@@ -11,12 +11,13 @@ import {
   toolTextScreenInput,
 } from "../screen/screenPrompt.js";
 import { assistantUnavailable } from "./anthropicClient.js";
-import type {
-  AssistantDriver,
-  LiveStream,
-  SessionEvent,
-  SessionUsage,
-  StreamItem,
+import {
+  ProviderRefusedError,
+  type AssistantDriver,
+  type LiveStream,
+  type SessionEvent,
+  type SessionUsage,
+  type StreamItem,
 } from "./types.js";
 
 /**
@@ -31,10 +32,17 @@ type Raw = Record<string, unknown>;
 
 const isNotFound = (error: unknown) => error instanceof Anthropic.NotFoundError;
 
-/** Logs a failed API call by status and type and answers the 503 the caller sees. */
-const unavailable = (operation: string, error: unknown): AppError => {
-  if (error instanceof AppError) return error;
+const isBillingRefusal = (api: { status: unknown; type: unknown }): boolean =>
+  api.status === 402 || api.type === "billing_error";
+
+/**
+ * Logs a failed API call by status and type and answers the 503 the caller
+ * sees, or `ProviderRefusedError` for a spend limit or credits.
+ */
+const unavailable = (operation: string, error: unknown): AppError | ProviderRefusedError => {
+  if (error instanceof AppError || error instanceof ProviderRefusedError) return error;
   const api = error instanceof Anthropic.APIError ? error : null;
+  if (api && isBillingRefusal(api)) return new ProviderRefusedError();
   logger.error("assistant.provider_error", {
     operation,
     status: typeof api?.status === "number" ? api.status : undefined,
@@ -65,6 +73,15 @@ const streamItem = (raw: Raw): StreamItem | null => {
   if (typeof raw.id !== "string" || raw.type === "event_start") return null;
   return { kind: "event", event: raw as unknown as SessionEvent };
 };
+
+/** The API takes whole cents; round up so the ceiling never sits below the reservation. */
+const budgetOf = (microUsd: number) => ({
+  type: "limit" as const,
+  max_list_cost: {
+    amount: String(Math.max(1, Math.ceil(microUsd / 10_000))),
+    currency: "USD" as const,
+  },
+});
 
 const usageOf = (raw: Raw | undefined): SessionUsage => {
   const usage = (raw ?? {}) as {
@@ -152,11 +169,21 @@ export const createManagedDriver = (args: {
           agent: agentId,
           environment_id: environmentId,
           metadata: { chat_id: input.chatId, organization_id: input.organizationId },
+          budget: budgetOf(input.budgetMicroUsd),
         });
         return { sessionId: session.id, agentVersion: session.agent.version };
       }),
 
     sendEvents: (sessionId, events) => send(sessionId, events),
+
+    setBudget: (sessionId, budgetMicroUsd) =>
+      call("set_budget", async () => {
+        await sessions.update(sessionId, { budget: budgetOf(budgetMicroUsd) });
+      }),
+
+    interrupt: async (sessionId) => {
+      await send(sessionId, [{ type: "user.interrupt" }]);
+    },
 
     listEvents: (sessionId, options) =>
       call("list_events", async () => {

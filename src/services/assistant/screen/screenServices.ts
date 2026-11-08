@@ -9,7 +9,8 @@ import { logger } from "../../../middleware/logger.js";
 import { USER_TEXT_KEY } from "../../../tools/userText.js";
 import { errorName } from "../../../utils/errorName.js";
 import { currentAgentKnowledge } from "../agent/agentSync.js";
-import type { AssistantDriver } from "../driver/types.js";
+import type { AssistantDriver, SessionUsage } from "../driver/types.js";
+import { isMeterRefusal, meterScreen } from "../meter/meter.js";
 
 /** What a flagged user-written value becomes in the tool result the session reads. */
 export const WITHHELD = "[withheld: looked like instructions]";
@@ -21,11 +22,19 @@ class ScreenTimeoutError extends Error {
   }
 }
 
+type ScreenOwner = { organizationId: string; userId: string; chatId: string };
+
 /**
  * Runs one screen call under the timeout, so even a call that ignores its
- * signal fails closed in time. Every screen call goes through here.
+ * signal fails closed in time, and through the meter as a `screen` step.
+ * Every screen call goes through here.
  */
-const screenCall = async <T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+const screenCall = <T extends { usage: SessionUsage }>(
+  owner: ScreenOwner & { promptText: string },
+  run: (signal: AbortSignal) => Promise<T>
+): Promise<T> => meterScreen(owner, () => withTimeout(run));
+
+const withTimeout = async <T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> => {
   const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -70,6 +79,8 @@ export type MessageScreen =
 export const screenMessage = async (args: {
   driver: AssistantDriver;
   chatId: string;
+  organizationId: string;
+  userId: string;
   message: string;
   language: "en" | "cs";
 }): Promise<MessageScreen> => {
@@ -80,11 +91,21 @@ export const screenMessage = async (args: {
       language: args.language,
       articleIndex: currentAgentKnowledge()?.index ?? null,
     };
-    const { verdict } = await screenCall((signal) => args.driver.screen(input, signal));
+    const { verdict } = await screenCall(
+      {
+        organizationId: args.organizationId,
+        userId: args.userId,
+        chatId: args.chatId,
+        promptText: `${input.message}${input.previousAssistantMessage ?? ""}${input.articleIndex ?? ""}`,
+      },
+      (signal) => args.driver.screen(input, signal)
+    );
     if ("refused" in verdict || verdict.attack) return { outcome: "rejected", reason: "attack" };
     if (!verdict.inScope) return { outcome: "rejected", reason: "off_topic" };
     return { outcome: "pass" };
   } catch (error) {
+    // The Weekly limit or a provider refusal is the turn's answer, not a screen failure.
+    if (isMeterRefusal(error)) throw error;
     logger.warn("assistant.screen_failed", {
       chatId: args.chatId,
       purpose: "message",
@@ -132,6 +153,8 @@ const parse = (text: string): Json | undefined => {
 export const screenToolResults = async (args: {
   driver: AssistantDriver;
   chatId: string;
+  organizationId: string;
+  userId: string;
   texts: string[];
 }): Promise<string[]> => {
   const parsed = args.texts.map(parse);
@@ -140,8 +163,15 @@ export const screenToolResults = async (args: {
 
   let withheld: Set<number>;
   try {
-    const { verdict } = await screenCall((signal) =>
-      args.driver.screenToolText({ values: slots.map((slot) => slot[USER_TEXT_KEY]) }, signal)
+    const values = slots.map((slot) => slot[USER_TEXT_KEY]);
+    const { verdict } = await screenCall(
+      {
+        organizationId: args.organizationId,
+        userId: args.userId,
+        chatId: args.chatId,
+        promptText: values.join("\n"),
+      },
+      (signal) => args.driver.screenToolText({ values }, signal)
     );
     withheld =
       "refused" in verdict

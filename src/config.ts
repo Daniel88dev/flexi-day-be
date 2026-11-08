@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import { hasPrice } from "./services/assistant/meter/prices.js";
 dotenv.config();
 
 type APIConfig = {
@@ -157,7 +158,10 @@ type AssistantConfig = {
   /** The agent's model and effort. A change is a new agent version and reaches new chats only. */
   model: string;
   effort: AssistantEffort;
-  /** The screen's model (`ASSISTANT_SCREEN_MODEL`), run with thinking off on every user message. */
+  /**
+   * The screen's model (`ASSISTANT_SCREEN_MODEL`), run with thinking off on every user message
+   * and metered like any model call.
+   */
   screenModel: string;
   /** A screen call that takes longer fails closed: nothing is sent. */
   screenTimeoutMs: number;
@@ -169,6 +173,8 @@ type AssistantConfig = {
   webhookSecret?: string;
   /** Context tokens at which a chat closes, well below the harness's compaction (T-711). */
   chatTokenCeiling: number;
+  /** Each organization's Weekly limit (`ASSISTANT_WEEKLY_LIMIT_USD`), in micro-USD. */
+  weeklyLimitMicroUsd: number;
   /** Output tokens one step reserves. Agents take no `max_tokens`, so this is an allowance, not a cap. */
   stepOutputReserve: number;
 };
@@ -547,6 +553,17 @@ const parsePositiveInt = (key: string, fallback: number): number => {
   return value;
 };
 
+const parseWeeklyLimit = (): number => {
+  const raw = process.env.ASSISTANT_WEEKLY_LIMIT_USD;
+  if (!raw) return 10_000_000;
+  if (!/^\d+(\.\d{1,2})?$/.test(raw) || Number(raw) <= 0) {
+    throw new Error(
+      `Invalid ASSISTANT_WEEKLY_LIMIT_USD: "${raw}". Expected a positive amount in dollars`
+    );
+  }
+  return Math.round(Number(raw) * 1_000_000);
+};
+
 const parseAssistant = (): AssistantConfig => {
   const driver =
     process.env.ASSISTANT_DRIVER || (environment === "production" ? "managed" : "fake");
@@ -566,16 +583,25 @@ const parseAssistant = (): AssistantConfig => {
   if (webhookSecret && !webhookSecret.startsWith("whsec_")) {
     throw new Error("ANTHROPIC_WEBHOOK_SECRET must start with whsec_");
   }
+  const model = process.env.ASSISTANT_MODEL || "claude-sonnet-5-5";
+  const screenModel = process.env.ASSISTANT_SCREEN_MODEL || "claude-haiku-5-5";
+  for (const [key, value] of [
+    ["ASSISTANT_MODEL", model],
+    ["ASSISTANT_SCREEN_MODEL", screenModel],
+  ] as const) {
+    if (!hasPrice(value)) throw new Error(`${key} ${value} has no row in the price table`);
+  }
   const assistant: AssistantConfig = {
     driver,
-    model: process.env.ASSISTANT_MODEL || "claude-sonnet-5-5",
+    model,
+    screenModel,
     effort: effort as AssistantEffort,
-    screenModel: process.env.ASSISTANT_SCREEN_MODEL || "claude-haiku-5-5",
     screenTimeoutMs: parsePositiveInt("ASSISTANT_SCREEN_TIMEOUT_MS", 5000),
     agentId: process.env.ASSISTANT_AGENT_ID || undefined,
     environmentId: process.env.ASSISTANT_ENVIRONMENT_ID || undefined,
     chatTokenCeiling: parsePositiveInt("ASSISTANT_CHAT_TOKEN_CEILING", 100_000),
     stepOutputReserve: parsePositiveInt("ASSISTANT_STEP_OUTPUT_RESERVE", 4096),
+    weeklyLimitMicroUsd: parseWeeklyLimit(),
   };
   // Non-enumerable, so a test diff, a log line or a spread of this block never carries them.
   // The e2e setup loads `.env`, which holds the dev key.

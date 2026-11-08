@@ -1,14 +1,17 @@
 import crypto from "node:crypto";
-import type {
-  AssistantDriver,
-  ModelUsage,
-  ScreenInput,
-  ScreenVerdict,
-  SessionEvent,
-  SessionInputEvent,
-  SessionUsage,
-  StopReason,
-  StreamItem,
+import { config } from "../../../config.js";
+import { costOf, priceFor } from "../meter/prices.js";
+import {
+  ProviderRefusedError,
+  type AssistantDriver,
+  type ModelUsage,
+  type ScreenInput,
+  type ScreenVerdict,
+  type SessionEvent,
+  type SessionInputEvent,
+  type SessionUsage,
+  type StopReason,
+  type StreamItem,
 } from "./types.js";
 
 /**
@@ -34,6 +37,8 @@ type FakeSession = {
   results: { name: string; text: string; isError: boolean }[];
   /** Model requests so far; the first one writes the prompt cache. */
   requests: number;
+  /** The spend ceiling in micro-USD; a step waits on it like Managed Agents does. */
+  budgetMicroUsd: number;
 };
 
 const sessions = new Map<string, FakeSession>();
@@ -46,6 +51,14 @@ const randomId = (prefix: string) =>
 export const fakeDriverControls = {
   chunkDelayMs: 15,
   stepDelayMs: 120,
+  /** Text a tool step writes before its tool call, as a model often does. */
+  leadText: null as string | null,
+  /**
+   * Anthropic refusing for the workspace's spend limit or credits: `call`
+   * throws from every driver call, `session` fails the next model step with a
+   * `billing_error`.
+   */
+  providerRefusal: null as "call" | "session" | null,
   gate: null as Promise<void> | null,
   release: null as (() => void) | null,
   /** Fails every message screen: `error` at once, `timeout` by never answering until aborted. */
@@ -77,6 +90,8 @@ export const fakeDriverControls = {
   },
   reset(): void {
     this.release?.();
+    this.leadText = null;
+    this.providerRefusal = null;
     sessions.clear();
     this.screenFailure = null;
     this.toolTextScreenFailure = null;
@@ -106,6 +121,7 @@ const sessionOf = (sessionId: string): FakeSession => {
       pending: new Map(),
       results: [],
       requests: 0,
+      budgetMicroUsd: Number.MAX_SAFE_INTEGER,
     };
     sessions.set(sessionId, session);
   }
@@ -266,8 +282,29 @@ const emitText = async (session: FakeSession, text: string) => {
 };
 
 /** One model request: tool call or text, then usage and idle. */
+const listCost = (usage: SessionUsage): number =>
+  costOf(priceFor(config.assistant.model, new Date()), {
+    inputTokens: usage.input_tokens,
+    cacheWrite5mTokens: usage.cache_creation.ephemeral_5m_input_tokens,
+    cacheWrite1hTokens: usage.cache_creation.ephemeral_1h_input_tokens,
+    cacheReadTokens: usage.cache_read_input_tokens,
+    outputTokens: usage.output_tokens,
+  });
+
 const runStep = async (session: FakeSession, input: { script: Script; inputChars: number }) => {
+  if (listCost(session.usage) >= session.budgetMicroUsd) {
+    log(session, { type: "session.status_idle", stop_reason: { type: "budget_reached" } });
+    return;
+  }
   log(session, { type: "session.status_running" });
+  if (fakeDriverControls.providerRefusal === "session") {
+    log(session, {
+      type: "session.error",
+      error: { type: "billing_error", message: "Spend limit reached" },
+    });
+    log(session, { type: "session.status_idle", stop_reason: { type: "end_turn" } });
+    return;
+  }
   const start = log(session, { type: "span.model_request_start" });
   await sleep(fakeDriverControls.stepDelayMs);
   if (fakeDriverControls.gate) await fakeDriverControls.gate;
@@ -281,6 +318,12 @@ const runStep = async (session: FakeSession, input: { script: Script; inputChars
     stop = { type: "refusal" };
   } else if (input.script) {
     output = JSON.stringify(input.script.input);
+    const lead = fakeDriverControls.leadText;
+    if (lead) {
+      await emitText(session, lead);
+      log(session, { type: "agent.message", content: [{ type: "text", text: lead }] });
+      output += lead;
+    }
     const call = log(session, {
       type: "agent.custom_tool_use",
       name: input.script.tool,
@@ -379,17 +422,36 @@ const screenCall = <T>(
   return Promise.resolve(answer());
 };
 
+const refusedCall = (): Promise<never> | null =>
+  fakeDriverControls.providerRefusal === "call" ? Promise.reject(new ProviderRefusedError()) : null;
+
 export const fakeDriver: AssistantDriver = {
   name: "fake",
 
-  createSession() {
+  createSession(input) {
+    const refused = refusedCall();
+    if (refused) return refused;
     const sessionId = randomId("sesn");
-    sessionOf(sessionId);
+    sessionOf(sessionId).budgetMicroUsd = input.budgetMicroUsd;
     return Promise.resolve({ sessionId, agentVersion: null });
   },
 
+  setBudget(sessionId, budgetMicroUsd) {
+    sessionOf(sessionId).budgetMicroUsd = budgetMicroUsd;
+    return Promise.resolve();
+  },
+
+  interrupt(sessionId) {
+    const session = sessionOf(sessionId);
+    session.pending.clear();
+    session.results = [];
+    log(session, { type: "user.interrupt" });
+    log(session, { type: "session.status_idle", stop_reason: { type: "end_turn" } });
+    return Promise.resolve();
+  },
+
   sendEvents(sessionId, events) {
-    return Promise.resolve(ingest(sessionOf(sessionId), events));
+    return refusedCall() ?? Promise.resolve(ingest(sessionOf(sessionId), events));
   },
 
   listEvents(sessionId, options) {
@@ -437,6 +499,8 @@ export const fakeDriver: AssistantDriver = {
   },
 
   answerToolCall(sessionId, toolUseId, result) {
+    const refused = refusedCall();
+    if (refused) return refused;
     const [event] = ingest(sessionOf(sessionId), [
       {
         type: "user.custom_tool_result",
@@ -468,6 +532,9 @@ export const fakeDriver: AssistantDriver = {
 
   screen(input, signal) {
     fakeDriverControls.screened.push(input);
+    if (fakeDriverControls.providerRefusal === "call") {
+      return Promise.reject(new ProviderRefusedError());
+    }
     return screenCall(fakeDriverControls.screenFailure, signal, () => {
       const verdict: ScreenVerdict = SCREEN_REFUSAL.test(input.message)
         ? { refused: true }
@@ -478,6 +545,9 @@ export const fakeDriver: AssistantDriver = {
   },
 
   screenToolText(input, signal) {
+    if (fakeDriverControls.providerRefusal === "call") {
+      return Promise.reject(new ProviderRefusedError());
+    }
     return screenCall(fakeDriverControls.toolTextScreenFailure, signal, () => ({
       verdict: {
         flagged: input.values.flatMap((value, index) => (ATTACK.test(value) ? [index] : [])),

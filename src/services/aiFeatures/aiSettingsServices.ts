@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { config } from "../../config.js";
 import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { aiAgreementAcceptances } from "../../db/schema/ai-agreement-schema.js";
@@ -70,6 +71,7 @@ export const readAiSettings = async (
       enabled: organization.assistantEnabled,
       enabledAt: organization.assistantEnabledAt,
       planAllows: isAssistantPlan(plan),
+      weeklyLimitMicroUsd: config.assistant.weeklyLimitMicroUsd,
     },
     aiConnections: {
       level: organization.aiConnections,

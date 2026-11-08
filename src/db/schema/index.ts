@@ -42,6 +42,7 @@ import {
   assistantRejectedTurns,
   assistantWebhookEvents,
 } from "./assistant-schema.js";
+import { assistantModelCalls } from "./assistant-meter-schema.js";
 import { organizationUsers } from "./organization-users-schema.js";
 import { subscriptions } from "./subscription-schema.js";
 import { paddleEvents } from "./paddle-event-schema.js";
@@ -139,4 +140,5 @@ export const schema = {
   assistantChatMessages,
   assistantRejectedTurns,
   assistantWebhookEvents,
+  assistantModelCalls,
 };

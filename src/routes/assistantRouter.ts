@@ -58,9 +58,12 @@ export const assistantRouter = (): Router => {
    *         One row of the display record, in order. `user` and `assistant`
    *         carry `text`; `tool` is an activity line with the tool's name and
    *         outcome (`ok`, `refused`, `failed`, `invalid_arguments`, `read_only`,
-   *         or null while it runs); `notice` is a fixed message by `code`
-   *         (`ASSISTANT_ERROR`, `ASSISTANT_TOPIC_REFUSAL`,
-   *         `ASSISTANT_MODEL_REFUSAL`). A `user` row with `code` `REJECTED` is
+   *         `stopped` when the Weekly limit or the turn's 10 model calls stopped
+   *         the turn before its result was sent, or null while it runs);
+   *         `notice` is a fixed message by `code` (`ASSISTANT_ERROR`,
+   *         `ASSISTANT_TOPIC_REFUSAL`, `ASSISTANT_MODEL_REFUSAL`,
+   *         `ASSISTANT_WEEKLY_LIMIT_REACHED`, `ASSISTANT_STEP_LIMIT`,
+   *         `ASSISTANT_UNAVAILABLE`). A `user` row with `code` `REJECTED` is
    *         a message the screen kept from the session; the topic refusal
    *         notice follows it.
    *       required: [id, kind, text, toolName, toolOutcome, code, createdAt]
@@ -102,6 +105,9 @@ export const assistantRouter = (): Router => {
    *           `ASSISTANT_TOPIC_REFUSAL` (the screen rejected the message, which
    *           never reached the session) or `ASSISTANT_MODEL_REFUSAL` (the
    *           model refused; the turn ends without a retry).
+   *           `ASSISTANT_WEEKLY_LIMIT_REACHED` (the Weekly limit stopped the
+   *           turn; streamed text stays), `ASSISTANT_STEP_LIMIT` (10 model
+   *           calls), `ASSISTANT_UNAVAILABLE` (Anthropic's spend limit or credits).
    *         - `done` `{}`: the turn ended; the display record has it all.
    */
 
@@ -120,6 +126,14 @@ export const assistantRouter = (): Router => {
    *       list) are left out. `planAllows` and `role` drive the web app's
    *       button: an owner without Enterprise gets the upgrade prompt, an
    *       owner or org admin with the Assistant off gets "The Assistant is off".
+   *
+   *       `weeklyLimit` is this week's Usage against the organization's Weekly
+   *       limit, for eligible organizations: "used" is settled plus reserved
+   *       steps of the UTC week (Monday 00:00 UTC, by the database clock).
+   *       Owners and org admins get the amounts; members get `percent`,
+   *       `reached` and `resetsAt` with the amounts `null`.
+   *       `providerUnavailable` is true for every caller for a few minutes
+   *       after Anthropic refused for its spend limit or credits.
    *     operationId: handleGetAssistantOrganizations
    *     security:
    *       - bearerAuth: []
@@ -130,13 +144,15 @@ export const assistantRouter = (): Router => {
    *           application/json:
    *             schema:
    *               type: object
-   *               required: [organizations]
+   *               required: [organizations, providerUnavailable]
    *               properties:
+   *                 providerUnavailable:
+   *                   type: boolean
    *                 organizations:
    *                   type: array
    *                   items:
    *                     type: object
-   *                     required: [organizationId, organizationName, eligible, reason, planAllows, role]
+   *                     required: [organizationId, organizationName, eligible, reason, planAllows, role, weeklyLimit]
    *                     properties:
    *                       organizationId:
    *                         type: string
@@ -154,6 +170,29 @@ export const assistantRouter = (): Router => {
    *                       role:
    *                         type: string
    *                         enum: [owner, admin, member]
+   *                       weeklyLimit:
+   *                         type: object
+   *                         nullable: true
+   *                         required: [percent, reached, resetsAt, usedMicroUsd, limitMicroUsd]
+   *                         properties:
+   *                           percent:
+   *                             type: integer
+   *                             minimum: 0
+   *                             maximum: 100
+   *                           reached:
+   *                             type: boolean
+   *                             description: Even the smallest step would pass the limit; no turn can start.
+   *                           resetsAt:
+   *                             type: string
+   *                             format: date-time
+   *                           usedMicroUsd:
+   *                             type: integer
+   *                             nullable: true
+   *                             description: Settled plus reserved, in micro-USD; `null` for members.
+   *                           limitMicroUsd:
+   *                             type: integer
+   *                             nullable: true
+   *                             description: The Weekly limit in micro-USD; `null` for members.
    *       '401':
    *         description: Not signed in
    *       '404':
@@ -323,6 +362,9 @@ export const assistantRouter = (): Router => {
    *       and nothing reaches the session. Otherwise the answer streams as
    *       server-sent events (`AssistantChatStream`) until `done`. Closing the
    *       connection does not stop the answer; reconnect with `GET .../stream`.
+   *       Each step, the screen included, is reserved against the
+   *       organization's Weekly limit first; a send whose first step would
+   *       pass it is refused with 429 and writes nothing.
    *     operationId: handlePostChatMessage
    *     security:
    *       - bearerAuth: []
@@ -364,9 +406,14 @@ export const assistantRouter = (): Router => {
    *         description: Not the caller's chat, or the Assistant is unavailable in its organization
    *       '409':
    *         description: '`ASSISTANT_TURN_RUNNING`: another answer of the caller''s is being written'
+   *       '429':
+   *         description: |
+   *           `ASSISTANT_WEEKLY_LIMIT_REACHED` with `resetsAt`: the organization
+   *           reached this week's Assistant limit. Nothing is written or charged.
    *       '503':
    *         description: |
-   *           `ASSISTANT_UNAVAILABLE`: no driver can run the Assistant.
+   *           `ASSISTANT_UNAVAILABLE`: no driver can run the Assistant, or
+   *           Anthropic refused for its spend limit or credits.
    *           `ASSISTANT_SCREEN_FAILED`: the screen failed or timed out; the
    *           message was neither recorded nor sent, so send it again.
    */

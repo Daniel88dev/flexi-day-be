@@ -15,7 +15,26 @@ import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 import { answerAssistantToolCall } from "./assistantTools.js";
 import { getOwnChat, roleIn, type ChatRow } from "./chatServices.js";
 import { assistantDriver } from "./driver/index.js";
-import type { AssistantDriver, SessionEvent, SessionInputEvent } from "./driver/types.js";
+import {
+  isProviderRefusal,
+  ProviderRefusedError,
+  type AssistantDriver,
+  type SessionEvent,
+  type SessionInputEvent,
+  type SessionUsage,
+} from "./driver/types.js";
+import {
+  attachStepEvent,
+  noteProviderRefused,
+  providerRefusedRecently,
+  providerUnavailable,
+  reserveToolRound,
+  reserveTurnStart,
+  sessionCost,
+  settleSteps,
+  voidReservation,
+  type Reservation,
+} from "./meter/meter.js";
 import { recordRejectedTurn } from "./screen/rejectedTurns.js";
 import { screenMessage, screenToolResults } from "./screen/screenServices.js";
 import { ASSISTANT_NOTICE, REJECTED_MESSAGE, SCREEN_FAILED, TITLE_MAX_LENGTH } from "./types.js";
@@ -26,6 +45,9 @@ export const STALE_TURN_MS = 5 * 60_000;
 export const TURN_TIMEOUT_MS = 4 * 60_000;
 
 export const TURN_RUNNING = "ASSISTANT_TURN_RUNNING";
+
+/** A tool line whose result was never sent because the meter stopped the turn. */
+export const TOOL_STOPPED = "stopped";
 
 const turnRunning = () =>
   new AppError({
@@ -72,6 +94,14 @@ const claimTurn = async (chatId: string, userId: string): Promise<void> => {
     if (isRunningTurnConflict(error)) throw turnRunning();
     throw error;
   }
+};
+
+/** Gives a claimed turn back before anything of it was written. */
+const unclaimTurn = async (chatId: string): Promise<void> => {
+  await db
+    .update(assistantChats)
+    .set({ turnStatus: "idle", turnStartedAt: null })
+    .where(and(eq(assistantChats.id, chatId), eq(assistantChats.turnStatus, "running")));
 };
 
 export const releaseTurn = async (chatId: string): Promise<void> => {
@@ -150,15 +180,21 @@ export type PreparedTurn = {
   language: ToolLanguage;
   input: SessionInputEvent[];
   driver: AssistantDriver;
+  /** The meter's reservation for this send. */
+  reservationId: string;
 };
+
+const textOf = (events: SessionInputEvent[]) =>
+  events.flatMap((event) => event.content.map((block) => block.text)).join("\n");
 
 /**
  * Everything a send checks and writes before its stream opens: the chat is
  * the caller's, the organization still allows the Assistant (403 with the
  * reason otherwise), no other turn of the caller's runs (409), the screen
  * passes the message (a rejected turn is recorded and answered here; a failed
- * screen is 503 with nothing written), then the user's text in the display
- * record and the session, created on first use.
+ * screen is 503 with nothing written), the Weekly limit has room for the step
+ * (429, nothing written), then the user's text in the display record and the
+ * session, created on first use with the reservation as its spend ceiling.
  */
 export const prepareTurn = async (args: {
   auth: AuthSession;
@@ -172,14 +208,24 @@ export const prepareTurn = async (args: {
     organizationId: chat.organizationId,
     feature: "assistant",
   });
+  if (providerRefusedRecently()) throw providerUnavailable();
   await claimTurn(chat.id, auth.userId);
 
+  let reservation: Reservation | null = null;
+  let written = false;
   try {
     const driver = assistantDriver();
     const now = new Date();
     const language = await toolLanguage(auth.userId);
 
-    const screen = await screenMessage({ driver, chatId: chat.id, message: args.text, language });
+    const screen = await screenMessage({
+      driver,
+      chatId: chat.id,
+      organizationId: chat.organizationId,
+      userId: auth.userId,
+      message: args.text,
+      language,
+    });
     if (screen.outcome === "failed") throw screenFailed();
     if (screen.outcome === "rejected") {
       await record(chat.id, { kind: "user", text: args.text, code: REJECTED_MESSAGE });
@@ -198,31 +244,44 @@ export const prepareTurn = async (args: {
       return { rejected: true, chatId: chat.id, code: ASSISTANT_NOTICE.TOPIC_REFUSAL };
     }
 
-    let sessionId = chat.sessionId;
-    if (!sessionId) {
-      const created = await driver.createSession({
-        chatId: chat.id,
-        organizationId: chat.organizationId,
-      });
-      sessionId = created.sessionId;
-      await db
-        .update(assistantChats)
-        .set({ sessionId, agentVersion: created.agentVersion })
-        .where(eq(assistantChats.id, chat.id));
-    }
-
-    await record(chat.id, { kind: "user", text: args.text });
-    await db
-      .update(assistantChats)
-      .set({ title: chat.title ?? args.text.slice(0, TITLE_MAX_LENGTH), lastMessageAt: now })
-      .where(eq(assistantChats.id, chat.id));
-
     const input: SessionInputEvent[] = [
       { type: "user.message", content: [{ type: "text", text: args.text }] },
     ];
     if (!chat.sessionId || utcDay(chat.lastMessageAt) !== utcDay(now)) {
       input.push(await contextMessage({ auth, chat, language, now }));
     }
+    reservation = await reserveTurnStart({
+      organizationId: chat.organizationId,
+      userId: auth.userId,
+      chatId: chat.id,
+      sessionId: chat.sessionId,
+      appendedText: textOf(input),
+    });
+
+    let sessionId = chat.sessionId;
+    if (!sessionId) {
+      const created = await driver.createSession({
+        chatId: chat.id,
+        organizationId: chat.organizationId,
+        budgetMicroUsd: reservation.reservedMicroUsd,
+      });
+      sessionId = created.sessionId;
+      await db
+        .update(assistantChats)
+        .set({ sessionId, agentVersion: created.agentVersion })
+        .where(eq(assistantChats.id, chat.id));
+    } else {
+      const used = sessionCost(await driver.readUsage(sessionId));
+      await driver.setBudget(sessionId, used + reservation.reservedMicroUsd);
+    }
+
+    written = true;
+    await record(chat.id, { kind: "user", text: args.text });
+    await db
+      .update(assistantChats)
+      .set({ title: chat.title ?? args.text.slice(0, TITLE_MAX_LENGTH), lastMessageAt: now })
+      .where(eq(assistantChats.id, chat.id));
+
     return {
       auth,
       chatId: chat.id,
@@ -231,9 +290,16 @@ export const prepareTurn = async (args: {
       language,
       input,
       driver,
+      reservationId: reservation.id,
     };
   } catch (error) {
-    await releaseTurn(chat.id);
+    if (reservation) await voidReservation(reservation.id);
+    if (written) await releaseTurn(chat.id);
+    else await unclaimTurn(chat.id);
+    if (error instanceof ProviderRefusedError) {
+      noteProviderRefused("prepare_turn");
+      throw providerUnavailable();
+    }
     throw error;
   }
 };
@@ -272,11 +338,13 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
       await record(turn.chatId, { kind: "assistant", text, eventId: event.id });
     }
     if (event.type === "session.error" && event.error.retry_status?.type !== "retrying") {
-      await record(turn.chatId, {
+      const refused = isProviderRefusal(event.error);
+      const wrote = await record(turn.chatId, {
         kind: "notice",
-        code: ASSISTANT_NOTICE.ERROR,
+        code: refused ? ASSISTANT_NOTICE.UNAVAILABLE : ASSISTANT_NOTICE.ERROR,
         eventId: event.id,
       });
+      if (wrote && refused) noteProviderRefused("session");
     }
   }
 
@@ -284,6 +352,17 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
     (event) => event.type === "session.status_idle" || event.type === "session.status_terminated"
   );
   if (!last) return false;
+
+  let usage: SessionUsage | null = null;
+  const readUsage = async () => (usage ??= await turn.driver.readUsage(turn.sessionId));
+  await settleSteps({
+    organizationId: turn.organizationId,
+    sessionId: turn.sessionId,
+    startEventId: turn.startEventId,
+    events,
+    usage: readUsage,
+  });
+
   if (isTurnEnd(last)) {
     if (last.type === "session.status_idle" && last.stop_reason.type === "refusal") {
       await record(turn.chatId, {
@@ -291,6 +370,10 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
         code: ASSISTANT_NOTICE.MODEL_REFUSAL,
         eventId: last.id,
       });
+    }
+    if (last.type === "session.status_idle" && last.stop_reason.type === "budget_reached") {
+      logger.warn("session.budget_reached", { chatId: turn.chatId });
+      await record(turn.chatId, { kind: "notice", code: ASSISTANT_NOTICE.ERROR, eventId: last.id });
     }
     await releaseTurn(turn.chatId);
     return true;
@@ -329,16 +412,98 @@ export const advanceTurn = async (turn: Advance): Promise<boolean> => {
       );
     answers.push({ toolUseId: call.id, text: answer.text, isError: answer.isError });
   }
+  if (answers.length === 0) return false;
   const texts = await screenToolResults({
     driver: turn.driver,
     chatId: turn.chatId,
+    organizationId: turn.organizationId,
+    userId: turn.auth.userId,
     texts: answers.map((answer) => answer.text),
   });
-  for (const [index, answer] of answers.entries()) {
-    await turn.driver.answerToolCall(turn.sessionId, answer.toolUseId, {
-      text: texts[index]!,
-      isError: answer.isError,
+  return sendToolResults(turn, {
+    idle: last,
+    events,
+    answers: answers.map((answer, index) => ({ ...answer, text: texts[index]! })),
+    readUsage,
+  });
+};
+
+/**
+ * Sends one round of tool results as a metered step, or stops the turn when
+ * the meter refuses it: the fixed notice is written, the results are never
+ * sent, and the session is interrupted so no model call runs unreserved.
+ */
+const sendToolResults = async (
+  turn: Advance,
+  round: {
+    idle: SessionEvent;
+    events: SessionEvent[];
+    answers: { toolUseId: string; text: string; isError: boolean }[];
+    readUsage: () => Promise<SessionUsage>;
+  }
+): Promise<boolean> => {
+  const metered = await reserveToolRound({
+    organizationId: turn.organizationId,
+    userId: turn.auth.userId,
+    chatId: turn.chatId,
+    sessionId: turn.sessionId,
+    triggerEventId: round.idle.id,
+    appendedText: round.answers.map((answer) => answer.text).join("\n"),
+    modelCallsThisTurn: round.events.filter((event) => event.type === "span.model_request_start")
+      .length,
+  });
+  if (metered.kind === "refused") {
+    for (const answer of round.answers) {
+      await db
+        .update(assistantChatMessages)
+        .set({ toolOutcome: TOOL_STOPPED })
+        .where(
+          and(
+            eq(assistantChatMessages.chatId, turn.chatId),
+            eq(assistantChatMessages.eventId, answer.toolUseId)
+          )
+        );
+    }
+    try {
+      await turn.driver.interrupt(turn.sessionId);
+    } catch (error) {
+      logger.error("assistant.interrupt_failed", { chatId: turn.chatId, error: errorName(error) });
+    }
+    await releaseTurn(turn.chatId);
+    return true;
+  }
+
+  let delivered = false;
+  try {
+    if (metered.kind === "reserved") {
+      const used = sessionCost(await round.readUsage());
+      await turn.driver.setBudget(turn.sessionId, used + metered.reservation.reservedMicroUsd);
+    }
+    for (const [index, answer] of round.answers.entries()) {
+      const sent = await turn.driver.answerToolCall(turn.sessionId, answer.toolUseId, {
+        text: answer.text,
+        isError: answer.isError,
+      });
+      delivered = true;
+      if (index === 0 && metered.kind === "reserved") {
+        await attachStepEvent(metered.reservation.id, {
+          sessionId: turn.sessionId,
+          eventId: sent.id,
+        });
+      }
+    }
+  } catch (error) {
+    // Nothing reached the session, so no model call ran on this reservation.
+    if (metered.kind === "reserved" && !delivered) await voidReservation(metered.reservation.id);
+    if (!(error instanceof ProviderRefusedError)) throw error;
+    noteProviderRefused("tool_results");
+    await record(turn.chatId, {
+      kind: "notice",
+      code: ASSISTANT_NOTICE.UNAVAILABLE,
+      eventId: round.idle.id,
     });
+    await releaseTurn(turn.chatId);
+    return true;
   }
   return false;
 };
@@ -347,7 +512,9 @@ const relays = new Map<string, Promise<void>>();
 
 const failTurn = async (chatId: string, reason: string, error?: unknown) => {
   logger.error("assistant.turn_failed", { chatId, reason, error: errorName(error) });
-  await record(chatId, { kind: "notice", code: ASSISTANT_NOTICE.ERROR });
+  const code =
+    error instanceof ProviderRefusedError ? ASSISTANT_NOTICE.UNAVAILABLE : ASSISTANT_NOTICE.ERROR;
+  await record(chatId, { kind: "notice", code });
   await releaseTurn(chatId);
 };
 
@@ -401,12 +568,18 @@ export const sendTurn = async (turn: PreparedTurn): Promise<string> => {
   try {
     const sent = await turn.driver.sendEvents(turn.sessionId, turn.input);
     startEventId = sent[0]!.id;
+    await attachStepEvent(turn.reservationId, { sessionId: turn.sessionId, eventId: startEventId });
     await db
       .update(assistantChats)
       .set({ turnStartEventId: startEventId })
       .where(eq(assistantChats.id, turn.chatId));
   } catch (error) {
+    await voidReservation(turn.reservationId);
     await failTurn(turn.chatId, "send_failed", error);
+    if (error instanceof ProviderRefusedError) {
+      noteProviderRefused("send_events");
+      throw providerUnavailable();
+    }
     throw error;
   }
   startRelay({ ...turn, startEventId });

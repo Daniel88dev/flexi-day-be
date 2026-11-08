@@ -16,6 +16,7 @@ type FakeSession = {
   events: Json[];
   streams: Set<ReadableStreamDefaultController<Uint8Array>>;
   usage: Json;
+  budget: Json | null;
 };
 
 const encoder = new TextEncoder();
@@ -46,7 +47,11 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
   const sessions = new Map<string, FakeSession>();
   const calls: { method: string; path: string; body: Json | null }[] = [];
   /** Makes the next agent update answer 409, as a racing writer would. */
-  const state = { conflictNextUpdate: false };
+  const state = {
+    conflictNextUpdate: false,
+    /** Answer every session call as a workspace out of credits would. */
+    billingRefusal: false,
+  };
   /** Canned Messages API answers for the screen, taken in order; none left answers 500. */
   const messageReplies: Json[] = [];
 
@@ -66,6 +71,9 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
       return reply ? json(200, reply) : apiError(500, "api_error", "no canned message");
     }
     let match: RegExpMatchArray | null;
+    if (state.billingRefusal && path.startsWith("/v1/sessions")) {
+      return apiError(402, "billing_error", "Your credit balance is too low");
+    }
 
     if (method === "GET" && path === "/v1/agents") {
       const all = [...agents.values()];
@@ -156,6 +164,7 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
           cache_read_input_tokens: 0,
           cache_creation: { ephemeral_5m_input_tokens: 7713, ephemeral_1h_input_tokens: 0 },
         },
+        budget: (body?.budget as Json | undefined) ?? null,
       };
       sessions.set(session.id, session);
       return json(200, sessionBody(session, body));
@@ -164,6 +173,15 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
       const session = sessions.get(match[1]!);
       if (!session) return apiError(404, "not_found_error", "session not found");
       if (method === "GET") return json(200, sessionBody(session, null));
+      if (method === "POST") {
+        if (body && "budget" in body) {
+          if (!session.budget) {
+            return apiError(400, "invalid_request_error", "budget_create_only");
+          }
+          session.budget = body.budget as Json | null;
+        }
+        return json(200, sessionBody(session, null));
+      }
       if (method === "DELETE") {
         for (const controller of session.streams) controller.close();
         sessions.delete(session.id);
@@ -198,6 +216,7 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
     title: created?.title ?? null,
     metadata: created?.metadata ?? {},
     usage: session.usage,
+    budget: session.budget,
   });
 
   const openStream = (url: URL, signal: AbortSignal | null | undefined): Response => {

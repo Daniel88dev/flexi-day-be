@@ -113,6 +113,8 @@ assistant_enabled           = false
 ai_connections_enabled      = false
 ai_preview_organization_ids = []
 assistant_driver            = "managed"
+# Each organization's Weekly limit on Assistant Usage, in dollars.
+assistant_weekly_limit_usd = "10"
 
 # Paddle billing. Leave paddle_api_key empty to disable billing entirely: no
 # Paddle secrets are created, no Paddle env vars are injected, and the

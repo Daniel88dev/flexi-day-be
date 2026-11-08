@@ -58,6 +58,21 @@ export type AssistantOrganization = {
   /** Enterprise or Custom: whether the Assistant comes with the plan at all. */
   planAllows: boolean;
   role: AssistantRole;
+  /** This week's Usage against the Weekly limit; `null` where the caller can't chat. */
+  weeklyLimit: WeeklyLimitState | null;
+};
+
+/**
+ * The organization's Weekly limit as the panel shows it. "Used" is settled
+ * plus reserved. Money is for owners and org admins; members get the percentage.
+ */
+export type WeeklyLimitState = {
+  percent: number;
+  /** No turn can start until the reset. */
+  reached: boolean;
+  resetsAt: string;
+  usedMicroUsd: number | null;
+  limitMicroUsd: number | null;
 };
 
 /** Fixed notices the display record carries; the web app holds their words. */
@@ -68,6 +83,12 @@ export const ASSISTANT_NOTICE = {
   TOPIC_REFUSAL: "ASSISTANT_TOPIC_REFUSAL",
   /** The model refused; the turn ends and is not retried. */
   MODEL_REFUSAL: "ASSISTANT_MODEL_REFUSAL",
+  /** The organization reached its Weekly limit; the turn stopped there. */
+  WEEKLY_LIMIT: "ASSISTANT_WEEKLY_LIMIT_REACHED",
+  /** The turn used its 10 model calls. */
+  STEP_LIMIT: "ASSISTANT_STEP_LIMIT",
+  /** Anthropic refused for its spend limit or credits. */
+  UNAVAILABLE: "ASSISTANT_UNAVAILABLE",
 } as const;
 
 /** The `code` on a user row the screen rejected; the message was never sent. */

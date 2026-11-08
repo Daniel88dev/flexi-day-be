@@ -10,6 +10,7 @@ import {
   listChats,
 } from "../../services/assistant/chatServices.js";
 import { projectTurn, type ChatStreamSink } from "../../services/assistant/chatStream.js";
+import { providerRefusedRecently } from "../../services/assistant/meter/meter.js";
 import { assistantDriver } from "../../services/assistant/driver/index.js";
 import {
   prepareTurn,
@@ -45,14 +46,20 @@ const openStream = (res: Response): { sink: ChatStreamSink; signal: AbortSignal 
 /** Once the stream is open the status is sent; a late failure becomes `error` then `done`. */
 const finishWithError = (res: Response, sink: ChatStreamSink, error: unknown) => {
   logger.error("assistant.stream_failed", { error: errorName(error) });
-  sink("error", { code: ASSISTANT_NOTICE.ERROR });
+  const unavailable =
+    error instanceof AppError &&
+    error.errors[0]?.publicContext.code === ASSISTANT_NOTICE.UNAVAILABLE;
+  sink("error", { code: unavailable ? ASSISTANT_NOTICE.UNAVAILABLE : ASSISTANT_NOTICE.ERROR });
   sink("done", {});
   res.end();
 };
 
 export const handleGetAssistantOrganizations = async (req: Request, res: Response) => {
   const { userId } = getAuth(req);
-  res.status(200).json({ organizations: await listAssistantOrganizations(userId) });
+  res.status(200).json({
+    organizations: await listAssistantOrganizations(userId),
+    providerUnavailable: providerRefusedRecently(),
+  });
 };
 
 export const handleGetChats = async (req: Request, res: Response) => {

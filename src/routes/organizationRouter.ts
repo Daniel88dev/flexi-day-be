@@ -944,7 +944,7 @@ export const organizationRouter = (): Router => {
    *           enum: [FREE, PRO, ENTERPRISE, CUSTOM]
    *         assistant:
    *           type: object
-   *           required: [enabled, enabledAt, planAllows]
+   *           required: [enabled, enabledAt, planAllows, weeklyLimitMicroUsd]
    *           properties:
    *             enabled:
    *               type: boolean
@@ -957,6 +957,9 @@ export const organizationRouter = (): Router => {
    *             planAllows:
    *               type: boolean
    *               description: Enterprise or Custom, so the owner may turn it on.
+   *             weeklyLimitMicroUsd:
+   *               type: integer
+   *               description: The organization's Weekly limit on Assistant Usage, in micro-USD.
    *         aiConnections:
    *           type: object
    *           required: [level, planAllows, grants]

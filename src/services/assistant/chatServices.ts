@@ -11,6 +11,7 @@ import { isAiFeatureAvailable } from "../aiFeatures/aiFeatureServices.js";
 import { isAssistantPlan, planForOrganization } from "../billing/guards.js";
 import { isOrganizationAdmin } from "../organization/organizationServices.js";
 import { assistantDriver } from "./driver/index.js";
+import { readWeeklyUsage } from "./meter/meter.js";
 import type {
   AssistantOrganization,
   AssistantRole,
@@ -161,10 +162,15 @@ export const listAssistantOrganizations = async (
   userId: string
 ): Promise<AssistantOrganization[]> => {
   const answers = await aiEligibilityForUser({ userId, feature: "assistant" });
+  const usage = await readWeeklyUsage(
+    answers.filter((answer) => answer.eligible).map((answer) => answer.organizationId)
+  );
   const result: AssistantOrganization[] = [];
   for (const answer of answers) {
     if (!answer.eligible && answer.reason === "UNAVAILABLE") continue;
     const role = await roleIn(userId, answer.organizationId);
+    const week = usage.get(answer.organizationId);
+    const seesMoney = role === "owner" || role === "admin";
     result.push({
       organizationId: answer.organizationId,
       organizationName: answer.organizationName,
@@ -172,6 +178,15 @@ export const listAssistantOrganizations = async (
       reason: answer.eligible ? null : answer.reason,
       planAllows: isAssistantPlan(await planForOrganization(answer.organizationId)),
       role,
+      weeklyLimit: week
+        ? {
+            percent: Math.min(100, Math.floor((week.usedMicroUsd * 100) / week.limitMicroUsd)),
+            reached: week.reached,
+            resetsAt: week.resetsAt.toISOString(),
+            usedMicroUsd: seesMoney ? week.usedMicroUsd : null,
+            limitMicroUsd: seesMoney ? week.limitMicroUsd : null,
+          }
+        : null,
     });
   }
   return result;

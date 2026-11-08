@@ -70,6 +70,7 @@ export type SessionEvent = Stamped &
         };
       }
     | { type: "session.status_terminated" }
+    | { type: "user.interrupt" }
   );
 
 export type SessionEventType = SessionEvent["type"];
@@ -114,6 +115,22 @@ export type ToolTextScreenAnswer = {
   usage: SessionUsage;
 };
 
+/**
+ * Anthropic refused for the workspace's spend limit or credits. Every
+ * organization is out until the operator fixes billing, and no organization's
+ * Weekly limit is charged for it.
+ */
+export class ProviderRefusedError extends Error {
+  constructor() {
+    super("The model provider refused: spend limit or credits");
+    this.name = "ProviderRefusedError";
+  }
+}
+
+/** A `session.error` that means the same refusal mid-session. */
+export const isProviderRefusal = (error: { type: string }): boolean =>
+  error.type === "billing_error";
+
 export type CreatedSession = {
   sessionId: string;
   /** The agent version the session is pinned to; `null` on the fake driver. */
@@ -122,7 +139,16 @@ export type CreatedSession = {
 
 export interface AssistantDriver {
   readonly name: "fake" | "managed";
-  createSession(input: { chatId: string; organizationId: string }): Promise<CreatedSession>;
+  /** `budgetMicroUsd` is the session's spend ceiling at creation, the meter's backstop. */
+  createSession(input: {
+    chatId: string;
+    organizationId: string;
+    budgetMicroUsd: number;
+  }): Promise<CreatedSession>;
+  /** Replaces the session's spend ceiling; it must stay above what the session has used. */
+  setBudget(sessionId: string, budgetMicroUsd: number): Promise<void>;
+  /** Stops the session and hands control back, leaving its tool calls unanswered. */
+  interrupt(sessionId: string): Promise<void>;
   /** Appends events to the session and answers them with their ids, in order. */
   sendEvents(sessionId: string, events: SessionInputEvent[]): Promise<SessionEvent[]>;
   /** The session's log in order, after `afterId` when given. */

@@ -357,6 +357,17 @@ variable "assistant_driver" {
   }
 }
 
+variable "assistant_weekly_limit_usd" {
+  description = "Each organization's Weekly limit on Assistant Usage in dollars (ASSISTANT_WEEKLY_LIMIT_USD), at Anthropic list price, reset Monday 00:00 UTC."
+  type        = string
+  default     = "10"
+
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]{1,2})?$", var.assistant_weekly_limit_usd)) && try(tonumber(var.assistant_weekly_limit_usd) > 0, false)
+    error_message = "assistant_weekly_limit_usd must be a positive dollar amount, such as \"10\" or \"12.50\"."
+  }
+}
+
 # Attachments (docs/adr/0003)
 variable "attachments_bucket_name" {
   description = "S3 bucket for attachment bytes. Bucket names are global, so override on a collision; empty means <project_name>-<environment>-attachments."

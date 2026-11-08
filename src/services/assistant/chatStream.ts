@@ -1,4 +1,7 @@
-import type { AssistantDriver, SessionEvent } from "./driver/types.js";
+import { and, eq, inArray } from "drizzle-orm";
+import { db } from "../../db/db.js";
+import { assistantChatMessages } from "../../db/schema/assistant-schema.js";
+import { isProviderRefusal, type AssistantDriver, type SessionEvent } from "./driver/types.js";
 import { isTurnRunning } from "./turnServices.js";
 import { ASSISTANT_NOTICE } from "./types.js";
 
@@ -46,6 +49,8 @@ export const projectTurn = async (args: {
 
   const seen = new Set<string>();
   const toolNames = new Map<string, string>();
+  /** Idles a notice can be keyed on: a round the meter refused, a session out of budget. */
+  const rounds: string[] = [];
   let ended = false;
 
   const emit = (event: SessionEvent) => {
@@ -76,11 +81,25 @@ export const projectTurn = async (args: {
         break;
       case "session.error":
         if (event.error.retry_status?.type === "retrying") break;
-        sink("error", { code: ASSISTANT_NOTICE.ERROR }, event.id);
+        sink(
+          "error",
+          {
+            code: isProviderRefusal(event.error)
+              ? ASSISTANT_NOTICE.UNAVAILABLE
+              : ASSISTANT_NOTICE.ERROR,
+          },
+          event.id
+        );
         break;
       case "session.status_idle":
         if (event.stop_reason.type === "refusal") {
           sink("error", { code: ASSISTANT_NOTICE.MODEL_REFUSAL }, event.id);
+        }
+        if (
+          event.stop_reason.type === "requires_action" ||
+          event.stop_reason.type === "budget_reached"
+        ) {
+          rounds.push(event.id);
         }
         break;
     }
@@ -115,6 +134,22 @@ export const projectTurn = async (args: {
   // The relay writes the display record at the same idle; wait for it so a refetch after `done` sees it.
   for (let i = 0; i < 30 && (await isTurnRunning(args.chatId)); i++) {
     await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  // A round the meter refused, or the provider turned away, ends the turn with its fixed notice.
+  if (rounds.length > 0) {
+    const notices = await db
+      .select({ code: assistantChatMessages.code, eventId: assistantChatMessages.eventId })
+      .from(assistantChatMessages)
+      .where(
+        and(
+          eq(assistantChatMessages.chatId, args.chatId),
+          eq(assistantChatMessages.kind, "notice"),
+          inArray(assistantChatMessages.eventId, rounds)
+        )
+      );
+    for (const notice of notices) {
+      if (notice.code) sink("error", { code: notice.code }, notice.eventId ?? undefined);
+    }
   }
   sink("done", {});
 };
