@@ -90,6 +90,26 @@ export default [
     },
   },
 
+  // The lint fence: the tool layer reaches data only through services that take
+  // `auth` and run their own guards, so a tool sees what its user sees in the app.
+  {
+    files: ["src/tools/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/db/**", "**/db/*", "drizzle-orm", "drizzle-orm/**", "pg", "pg/**"],
+              message:
+                "The tool layer reaches data only through services that take `auth` (the lint fence, docs/invariants.md).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // The disk stores confine every key under their root (`keyToPath`), and the person export
   // writes only into its own `mkdtemp` folder. Disk access elsewhere still needs a look.
   {

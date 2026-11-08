@@ -244,6 +244,30 @@ not Off, a Paid plan.
 - **Off means 404.** `/api/auth/oauth2/*`, `/api/auth/jwks`, the discovery documents and
   `/api/oauth-connect/*` answer 404 while AI connections are unavailable (`requireAiFeature`).
 
+## Tools and `/mcp` (`src/tools/`, `src/mcp/`)
+
+The Assistant and the MCP server share one tool layer. A tool must see exactly what its user sees in
+the app, inside one organization.
+
+- **The tool layer imports no database module.** An ESLint `no-restricted-imports` rule on
+  `src/tools/**` (the lint fence) bars `db/`, `drizzle-orm` and `pg`. Handlers call services that
+  take `auth` and run their own guards, so a permission check written for the app holds for the
+  tool too. `src/tools/tests/lintFence.test.ts` fails if the rule goes.
+- **Every group and person a tool's input names passes the organization fence first.** A tool
+  declares those fields in `fence`; `runTool` rejects any outside the context's organization with
+  the same 404 as a missing one. Reads without such a field pass `organizationId` to the service.
+  A user in two organizations would otherwise read the second through a grant for the first.
+- **Every `/mcp` call settles the grant again.** After the JWT verifies, `loadMcpGrant` loads the
+  consent for user, client and organization claim, the user, and `aiEligibility`. Disconnecting,
+  leaving the organization or a lapsed plan take effect on the next call, not when the token
+  expires.
+- **Tool errors carry no user text or arguments.** A guard's refusal reaches the model with its
+  public message and public context only; anything else is one fixed message. Invalid arguments
+  name the schema's field paths, never the values.
+- **No argument or result leaves the process.** The `gen_ai.execute_tool` span carries the tool,
+  channel and outcome only (`src/tools/tests/toolSpan.test.ts`), `instrument.ts` sets
+  `dataCollection.mcp` off, and `toToolError` logs an internal error by class name.
+
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 
 `/api/dev/*` seeds verified users, teams, quotas and vacations, and issues session cookies, so the

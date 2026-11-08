@@ -52,6 +52,7 @@ import { localOrganizationDataRouter, personExportRouter } from "./routes/person
 import { aiFeaturesRouter } from "./routes/aiFeaturesRouter.js";
 import { oauthConnectContextRouter, oauthConnectRouter } from "./routes/oauthConnectRouter.js";
 import { requireAiFeature } from "./middleware/aiFeatureGuard.js";
+import { mcpRouter } from "./routes/mcpRouter.js";
 
 export const createServer = () => {
   const app = express();
@@ -121,6 +122,11 @@ export const createServer = () => {
     aiConnectionsReachable,
     toNodeHandler(auth)
   );
+
+  // The MCP server AI apps call with those tokens. At the root, outside `/api`
+  // and its session middleware, and ahead of the JSON parser: the SDK reads the
+  // raw body itself.
+  app.use("/mcp", mcpRouter());
 
   app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());
 

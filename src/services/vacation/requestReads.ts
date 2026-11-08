@@ -8,7 +8,7 @@ import {
 import { isRequestPastRetention } from "../attachment/attachmentRetention.js";
 import { MAX_ATTACHMENTS_PER_REQUEST } from "../attachment/types.js";
 import { isAttachmentUploadAvailable } from "../billing/guards.js";
-import { getGroup } from "../group/groupServices.js";
+import { filterGroupIdsByOrganization, getGroup } from "../group/groupServices.js";
 import { canViewWholeGroup } from "../report/reportScope.js";
 import { getReportScopeEntries } from "../report/reportServices.js";
 import { getVacationEvents } from "../vacationEvent/vacationEventServices.js";
@@ -30,15 +30,21 @@ import {
 /** `endDate` itself is excluded. */
 export type RequestListRange = { startDate: DateString; endDate: DateString };
 
-/** The caller's own rows in every group, each with whether the caller may approve it. */
+/**
+ * The caller's own rows in every group, or only the live groups of
+ * `organizationId` when given, each with whether the caller may approve it.
+ */
 export const listOwnRequests = async (params: {
   auth: AuthSession;
   range: RequestListRange;
   options: VacationListOptions;
+  organizationId?: string;
 }) => {
-  const { auth, range, options } = params;
+  const { auth, range, options, organizationId } = params;
 
-  const result = await getVacationsForUser(auth.userId, range.startDate, range.endDate, options);
+  const all = await getVacationsForUser(auth.userId, range.startDate, range.endDate, options);
+  const result =
+    organizationId === undefined ? all : await keepOrganizationRows(all, organizationId);
   const canApprove = await resolveCanApproveForList(auth.userId, result);
   // Same shape as `listWhoIsAway`, so clients do not branch on scope.
   return result.map((row) => ({
@@ -47,6 +53,39 @@ export const listOwnRequests = async (params: {
     mirroredFromGroupName: null,
     canApprove: canApprove(row),
   }));
+};
+
+const keepOrganizationRows = async <T extends { groupId: string }>(
+  rows: T[],
+  organizationId: string
+): Promise<T[]> => {
+  const inside = new Set(
+    await filterGroupIdsByOrganization([...new Set(rows.map((row) => row.groupId))], organizationId)
+  );
+  return rows.filter((row) => inside.has(row.groupId));
+};
+
+/**
+ * The groups of one organization whose whole calendar the caller may view:
+ * those `listWhoIsAway` answers for.
+ */
+export const listViewableGroups = async (params: {
+  auth: AuthSession;
+  organizationId: string;
+}): Promise<{ groupId: string; groupName: string }[]> => {
+  const { auth, organizationId } = params;
+  const viewable = (await getReportScopeEntries(auth.userId)).filter(
+    (entry) => entry.access === "all"
+  );
+  const inside = new Set(
+    await filterGroupIdsByOrganization(
+      viewable.map((entry) => entry.groupId),
+      organizationId
+    )
+  );
+  return viewable
+    .filter((entry) => inside.has(entry.groupId))
+    .map(({ groupId, groupName }) => ({ groupId, groupName }));
 };
 
 /** A group's rows, for a caller who may view the whole group, redacted to what they may see. */

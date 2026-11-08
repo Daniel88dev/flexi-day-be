@@ -44,6 +44,8 @@ if (enabled) {
       httpBodies: [],
       urlQueryParams: { deny: ["forwarded", "-ip", "remote-", "via", "-user"] },
       genAI: { inputs: false, outputs: false },
+      // Tool arguments and results never leave the process (see the AI connections invariant).
+      mcp: { inputs: false, outputs: false },
       databaseQueryData: false,
       queues: false,
       graphQL: { document: false, variables: false },
