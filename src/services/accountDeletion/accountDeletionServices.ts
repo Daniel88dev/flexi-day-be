@@ -33,6 +33,7 @@ import AppError from "../../utils/appError.js";
 import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import { lockOrganization } from "../organization/organizationServices.js";
 import { updateGroupManager } from "../group/groupServices.js";
+import { deleteOrganizationGrants, deleteUserGrants } from "../aiConnections/grants.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { DeletionRefusal, type DeletionBlocker, type DeletionConfirmation } from "./types.js";
 
@@ -331,6 +332,7 @@ const deleteAccountData = async (userId: string, tx: DbTransaction) => {
   await tx.delete(notifications).where(eq(notifications.userId, userId));
   await tx.delete(calendarConnection).where(eq(calendarConnection.userId, userId));
   await tx.delete(calendarSync).where(eq(calendarSync.userId, userId));
+  await deleteUserGrants(userId, tx);
   // A tombstone rather than a delete, so the phones that synced it drop it.
   await removeBirthday(userId, tx);
 };
@@ -458,6 +460,7 @@ export const deleteAccountRows = async (
         .returning({ id: groups.id })
     ).length;
     await tx.delete(subscriptions).where(inArray(subscriptions.organizationId, ownedIds));
+    await deleteOrganizationGrants({ organizationIds: ownedIds }, tx);
     await tx.delete(organizations).where(inArray(organizations.id, ownedIds));
   }
 

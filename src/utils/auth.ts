@@ -23,6 +23,8 @@ import { appleClientFrom, buildAccountLinking, buildSocialProviders } from "./so
 import { appleUnlinkRevocation } from "./appleUnlinkRevocation.js";
 import { confirmationEmailSuppressed } from "./confirmationEmail.js";
 import { devSignInTicketPlugin } from "./devSignInTicket.js";
+import { aiConnectionGrantRevocation } from "./aiConnectionGrantRevocation.js";
+import { deleteUserGrants } from "../services/aiConnections/grants.js";
 import {
   AI_CONNECTION_SCOPES,
   consentOrganization,
@@ -141,10 +143,14 @@ export const auth = betterAuth({
     // account instead of taking it from them. The links are dropped with the
     // promotion, in one transaction; the owner reattaches whichever they want
     // from Settings, where being signed in is the thing that authorises it.
+    //
+    // Every reset also ends the user's AI connections, verified or not: the
+    // reset is the remedy for a stolen account, and a grant outlives sessions.
     onPasswordReset: async ({ user }, _request) => {
-      if (user.emailVerified) return;
       try {
         await db.transaction(async (tx) => {
+          await deleteUserGrants(user.id, tx);
+          if (user.emailVerified) return;
           await tx
             .delete(accountTable)
             .where(
@@ -418,6 +424,7 @@ export const auth = betterAuth({
     }),
     cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
     readOnlyConsentScopes,
+    aiConnectionGrantRevocation,
     // Last on purpose (better-auth infers session fields added by earlier
     // plugins into this callback). Rides on the session fetch the client
     // already makes, so the frontend learns whether to render the support UI

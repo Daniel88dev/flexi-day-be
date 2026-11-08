@@ -243,6 +243,28 @@ not Off, a Paid plan.
   AI connections' access tokens.
 - **Off means 404.** `/api/auth/oauth2/*`, `/api/auth/jwks`, the discovery documents and
   `/api/oauth-connect/*` answer 404 while AI connections are unavailable (`requireAiFeature`).
+- **These events end OAuth grants, and only these.** A grant is the consent row plus every refresh
+  and access token for the same user, client and organization (`reference_id`), and ending one
+  deletes them all in one transaction (`src/services/aiConnections/grants.ts`).
+  - Disconnect in Settings: that one grant (`DELETE /api/users/me/ai-connections/:grantId`).
+  - Password reset: every grant the user holds, in `onPasswordReset`, whether or not the address
+    was verified.
+  - Password change with `revokeOtherSessions`: every grant the user holds, in the
+    `ai-connection-grant-revocation` after hook, only once the change succeeded.
+  - Account deletion: every grant the user holds, in the deletion transaction. The user row stays,
+    so the `ON DELETE CASCADE` on these tables never fires and the rows go explicitly.
+  - The owner turning AI connections off: every grant in the organization. Lowering to Read only:
+    every grant there holding `flexiday.write`, whole; the member connects again with read access.
+    Both run inside the transaction that locks the organization row and changes the setting.
+
+  Sign-out, a password change without `revokeOtherSessions`, auth-secret rotation and turning
+  two-factor on keep every grant: a grant is not a session, and those events say nothing about the
+  app the member chose to trust. Refresh in better-auth checks no consent, so deleting the consent
+  alone would leave the app refreshing tokens the per-call check then refuses; deleting the refresh
+  tokens is what makes the next refresh answer `invalid_grant`. A reset or password change that
+  stopped deleting them would leave an attacker's app connected after the victim took the account
+  back. `src/tests/e2e/aiConnectionGrants.e2e.test.ts` drives each event and the next refresh, and
+  fails if one stops ending its grants or a keeper starts.
 
 ## Tools and `/mcp` (`src/tools/`, `src/mcp/`)
 

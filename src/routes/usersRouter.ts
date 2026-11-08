@@ -25,6 +25,9 @@ import { handleGetMyBirthday } from "../controllers/users/handleGetMyBirthday.js
 import { handlePutMyBirthday } from "../controllers/users/handlePutMyBirthday.js";
 import { handleDeleteMyBirthday } from "../controllers/users/handleDeleteMyBirthday.js";
 import { validatePutBirthday } from "../services/birthday/types.js";
+import { requireAiFeature } from "../middleware/aiFeatureGuard.js";
+import { handleGetMyAiConnections } from "../controllers/users/handleGetMyAiConnections.js";
+import { handleDeleteMyAiConnection } from "../controllers/users/handleDeleteMyAiConnection.js";
 
 export const usersRouter = (): Router => {
   const app = Router();
@@ -1406,6 +1409,137 @@ export const usersRouter = (): Router => {
     tryCatch(handlePutPushRegistration)
   );
   app.delete("/me/push-registration", requireNativeSession, tryCatch(handleDeletePushRegistration));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     AiConnectionApp:
+   *       type: object
+   *       required: [clientId, name, verified, host]
+   *       properties:
+   *         clientId:
+   *           type: string
+   *         name:
+   *           type: string
+   *           nullable: true
+   *           description: The name the app gave itself. Checked only when `verified`.
+   *         verified:
+   *           type: boolean
+   *           description: |
+   *             The app registered with a Client ID Metadata Document, so
+   *             `host` is the address it was fetched from. False for a
+   *             dynamically registered app ("name not verified").
+   *         host:
+   *           type: string
+   *           description: The `client_id` host when verified, the first redirect host otherwise.
+   *     AiConnection:
+   *       type: object
+   *       required: [grantId, app, organizationId, organizationName, access, connectedAt, lastUsedAt]
+   *       properties:
+   *         grantId:
+   *           type: string
+   *         app:
+   *           $ref: '#/components/schemas/AiConnectionApp'
+   *         organizationId:
+   *           type: string
+   *           format: uuid
+   *         organizationName:
+   *           type: string
+   *           nullable: true
+   *           description: Null once the organization is gone.
+   *         access:
+   *           type: string
+   *           enum: [read, write]
+   *           description: "`write` while the grant holds `flexiday.write`."
+   *         connectedAt:
+   *           type: string
+   *           format: date-time
+   *         lastUsedAt:
+   *           type: string
+   *           format: date-time
+   *           description: |
+   *             When the app last got a token for this grant: the consent, or
+   *             a refresh, which an app in use makes at least hourly.
+   */
+
+  /**
+   * @openapi
+   * /api/users/me/ai-connections:
+   *   get:
+   *     tags:
+   *       - Users
+   *     summary: The caller's AI connections and the MCP server address
+   *     description: |
+   *       Every OAuth grant the caller gave an AI app, one per app and
+   *       organization, newest first, plus the address an app connects to.
+   *       404 while AI connections are unavailable in all of the caller's
+   *       organizations.
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       '200':
+   *         description: The caller's AI connections
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [serverUrl, connections]
+   *               properties:
+   *                 serverUrl:
+   *                   type: string
+   *                   format: uri
+   *                   example: https://api.flexi-day.com/mcp
+   *                 connections:
+   *                   type: array
+   *                   items:
+   *                     $ref: '#/components/schemas/AiConnection'
+   *       '401':
+   *         description: Not signed in
+   *       '404':
+   *         description: AI connections are unavailable to the caller
+   */
+  app.get(
+    "/me/ai-connections",
+    requireAiFeature("aiConnections", "caller"),
+    tryCatch(handleGetMyAiConnections)
+  );
+
+  /**
+   * @openapi
+   * /api/users/me/ai-connections/{grantId}:
+   *   delete:
+   *     tags:
+   *       - Users
+   *     summary: Disconnect one of the caller's AI connections
+   *     description: |
+   *       Deletes the grant's consent and every refresh and access token for
+   *       the same user, app and organization, in one transaction. The app's
+   *       next refresh answers `invalid_grant` and its next MCP call 401
+   *       `invalid_token`. The member can connect the app again.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: grantId
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '204':
+   *         description: Disconnected
+   *       '401':
+   *         description: Not signed in
+   *       '404':
+   *         description: |
+   *           No such grant of the caller's, or AI connections are unavailable
+   *           to the caller.
+   */
+  app.delete(
+    "/me/ai-connections/:grantId",
+    requireAiFeature("aiConnections", "caller"),
+    tryCatch(handleDeleteMyAiConnection)
+  );
 
   return app;
 };

@@ -68,6 +68,9 @@ Account data goes:
 - Provider accounts (the password included), two-factor, pending verification tokens for the user,
   settings, notifications, calendar connections and calendar feeds.
 - The Birthday, as a tombstone with no date, so the phones that synced it drop it.
+- Every AI connection: OAuth consents and refresh and access tokens. The user row stays, so its
+  cascades never fire; the rows go explicitly, and an organization deleted with the account takes
+  every grant that names it.
 
 The user row stays as a **Deleted account**: the id, an empty name, the email
 `<id>@deleted.invalid`, no picture, `email_verified` false and `deleted_at` set. Both columns stay

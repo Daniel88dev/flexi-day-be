@@ -14,6 +14,7 @@ import {
   planForOrganization,
 } from "../billing/guards.js";
 import { lockOrganization } from "../organization/organizationServices.js";
+import { deleteOrganizationGrants, listOrganizationGrants } from "../aiConnections/grants.js";
 import { personName } from "../person/personName.js";
 import type { OrganizationType } from "../organization/types.js";
 import { AI_AGREEMENT_VERSION } from "./aiAgreement.js";
@@ -73,6 +74,7 @@ export const readAiSettings = async (
     aiConnections: {
       level: organization.aiConnections,
       planAllows: isAiConnectionsPlan(plan),
+      grants: await listOrganizationGrants(input.organizationId, tx),
     },
     agreement: await readAgreement(input.organizationId, anyAiFeatureOn(organization), tx),
     memberNotice: {
@@ -254,7 +256,8 @@ export const enableAiConnections = async (
 /**
  * Moves AI connections between Read only and Read and write while they are on.
  * Raising needs a Paid plan and the feature available, and no new acceptance;
- * lowering works on any plan. The same level again changes nothing.
+ * lowering works on any plan and deletes the grants holding write access. The
+ * same level again changes nothing.
  */
 export const setAiConnectionsLevel = async (
   input: Actor & { level: aiConnectionsLevel.Read | aiConnectionsLevel.Write },
@@ -273,13 +276,20 @@ export const setAiConnectionsLevel = async (
     await assertAiConnectionsPlan(organizationId, tx);
   }
   await changeAiConnections(input, organization.aiConnections, level, tx);
+  if (level === aiConnectionsLevel.Read) {
+    await deleteOrganizationGrants({ organizationIds: [organizationId], writeOnly: true }, tx);
+  }
 };
 
-/** Turns AI connections off. Owner only, on every plan, whatever the kill switch says. */
+/**
+ * Turns AI connections off and deletes every grant in the organization. Owner
+ * only, on every plan, whatever the kill switch says.
+ */
 export const disableAiConnections = async (input: Actor, tx: DbTransaction) => {
   await lockOrganization(input.organizationId, tx);
   const organization = await readOrganization(input.organizationId, tx);
   assertOwner(organization, input.userId);
   if (organization.aiConnections === aiConnectionsLevel.Off) return;
   await changeAiConnections(input, organization.aiConnections, aiConnectionsLevel.Off, tx);
+  await deleteOrganizationGrants({ organizationIds: [input.organizationId] }, tx);
 };

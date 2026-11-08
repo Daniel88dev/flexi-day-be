@@ -959,7 +959,7 @@ export const organizationRouter = (): Router => {
    *               description: Enterprise or Custom, so the owner may turn it on.
    *         aiConnections:
    *           type: object
-   *           required: [level, planAllows]
+   *           required: [level, planAllows, grants]
    *           properties:
    *             level:
    *               type: string
@@ -970,6 +970,27 @@ export const organizationRouter = (): Router => {
    *             planAllows:
    *               type: boolean
    *               description: Any Paid plan (Pro, Enterprise, Custom, grace included).
+   *             grants:
+   *               type: array
+   *               description: |
+   *                 Every AI connection in the organization, by app name. The
+   *                 owner's dialogs name what lowering to Read only (the
+   *                 `write` ones) or turning off (all) disconnects.
+   *               items:
+   *                 type: object
+   *                 required: [grantId, app, userId, personName, access]
+   *                 properties:
+   *                   grantId:
+   *                     type: string
+   *                   app:
+   *                     $ref: '#/components/schemas/AiConnectionApp'
+   *                   userId:
+   *                     type: string
+   *                   personName:
+   *                     type: string
+   *                   access:
+   *                     type: string
+   *                     enum: [read, write]
    *         agreement:
    *           type: object
    *           required: [currentVersion, acceptedVersion, acceptedAt, acceptedByName, newVersionReady]
@@ -1323,8 +1344,10 @@ export const organizationRouter = (): Router => {
    *       Owner only, while AI connections are on. Raising to `write` needs a
    *       Paid plan and AI connections available to the organization, and no
    *       new agreement acceptance. Lowering to `read` works on every plan,
-   *       whatever the kill switch says. Each change writes a setting change
-   *       log row; sending the current level changes nothing.
+   *       whatever the kill switch says, and deletes every AI connection in
+   *       the organization holding write access, in the same transaction.
+   *       Each change writes a setting change log row; sending the current
+   *       level changes nothing.
    *     security:
    *       - bearerAuth: []
    *     parameters:
@@ -1380,8 +1403,9 @@ export const organizationRouter = (): Router => {
    *       - Organization
    *     summary: Turn AI connections off
    *     description: |
-   *       Owner only, on every plan, whatever the kill switch says. Writes a
-   *       setting change log row. Calling it while AI connections are off
+   *       Owner only, on every plan, whatever the kill switch says. Deletes
+   *       every AI connection in the organization and writes a setting change
+   *       log row, in one transaction. Calling it while AI connections are off
    *       changes nothing.
    *     security:
    *       - bearerAuth: []

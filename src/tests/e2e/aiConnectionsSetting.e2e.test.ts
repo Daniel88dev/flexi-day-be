@@ -129,7 +129,7 @@ describe("The AI connections setting", () => {
       const res = await settingsAs(world.users.owner.id, world.organizationId);
 
       expect(res.status).toBe(200);
-      expect(res.body.aiConnections).toEqual({ level: "off", planAllows: true });
+      expect(res.body.aiConnections).toEqual({ level: "off", planAllows: true, grants: [] });
     });
 
     it("accepts the agreement the first time and starts at the chosen level", async () => {
@@ -304,7 +304,7 @@ describe("The AI connections setting", () => {
         const res = await enable(world.users.owner.id, world.organizationId);
 
         expect(res.status).toBe(200);
-        expect(res.body.aiConnections).toEqual({ level: "read", planAllows: true });
+        expect(res.body.aiConnections).toEqual({ level: "read", planAllows: true, grants: [] });
       }
     });
 
