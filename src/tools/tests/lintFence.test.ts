@@ -2,11 +2,15 @@ import { describe, it, expect } from "vitest";
 import { ESLint } from "eslint";
 
 const lintAsToolLayer = async (code: string) => {
+  // Type-aware parsing is off: the fence needs no types, and on a cold start the project
+  // service could parse the file on disk instead of `code`, which hid the first violation in CI.
   const eslint = new ESLint({
     cwd: process.cwd(),
     ruleFilter: ({ ruleId }) => ruleId === "no-restricted-imports",
+    overrideConfig: {
+      languageOptions: { parserOptions: { projectService: false, project: null } },
+    },
   });
-  // An existing file of the layer, so the type-aware parser finds it in the project.
   const [result] = await eslint.lintText(code, { filePath: "src/tools/registry.ts" });
   return result!.messages.map((message) => message.ruleId);
 };
