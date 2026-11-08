@@ -368,6 +368,72 @@ variable "assistant_weekly_limit_usd" {
   }
 }
 
+variable "assistant_model" {
+  description = "The Assistant's model (ASSISTANT_MODEL). A change is a new agent version on the next boot and reaches new chats only. The backend refuses to start with a model that has no row in its price table."
+  type        = string
+  default     = "claude-sonnet-5-5"
+
+  validation {
+    condition     = startswith(var.assistant_model, "claude-")
+    error_message = "assistant_model must be a Claude model id, such as \"claude-sonnet-5-5\"."
+  }
+}
+
+variable "assistant_effort" {
+  description = "The Assistant's effort (ASSISTANT_EFFORT). Moves with the agent version, like assistant_model."
+  type        = string
+  default     = "medium"
+
+  validation {
+    condition     = contains(["low", "medium", "high", "xhigh", "max"], var.assistant_effort)
+    error_message = "assistant_effort must be one of low, medium, high, xhigh, max."
+  }
+}
+
+variable "assistant_screen_model" {
+  description = "The screen's model (ASSISTANT_SCREEN_MODEL), run with thinking off on every user message and on the user text in tool results. Needs a row in the backend's price table, like assistant_model."
+  type        = string
+  default     = "claude-haiku-5-5"
+
+  validation {
+    condition     = startswith(var.assistant_screen_model, "claude-")
+    error_message = "assistant_screen_model must be a Claude model id, such as \"claude-haiku-5-5\"."
+  }
+}
+
+variable "assistant_screen_timeout_ms" {
+  description = "How long the screen may take before it fails closed and nothing is sent (ASSISTANT_SCREEN_TIMEOUT_MS)."
+  type        = number
+  default     = 5000
+
+  validation {
+    condition     = var.assistant_screen_timeout_ms > 0 && floor(var.assistant_screen_timeout_ms) == var.assistant_screen_timeout_ms
+    error_message = "assistant_screen_timeout_ms must be a positive whole number of milliseconds."
+  }
+}
+
+variable "assistant_chat_token_ceiling" {
+  description = "Tokens of context at which a chat closes (ASSISTANT_CHAT_TOKEN_CEILING), below the harness's compaction."
+  type        = number
+  default     = 100000
+
+  validation {
+    condition     = var.assistant_chat_token_ceiling > 0 && floor(var.assistant_chat_token_ceiling) == var.assistant_chat_token_ceiling
+    error_message = "assistant_chat_token_ceiling must be a positive whole number of tokens."
+  }
+}
+
+variable "assistant_step_output_reserve" {
+  description = "Output tokens the meter reserves for each step (ASSISTANT_STEP_OUTPUT_RESERVE). An allowance, not a cap: agents take no max_tokens. It bounds how far concurrent steps can overshoot the Weekly limit."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.assistant_step_output_reserve > 0 && floor(var.assistant_step_output_reserve) == var.assistant_step_output_reserve
+    error_message = "assistant_step_output_reserve must be a positive whole number of tokens."
+  }
+}
+
 variable "assistant_agent_id" {
   description = "Id of the flexi-day-assistant agent in the flexi-day-prod Anthropic workspace (ASSISTANT_AGENT_ID), printed by `pnpm run assistant:provision`. Public; plain env var. Required while the Assistant is on or the preview list is not empty."
   type        = string

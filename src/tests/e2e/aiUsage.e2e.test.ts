@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { config } from "../../config.js";
 import { createServer } from "../../server.js";
@@ -276,6 +276,59 @@ describe("The AI usage page's endpoints", () => {
         grant.grantId
       );
       expect(clientId).toBeTruthy();
+    });
+  });
+
+  describe("kill switches", () => {
+    const OFF = {
+      assistantEnabled: false,
+      aiConnectionsEnabled: false,
+      previewOrganizationIds: [],
+    };
+    let grantId: string;
+
+    beforeEach(async () => {
+      config.aiFeatures = { ...ON };
+      await connectAiApp({ serverUrl: server.url, email: s.ada.email, organizationId: s.acmeId });
+      grantId = personOf(await usage(), s.ada.id)!.apps[0]!.grantId;
+    });
+
+    afterEach(async () => {
+      config.aiFeatures = { ...ON };
+      await (
+        await apiAs(server.url, s.olga.id)
+      ).delete(`/api/organization/ai/connections/${grantId}?organizationId=${s.acmeId}`);
+    });
+
+    const statuses = async () => {
+      const api = await apiAs(server.url, s.olga.id);
+      const query = `?organizationId=${s.acmeId}`;
+      return {
+        usage: (await usageAs(s.olga.id)).status,
+        week: (await api.get(`/api/organization/ai/usage/weeks/${weekStart(1)}${query}`)).status,
+        revoke: (await api.delete(`/api/organization/ai/connections/${grantId}${query}`)).status,
+      };
+    };
+
+    it("answers 404 on the usage page and the revoke while both features are off", async () => {
+      config.aiFeatures = { ...OFF };
+      expect(await statuses()).toEqual({ usage: 404, week: 404, revoke: 404 });
+      config.aiFeatures = { ...ON };
+      expect(personOf(await usage(), s.ada.id)!.apps.map((app) => app.grantId)).toEqual([grantId]);
+    });
+
+    it("keeps the usage page while either feature is on, and the revoke only with AI connections", async () => {
+      config.aiFeatures = { ...OFF, assistantEnabled: true };
+      expect(await statuses()).toEqual({ usage: 200, week: 200, revoke: 404 });
+      config.aiFeatures = { ...OFF, aiConnectionsEnabled: true };
+      expect(await statuses()).toEqual({ usage: 200, week: 200, revoke: 204 });
+    });
+
+    it("opens both to an organization on the preview list, and only to it", async () => {
+      config.aiFeatures = { ...OFF, previewOrganizationIds: [s.betaId] };
+      expect(await statuses()).toEqual({ usage: 404, week: 404, revoke: 404 });
+      config.aiFeatures = { ...OFF, previewOrganizationIds: [s.acmeId] };
+      expect(await statuses()).toEqual({ usage: 200, week: 200, revoke: 204 });
     });
   });
 

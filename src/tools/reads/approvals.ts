@@ -2,7 +2,7 @@ import { z } from "zod";
 import { listRequestsToApprove } from "../../services/vacation/requestDecisions.js";
 import { authorsOf, withTextAuthors } from "../textAuthors.js";
 import { defineTool } from "../types.js";
-import { cursorField, page } from "./requestRows.js";
+import { cursorField, page } from "./paging.js";
 
 export const listRequestsToApproveTool = defineTool({
   name: "list_requests_to_approve",

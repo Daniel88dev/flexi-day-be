@@ -1,5 +1,5 @@
 {
-  "version": "865ede103d9b",
+  "version": "106873ee1021",
   "siteUrl": "https://www.flexi-day.com",
   "languages": {
     "en": {
@@ -25,6 +25,13 @@
           "summary": "Let an AI app such as Claude, ChatGPT or Cursor read your Flexi Day data and make changes for you.",
           "module": "assistant-and-mcp",
           "url": "https://www.flexi-day.com/help/ai-connections/"
+        },
+        {
+          "id": "ai-usage",
+          "title": "The AI usage page",
+          "summary": "What owners and org admins see on the AI usage page, from the Assistant's spend to each person's AI apps, and how to revoke an app.",
+          "module": "assistant-and-mcp",
+          "url": "https://www.flexi-day.com/help/ai-usage/"
         },
         {
           "id": "allowances",
@@ -440,7 +447,7 @@
             "mcp",
             "calls a day"
           ],
-          "related": ["ai-connections"],
+          "related": ["ai-connections", "ai-usage"],
           "headings": ["Daily limits", "Limits for each app", "When a limit is reached"],
           "body": "AI connections have limits, so that one app or one person can't use up what the whole organization\nshares. Only the app's tool calls count. Connecting, listing what the app can do and checking the\nconnection don't.\n\n## Daily limits\n\n- **Daily AI connection limit**: the calls all of an organization's AI connections may make in one\n  day, together. 5,000 on Pro, 20,000 on Enterprise and Custom.\n- **Member daily limit**: 1,000 per person in each organization, so one app stuck in a loop can't\n  use the whole organization's day.\n\nBoth reset at midnight UTC. The owner sees both numbers when turning AI connections on in the AI\ncard on the Organization page.\n\n## Limits for each app\n\nEach app a person connected may make 300 tool calls in 5 minutes and 30 changes an hour. A change\nis creating or cancelling a request, or clocking in or out; each can send emails, which is why\nchanges have a lower limit. A person's second app has limits of its own.\n\n## When a limit is reached\n\nThe app gets a message in your app language saying which limit it reached and when it resets, so\nit can tell you. Until then its calls are refused. Flexi Day itself keeps working, and so do your\nother apps, unless the organization reached its daily AI connection limit, which every app there\nshares. Nobody gets an email or a notification."
         },
@@ -478,7 +485,7 @@
             "agreement",
             "tell members"
           ],
-          "related": ["assistant", "ai-connection-limits"],
+          "related": ["assistant", "ai-connection-limits", "ai-usage"],
           "headings": [
             "Before you start",
             "Turning AI connections on",
@@ -490,6 +497,38 @@
             "What else disconnects apps"
           ],
           "body": "AI connections let an AI app you already use, such as Claude, ChatGPT or Cursor, work with your\nFlexi Day data. The app acts as you, in one organization, with the same permissions you have in the\napp.\n\n## Before you start\n\nAI connections work on every paid plan: Pro, Enterprise and Custom. The owner chooses one of three\nsettings for \"AI connections\" in the AI card on the\nOrganization page:\n\n- **Off**, the default: no app can connect.\n- **Read only**: apps can read what you can see.\n- **Read and write**: apps can also make changes to your own\n  records.\n\n## Turning AI connections on\n\nOnly the owner can change the setting. Org admins see it but can't change it, and on the Free plan\nit stays off. Before AI connections turn on, the owner reads what the apps can do and what leaves\nFlexi Day: what an app reads goes to the company behind that app, under the member's own agreement\nwith them. Personal accounts of AI apps may keep what they read or train on it, so your\norganization's own policy decides which apps people may use.\n\nThe owner picks the level to start with under \"Start with\". The\nfirst time an AI feature is turned on, the owner accepts the AI features agreement for the\norganization, and Flexi Day records who accepted, when, and which version. If the Assistant already\naccepted the current version, AI connections don't ask again.\n\n\"Tell members\" is ticked by default and sends everyone in the organization a\nnotice in the app and on their phone. While AI connections are on, the owner can copy the same text\nfrom the AI card with \"Copy the members' notice\".\n\nGoing from Read only to\nRead and write needs no new acceptance. Lowering to\nRead only or turning AI connections off asks the owner to confirm\nfirst and names the apps and people it disconnects. Every change is recorded with who made it and\nwhen.\n\n## Connect an app\n\n1. Open Settings and find the \"AI connections\" card.\n2. Under \"Connect an AI app\", copy the server address,\n   `https://api.flexi-day.com/mcp`.\n3. In your AI app, add a custom connector with that address.\n4. The app opens a Flexi Day page that names it. Sign in as usual. If you use two-factor\n   authentication, Flexi Day asks for your code. Nothing is shared until you allow it.\n5. Pick the organization the app should work in. Each one shows the access it allows.\n   Organizations whose owner hasn't turned on AI connections, or that are on the Free plan, are\n   listed with the reason. If none allows it, go back to the app.\n6. Check the consent page and choose \"Allow\".\n\nEach connection covers one organization, and you pick it every time you connect. Connect again to\nadd another.\n\n### The consent page\n\n- When Flexi Day could check the app's address, the page says \"Address checked\" with it.\n  Otherwise it says \"Name not verified\": the name is the app's own claim.\n- When the app is a program on your computer, such as Claude Code or Cursor, a warning asks you to\n  allow it only if you started connecting from it just now.\n- \"See what you can see\" is always part of the connection. \"Make changes for you\"\n  is ticked; untick it to connect read only. On a Read only organization it isn't offered.\n\n## What a connected app can do\n\nIt can read whatever you can see in Flexi Day and look things up in the help. With Read and write\nit can also create a request, cancel your own request, and clock you in or out, only for you.\nFlexi Day makes the change at once, under the same rules as in the app. It can't approve or\nreject requests (do that in Flexi Day, or ask [the Assistant](https://www.flexi-day.com/help/assistant/)), and it can't change roles, billing or\nsettings.\n\nA change the app makes reads \"through an AI app\" in the request's history or in the\nattendance history. When it opens a Sensitive section of someone's profile, the organization's Read\nlog shows the read the same way.\n\n## Limits\n\nEach organization has a daily AI connection limit, each person a member daily limit, and each app\nlimits of its own. [Limits on AI connections](https://www.flexi-day.com/help/ai-connection-limits/) has the numbers and what\nthe app hears when it reaches one.\n\n## Your connections and Disconnect\n\nThe \"AI connections\" card in Settings lists each app you\nconnected: its address, or \"name not verified\" when Flexi Day couldn't\ncheck it, the organization, its access, and when it was last used. Last use updates at least once an hour while the app is in use.\n\nTo end one, choose \"Disconnect\" next to the app and confirm. The\napp stops at its next call. To use it again, connect it again.\n\n### What else disconnects apps\n\n- Resetting your password disconnects every app you connected, in every organization.\n- Changing your password in Settings does the same, because it also signs you out\n  everywhere else.\n- Deleting your account disconnects them all.\n- The owner turning AI connections off disconnects every app in the organization. Lowering it to\n  Read only disconnects the apps that have write access; connect\n  again to get read access.\n- Owners and org admins see each person's apps on the AI usage page and can revoke them there.\n\nSigning out, turning on two-factor authentication and a lapsed plan keep your connections. While the plan is lapsed, the app's calls are refused."
+        },
+        {
+          "id": "ai-usage",
+          "language": "en",
+          "url": "https://www.flexi-day.com/help/ai-usage/",
+          "title": "The AI usage page",
+          "summary": "What owners and org admins see on the AI usage page, from the Assistant's spend to each person's AI apps, and how to revoke an app.",
+          "module": "assistant-and-mcp",
+          "roles": ["org-admin", "owner"],
+          "routes": ["/ai-usage"],
+          "tools": [],
+          "keywords": [
+            "ai usage",
+            "usage page",
+            "weekly limit",
+            "spend",
+            "refused",
+            "calls today",
+            "revoke",
+            "connected apps",
+            "past weeks",
+            "deleted account"
+          ],
+          "related": ["assistant-weekly-limit", "ai-connection-limits", "ai-connections"],
+          "headings": [
+            "Assistant this week",
+            "AI connections today",
+            "People",
+            "Revoke an app",
+            "Past weeks"
+          ],
+          "body": "The AI usage page shows what the Assistant and your members' AI apps use in one\norganization. Only the owner and org admins see it. Open it from AI usage under\nOrganization in the sidebar, from \"See AI usage\" on the AI\ncard of the Organization page, or from \"See usage\" when the\nAssistant has paused. If you administer more than one organization, pick one at the top.\n\nIt shows what each person used and how many of their messages were refused, never what anyone\nwrote.\n\n## Assistant this week\n\nHow much of the organization's Weekly limit is used, in dollars and as a percentage, and when it\nresets, in your own time zone. Answers still being written count, so the figure can drop a little\nonce they finish. Bars show the last eight weeks beside this one, with the weeks that reached the\nlimit in red. Once the limit is reached, the card says when, and that the Assistant is paused for\neveryone until the reset. See [Weekly limit and Usage](https://www.flexi-day.com/help/assistant-weekly-limit/).\n\n## AI connections today\n\nThe tool calls all AI apps made today against the daily AI connection limit, when the count resets,\nand bars for the last 14 days with the days that reached the limit in red. See\n[Limits on AI connections](https://www.flexi-day.com/help/ai-connection-limits/).\n\n## People\n\nOne row per person who used the Assistant this week, had a message refused, made a call today or\nhas an AI app connected:\n\n- **Assistant this week**: what their Assistant answers cost this week.\n- **Refused**: messages the Assistant refused as off topic or unsafe this\n  week. From 3 the number turns amber.\n- **AI calls today**: their AI apps' calls today, marked once they reach the\n  member daily limit.\n- **Connected apps**: the apps they connected in this organization.\n\nUsage of an account that was deleted and erased shows as \"Deleted account\",\nwith no name, so the totals stay right. On a phone each person is a card.\n\n## Revoke an app\n\nOpen a person to see their apps, with the access each has, when it was connected and when it was\nlast used. Press Revoke, then Revoke again to confirm.\nThe app stops at its next call. The person can connect it again while AI connections are on, and\nthey can disconnect their own apps in Settings. See [AI connections](https://www.flexi-day.com/help/ai-connections/).\n\n## Past weeks\n\nEvery earlier week with Assistant use, newest first, with the date the limit was reached if it was.\nOpen a week to see who used how much. Per-person usage is kept for 180 days; older weeks show only\nthe organization's total.\n\nIf both the Assistant and AI connections are off, the page says so and links to the organization\nsettings."
         },
         {
           "id": "allowances",
@@ -637,9 +676,9 @@
             "assistant",
             "cost"
           ],
-          "related": ["assistant"],
+          "related": ["assistant", "ai-usage"],
           "headings": ["Near the limit", "When the limit is reached", "Assistant unavailable"],
-          "body": "Usage is what the Assistant's answers cost your organization: the AI provider's list price for\neach step of an answer, answers still being written included. Each organization has a Weekly limit\non Usage, shared by everyone in it. It resets every Monday at 00:00 UTC, shown in your own time\nzone.\n\n## Near the limit\n\nFrom 80% of the limit, a bar under the message box shows how much is used and when it resets.\nMembers see the percentage; owners and org admins also see the amounts.\n\n## When the limit is reached\n\nThe Assistant pauses for the whole organization until the reset, and the message box says until\nwhen. Your chats stay readable. An answer that reaches the limit halfway keeps what it wrote and\nends with a line saying it stopped. Owners and org admins get \"See usage\",\nwhich opens the AI usage page with the organization's usage, person by person.\n\n## Assistant unavailable\n\n\"The Assistant is unavailable right now. Try again later.\" means the AI provider itself can't answer. It isn't your\norganization's limit, and nothing counts against it."
+          "body": "Usage is what the Assistant's answers cost your organization: the AI provider's list price for\neach step of an answer, answers still being written included. Each organization has a Weekly limit\non Usage, shared by everyone in it. It resets every Monday at 00:00 UTC, shown in your own time\nzone.\n\n## Near the limit\n\nFrom 80% of the limit, a bar under the message box shows how much is used and when it resets.\nMembers see the percentage; owners and org admins also see the amounts.\n\n## When the limit is reached\n\nThe Assistant pauses for the whole organization until the reset, and the message box says until\nwhen. Your chats stay readable. An answer that reaches the limit halfway keeps what it wrote and\nends with a line saying it stopped. Owners and org admins get \"See usage\",\nwhich opens the [AI usage](https://www.flexi-day.com/help/ai-usage/) page with the organization's usage, person by\nperson.\n\n## Assistant unavailable\n\n\"The Assistant is unavailable right now. Try again later.\" means the AI provider itself can't answer. It isn't your\norganization's limit, and nothing counts against it."
         },
         {
           "id": "assistant",
@@ -2258,6 +2297,13 @@
           "url": "https://www.flexi-day.com/cs/help/ai-connections/"
         },
         {
+          "id": "ai-usage",
+          "title": "Stránka Využití AI",
+          "summary": "Co vlastník a správci organizace vidí na stránce Využití AI, od útraty Asistenta po AI aplikace jednotlivých lidí, a jak aplikaci odvolat.",
+          "module": "assistant-and-mcp",
+          "url": "https://www.flexi-day.com/cs/help/ai-usage/"
+        },
+        {
           "id": "allowances",
           "title": "Nároky a kolik dní ti zbývá",
           "summary": "Jak fungují roční nároky podle skupiny a typu, kde uvidíš, co zbývá, a jak je správci nastavují.",
@@ -2671,7 +2717,7 @@
             "mcp",
             "volání denně"
           ],
-          "related": ["ai-connections"],
+          "related": ["ai-connections", "ai-usage"],
           "headings": ["Denní limity", "Limity pro každou aplikaci", "Když se limit vyčerpá"],
           "body": "AI připojení mají limity, aby jedna aplikace nebo jeden člověk nevyčerpali, co sdílí celá\norganizace. Počítají se jen volání nástrojů. Připojení, výpis toho, co aplikace umí, a kontrola\nspojení se nepočítají.\n\n## Denní limity\n\n- **Denní limit AI připojení**: kolik volání smí za den udělat všechna AI připojení organizace\n  dohromady. 5 000 v tarifu Pro, 20 000 v tarifech Enterprise a Custom.\n- **Denní limit člena**: 1 000 na člověka v každé organizaci, aby jedna zacyklená aplikace\n  nevyčerpala den celé organizace.\n\nOba se obnovují o půlnoci UTC. Vlastník vidí obě čísla, když zapíná AI připojení v kartě AI na\nstránce Organizace.\n\n## Limity pro každou aplikaci\n\nKaždá aplikace, kterou někdo připojil, smí udělat 300 volání nástrojů za 5 minut a 30 změn za\nhodinu. Změna je vytvoření nebo zrušení žádosti, příchod nebo odchod; každá může poslat e-maily,\na proto mají změny nižší limit. Druhá aplikace téhož člověka má vlastní limity.\n\n## Když se limit vyčerpá\n\nAplikace dostane zprávu v jazyce tvé aplikace, který limit vyčerpala a kdy se obnoví, aby ti to\nmohla říct. Do té doby se její volání odmítají. Flexi Day samotné funguje dál, stejně jako tvoje\ndalší aplikace, pokud organizace nevyčerpala denní limit AI připojení, který sdílí všechny\naplikace v ní. Nikomu nepřijde e-mail ani upozornění."
         },
@@ -2709,7 +2755,7 @@
             "smlouva",
             "dát vědět členům"
           ],
-          "related": ["assistant", "ai-connection-limits"],
+          "related": ["assistant", "ai-connection-limits", "ai-usage"],
           "headings": [
             "Než začneš",
             "Zapnutí AI připojení",
@@ -2721,6 +2767,38 @@
             "Co dalšího aplikace odpojí"
           ],
           "body": "AI připojení umožní AI aplikaci, kterou už používáš, třeba Claude, ChatGPT nebo Cursor, pracovat s\ntvými údaji ve Flexi Day. Aplikace jedná jako ty, v jedné organizaci a se stejnými oprávněními, jaká\nmáš v aplikaci.\n\n## Než začneš\n\nAI připojení fungují v každém placeném tarifu: Pro, Enterprise i Custom. Vlastník vybere jedno ze\ntří nastavení pro „AI připojení“ v kartě AI na stránce\nOrganizace:\n\n- **Vypnuto**, výchozí stav: žádná aplikace se nepřipojí.\n- **Jen čtení**: aplikace čtou to, co vidíš ty.\n- **Čtení a zápis**: aplikace navíc můžou měnit tvoje vlastní\n  záznamy.\n\n## Zapnutí AI připojení\n\nNastavení může změnit jen vlastník. Správci organizace ho vidí, ale změnit ho nemůžou, a v tarifu\nFree zůstává vypnuté. Než se AI připojení zapnou, vlastník si přečte, co aplikace umí a co opouští\nFlexi Day: co aplikace přečte, jde ke společnosti, která za ní stojí, podle vlastní smlouvy člena s\nní. Osobní účty AI aplikací si mohou přečtená data uchovat nebo na nich trénovat, takže které\naplikace můžou lidé používat, určují pravidla vaší organizace.\n\nÚroveň, se kterou začne, vybere vlastník v části „Začít s“.\nKdyž se nějaká funkce AI zapíná poprvé, vlastník přijme za organizaci Smlouvu o funkcích AI a Flexi\nDay zaznamená, kdo ji přijal, kdy a kterou verzi. Pokud aktuální verzi už přijal při zapnutí\nAsistenta, AI připojení se znovu neptají.\n\n„Dát vědět členům“ je ve výchozím stavu zaškrtnuté a pošle všem v organizaci\nupozornění v aplikaci a v telefonu. Dokud jsou AI připojení zapnutá, vlastník zkopíruje stejný text\nz karty AI tlačítkem „Zkopírovat upozornění pro členy“.\n\nPřechod z Jen čtení na\nČtení a zápis nové přijetí smlouvy nepotřebuje. Snížení na\nJen čtení nebo vypnutí AI připojení musí vlastník nejdřív\npotvrdit a dialog vyjmenuje aplikace a lidi, které odpojí. Každá změna se zaznamená i s tím, kdo ji\nudělal a kdy.\n\n## Připojení aplikace\n\n1. Otevři Nastavení a najdi kartu „AI připojení“.\n2. V části „Připojit AI aplikaci“ zkopíruj adresu serveru,\n   `https://api.flexi-day.com/mcp`.\n3. V AI aplikaci přidej vlastní konektor s touto adresou.\n4. Aplikace otevře stránku Flexi Day, která ji jmenuje. Přihlas se jako obvykle. Pokud používáš\n   dvoufázové ověření, Flexi Day si řekne o kód. Dokud přístup nepovolíš, nic se nesdílí.\n5. Vyber organizaci, ve které má aplikace pracovat. U každé vidíš, jaký přístup povoluje.\n   Organizace, kde vlastník AI připojení nezapnul nebo které mají tarif Free, jsou uvedené i s\n   důvodem. Pokud to nepovoluje žádná, vrať se do aplikace.\n6. Zkontroluj stránku se souhlasem a zvol „Povolit“.\n\nKaždé připojení platí pro jednu organizaci a vybíráš ji při každém připojení. Další přidáš novým\npřipojením.\n\n### Stránka se souhlasem\n\n- Když Flexi Day mohl adresu aplikace ověřit, stránka ukáže „Adresa ověřena“ i s adresou. Jinak\n  napíše „Název není ověřený“: název uvádí sama aplikace.\n- Když je aplikace program v tvém počítači, třeba Claude Code nebo Cursor, upozornění tě požádá,\n  abys ji povolil jen tehdy, když jsi připojení z ní právě spustil.\n- „Vidět, co vidíte vy“ je součástí každého připojení. „Provádět změny za vás“ je\n  zaškrtnuté; odškrtni ho a připojíš jen pro čtení. V organizaci s nastavením Jen čtení se nenabízí.\n\n## Co připojená aplikace umí\n\nČte všechno, co ve Flexi Day vidíš ty, a hledá v nápovědě. Při nastavení Čtení a zápis navíc\nvytvoří žádost, zruší tvoji žádost a zaznamená tvůj příchod nebo odchod, jen za tebe. Změna proběhne hned, podle pravidel aplikace. Žádosti schvalovat ani\nzamítat neumí (to udělej ve Flexi Day nebo požádej [Asistenta](https://www.flexi-day.com/cs/help/assistant/)) a nemění role, fakturaci ani\nnastavení.\n\nZměna od aplikace má v historii žádosti nebo docházky poznámku\n„přes AI aplikaci“. Když otevře citlivou sekci něčího profilu, ukáže se toto čtení stejně\ni v Záznamu o čtení organizace.\n\n## Limity\n\nKaždá organizace má denní limit AI připojení, každý člověk denní limit člena a každá aplikace navíc\nvlastní limity. V článku [Limity AI připojení](https://www.flexi-day.com/cs/help/ai-connection-limits/) najdeš čísla a co\naplikace uslyší, když některý vyčerpá.\n\n## Tvoje připojení a odpojení\n\nKarta „AI připojení“ v Nastavení ukazuje každou aplikaci,\nkterou jsi připojil: její adresu, nebo „název neověřen“, když ji\nFlexi Day nemohl ověřit, organizaci, přístup a kdy byla naposledy použita. Poslední použití se u používané\naplikace aktualizuje aspoň jednou za hodinu.\n\nPřipojení ukončíš tak, že u aplikace zvolíš „Odpojit“ a\npotvrdíš to. Aplikace přestane fungovat při svém dalším volání. Pokud ji chceš používat znovu,\npřipoj ji znovu.\n\n### Co dalšího aplikace odpojí\n\n- Obnovení hesla odpojí všechny aplikace, které jsi připojil, ve všech organizacích.\n- Změna hesla v Nastavení udělá totéž, protože tě zároveň odhlásí všude jinde.\n- Smazání účtu je odpojí všechny.\n- Když vlastník AI připojení vypne, odpojí se všechny aplikace v organizaci. Když nastavení sníží na\n  Jen čtení, odpojí se aplikace s přístupem k zápisu; novým\n  připojením získáš přístup ke čtení.\n- Vlastník a správci organizace vidí aplikace každého člověka na stránce Využití AI a můžou je tam\n  odebrat.\n\nOdhlášení, zapnutí dvoufázového ověření ani propadlý tarif tvoje připojení nezruší. Dokud je tarif propadlý, aplikace dostává na svá volání odmítnutí."
+        },
+        {
+          "id": "ai-usage",
+          "language": "cs",
+          "url": "https://www.flexi-day.com/cs/help/ai-usage/",
+          "title": "Stránka Využití AI",
+          "summary": "Co vlastník a správci organizace vidí na stránce Využití AI, od útraty Asistenta po AI aplikace jednotlivých lidí, a jak aplikaci odvolat.",
+          "module": "assistant-and-mcp",
+          "roles": ["org-admin", "owner"],
+          "routes": ["/ai-usage"],
+          "tools": [],
+          "keywords": [
+            "využití ai",
+            "stránka využití",
+            "týdenní limit",
+            "útrata",
+            "odmítnuto",
+            "volání dnes",
+            "odvolat",
+            "připojené aplikace",
+            "předchozí týdny",
+            "deleted account"
+          ],
+          "related": ["assistant-weekly-limit", "ai-connection-limits", "ai-connections"],
+          "headings": [
+            "Asistent tento týden",
+            "AI připojení dnes",
+            "Lidé",
+            "Odvolání aplikace",
+            "Předchozí týdny"
+          ],
+          "body": "Stránka Využití AI ukazuje, co v jedné organizaci využívá Asistent a AI aplikace vašich\nčlenů. Vidí ji jen vlastník a správci organizace. Otevřete ji přes Využití AI v sekci\nOrganizace v postranním panelu, přes „Zobrazit využití AI“ na AI\nkartě stránky Organizace nebo přes „Zobrazit využití“, když se Asistent\npozastaví. Pokud spravujete víc organizací, vyberte jednu nahoře.\n\nUkazuje, kolik kdo využil a kolik jeho zpráv bylo odmítnuto, nikdy ne to, co kdo napsal.\n\n## Asistent tento týden\n\nKolik z Týdenního limitu organizace je vyčerpáno, v dolarech a v procentech, a kdy se limit\nobnoví, ve vašem časovém pásmu. Počítají se i odpovědi, které se ještě píšou, takže částka může po\njejich dokončení trochu klesnout. Sloupce ukazují posledních osm týdnů vedle tohoto, týdny s\nvyčerpaným limitem červeně. Po vyčerpání limitu karta řekne kdy a že je Asistent pozastavený pro\nvšechny do obnovení. Viz [Týdenní limit a využití](https://www.flexi-day.com/cs/help/assistant-weekly-limit/).\n\n## AI připojení dnes\n\nVolání nástrojů všech AI aplikací dnes oproti dennímu limitu AI připojení, kdy se počet obnoví, a\nsloupce za posledních 14 dní, dny s vyčerpaným limitem červeně. Viz\n[Limity AI připojení](https://www.flexi-day.com/cs/help/ai-connection-limits/).\n\n## Lidé\n\nJeden řádek pro každého, kdo tento týden použil Asistenta, měl odmítnutou zprávu, dnes volal nebo\nmá připojenou AI aplikaci:\n\n- **Asistent tento týden**: kolik tento týden stály jeho odpovědi Asistenta.\n- **Odmítnuto**: zprávy, které Asistent tento týden odmítl jako mimo téma nebo\n  nebezpečné. Od 3 je číslo oranžové.\n- **AI volání dnes**: dnešní volání jeho AI aplikací, označená, jakmile dosáhnou\n  denního limitu člena.\n- **Připojené aplikace**: aplikace, které v této organizaci připojil.\n\nVyužití účtu, který byl smazán a vymazán, se ukazuje jako „Deleted account“\nbez jména, aby součty seděly. Na telefonu je každý člověk jedna karta.\n\n## Odvolání aplikace\n\nOtevřete člověka a uvidíte jeho aplikace s přístupem, datem připojení a posledním použitím.\nStiskněte Odvolat a pak znovu Odvolat pro potvrzení.\nAplikace přestane fungovat při dalším volání. Člověk ji může znovu připojit, dokud jsou AI\npřipojení zapnutá, a své aplikace si může odpojit sám v Nastavení. Viz\n[AI připojení](https://www.flexi-day.com/cs/help/ai-connections/).\n\n## Předchozí týdny\n\nVšechny dřívější týdny, kdy se Asistent používal, od nejnovějšího, s datem vyčerpání limitu, pokud\nk němu došlo. Otevřete týden a uvidíte, kdo kolik využil. Využití po lidech se uchovává 180 dní;\nstarší týdny ukazují jen součet za organizaci.\n\nPokud jsou Asistent i AI připojení vypnuté, stránka to řekne a odkáže na nastavení organizace."
         },
         {
           "id": "allowances",
@@ -2866,13 +2944,13 @@
             "asistent",
             "cena"
           ],
-          "related": ["assistant"],
+          "related": ["assistant", "ai-usage"],
           "headings": [
             "Když se limit blíží",
             "Když je limit vyčerpaný",
             "Asistent není k dispozici"
           ],
-          "body": "Využití je to, kolik organizaci stojí odpovědi Asistenta: ceníková cena poskytovatele AI za každý\nkrok odpovědi, včetně odpovědí, které se ještě píšou. Každá organizace má na využití Týdenní limit,\nspolečný pro všechny její členy. Obnoví se každé pondělí v 00:00 UTC, zobrazeno ve tvém časovém\npásmu.\n\n## Když se limit blíží\n\nOd 80 % limitu ukazuje pruh pod polem pro zprávu, kolik je vyčerpáno a kdy se limit obnoví. Členové\nvidí procenta, vlastník a správci organizace i částky.\n\n## Když je limit vyčerpaný\n\nAsistent se pro celou organizaci pozastaví do obnovení a pole pro zprávu řekne, do kdy. Tvoje chaty\nzůstanou čitelné. Odpověď, která na limit narazí v polovině, si nechá, co už napsala, a skončí\nřádkem, že se zastavila. Vlastník a správci uvidí „Zobrazit využití“, které otevře\nstránku Využití AI s využitím organizace po jednotlivých lidech.\n\n## Asistent není k dispozici\n\n„Asistent teď není k dispozici. Zkus to později.“ znamená, že neodpovídá samotný poskytovatel AI. Nejde o limit tvé\norganizace a nic se do něj nepočítá."
+          "body": "Využití je to, kolik organizaci stojí odpovědi Asistenta: ceníková cena poskytovatele AI za každý\nkrok odpovědi, včetně odpovědí, které se ještě píšou. Každá organizace má na využití Týdenní limit,\nspolečný pro všechny její členy. Obnoví se každé pondělí v 00:00 UTC, zobrazeno ve tvém časovém\npásmu.\n\n## Když se limit blíží\n\nOd 80 % limitu ukazuje pruh pod polem pro zprávu, kolik je vyčerpáno a kdy se limit obnoví. Členové\nvidí procenta, vlastník a správci organizace i částky.\n\n## Když je limit vyčerpaný\n\nAsistent se pro celou organizaci pozastaví do obnovení a pole pro zprávu řekne, do kdy. Tvoje chaty\nzůstanou čitelné. Odpověď, která na limit narazí v polovině, si nechá, co už napsala, a skončí\nřádkem, že se zastavila. Vlastník a správci uvidí „Zobrazit využití“, které otevře\nstránku [Využití AI](https://www.flexi-day.com/cs/help/ai-usage/) s využitím organizace po jednotlivých lidech.\n\n## Asistent není k dispozici\n\n„Asistent teď není k dispozici. Zkus to později.“ znamená, že neodpovídá samotný poskytovatel AI. Nejde o limit tvé\norganizace a nic se do něj nepočítá."
         },
         {
           "id": "assistant",
@@ -4500,6 +4578,20 @@
     },
     {
       "language": "en",
+      "articleId": "ai-usage",
+      "question": "How much of our Assistant limit have we used this week?",
+      "expectedArticles": ["ai-usage", "assistant-weekly-limit"],
+      "mustMention": ["AI usage page"]
+    },
+    {
+      "language": "en",
+      "articleId": "ai-usage",
+      "question": "How do I cut off an AI app one of our members connected?",
+      "expectedArticles": ["ai-usage"],
+      "mustMention": ["Revoke", "stops at its next call"]
+    },
+    {
+      "language": "en",
       "articleId": "allowances",
       "question": "How many vacation days do I have left?",
       "expectedArticles": ["allowances"],
@@ -5456,6 +5548,20 @@
       "question": "Může moje AI aplikace schvalovat žádosti?",
       "expectedArticles": ["ai-connections"],
       "mustMention": ["schvalovat a zamítat jen ve Flexi Day"]
+    },
+    {
+      "language": "cs",
+      "articleId": "ai-usage",
+      "question": "Kolik z limitu Asistenta jsme tento týden vyčerpali?",
+      "expectedArticles": ["ai-usage", "assistant-weekly-limit"],
+      "mustMention": ["stránka Využití AI"]
+    },
+    {
+      "language": "cs",
+      "articleId": "ai-usage",
+      "question": "Jak odpojím AI aplikaci, kterou připojil někdo z členů?",
+      "expectedArticles": ["ai-usage"],
+      "mustMention": ["Odvolat", "přestane fungovat při dalším volání"]
     },
     {
       "language": "cs",

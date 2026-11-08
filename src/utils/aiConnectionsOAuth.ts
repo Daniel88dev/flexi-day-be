@@ -1,9 +1,7 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { eq } from "drizzle-orm";
-import { db } from "../db/db.js";
-import { session as sessionTable } from "../db/schema/auth-schema.js";
 import { logger } from "../middleware/logger.js";
+import { forgetConnectOrganization } from "../services/aiConnections/connectSession.js";
 import { pruneUnusedOAuthClients } from "../services/aiConnections/oauthClients.js";
 import { aiEligibility } from "../services/aiFeatures/aiEligibility.js";
 import { errorName } from "./errorName.js";
@@ -39,12 +37,7 @@ export const shouldPickOrganization = async ({
 }): Promise<boolean> => {
   const current = session as unknown as OAuthSession;
   if (!isContinuation) {
-    if (chosenOrganization(session)) {
-      await db
-        .update(sessionTable)
-        .set({ oauthOrganizationId: null })
-        .where(eq(sessionTable.id, current.id));
-    }
+    if (chosenOrganization(session)) await forgetConnectOrganization(current.id);
     return true;
   }
   const organizationId = chosenOrganization(session);

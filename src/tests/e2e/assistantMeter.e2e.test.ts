@@ -9,16 +9,20 @@ import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { userYearQuotas } from "../../db/schema/user-year-quotas-schema.js";
+import { vacation } from "../../db/schema/vacation-schema.js";
 import { vacationEvents } from "../../db/schema/vacation-event-schema.js";
+import { logger } from "../../middleware/logger.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { fakeDriver, fakeDriverControls } from "../../services/assistant/driver/fakeDriver.js";
+import type { SessionEvent } from "../../services/assistant/driver/types.js";
 import { clearProviderRefusal, reserveToolRound } from "../../services/assistant/meter/meter.js";
+import { WITHHELD } from "../../services/assistant/screen/screenServices.js";
 import { settleRelays } from "../../services/assistant/turnServices.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { authCookieFor } from "./helpers/authHelper.js";
 import { apiAs } from "./helpers/directoryWorld.js";
-import { addMember, addQuota, makeGroup, makeUser } from "./helpers/reportFixtures.js";
+import { addLeave, addMember, addQuota, makeGroup, makeUser } from "./helpers/reportFixtures.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
 
 vi.mock("../../services/email/index.js", () => ({
@@ -82,7 +86,7 @@ const seed = async () => {
     await join("Cid Member"),
     await join("Dee Member"),
   ];
-  return { organizationId, owner, admin, members };
+  return { organizationId, groupId, owner, admin, members };
 };
 
 type WeeklyLimit = {
@@ -111,6 +115,7 @@ describe("The Assistant's meter and Weekly limit", () => {
     fakeDriverControls.stepDelayMs = 5;
     clearProviderRefusal();
     await db.delete(vacationEvents);
+    await db.delete(vacation);
     await db.delete(userYearQuotas);
     await cleanupTestData();
     s = await seed();
@@ -376,6 +381,92 @@ describe("The Assistant's meter and Weekly limit", () => {
     const carried = log.findIndex((e) => e.type === "user.custom_tool_result");
     expect(carried).toBeGreaterThan(-1);
     expect(carried).toBeLessThan(log.findLastIndex((e) => e.type === "user.message"));
+  });
+
+  describe("a refusal at the screen of tool results", () => {
+    const screenFailures = (warn: { mock: { calls: unknown[][] } }) =>
+      warn.mock.calls.filter((call) => call[0] === "assistant.screen_failed");
+
+    const toolResults = (sessionId: string) =>
+      fakeDriverControls
+        .events(sessionId)
+        .filter(
+          (event): event is Extract<SessionEvent, { type: "user.custom_tool_result" }> =>
+            event.type === "user.custom_tool_result"
+        )
+        .map((event) => event.content.map((block) => block.text).join(""));
+
+    /** Ann asks for her requests, whose note the tool-text screen must check; `refuse` runs mid-step. */
+    const askWithNote = async (refuse: () => Promise<void>) => {
+      const [ann] = s.members;
+      await addLeave(s.groupId, ann!.id, `${year.toString()}-07-07`, { note: "Dentist" });
+      const chatId = await openChat(ann!.id);
+      const release = fakeDriverControls.hold();
+      const res = await send(ann!.id, chatId, "What requests do I have?");
+      expect(res.status).toBe(200);
+      await refuse();
+      release();
+      const events = parseStream(await res.text());
+      await settleRelays();
+      const [step] = (await mainSteps()).filter((row) => row.chatId === chatId);
+      return { ann: ann!, chatId, events, sessionId: step!.sessionId! };
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("ends the turn at the Weekly limit as the limit, not a screen failure, and never sends the note", async () => {
+      const warn = vi.spyOn(logger, "warn");
+      const { ann, chatId, events, sessionId } = await askWithNote(() =>
+        seedUsage(TEN_DOLLARS, { userId: s.members[1]!.id })
+      );
+
+      expect(events.slice(-2).map((e) => [e.event, e.data.code])).toEqual([
+        ["error", "ASSISTANT_WEEKLY_LIMIT_REACHED"],
+        ["done", undefined],
+      ]);
+      expect(screenFailures(warn)).toEqual([]);
+      const after = await detail(ann.id, chatId);
+      expect(after.messages.map((m) => [m.kind, m.toolOutcome, m.code])).toEqual([
+        ["user", null, null],
+        ["tool", "stopped", null],
+        ["notice", null, "ASSISTANT_WEEKLY_LIMIT_REACHED"],
+      ]);
+      expect(toolResults(sessionId)).toEqual([]);
+
+      // The week resets; the next message carries the held result with the unscreened note withheld.
+      await db.delete(assistantModelCalls).where(eq(assistantModelCalls.userId, s.members[1]!.id));
+      const thanks = await send(ann.id, chatId, "Thanks");
+      expect(thanks.status).toBe(200);
+      await thanks.text();
+      await settleRelays();
+      const [carried] = toolResults(sessionId);
+      expect(JSON.parse(carried!)).toMatchObject({
+        requests: [{ note: { user_text: WITHHELD } }],
+      });
+      expect(carried).not.toContain("Dentist");
+    });
+
+    it("ends the turn as Assistant unavailable when Anthropic refuses the screen, not a screen failure", async () => {
+      const warn = vi.spyOn(logger, "warn");
+      const { ann, chatId, events, sessionId } = await askWithNote(() => {
+        fakeDriverControls.providerRefusal = "call";
+        return Promise.resolve();
+      });
+
+      expect(events.filter((e) => e.event === "error").map((e) => e.data.code)).toEqual([
+        "ASSISTANT_UNAVAILABLE",
+      ]);
+      expect(screenFailures(warn)).toEqual([]);
+      const after = await detail(ann.id, chatId);
+      expect(after.messages.map((m) => [m.kind, m.toolOutcome, m.code])).toEqual([
+        ["user", null, null],
+        ["tool", "stopped", null],
+        ["notice", null, "ASSISTANT_UNAVAILABLE"],
+      ]);
+      expect(toolResults(sessionId)).toEqual([]);
+    });
   });
 
   it("settles both steps of a turn with a tool call from the session's usage", async () => {

@@ -12,6 +12,7 @@ const PINNED: Record<number, string> = {
   3: "17b16ec77c0ac23fcb66f13ca45f974999e775232cc73c95aa3a94b90258a17c",
   4: "d756bbb371a7584feb1f6fab2201764c1b02733dbe04136fece770c6ffa746cd",
   5: "9784b04414e342929bead777108f09d9ea73f09e8c668d5c98f1f9c7340733fc",
+  6: "58bec239065d4f1616c0d104b98022ac048dc6f75996c2981807a9625f60c89a",
 };
 
 describe("agent config version", () => {

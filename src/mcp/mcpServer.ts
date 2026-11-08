@@ -4,7 +4,7 @@ import {
   type AuthInfo,
   type CallToolResult,
 } from "@modelcontextprotocol/server";
-import { KB_LANGUAGES, type KbBundle } from "../services/knowledgeBase/bundle.js";
+import { KB_LANGUAGES, type KbBundle } from "../services/knowledgeBase/types.js";
 import { knowledgeBase } from "../services/knowledgeBase/knowledgeBase.js";
 import { findMcpTool, toolDescription, toolInputJsonSchema, toolsFor } from "../tools/registry.js";
 import { isToolAllowed, runTool } from "../tools/runTool.js";

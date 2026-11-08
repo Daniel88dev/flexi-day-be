@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { config } from "../../config.js";
 import { and, desc, eq, gt, isNotNull, lt, ne } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { assistantChatMessages, assistantChats } from "../../db/schema/assistant-schema.js";
@@ -7,11 +8,14 @@ import { appLanguage } from "../../db/schema/user-settings-schema.js";
 import type { AuthSession } from "../../middleware/authSession.js";
 import { logger } from "../../middleware/logger.js";
 import type { ToolLanguage } from "../../tools/types.js";
+import { USER_TEXT_KEY } from "../../tools/userText.js";
+import { businessDateInZone } from "../../utils/dateFunc.js";
 import AppError from "../../utils/appError.js";
 import { errorName } from "../../utils/errorName.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { assertAiEligible } from "../aiFeatures/aiEligibility.js";
 import { isAiFeatureAvailable } from "../aiFeatures/aiFeatureServices.js";
+import { getAttendanceSettings } from "../organization/attendanceSettingsServices.js";
 import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 import { answerAssistantToolCall, runConfirmedWrite } from "./assistantTools.js";
 import { assertChatOpen, chatClosed, closedReason } from "./chatLifecycle.js";
@@ -27,6 +31,7 @@ import {
 } from "./driver/types.js";
 import {
   attachStepEvent,
+  meterRefusalCode,
   noteProviderRefused,
   providerRefusedRecently,
   providerUnavailable,
@@ -57,7 +62,7 @@ import {
   type ToolAnswer,
 } from "./pendingActions.js";
 import { recordRejectedTurn } from "./screen/rejectedTurns.js";
-import { screenMessage, screenToolResults } from "./screen/screenServices.js";
+import { screenMessage, screenToolResults, withholdAllUserText } from "./screen/screenServices.js";
 import {
   ASSISTANT_NOTICE,
   PENDING_ACTION_SETTLED,
@@ -175,26 +180,39 @@ const record = async (
 const toolLanguage = async (userId: string): Promise<ToolLanguage> =>
   (await getUserLanguage(userId)) === appLanguage.Czech ? "cs" : "en";
 
-const utcDay = (date: Date) => date.toISOString().slice(0, 10);
+/**
+ * The zone "today" is read in: the organization's attendance zone, else the
+ * zone the quota rollover runs in, the product's home zone. Never UTC, which
+ * would date a Czech user's first hour after midnight as yesterday.
+ */
+const chatTimeZone = async (organizationId: string): Promise<string> =>
+  (await getAttendanceSettings(organizationId))?.timezone ?? config.quotaRollover.timezone;
+
+/** A name people chose, wrapped like user-written values in tool results. */
+const userText = (value: string) => JSON.stringify({ [USER_TEXT_KEY]: value });
 
 /**
  * Per-user context for the model, sent with the first message and again when
- * the date has changed since the last one. Last in the send, as the API requires.
+ * the local date has changed since the last one. Last in the send, as the API requires.
  */
 const contextMessage = async (args: {
   auth: AuthSession;
   chat: ChatRow & { organizationName: string };
   language: ToolLanguage;
   now: Date;
+  timeZone: string;
 }): Promise<SessionInputEvent> => {
   const role = await roleIn(args.auth.userId, args.chat.organizationId);
-  const weekday = args.now.toLocaleDateString("en-GB", { weekday: "long", timeZone: "UTC" });
+  const weekday = args.now.toLocaleDateString("en-GB", {
+    weekday: "long",
+    timeZone: args.timeZone,
+  });
   const text = [
-    `Signed-in user: ${args.auth.userName}.`,
+    `Signed-in user: ${userText(args.auth.userName)}.`,
     `Role in the organization: ${role}.`,
-    `Organization: ${args.chat.organizationName}.`,
+    `Organization: ${userText(args.chat.organizationName)}.`,
     `App language: ${args.language === "cs" ? "Czech" : "English"}.`,
-    `Today: ${weekday} ${utcDay(args.now)} (UTC).`,
+    `Today: ${weekday} ${businessDateInZone(args.now, args.timeZone)} (${args.timeZone}).`,
   ].join(" ");
   return { type: "system.message", content: [{ type: "text", text }] };
 };
@@ -304,8 +322,12 @@ export const prepareTurn = async (args: {
       ...carried.map(resultEvent),
       { type: "user.message", content: [{ type: "text", text: args.text }] },
     ];
-    if (!chat.sessionId || utcDay(chat.lastMessageAt) !== utcDay(now)) {
-      input.push(await contextMessage({ auth, chat, language, now }));
+    const timeZone = await chatTimeZone(chat.organizationId);
+    if (
+      !chat.sessionId ||
+      businessDateInZone(chat.lastMessageAt, timeZone) !== businessDateInZone(now, timeZone)
+    ) {
+      input.push(await contextMessage({ auth, chat, language, now, timeZone }));
     }
     reservation = await reserveTurnStart({
       organizationId: chat.organizationId,
@@ -538,13 +560,23 @@ const advance = async (turn: Advance): Promise<boolean> => {
   }
   if (answers.length > 0) {
     // One screen call covers the user text of every read in the response.
-    const texts = await screenToolResults({
-      driver: turn.driver,
-      chatId: turn.chatId,
-      organizationId: turn.organizationId,
-      userId: turn.auth.userId,
-      texts: answers.map((answer) => answer.text),
-    });
+    let texts: string[];
+    try {
+      texts = await screenToolResults({
+        driver: turn.driver,
+        chatId: turn.chatId,
+        organizationId: turn.organizationId,
+        userId: turn.auth.userId,
+        texts: answers.map((answer) => answer.text),
+      });
+    } catch (error) {
+      const code = meterRefusalCode(error);
+      if (!code) throw error;
+      // The round stops like a refused send (sendRound reads this notice): the
+      // answers are held for the next message, with nothing unscreened in them.
+      texts = withholdAllUserText(answers.map((answer) => answer.text));
+      await record(turn.chatId, { kind: "notice", code, eventId: last.id });
+    }
     await holdAnswers(
       turn.chatId,
       last.id,

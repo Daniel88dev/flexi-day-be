@@ -2,7 +2,7 @@ import { z } from "zod";
 import { listBirthdaysForMonth } from "../../services/birthday/birthdayCalendar.js";
 import { listViewableGroups } from "../../services/vacation/requestReads.js";
 import { defineTool } from "../types.js";
-import { cursorField, page } from "./requestRows.js";
+import { cursorField, page } from "./paging.js";
 import { monthDays, monthFields, monthOf } from "./monthInput.js";
 
 type Row = Awaited<ReturnType<typeof listBirthdaysForMonth>>[number];

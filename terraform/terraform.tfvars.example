@@ -115,6 +115,14 @@ ai_preview_organization_ids = []
 assistant_driver            = "managed"
 # Each organization's Weekly limit on Assistant Usage, in dollars.
 assistant_weekly_limit_usd = "10"
+# The models and the meter's figures. The defaults match config.ts; a model
+# change is a new agent version on the next boot.
+# assistant_model               = "claude-sonnet-5-5"
+# assistant_effort              = "medium"
+# assistant_screen_model        = "claude-haiku-5-5"
+# assistant_screen_timeout_ms   = 5000
+# assistant_chat_token_ceiling  = 100000
+# assistant_step_output_reserve = 4096
 # The agent and environment in the flexi-day-prod Anthropic workspace, as
 # `pnpm run assistant:provision` prints them (scripts/assistant-setup.sh prod
 # runs it). Public ids. Required, with the two Anthropic secrets, once

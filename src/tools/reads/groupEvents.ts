@@ -3,7 +3,7 @@ import { listGroupEventsForMonth } from "../../services/groupEvent/groupEventAcc
 import { occurrences } from "../../services/groupEvent/occurrences.js";
 import { authorsOf, withTextAuthors } from "../textAuthors.js";
 import { defineTool } from "../types.js";
-import { cursorField, page } from "./requestRows.js";
+import { cursorField, page } from "./paging.js";
 import { monthDays, monthFields, monthOf } from "./monthInput.js";
 
 export const listGroupEventsTool = defineTool({

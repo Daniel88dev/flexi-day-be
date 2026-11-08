@@ -91,10 +91,12 @@ production's `/help/kb.json`; `--from <url or file>` takes another bundle, such 
 
 ## The workflow
 
-`.github/workflows/assistant-eval.yml` runs the smoke set on pull requests to `main`, and the full
-suite only through `workflow_dispatch` (scope, model and effort inputs). The owner chose this
-against the $20 limit: smoke on pull requests costs about $1-3 a month, one full run about $5. The
-weekly trigger is written and commented out. On a pull request it diffs against the base
+`.github/workflows/assistant-eval.yml` runs the smoke set on pull requests to `main`, the full suite
+on `main` against the live help bundle on the 1st of each month at 06:00 UTC, and otherwise the
+full suite only through `workflow_dispatch` (scope, model and effort inputs). The owner chose this
+against the $20 limit: smoke on pull requests costs about $1-3 a month and the monthly full run
+about $8. A help-article change runs no eval of its own, so the monthly run is what catches an
+article edit that makes answers worse. On a pull request the workflow diffs against the base
 (`scripts/assistant-eval-changes.sh`) and runs only when prompts, tools, the price table, model
 config, the eval, the KB snapshot or the Anthropic SDK version change; otherwise the
 `assistant-eval` job passes in seconds. `PR_SCOPE` at the top switches pull requests between the

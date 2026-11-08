@@ -145,11 +145,39 @@ const parse = (text: string): Json | undefined => {
   }
 };
 
+const slotsOf = (texts: string[]) => {
+  const parsed = texts.map(parse);
+  const slots = parsed.flatMap((value) => (value === undefined ? [] : userTextSlots(value)));
+  return { parsed, slots };
+};
+
+const withholdSlots = (
+  texts: string[],
+  { parsed, slots }: ReturnType<typeof slotsOf>,
+  withheld: Set<number>
+): string[] => {
+  if (withheld.size === 0) return texts;
+  slots.forEach((slot, index) => {
+    if (withheld.has(index)) slot[USER_TEXT_KEY] = WITHHELD;
+  });
+  return parsed.map((value, index) =>
+    value === undefined ? texts[index]! : JSON.stringify(value)
+  );
+};
+
+/** The texts with every user-written value withheld, for results no screen has passed. */
+export const withholdAllUserText = (texts: string[]): string[] => {
+  const found = slotsOf(texts);
+  return withholdSlots(texts, found, new Set(found.slots.keys()));
+};
+
 /**
  * The screen of one model response's tool results: one call over every value
  * people wrote (the declared `user_text` slots). A flagged value becomes
  * `WITHHELD`; when the call fails or Haiku refuses, every value in the
  * response is. Answers the texts to send, in order. No call without user text.
+ * A meter refusal (the Weekly limit, Anthropic refusing) is thrown, as from
+ * {@link screenMessage}: it ends the turn rather than counting as a failed screen.
  */
 export const screenToolResults = async (args: {
   driver: AssistantDriver;
@@ -158,8 +186,8 @@ export const screenToolResults = async (args: {
   userId: string;
   texts: string[];
 }): Promise<string[]> => {
-  const parsed = args.texts.map(parse);
-  const slots = parsed.flatMap((value) => (value === undefined ? [] : userTextSlots(value)));
+  const found = slotsOf(args.texts);
+  const { slots } = found;
   if (slots.length === 0) return args.texts;
 
   let withheld: Set<number>;
@@ -186,6 +214,7 @@ export const screenToolResults = async (args: {
       });
     }
   } catch (error) {
+    if (isMeterRefusal(error)) throw error;
     withheld = new Set(slots.keys());
     aiSignal("assistant.screen_failed", {
       chatId: args.chatId,
@@ -199,12 +228,5 @@ export const screenToolResults = async (args: {
       count: withheld.size,
     });
   }
-  if (withheld.size === 0) return args.texts;
-
-  slots.forEach((slot, index) => {
-    if (withheld.has(index)) slot[USER_TEXT_KEY] = WITHHELD;
-  });
-  return parsed.map((value, index) =>
-    value === undefined ? args.texts[index]! : JSON.stringify(value)
-  );
+  return withholdSlots(args.texts, found, withheld);
 };

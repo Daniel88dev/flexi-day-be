@@ -8,7 +8,7 @@ import {
 } from "../../services/vacation/ownRequests.js";
 import { REQUESTABLE_CALENDAR_RECORD_TYPES } from "../../services/vacation/types.js";
 import { defineTool } from "../types.js";
-import { withDayRange } from "../reads/requestRows.js";
+import { withDayRange } from "../reads/dayRange.js";
 import {
   allowanceChanges,
   DESTRUCTIVE,

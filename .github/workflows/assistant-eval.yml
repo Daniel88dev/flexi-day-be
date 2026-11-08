@@ -1,10 +1,11 @@
 name: assistant-eval
 
 # Real model calls in the flexi-day-eval workspace, capped at $20 a month.
-# The owner chose the triggers (T-731): the smoke set on pull requests that
-# touch an Assistant path, and the full suite only by manual dispatch. A pull
-# request that touches no Assistant path passes in seconds. The schedule is
-# ready but off; it would run main against the live help bundle.
+# The owner chose the triggers (T-731, T-697): the smoke set on pull requests
+# that touch an Assistant path, the full suite on main against the live help
+# bundle once a month (about $8, so help-article changes that hurt answers show
+# up), and the full suite otherwise only by manual dispatch. A pull request
+# that touches no Assistant path passes in seconds.
 on:
   workflow_dispatch:
     inputs:
@@ -24,8 +25,8 @@ on:
         default: default
   pull_request:
     branches: [main]
-  # schedule:
-  #   - cron: "0 6 * * 3" # Wednesday 06:00 UTC, on main
+  schedule:
+    - cron: "0 6 1 * *" # the 1st of each month, 06:00 UTC, on main: full suite, live bundle
 
 env:
   # What a pull request that touches an Assistant path runs: full or smoke.

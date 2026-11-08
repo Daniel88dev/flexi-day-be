@@ -1,9 +1,9 @@
 import { parseArgs } from "node:util";
 import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
-import { z } from "zod";
 import { db } from "../../../db/db.js";
 import { assistantModelCalls } from "../../../db/schema/assistant-meter-schema.js";
 import { logger } from "../../../middleware/logger.js";
+import { validateAnthropicCostReport } from "../types.js";
 import { usedAmount } from "./meter.js";
 
 /** Drift is tolerated up to the larger of these. */
@@ -17,27 +17,13 @@ const USAGE = `Usage: pnpm run assistant:reconcile --month <YYYY-MM> --report <f
 <file> is the JSON of GET /v1/organizations/cost_report with group_by[]=workspace_id and
 group_by[]=description, one page or an array of pages.`;
 
-const costResult = z.object({
-  amount: z.string(),
-  currency: z.string(),
-  cost_type: z.string().nullable(),
-  model: z.string().nullable().optional(),
-  workspace_id: z.string().nullable().optional(),
-});
-const costPage = z.object({
-  data: z.array(
-    z.object({ starting_at: z.string(), ending_at: z.string(), results: z.array(costResult) })
-  ),
-});
-const costReport = z.union([costPage, z.array(costPage)]);
-
 const DEFAULT_WORKSPACE = "default";
 
 type ReportLine = { workspaceId: string; model: string; microUsd: number };
 
 /** The month's token costs per workspace and model; runtime and tools are outside the meter. */
 const reportLines = (json: unknown, from: Date, until: Date): ReportLine[] => {
-  const pages = [costReport.parse(json)].flat();
+  const pages = [validateAnthropicCostReport.parse(json)].flat();
   const lines: ReportLine[] = [];
   for (const bucket of pages.flatMap((page) => page.data)) {
     const startsAt = new Date(bucket.starting_at);

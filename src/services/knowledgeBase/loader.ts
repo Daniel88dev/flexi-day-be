@@ -1,4 +1,4 @@
-import { kbBundleSchema, type KbBundle } from "./bundle.js";
+import { kbBundleSchema, type KbBundle } from "./types.js";
 
 export type KnowledgeBaseLoader = {
   /** The bundle as last loaded, without fetching. */

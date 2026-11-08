@@ -7,7 +7,7 @@ import {
 } from "../../services/directory/directoryLookups.js";
 import type { ShownSection } from "../../services/directory/types.js";
 import { defineTool, type ToolContext } from "../types.js";
-import { cursorField, page } from "./requestRows.js";
+import { cursorField, page } from "./paging.js";
 
 const scopeOf = (ctx: ToolContext) => ({
   auth: ctx.auth,

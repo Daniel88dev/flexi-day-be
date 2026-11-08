@@ -3,9 +3,9 @@ import { db, type DbTransaction } from "../../db/db.js";
 import { user } from "../../db/schema/auth-schema.js";
 import { aiConnectionsLevel, organizations } from "../../db/schema/organization-schema.js";
 import AppError from "../../utils/appError.js";
-import { isAiConnectionsPlan, isAssistantPlan, planForOrganization } from "../billing/guards.js";
+import { planForOrganization } from "../billing/guards.js";
 import { hasOrganizationLink, linkedOrganizationIds } from "../employment/organizationLinks.js";
-import { isAiFeatureAvailable, type AiFeature } from "./aiFeatureServices.js";
+import { AI_FEATURE_RULES, isAiFeatureAvailable, type AiFeature } from "./aiFeatureServices.js";
 
 /** What an eligible organization lets an AI connection do. Always `null` for the Assistant. */
 export type AiConnectionAccess = "read" | "write";
@@ -69,24 +69,12 @@ const decide = async (
   if (!isAiFeatureAvailable(feature, row.organizationId)) {
     return { ...facts, eligible: false, reason: "UNAVAILABLE" };
   }
-  const turnedOn =
-    feature === "assistant" ? row.assistantEnabled : row.aiConnections !== aiConnectionsLevel.Off;
-  if (!turnedOn) return { ...facts, eligible: false, reason: "TURNED_OFF" };
-
-  const plan = await planForOrganization(row.organizationId, tx);
-  const planAllows = feature === "assistant" ? isAssistantPlan(plan) : isAiConnectionsPlan(plan);
-  if (!planAllows) return { ...facts, eligible: false, reason: "PLAN" };
-
-  return {
-    ...facts,
-    eligible: true,
-    access:
-      feature === "assistant"
-        ? null
-        : row.aiConnections === aiConnectionsLevel.Write
-          ? "write"
-          : "read",
-  };
+  const rules = AI_FEATURE_RULES[feature];
+  if (!rules.turnedOn(row)) return { ...facts, eligible: false, reason: "TURNED_OFF" };
+  if (!rules.planAllows(await planForOrganization(row.organizationId, tx))) {
+    return { ...facts, eligible: false, reason: "PLAN" };
+  }
+  return { ...facts, eligible: true, access: rules.access(row) };
 };
 
 /**

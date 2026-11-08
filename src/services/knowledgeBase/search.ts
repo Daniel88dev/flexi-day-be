@@ -1,4 +1,4 @@
-import type { KbArticle, KbBundle, KbIndexEntry } from "./bundle.js";
+import type { KbArticle, KbBundle, KbIndexEntry } from "./types.js";
 
 type LanguageContent = KbBundle["languages"]["en"];
 

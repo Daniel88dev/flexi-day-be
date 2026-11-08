@@ -207,6 +207,10 @@ stops.
 | `ai_preview_organization_ids`                            | `AI_PREVIEW_ORGANIZATION_IDS`                            | when the list is not empty |
 | `assistant_driver`, `assistant_weekly_limit_usd`         | `ASSISTANT_DRIVER`, `ASSISTANT_WEEKLY_LIMIT_USD`         | always                     |
 | `kb_bundle_url`                                          | `KB_BUNDLE_URL`                                          | always                     |
+| `assistant_model`, `assistant_effort`                    | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT`                    | always                     |
+| `assistant_screen_model`, `assistant_screen_timeout_ms`  | `ASSISTANT_SCREEN_MODEL`, `ASSISTANT_SCREEN_TIMEOUT_MS`  | always                     |
+| `assistant_chat_token_ceiling`                           | `ASSISTANT_CHAT_TOKEN_CEILING`                           | always                     |
+| `assistant_step_output_reserve`                          | `ASSISTANT_STEP_OUTPUT_RESERVE`                          | always                     |
 | `sentry_traces_mcp_rate`, `sentry_traces_assistant_rate` | `SENTRY_TRACES_MCP_RATE`, `SENTRY_TRACES_ASSISTANT_RATE` | always                     |
 | `privacy_banner_from`                                    | `PRIVACY_BANNER_FROM`                                    | when it is not empty       |
 | `assistant_agent_id`, `assistant_environment_id`         | `ASSISTANT_AGENT_ID`, `ASSISTANT_ENVIRONMENT_ID`         | while the Assistant is on  |
@@ -305,7 +309,8 @@ their grants stay, and retention keeps running.
   empty too, the plan also takes the two secrets and the ids out of App Runner; the slots keep
   their values for the next switch-on.
 - `ai_connections_enabled = false` stops `/mcp`, its OAuth discovery and consent for everyone off
-  the preview list.
+  the preview list, and the revoke on the AI usage page with them.
+- The AI usage page answers 404 once both are off for an organization.
 - A preview organization keeps both features while it is on the list. Remove its id and apply to
   stop them there too.
 

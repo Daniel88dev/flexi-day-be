@@ -1,4 +1,4 @@
-import { db } from "../../db/db.js";
+import { db, type DbTransaction } from "../../db/db.js";
 import type { AuthSession } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import {
@@ -22,52 +22,34 @@ import type {
   ValidatedAttendanceMonthQueryType,
 } from "./types.js";
 
-/** Starts a session at the server's instant. The business date is fixed from the organization's zone. */
-export const clockInOwn = async (params: {
-  auth: AuthSession;
-  organizationId: string | undefined;
-}): Promise<AttendanceSessionView> => {
-  const { auth, organizationId } = params;
-  return db.transaction(async (tx) => {
-    const subject = await beginAttendanceWrite(auth.userId, organizationId, tx, "OPEN");
-    return clockIn(subject, auth, tx);
-  });
-};
+type OwnClock = { auth: AuthSession; organizationId: string | undefined };
 
-export const clockOutOwn = async (params: {
-  auth: AuthSession;
-  organizationId: string | undefined;
-}): Promise<AttendanceSessionView> => {
-  const { auth, organizationId } = params;
-  return db.transaction(async (tx) => {
-    const subject = await beginAttendanceWrite(auth.userId, organizationId, tx, "CLOSE");
-    return clockOut(subject, auth, tx);
-  });
-};
+type WriteSubject = Awaited<ReturnType<typeof beginAttendanceWrite>>;
+
+/** One clock write or dry run in its own transaction, after the write checks for its kind. */
+const onOwnClock = <T>(
+  kind: "OPEN" | "CLOSE",
+  { auth, organizationId }: OwnClock,
+  run: (subject: WriteSubject, tx: DbTransaction) => Promise<T>
+): Promise<T> =>
+  db.transaction(async (tx) =>
+    run(await beginAttendanceWrite(auth.userId, organizationId, tx, kind), tx)
+  );
+
+/** Starts a session at the server's instant. The business date is fixed from the organization's zone. */
+export const clockInOwn = (params: OwnClock): Promise<AttendanceSessionView> =>
+  onOwnClock("OPEN", params, (subject, tx) => clockIn(subject, params.auth, tx));
+
+export const clockOutOwn = (params: OwnClock): Promise<AttendanceSessionView> =>
+  onOwnClock("CLOSE", params, (subject, tx) => clockOut(subject, params.auth, tx));
 
 /** {@link clockInOwn} as a dry run: the same checks, nothing written. */
-export const previewClockInOwn = async (params: {
-  auth: AuthSession;
-  organizationId: string | undefined;
-}): Promise<ClockInPreview> =>
-  db.transaction(async (tx) =>
-    previewClockIn(
-      await beginAttendanceWrite(params.auth.userId, params.organizationId, tx, "OPEN"),
-      tx
-    )
-  );
+export const previewClockInOwn = (params: OwnClock): Promise<ClockInPreview> =>
+  onOwnClock("OPEN", params, previewClockIn);
 
 /** {@link clockOutOwn} as a dry run: the same checks, nothing written. */
-export const previewClockOutOwn = async (params: {
-  auth: AuthSession;
-  organizationId: string | undefined;
-}): Promise<ClockOutPreview> =>
-  db.transaction(async (tx) =>
-    previewClockOut(
-      await beginAttendanceWrite(params.auth.userId, params.organizationId, tx, "CLOSE"),
-      tx
-    )
-  );
+export const previewClockOutOwn = (params: OwnClock): Promise<ClockOutPreview> =>
+  onOwnClock("CLOSE", params, previewClockOut);
 
 /** The clock widget's read. Never gated by the plan, so a lapsed organization still reads `active: false`. */
 export const readOwnAttendanceState = async (params: {

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { kbBundleSchema } from "../../services/knowledgeBase/bundle.js";
+import { kbBundleSchema } from "../../services/knowledgeBase/types.js";
 import { KB_SNAPSHOT_PATH } from "../../tests/fixtures/kbSnapshot.js";
 import { goldenQuestionsOf } from "./cases/index.js";
 import { LIVE_BUNDLE_URL } from "./runEnv.js";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { kbSnapshot } from "../../../tests/fixtures/kbSnapshot.js";
-import type { KbBundle } from "../bundle.js";
+import type { KbBundle } from "../types.js";
 import { createKnowledgeBaseLoader } from "../loader.js";
 
 const URL = "http://kb.test/help/kb.json";

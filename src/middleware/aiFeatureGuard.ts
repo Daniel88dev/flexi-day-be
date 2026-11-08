@@ -9,12 +9,14 @@ import AppError from "../utils/appError.js";
 
 /**
  * How a guarded route names the organization it serves:
- * - `{ organizationId }`: read it from the request; a request that names none is refused.
+ * - `{ organizationId }`: read it from the request, or resolve it; a request that names none is refused.
  * - `"caller"`: a session route with no organization in it; any of the caller's organizations counts.
  * - `"public"`: a route outside session auth; open while anyone is on the preview list.
  */
 export type AiFeatureScope =
-  { organizationId: (req: Request) => string | undefined } | "caller" | "public";
+  | { organizationId: (req: Request) => string | undefined | Promise<string | undefined> }
+  | "caller"
+  | "public";
 
 /** Reads the organization id from a path parameter, for `{ organizationId: organizationIdParam("organizationId") }`. */
 export const organizationIdParam =
@@ -28,23 +30,28 @@ const notFound = () => new AppError({ message: "Not found", code: 404 });
 
 /**
  * Answers 404 while the feature is unavailable, the same as a route that does
- * not exist. `"caller"` and organization scopes run after `authSession`.
+ * not exist. A list of features opens the route while any of them is
+ * available. `"caller"` and organization scopes run after `authSession`.
  */
 export const requireAiFeature =
-  (feature: AiFeature, scope: AiFeatureScope) =>
+  (feature: AiFeature | readonly AiFeature[], scope: AiFeatureScope) =>
   async (req: Request, _res: Response, next: NextFunction) => {
+    const features: readonly AiFeature[] = typeof feature === "string" ? [feature] : feature;
     try {
-      if (scope === "public") {
-        return next(isAiFeatureReachable(feature) ? undefined : notFound());
-      }
+      if (!features.some(isAiFeatureReachable)) return next(notFound());
+      if (scope === "public") return next();
       if (scope === "caller") {
         const userId = req.auth?.userId;
-        const available = userId ? await isAiFeatureAvailableToUser(feature, userId) : false;
-        return next(available ? undefined : notFound());
+        const available = userId
+          ? await Promise.all(features.map((one) => isAiFeatureAvailableToUser(one, userId)))
+          : [];
+        return next(available.some(Boolean) ? undefined : notFound());
       }
-      const organizationId = scope.organizationId(req);
+      const organizationId = await scope.organizationId(req);
       return next(
-        organizationId && isAiFeatureAvailable(feature, organizationId) ? undefined : notFound()
+        organizationId && features.some((one) => isAiFeatureAvailable(one, organizationId))
+          ? undefined
+          : notFound()
       );
     } catch (err) {
       return next(err);

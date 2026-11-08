@@ -101,6 +101,14 @@ resource "aws_apprunner_service" "main" {
             ASSISTANT_DRIVER       = var.assistant_driver
             # Each organization's Weekly limit on Assistant Usage, in dollars.
             ASSISTANT_WEEKLY_LIMIT_USD = var.assistant_weekly_limit_usd
+            # The models, the screen's timeout and the meter's token figures.
+            # Defaults match config.ts, so the plan shows them without a change.
+            ASSISTANT_MODEL               = var.assistant_model
+            ASSISTANT_EFFORT              = var.assistant_effort
+            ASSISTANT_SCREEN_MODEL        = var.assistant_screen_model
+            ASSISTANT_SCREEN_TIMEOUT_MS   = tostring(var.assistant_screen_timeout_ms)
+            ASSISTANT_CHAT_TOKEN_CEILING  = tostring(var.assistant_chat_token_ceiling)
+            ASSISTANT_STEP_OUTPUT_RESERVE = tostring(var.assistant_step_output_reserve)
             # The help articles bundle, read by the Assistant and the docs
             # tools on /mcp. Required by config.ts while either feature is on.
             KB_BUNDLE_URL = var.kb_bundle_url

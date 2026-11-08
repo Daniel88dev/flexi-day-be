@@ -73,6 +73,12 @@ booking, `groupUser/groupAccess.ts` for standing in a group, `billing/guards.ts`
 group's plan still allows writes. Controllers import them; so does the transition module, which
 could not if they had stayed a layer up.
 
+`src/tools/` is the tool layer: one definition per Assistant and `/mcp` tool (name, input schema,
+handler) and the registry both channels read. A handler calls services and holds no database access
+of its own; an eslint fence fails any import of `db`, a schema, `drizzle-orm` or `pg` there.
+`src/mcp/` serves the registry over `/mcp`, and `src/services/assistant/` runs it for the Assistant,
+so those two import `src/tools/` the way a controller imports a service.
+
 `src/jobs/` schedules background work with croner, started from `src/index.ts` and stopped on
 shutdown. Job modules only schedule and log — the work itself lives in a service, so it stays
 callable and testable outside the timer.
@@ -105,6 +111,13 @@ two rules above therefore hold by construction rather than by each route remembe
 transition supplies only what differs, its load, its authorization, its mutation and its own
 not-found and conflict wording, and its controller is left parsing the request and shaping the
 response. Reach for the module for any new vacation state change.
+
+**A service a tool calls owns its boundary.** A tool cannot import `db`, so a write or a dry run
+that both a tool and a controller reach opens its transaction inside the service, and the
+controller calls the same function: `createRequest` and `previewCreateRequest` in
+`vacation/requestCreation.ts`, `clockInOwn` and its siblings in `attendance/ownAttendance.ts`. The
+Assistant's own bookkeeping (`assistant/pendingActions.ts`, the meter) opens its transactions the
+same way, because no request handler sits above it.
 
 **Every other write handler owns its own boundary.** It imports `db`, opens
 `db.transaction(async (tx) => ...)`, and threads that `tx` through every service call and guard

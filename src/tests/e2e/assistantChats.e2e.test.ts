@@ -4,6 +4,8 @@ import { config } from "../../config.js";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { db } from "../../db/db.js";
+import { assistantChats } from "../../db/schema/assistant-schema.js";
+import { organizationAttendanceSettings } from "../../db/schema/organization-attendance-settings-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
 import { organizationUsers } from "../../db/schema/organization-users-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
@@ -322,6 +324,72 @@ describe("The Assistant's chat API on the fake driver", () => {
     expect(
       (await api.post("/api/assistant/chats", { organizationId: s.beta.organizationId })).status
     ).toBe(404);
+  });
+
+  describe("the context message", () => {
+    const DAY_MS = 86_400_000;
+    /** A UTC day two days out, so the clock moves forward from the sessions the seed signed. */
+    const base = Date.now() + 2 * DAY_MS;
+    const day = (offset = 0) => new Date(base + offset * DAY_MS).toISOString().slice(0, 10);
+    const at = (iso: string) => vi.setSystemTime(new Date(iso));
+
+    const contextTexts = async (chatId: string) => {
+      const [chat] = await db
+        .select({ sessionId: assistantChats.sessionId })
+        .from(assistantChats)
+        .where(eq(assistantChats.id, chatId));
+      return fakeDriverControls
+        .events(chat!.sessionId!)
+        .filter((event) => event.type === "system.message")
+        .map((event) => event.content.map((block) => block.text).join(""));
+    };
+
+    const sendAndSettle = async (chatId: string, text: string) => {
+      const res = await send(s.jana.id, chatId, text);
+      expect(res.status).toBe(200);
+      await res.text();
+      await settleRelays();
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("dates today in the product's home zone, again once that date changes, with names as user text", async () => {
+      const chatId = await openChat(s.jana.id, s.acme.organizationId);
+
+      // 21:30 UTC is still the same day in Prague; 23:30 UTC is already the next one there.
+      at(`${day()}T21:30:00Z`);
+      await sendAndSettle(chatId, "Hello there");
+      at(`${day()}T23:30:00Z`);
+      await sendAndSettle(chatId, "Hello again");
+
+      const texts = await contextTexts(chatId);
+      expect(texts).toHaveLength(2);
+      expect(texts[0]).toContain(`${day()} (Europe/Prague)`);
+      expect(texts[1]).toContain(`${day(1)} (Europe/Prague)`);
+      expect(texts[0]).toContain('Signed-in user: {"user_text":"Jana Member"}.');
+      expect(texts[0]).toContain('Organization: {"user_text":"Acme"}.');
+    });
+
+    it("uses the organization's own zone when it has one", async () => {
+      await db
+        .insert(organizationAttendanceSettings)
+        .values({ organizationId: s.acme.organizationId, timezone: "America/New_York" });
+      const chatId = await openChat(s.jana.id, s.acme.organizationId);
+
+      // Early in the UTC day it is still the evening before in New York.
+      at(`${day()}T03:30:00Z`);
+      await sendAndSettle(chatId, "Hello there");
+
+      expect(await contextTexts(chatId)).toEqual([
+        expect.stringContaining(`${day(-1)} (America/New_York)`),
+      ]);
+    });
   });
 
   it("keeps each chat to its owner and deletes it with its session", async () => {

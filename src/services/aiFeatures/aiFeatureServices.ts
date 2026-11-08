@@ -1,6 +1,10 @@
 import { config } from "../../config.js";
+import { aiConnectionsLevel } from "../../db/schema/organization-schema.js";
+import type { Entitlements } from "../billing/entitlements.js";
+import { isAiConnectionsPlan, isAssistantPlan } from "../billing/guards.js";
 import { linkedOrganizationIds } from "../employment/organizationLinks.js";
 import { ownedNewAgreementVersions } from "./aiAgreementState.js";
+import type { AiConnectionAccess } from "./aiEligibility.js";
 
 export type AiFeature = "assistant" | "aiConnections";
 
@@ -19,10 +23,34 @@ export type AiAvailability = {
   organizations: OrganizationAiAvailability[];
 };
 
-const isSwitchedOn = (feature: AiFeature): boolean =>
-  feature === "assistant"
-    ? config.aiFeatures.assistantEnabled
-    : config.aiFeatures.aiConnectionsEnabled;
+type OrganizationAiSettings = { assistantEnabled: boolean; aiConnections: aiConnectionsLevel };
+
+/** What differs between the two features, in one place: the kill switch, the owner's setting, the plan, the access. */
+export const AI_FEATURE_RULES: Record<
+  AiFeature,
+  {
+    switchedOn: () => boolean;
+    turnedOn: (organization: OrganizationAiSettings) => boolean;
+    planAllows: (plan: Entitlements["plan"]) => boolean;
+    access: (organization: OrganizationAiSettings) => AiConnectionAccess | null;
+  }
+> = {
+  assistant: {
+    switchedOn: () => config.aiFeatures.assistantEnabled,
+    turnedOn: (organization) => organization.assistantEnabled,
+    planAllows: (plan) => isAssistantPlan(plan),
+    access: () => null,
+  },
+  aiConnections: {
+    switchedOn: () => config.aiFeatures.aiConnectionsEnabled,
+    turnedOn: (organization) => organization.aiConnections !== aiConnectionsLevel.Off,
+    planAllows: (plan) => isAiConnectionsPlan(plan),
+    access: (organization) =>
+      organization.aiConnections === aiConnectionsLevel.Write ? "write" : "read",
+  },
+};
+
+const isSwitchedOn = (feature: AiFeature): boolean => AI_FEATURE_RULES[feature].switchedOn();
 
 /** The kill switch is on, or the organization is on the preview list. */
 export const isAiFeatureAvailable = (feature: AiFeature, organizationId: string): boolean =>

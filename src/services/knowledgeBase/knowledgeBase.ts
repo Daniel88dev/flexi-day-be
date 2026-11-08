@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/node";
 import { config } from "../../config.js";
 import { logger } from "../../middleware/logger.js";
 import { errorName } from "../../utils/errorName.js";
-import type { KbBundle, KbLanguage } from "./bundle.js";
+import type { KbBundle, KbLanguage } from "./types.js";
 import { createKnowledgeBaseLoader, type KnowledgeBaseLoader } from "./loader.js";
 
 const RETRY_MS = 30_000;

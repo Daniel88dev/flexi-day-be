@@ -28,6 +28,27 @@ export const validateCardConfirm = z
 
 export type ValidatedCardConfirm = z.infer<typeof validateCardConfirm>;
 
+/** Anthropic's webhook body once its signature checks; only the event and session ids are read. */
+export const validateAnthropicWebhook = z.object({
+  id: z.string().min(1).max(200),
+  data: z.object({ id: z.string().min(1).max(200), type: z.string().min(1).max(100) }),
+});
+
+const costResult = z.object({
+  amount: z.string(),
+  currency: z.string(),
+  cost_type: z.string().nullable(),
+  model: z.string().nullable().optional(),
+  workspace_id: z.string().nullable().optional(),
+});
+const costPage = z.object({
+  data: z.array(
+    z.object({ starting_at: z.string(), ending_at: z.string(), results: z.array(costResult) })
+  ),
+});
+/** The Admin API's cost report the reconcile reads: one page, or an array of pages. */
+export const validateAnthropicCostReport = z.union([costPage, z.array(costPage)]);
+
 export const validateStreamQuery = z.object({
   after: z
     .string()

@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db/db.js";
-import { oauthClient, session as sessionTable } from "../../db/schema/auth-schema.js";
+import { oauthClient } from "../../db/schema/auth-schema.js";
 import AppError from "../../utils/appError.js";
 import { auth } from "../../utils/auth.js";
+import { rememberConnectOrganization } from "./connectSession.js";
 import { FLEXIDAY_READ, FLEXIDAY_WRITE } from "../../utils/aiConnectionsOAuth.js";
 import {
   aiEligibility,
@@ -195,10 +196,7 @@ export const chooseConnectOrganization = async (args: {
     organizationId: args.organizationId,
     feature: "aiConnections",
   });
-  await db
-    .update(sessionTable)
-    .set({ oauthOrganizationId: answer.organizationId })
-    .where(eq(sessionTable.id, args.sessionId));
+  await rememberConnectOrganization(args.sessionId, answer.organizationId);
   return {
     organizationId: answer.organizationId,
     organizationName: answer.organizationName,

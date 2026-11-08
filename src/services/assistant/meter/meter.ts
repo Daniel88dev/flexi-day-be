@@ -466,12 +466,15 @@ export const providerUnavailable = () =>
     publicContext: { code: ASSISTANT_NOTICE.UNAVAILABLE },
   });
 
-/** A refusal by the meter, which a caller must pass on rather than read as a failed call. */
-export const isMeterRefusal = (error: unknown): boolean => {
-  if (!(error instanceof AppError)) return false;
+/** The notice code of a refusal by the meter, `null` for any other error. */
+export const meterRefusalCode = (error: unknown): string | null => {
+  if (!(error instanceof AppError)) return null;
   const code = error.errors[0]?.publicContext.code;
-  return code === WEEKLY_LIMIT_REACHED || code === ASSISTANT_NOTICE.UNAVAILABLE;
+  return code === WEEKLY_LIMIT_REACHED || code === ASSISTANT_NOTICE.UNAVAILABLE ? code : null;
 };
+
+/** A refusal by the meter, which a caller must pass on rather than read as a failed call. */
+export const isMeterRefusal = (error: unknown): boolean => meterRefusalCode(error) !== null;
 
 /**
  * One screen call as a metered step: reserved at its worst case (the screen's

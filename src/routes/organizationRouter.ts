@@ -1,4 +1,6 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
+import { requireAiFeature } from "../middleware/aiFeatureGuard.js";
+import { aiSettingsActor } from "../controllers/aiFeatures/aiSettingsActor.js";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
@@ -42,6 +44,13 @@ import {
   validateEnableAiConnectionsBody,
   validateEnableAssistantBody,
 } from "../services/aiFeatures/types.js";
+
+const AI_FEATURES = ["assistant", "aiConnections"] as const;
+
+/** The AI routes' organization, resolved as their handlers do, for the kill-switch guard. */
+const administered = {
+  organizationId: async (req: Request) => (await aiSettingsActor(req)).organizationId,
+};
 
 export const organizationRouter = (): Router => {
   const app = Router();
@@ -316,7 +325,7 @@ export const organizationRouter = (): Router => {
    *           Not an admin of the organization, or a delegated admin, for whom
    *           `context.code` is `OWNER_ONLY`.
    *       '404':
-   *         description: No such organization
+   *         description: No such organization, or neither AI feature is available to it
    *       '422':
    *         description: An empty `organizationId`
    *       '503':
@@ -356,7 +365,7 @@ export const organizationRouter = (): Router => {
    *       '403':
    *         description: "Not the owner; `context.code` is `OWNER_ONLY` for a delegated admin"
    *       '404':
-   *         description: No such organization
+   *         description: No such organization, or neither AI feature is available to it
    *       '422':
    *         description: An empty `organizationId`
    */
@@ -1640,9 +1649,12 @@ export const organizationRouter = (): Router => {
    *       '403':
    *         description: Caller does not administer this organization
    *       '404':
-   *         description: No such organization, or the caller has none yet
+   *         description: |
+   *           No such organization, or the caller has none yet, or neither AI
+   *           feature is available to the organization (kill switches off and
+   *           not on the preview list)
    */
-  app.get("/ai/usage", tryCatch(handleGetAiUsage));
+  app.get("/ai/usage", requireAiFeature(AI_FEATURES, administered), tryCatch(handleGetAiUsage));
 
   /**
    * @openapi
@@ -1692,11 +1704,15 @@ export const organizationRouter = (): Router => {
    *       '403':
    *         description: Caller does not administer this organization
    *       '404':
-   *         description: No such organization
+   *         description: No such organization, or neither AI feature is available to it
    *       '422':
    *         description: "`weekStart` is not a date"
    */
-  app.get("/ai/usage/weeks/:weekStart", tryCatch(handleGetAiUsageWeek));
+  app.get(
+    "/ai/usage/weeks/:weekStart",
+    requireAiFeature(AI_FEATURES, administered),
+    tryCatch(handleGetAiUsageWeek)
+  );
 
   /**
    * @openapi
@@ -1706,7 +1722,9 @@ export const organizationRouter = (): Router => {
    *       - Organization
    *     summary: Revoke a member's AI connection
    *     description: |
-   *       Owner and org admins, whatever the setting or the kill switch.
+   *       Owner and org admins, whatever the setting. Answers 404 while AI
+   *       connections are unavailable to the organization (the kill switch
+   *       off and the organization not on the preview list).
    *       Deletes the grant's consent and every refresh and access token for
    *       the same member, app and organization, in one transaction. The
    *       app's next MCP call answers 401 `invalid_token` and its next
@@ -1730,9 +1748,15 @@ export const organizationRouter = (): Router => {
    *       '403':
    *         description: Caller does not administer this organization
    *       '404':
-   *         description: No such organization, or no such grant in it
+   *         description: |
+   *           No such organization, no such grant in it, or AI connections
+   *           unavailable to it
    */
-  app.delete("/ai/connections/:grantId", tryCatch(handleDeleteOrganizationAiConnection));
+  app.delete(
+    "/ai/connections/:grantId",
+    requireAiFeature("aiConnections", administered),
+    tryCatch(handleDeleteOrganizationAiConnection)
+  );
 
   return app;
 };

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { KB_LANGUAGES } from "../../services/knowledgeBase/bundle.js";
+import { KB_LANGUAGES } from "../../services/knowledgeBase/types.js";
 import { knowledgeBaseIn } from "../../services/knowledgeBase/knowledgeBase.js";
 import { searchArticles } from "../../services/knowledgeBase/search.js";
 import AppError from "../../utils/appError.js";

@@ -249,7 +249,7 @@ not Off, a Paid plan.
   - Disconnect in Settings: that one grant (`DELETE /api/users/me/ai-connections/:grantId`).
   - Revoke on the AI usage page: that one grant, by the owner or an org admin of the grant's
     organization (`DELETE /api/organization/ai/connections/:grantId`, 404 for another
-    organization's grant). `src/tests/e2e/aiUsage.e2e.test.ts` checks the next MCP call fails.
+    organization's grant and while AI connections are unavailable to the organization). `src/tests/e2e/aiUsage.e2e.test.ts` checks the next MCP call fails.
   - Password reset: every grant the user holds, in `onPasswordReset`, whether or not the address
     was verified.
   - Password change with `revokeOtherSessions`: every grant the user holds, in the
@@ -606,8 +606,8 @@ under-protects the endpoints that matter:
   metadata document are left alone. The pruning runs in the request, so no sweep job exists.
 
 The store is in-memory, except for the two daily limits, which are Postgres rows: counters are
-per-process and reset on deploy. Running more than one instance multiplies the effective limits —
-that needs a shared store before scaling out.
+per-process and reset on deploy. Running more than one instance multiplies the effective limits, so
+scaling out needs a shared store first.
 
 ## Sync pull transport (`src/routes/syncRouter.ts`)
 
