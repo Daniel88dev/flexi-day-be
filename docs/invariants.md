@@ -66,6 +66,9 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   code challenge without anyone deciding they should; if it narrowed it, a password sign-in would
   get through without its code. Putting a social path under the plugin is a product decision, not a
   fix.
+  The same holds for AI connections: an OAuth grant that starts with a social sign-in on the connect
+  sign-in page carries the signed query through the provider and reaches the organization picker
+  with no code challenge, so the grant is as single-factor as that sign-in.
   `src/tests/utils/twoFactorScope.test.ts` fails if the matcher moves either way.
 - **The Expo authorization proxy stays disabled.** `disabledPaths` in `auth.ts` lists
   `/expo-authorization-proxy`. The `expo()` plugin serves it to start a browser sign-in from the
@@ -167,8 +170,9 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   `BETTER_AUTH_SECRET` as version 1. `src/utils/auth.ts` gives better-auth the list and version 1
   as the key for ciphertext from before versioning, which names no version. better-auth encrypts
   under the newest version, tags the ciphertext `$ba$<version>$`, and decrypts with whichever
-  version the tag names. That covers TOTP secrets, backup codes, account OAuth tokens and calendar
-  tokens. Terraform keeps two versions, so a row still under the older one when the next rotation
+  version the tag names. That covers TOTP secrets, backup codes, account OAuth tokens, calendar
+  tokens and `jwks.private_key`, the key that signs AI connections' access tokens (`jwt()` stores
+  it as the ciphertext wrapped in a JSON string, so its sweep entry unwraps and rewraps it). Terraform keeps two versions, so a row still under the older one when the next rotation
   lands never reads again, and for a dormant user's TOTP secret that is a lockout. Re-encrypting on
   use would leave exactly those dormant rows behind, so `runAuthSecretCheck` runs
   `reencryptToCurrentVersion` (`src/services/authSecret/reencryptServices.ts`) on every boot: each
@@ -179,7 +183,8 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   column joins the sweep's list, or it outlives its key. `src/tests/utils/authSecretRotation.test.ts`
   fails if a TOTP code, a backup code or a calendar token written before versioning or under
   version 1 stops working after a rotation, `src/tests/e2e/authSecretReencrypt.e2e.test.ts` if the
-  sweep leaves a row on a version the next rotation drops, and
+  sweep leaves a row on a version the next rotation drops ("keeps the AI connections signing key
+  through two rotations" for `jwks`), and
   `src/services/calendarConnection/tests/connectionAccessToken.test.ts` if an unreadable token
   throws without marking the connection.
 - **A session ends by deleting its row, never by flagging it; a new Better Auth secret version
@@ -205,6 +210,39 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   stops deleting the row, `src/tests/e2e/authSecretCheck.e2e.test.ts` if the check stops deleting or
   starts deleting on an unchanged secret, and `src/tests/boot.test.ts` if boot stops running it or
   starts listening before it finishes.
+
+## AI connections (`src/utils/auth.ts`, `src/utils/aiConnectionsOAuth.ts`)
+
+The backend is the OAuth 2.1 authorization server AI apps connect through: better-auth's `mcp()`
+with `cimd()` and `jwt()`. A grant acts in one organization the user picks, among those
+`aiEligibility` (`src/services/aiFeatures/aiEligibility.ts`) allows: standing in it, AI connections
+not Off, a Paid plan.
+
+- **`mcp()` is registered after `twoFactor`.** Both add after hooks, and better-auth runs them in
+  registration order. The provider's hook continues an OAuth flow whenever a response sets the
+  session cookie and the request carried the signed query. After `twoFactor`, a password sign-in
+  that ends in a challenge has already had its cookie deleted, so nothing continues until
+  `/two-factor/verify-*` sets the real one. Registered first, the provider would run the
+  authorization with the throwaway pre-challenge session, and a navigation request would leave with
+  the next step in `Location`, which survives `twoFactor` replacing the body. "yields no code from a
+  password sign-in until the challenge passes" in `src/tests/e2e/aiConnectionsOAuth.e2e.test.ts`
+  fails if the order flips. Social sign-in skips the second factor here too ("Social sign-in does
+  not run the second factor" above).
+- **Every new authorization picks its organization.** `postLogin.shouldRedirect` sends a fresh
+  authorization to the picker and clears `session.oauth_organization_id` first; only the return
+  from the picker, with a choice still eligible, goes on. Otherwise a choice left on the session
+  by an earlier connection, plus a consent on file for it, would issue a code for an organization
+  the user never picked this time. `postLogin.consentReferenceId` checks eligibility again and
+  throws when the organization stopped qualifying between picker and consent. The session field is
+  `input: false`, so only the picker route, which checks eligibility, writes it.
+- **Read only never grants `flexiday.write`.** A before hook on `/oauth2/consent` takes the scope out
+  of whatever the consent page posted when the chosen organization is Read only, because the
+  endpoint grants every requested scope when the body names none. The consent page hiding the
+  option is not the control.
+- **`/token` stays disabled.** `jwt()` would otherwise mint session JWTs signed by the same key as
+  AI connections' access tokens.
+- **Off means 404.** `/api/auth/oauth2/*`, `/api/auth/jwks`, the discovery documents and
+  `/api/oauth-connect/*` answer 404 while AI connections are unavailable (`requireAiFeature`).
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 

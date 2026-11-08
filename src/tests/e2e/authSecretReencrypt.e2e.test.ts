@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { generateId } from "better-auth";
 import { symmetricDecrypt, symmetricEncrypt, type SecretConfig } from "better-auth/crypto";
 import { eq } from "drizzle-orm";
+import { exportJWK, generateKeyPair, importJWK, jwtVerify, SignJWT } from "jose";
 import { db } from "../../db/db.js";
-import { account, twoFactor, user } from "../../db/schema/auth-schema.js";
+import { account, jwks, twoFactor, user } from "../../db/schema/auth-schema.js";
 import {
   calendarConnection,
   calendarProvider,
@@ -121,6 +122,46 @@ describe("re-encrypting onto the current secret version", () => {
     expect(Object.keys(result.unreadable)).toEqual(["two_factor.secret"]);
     const [row] = await db.select().from(twoFactor).where(eq(twoFactor.userId, userId));
     expect(row?.secret).toBe(stranger);
+  });
+
+  it("keeps the AI connections signing key through two rotations, JSON wrapper and all", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("EdDSA", {
+      crv: "Ed25519",
+      extractable: true,
+    });
+    const privateJwk = JSON.stringify(await exportJWK(privateKey));
+    const keyId = generateId();
+    // How `jwt()` writes it: the ciphertext as a JSON string.
+    await db.insert(jwks).values({
+      id: keyId,
+      publicKey: JSON.stringify(await exportJWK(publicKey)),
+      privateKey: JSON.stringify(await legacy(privateJwk)),
+      createdAt: new Date(),
+      alg: "EdDSA",
+      crv: "Ed25519",
+    });
+
+    expect(await reencryptToCurrentVersion(ROTATED)).toEqual({ reencrypted: 1, unreadable: {} });
+    expect(await reencryptToCurrentVersion(ROTATED_AGAIN)).toEqual({
+      reencrypted: 1,
+      unreadable: {},
+    });
+    expect(await reencryptToCurrentVersion(ROTATED_AGAIN)).toEqual({
+      reencrypted: 0,
+      unreadable: {},
+    });
+
+    const [row] = await db.select().from(jwks).where(eq(jwks.id, keyId));
+    const wrapped: unknown = JSON.parse(row?.privateKey ?? "");
+    expect(wrapped).toMatch(/^\$ba\$3\$/);
+    const onlyNewest = keys([3, V3]);
+    const restored = await symmetricDecrypt({ key: onlyNewest, data: wrapped as string });
+    expect(restored).toBe(privateJwk);
+
+    const token = await new SignJWT({ scope: "flexiday.read" })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .sign(await importJWK(JSON.parse(restored), "EdDSA"));
+    await expect(jwtVerify(token, publicKey)).resolves.toBeDefined();
   });
 
   it("finds nothing to do on the next boot", async () => {

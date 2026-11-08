@@ -3,7 +3,12 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 dotenv.config();
 
-type APIConfig = { port: number; env: "production" | "dev" | "test" };
+type APIConfig = {
+  port: number;
+  env: "production" | "dev" | "test";
+  /** This API's own origin, `BETTER_AUTH_URL`: the OAuth issuer and the `/mcp` resource hang off it. */
+  publicUrl: string;
+};
 
 type DBConfig = { database: string };
 
@@ -535,6 +540,7 @@ export const config: Config = {
       return n;
     })(),
     env: environment,
+    publicUrl: (process.env.BETTER_AUTH_URL || "http://localhost:8080").replace(/\/+$/, ""),
   },
   db: {
     database: databaseUrl,

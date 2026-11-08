@@ -134,7 +134,10 @@ header instead.
   an existing account, so connecting Apple from Settings fails for them, with a message of its own
   on the web. Mail to a relay address arrives only because the sending domain is registered with
   Apple's relay and signed with Easy DKIM.
-- **Second factor.** Social sign-in skips our second factor on the web and the phone alike.
+- **Second factor.** Social sign-in skips our second factor on the web and the phone alike, and in
+  the AI connections connect flow: a Google, Microsoft or Apple sign-in started from the connect
+  sign-in page carries the signed OAuth query through the provider round trip and continues to the
+  organization picker without a code challenge, so the grant it ends in was never second-factored.
 - **Google's nonce.** Google's iOS SDK offers no nonce, so a Google id-token sign-in has no replay
   protection beyond the token's audience and its one-hour age.
 - **Apple's name.** Apple sends the user's name only on the first authorization. An account

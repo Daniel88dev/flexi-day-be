@@ -50,6 +50,8 @@ import { isDiskAttachmentStore } from "./services/attachment/attachmentStore.js"
 import { isDiskOrganizationDataStore } from "./services/organizationData/organizationDataStore.js";
 import { localOrganizationDataRouter, personExportRouter } from "./routes/personExportRouter.js";
 import { aiFeaturesRouter } from "./routes/aiFeaturesRouter.js";
+import { oauthConnectContextRouter, oauthConnectRouter } from "./routes/oauthConnectRouter.js";
+import { requireAiFeature } from "./middleware/aiFeatureGuard.js";
 
 export const createServer = () => {
   const app = express();
@@ -100,7 +102,31 @@ export const createServer = () => {
     app.use("/api/directory/photos/processed", photoCallbackRouter());
   }
 
+  // The authorization server AI apps connect through. Its endpoints, keys and
+  // discovery documents answer 404 while AI connections are unavailable. The
+  // RFC 8414 and RFC 9728 documents live outside `/api/auth` because the
+  // issuer and the `/mcp` resource have paths; better-auth serves them from
+  // the full path.
+  const aiConnectionsReachable = requireAiFeature("aiConnections", "public");
+  app.use(
+    ["/api/auth/oauth2", "/api/auth/jwks", "/api/auth/.well-known/oauth-authorization-server"],
+    aiConnectionsReachable
+  );
+  app.get(
+    [
+      "/.well-known/oauth-authorization-server/api/auth",
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+    ],
+    aiConnectionsReachable,
+    toNodeHandler(auth)
+  );
+
   app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());
+
+  // The connect pages read the request they serve before anyone is signed in;
+  // the signed OAuth query is the credential.
+  app.use("/api/oauth-connect", apiFailureLimiter, oauthConnectContextRouter());
 
   // Local seeding/impersonation routes. `config.dev` is undefined unless the
   // environment explicitly opts in on a local database, so in every deployed
@@ -154,6 +180,7 @@ export const createServer = () => {
   app.use("/api/birthdays", birthdayRouter());
   app.use("/api/group-events", groupEventRouter());
   app.use("/api/ai-features", aiFeaturesRouter());
+  app.use("/api/oauth-connect", oauthConnectRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
   // deploy explicitly carries an allowlist, so for everyone else these routes

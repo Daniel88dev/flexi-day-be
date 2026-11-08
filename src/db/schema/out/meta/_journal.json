@@ -386,6 +386,13 @@
       "when": 1794133525372,
       "tag": "0054_ai_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1794135027973,
+      "tag": "0055_ai_connections_oauth",
+      "breakpoints": true
     }
   ]
 }

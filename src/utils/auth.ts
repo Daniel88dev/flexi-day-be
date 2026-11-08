@@ -12,7 +12,10 @@ import {
   session as sessionTable,
   user as userTable,
 } from "../db/schema/auth-schema.js";
-import { customSession, haveIBeenPwned, openAPI, twoFactor } from "better-auth/plugins";
+import { customSession, haveIBeenPwned, jwt, openAPI, twoFactor } from "better-auth/plugins";
+import { cimd } from "@better-auth/cimd";
+import { fetchClientMetadataResource } from "@better-auth/cimd/node";
+import { mcp } from "@better-auth/mcp";
 import { config } from "../config.js";
 import { emailSender } from "../services/email/index.js";
 import { logger } from "../middleware/logger.js";
@@ -20,6 +23,13 @@ import { appleClientFrom, buildAccountLinking, buildSocialProviders } from "./so
 import { appleUnlinkRevocation } from "./appleUnlinkRevocation.js";
 import { confirmationEmailSuppressed } from "./confirmationEmail.js";
 import { devSignInTicketPlugin } from "./devSignInTicket.js";
+import {
+  AI_CONNECTION_SCOPES,
+  consentOrganization,
+  organizationClaim,
+  readOnlyConsentScopes,
+  shouldPickOrganization,
+} from "./aiConnectionsOAuth.js";
 import {
   deviceMismatchError,
   isDeviceMismatch,
@@ -81,8 +91,13 @@ const sessionOptions = {
     deviceId: { type: "string", required: false, input: false },
     platform: { type: "string", required: false, input: false },
     appVersion: { type: "string", required: false, input: false },
+    // The organization an AI connection being authorized will act in. Only
+    // the picker route writes it, after checking eligibility.
+    oauthOrganizationId: { type: "string", required: false, input: false },
   },
 } as const;
+
+const connectPage = (path: string) => new URL(path, config.email.appUrl).toString();
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -325,7 +340,9 @@ export const auth = betterAuth({
   // A betterAuth option, not a plugin one: `expo()`'s only option is
   // `disableOriginOverride`. Its authorization proxy redirects to any https
   // URL its query names, and nothing signs in that way.
-  disabledPaths: ["/expo-authorization-proxy"],
+  // `/token` is `jwt()`'s session-JWT route. AI connections need only its
+  // signing key, and a session JWT signed by the same key must not exist.
+  disabledPaths: ["/expo-authorization-proxy", "/token"],
   plugins: [
     haveIBeenPwned(),
     openAPI(),
@@ -375,6 +392,32 @@ export const auth = betterAuth({
     appleUnlinkRevocation(appleClient),
     // `config.dev` cannot exist in production — config startup throws.
     ...(config.dev ? [devSignInTicketPlugin] : []),
+    // Signs the access tokens AI connections get and serves `/jwks`.
+    jwt({ disableSettingJwtHeader: true }),
+    // After `twoFactor`: its after hook continues an OAuth flow once a response
+    // sets the session cookie, and registered first it would run on the
+    // throwaway pre-challenge session. See "AI connections" in
+    // `docs/invariants.md`.
+    mcp({
+      resource: `${config.api.publicUrl}/mcp`,
+      loginPage: connectPage("/oauth/sign-in/"),
+      consentPage: connectPage("/oauth/consent/"),
+      postLogin: {
+        page: connectPage("/oauth/organization/"),
+        shouldRedirect: shouldPickOrganization,
+        consentReferenceId: consentOrganization,
+      },
+      scopes: AI_CONNECTION_SCOPES,
+      customAccessTokenClaims: organizationClaim,
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+      clientRegistrationDefaultApplicationType: "infer",
+      // The connect pages name the app before sign-in; the signed query is
+      // the credential.
+      allowPublicClientPrelogin: true,
+    }),
+    cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
+    readOnlyConsentScopes,
     // Last on purpose (better-auth infers session fields added by earlier
     // plugins into this callback). Rides on the session fetch the client
     // already makes, so the frontend learns whether to render the support UI

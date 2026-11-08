@@ -1,4 +1,18 @@
-import { account, session, twoFactor, user, verification } from "./auth-schema.js";
+import {
+  account,
+  jwks,
+  oauthAccessToken,
+  oauthClient,
+  oauthClientAssertion,
+  oauthClientResource,
+  oauthConsent,
+  oauthRefreshToken,
+  oauthResource,
+  session,
+  twoFactor,
+  user,
+  verification,
+} from "./auth-schema.js";
 import { groupUsers } from "./group-users-schema.js";
 import { groups } from "./group-schema.js";
 import { groupMirrors } from "./group-mirror-schema.js";
@@ -56,6 +70,14 @@ export const schema = {
   twoFactor,
   user,
   verification,
+  jwks,
+  oauthClient,
+  oauthResource,
+  oauthClientResource,
+  oauthRefreshToken,
+  oauthAccessToken,
+  oauthConsent,
+  oauthClientAssertion,
   groupUsers,
   groups,
   groupMirrors,
