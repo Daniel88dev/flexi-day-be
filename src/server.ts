@@ -57,6 +57,7 @@ import { oauthConnectContextRouter, oauthConnectRouter } from "./routes/oauthCon
 import { requireAiFeature } from "./middleware/aiFeatureGuard.js";
 import { mcpRouter } from "./routes/mcpRouter.js";
 import { assistantRouter } from "./routes/assistantRouter.js";
+import { sessionDeletionDrain } from "./middleware/sessionDeletionDrain.js";
 
 export const createServer = () => {
   const app = express();
@@ -65,6 +66,7 @@ export const createServer = () => {
     .set("trust proxy", 1)
     .use(serverCors)
     .use(requestContext)
+    .use(sessionDeletionDrain)
     .use(helmetHeaders)
     .use(floodLimiter);
 

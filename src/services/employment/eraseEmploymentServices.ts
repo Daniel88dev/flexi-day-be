@@ -14,6 +14,7 @@ import { logger } from "../../middleware/logger.js";
 import { refuse } from "../../utils/appError.js";
 import { businessDateInZone } from "../../utils/dateFunc.js";
 import { eraseAiUsage } from "../aiFeatures/aiUsageRetention.js";
+import { deleteMemberChats } from "../assistant/chatLifecycle.js";
 import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { organizationTimeZone } from "../organization/attendanceSettingsServices.js";
@@ -228,6 +229,7 @@ export const eraseEmployment = async (
     );
 
   await eraseAiUsage({ organizationId, userId }, tx);
+  await deleteMemberChats({ organizationId, userId }, tx);
 
   // Attendance sessions, breaks and events cascade from the Employment.
   const removedEmployments = await tx

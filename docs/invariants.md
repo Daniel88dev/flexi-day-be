@@ -351,6 +351,19 @@ the app, inside one organization.
   refuses keeps its answers held, and the next admitted message carries them ahead of its text.
   Answering a round's reads while its card is open, or interrupting the session, would leave a tool
   call unanswered or start a model call nobody reserved.
+- **A chat never goes without its session going too.** Every path that deletes chats (own delete,
+  losing the last link, End employment, Erase, account deletion, an owned organization's deletion,
+  the 180-day sweep) and the day-30 close goes through `chatLifecycle.ts`, which writes the session
+  id into `assistant_session_deletions` in the same transaction. The session is deleted after the
+  response and on every nightly tick until the driver confirms. A raw `delete(assistantChats)`, or
+  an organization delete that leans on the cascade, would leave an Anthropic session holding the
+  chat for good. `assistantChatLifecycle.e2e.test.ts` checks every path.
+- **Leaving is decided by the links, not by a screen.** The chat delete sits in `syncEmployment`'s
+  no-link branch, ahead of the Directory early return, so every remove, revoke, group delete and
+  manager change that leaves a member with no link deletes their chats there, and End employment,
+  Erase and account deletion call it themselves. See [`assistant-chats.md`](assistant-chats.md).
+- **A closed chat takes no message.** `prepareTurn` refuses with 409 `ASSISTANT_CHAT_CLOSED` before
+  eligibility, the screen or the meter, so nothing is written, screened or charged.
 
 ## Observability (`src/utils/sentryOptions.ts`, `src/utils/tracesSampler.ts`, `src/utils/aiSignals.ts`)
 

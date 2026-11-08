@@ -149,7 +149,10 @@ const usedThisWeek = async (tx: DbTransaction, organizationId: string): Promise<
 };
 
 /** The previous step's prompt and output, from the session's latest settled step. */
-const previousContext = async (tx: DbTransaction, sessionId: string | null): Promise<number> => {
+const previousContext = async (
+  tx: DbTransaction | typeof db,
+  sessionId: string | null
+): Promise<number> => {
   if (!sessionId) return 0;
   const [row] = await tx
     .select()
@@ -168,6 +171,10 @@ const previousContext = async (tx: DbTransaction, sessionId: string | null): Pro
     (row.outputTokens ?? 0)
   );
 };
+
+/** The session's context after its latest settled step, what the chat's length ceiling reads. */
+export const sessionContextTokens = (sessionId: string): Promise<number> =>
+  previousContext(db, sessionId);
 
 type StepOwner = {
   organizationId: string;

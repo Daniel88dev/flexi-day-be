@@ -20,6 +20,10 @@ vi.mock("../../../config.js", () => ({
   config: { dev: { seedEmailDomain: "dev.local" } },
 }));
 
+vi.mock("../../assistant/chatLifecycle.js", () => ({
+  deleteUserChats: vi.fn(),
+}));
+
 vi.mock("better-auth/crypto", () => ({
   hashPassword: (password: string) => Promise.resolve(`hashed:${password}`),
 }));

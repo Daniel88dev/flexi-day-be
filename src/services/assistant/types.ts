@@ -4,6 +4,7 @@ import type {
   PendingActionStatus,
 } from "../../db/schema/assistant-schema.js";
 import type { AiIneligibleReason } from "../aiFeatures/aiEligibility.js";
+import type { ChatClosedReason } from "./chatLifecycle.js";
 
 export const MESSAGE_MAX_LENGTH = 4000;
 export const TITLE_MAX_LENGTH = 80;
@@ -42,6 +43,8 @@ export type ChatSummary = {
   createdAt: string;
   lastMessageAt: string;
   turnRunning: boolean;
+  /** Why the chat takes no more messages: the length ceiling or 30 days idle. */
+  closed: ChatClosedReason | null;
 };
 
 export type DisplayMessage = {
@@ -101,6 +104,8 @@ export type AssistantOrganization = {
   /** Enterprise or Custom: whether the Assistant comes with the plan at all. */
   planAllows: boolean;
   role: AssistantRole;
+  /** The caller has chats here, readable even while the organization can't take new messages. */
+  hasChats: boolean;
   /** This week's Usage against the Weekly limit; `null` where the caller can't chat. */
   weeklyLimit: WeeklyLimitState | null;
 };

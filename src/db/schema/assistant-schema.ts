@@ -52,6 +52,8 @@ export const assistantChats = pgTable(
     turnStartedAt: timestamp("turn_started_at", { withTimezone: true }),
     /** The session event the running turn started at; reconnects list events after it. */
     turnStartEventId: text("turn_start_event_id"),
+    /** The session's context after its latest settled step; the chat closes at the length ceiling. */
+    contextTokens: integer("context_tokens").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -103,6 +105,17 @@ export const assistantChatMessages = pgTable(
       .where(sql`${table.eventId} IS NOT NULL`),
   ]
 );
+
+/**
+ * Anthropic sessions to delete. Written in the transaction that deletes or
+ * closes their chat, removed once the driver deleted the session, so a
+ * failed delete is retried by the nightly tick.
+ */
+export const assistantSessionDeletions = pgTable("assistant_session_deletions", {
+  sessionId: text("session_id").primaryKey(),
+  attempts: integer("attempts").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 /** Anthropic webhook deliveries already handled, by event id; a retry or replay finds its row and stops. */
 export const assistantWebhookEvents = pgTable("assistant_webhook_events", {

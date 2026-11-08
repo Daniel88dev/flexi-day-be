@@ -23,6 +23,7 @@ import { directoryAudience, directoryPermissionRow } from "../../db/schema/direc
 import { organizations } from "../../db/schema/organization-schema.js";
 import { clearAtEndSections } from "../directory/retentionPurge.js";
 import { recordProfileHistory } from "../directory/profileHistory.js";
+import { deleteMemberChats } from "../assistant/chatLifecycle.js";
 
 /**
  * The shared opening of End employment and Erase: 404 for no such row, 403
@@ -238,6 +239,8 @@ export const endLockedEmployment = async (
           isNull(organizationUsers.deletedAt)
         )
       );
+
+    await deleteMemberChats({ organizationId, userId }, tx);
 
     cancelled = await cancelBookingsOnDeparture(
       { userId, groupIds, today, actorUserId: input.actorUserId, reason: EMPLOYMENT_ENDED_REASON },

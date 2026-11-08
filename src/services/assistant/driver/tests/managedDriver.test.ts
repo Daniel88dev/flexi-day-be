@@ -266,6 +266,35 @@ describe("the managed driver", () => {
     expect(api.sessions.has(sessionId)).toBe(false);
   });
 
+  it("interrupts a running session before deleting it", async () => {
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
+    api.sessions.get(sessionId)!.status = "running";
+
+    await driver.deleteSession(sessionId);
+
+    expect(api.sessions.has(sessionId)).toBe(false);
+    const calls = api.calls.filter((call) => call.path.startsWith(`/v1/sessions/${sessionId}`));
+    expect(calls.map((call) => call.method)).toEqual(["GET", "POST", "DELETE"]);
+    expect(calls[1]!.body).toEqual({ events: [{ type: "user.interrupt" }] });
+  });
+
+  it("deletes an idle session without interrupting it", async () => {
+    const { sessionId } = await driver.createSession({
+      chatId: "c",
+      organizationId: "o",
+      budgetMicroUsd: 90_000,
+    });
+
+    await driver.deleteSession(sessionId);
+
+    const calls = api.calls.filter((call) => call.path.startsWith(`/v1/sessions/${sessionId}`));
+    expect(calls.map((call) => call.method)).toEqual(["GET", "DELETE"]);
+  });
+
   it("answers 503 when the API refuses", async () => {
     const error = await driver
       .sendEvents("sesn_missing", [{ type: "user.message", content: text("hi") }])

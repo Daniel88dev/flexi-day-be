@@ -296,9 +296,18 @@ export const createManagedDriver = (args: {
         return usageOf(session.usage as unknown as Raw);
       }),
 
+    // A running session is interrupted first, so the delete never lands mid-step.
     deleteSession: (sessionId) =>
       call("delete_session", async () => {
         try {
+          const session = await sessions.retrieve(sessionId);
+          if ((session.status as string) === "running") {
+            await sessions.events.send(sessionId, {
+              events: [{ type: "user.interrupt" }] as unknown as Parameters<
+                typeof sessions.events.send
+              >[1]["events"],
+            });
+          }
           await sessions.delete(sessionId);
         } catch (error) {
           if (!isNotFound(error)) throw error;

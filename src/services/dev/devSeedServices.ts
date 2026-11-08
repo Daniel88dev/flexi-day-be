@@ -27,6 +27,7 @@ import { insertGroupEvent } from "../groupEvent/groupEventServices.js";
 import type { CreateGroupEventBody } from "../groupEvent/types.js";
 import { upsertSubscription } from "../billing/subscriptionServices.js";
 import { AI_AGREEMENT_VERSION } from "../aiFeatures/aiAgreement.js";
+import { deleteUserChats } from "../assistant/chatLifecycle.js";
 
 export type SeededUser = {
   id: string;
@@ -439,6 +440,9 @@ export const resetDevData = async (): Promise<ResetSummary> => {
         )
       )
       .returning({ id: groups.id });
+
+    // Queued, so a managed driver's sessions go with the dev users.
+    for (const id of ids) await deleteUserChats(id, tx);
 
     // Organizations reference dev users without a cascade, and subscriptions
     // reference organizations — both must go before the user rows.

@@ -77,6 +77,10 @@ export const fakeDriverControls = {
   modelRefusal: false,
   /** Every message screen input, in order. */
   screened: [] as ScreenInput[],
+  /** Every session `deleteSession` was asked to delete, in order. */
+  deletedSessions: [] as string[],
+  /** Fails every `deleteSession`, as an unreachable provider would. */
+  sessionDeleteFailure: false,
   hold(): () => void {
     let release!: () => void;
     this.gate = new Promise<void>((resolve) => {
@@ -106,6 +110,8 @@ export const fakeDriverControls = {
     this.toolTextScreenFailure = null;
     this.modelRefusal = false;
     this.screened = [];
+    this.deletedSessions = [];
+    this.sessionDeleteFailure = false;
   },
 };
 
@@ -600,6 +606,10 @@ export const fakeDriver: AssistantDriver = {
   },
 
   deleteSession(sessionId) {
+    if (fakeDriverControls.sessionDeleteFailure) {
+      return Promise.reject(new Error("fake session delete failed"));
+    }
+    fakeDriverControls.deletedSessions.push(sessionId);
     const session = sessions.get(sessionId);
     sessions.delete(sessionId);
     if (!session) return Promise.resolve();

@@ -2,15 +2,13 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { db, type DbTransaction } from "../../db/db.js";
 import { assistantChatMessages, assistantChats } from "../../db/schema/assistant-schema.js";
 import { organizations } from "../../db/schema/organization-schema.js";
-import { logger } from "../../middleware/logger.js";
 import AppError from "../../utils/appError.js";
-import { errorName } from "../../utils/errorName.js";
 import { generateRandomUUID } from "../../utils/generateUUID.js";
 import { aiEligibilityForUser, assertAiEligible } from "../aiFeatures/aiEligibility.js";
 import { isAiFeatureAvailable } from "../aiFeatures/aiFeatureServices.js";
 import { isAssistantPlan, planForOrganization } from "../billing/guards.js";
 import { isOrganizationAdmin } from "../organization/organizationServices.js";
-import { assistantDriver } from "./driver/index.js";
+import { closedReason, deleteChatById } from "./chatLifecycle.js";
 import { readWeeklyUsage } from "./meter/meter.js";
 import { cardsOf } from "./pendingActions.js";
 import type {
@@ -33,6 +31,7 @@ const summaryColumns = {
   createdAt: assistantChats.createdAt,
   lastMessageAt: assistantChats.lastMessageAt,
   turnStatus: assistantChats.turnStatus,
+  contextTokens: assistantChats.contextTokens,
 };
 
 type SummaryRow = {
@@ -43,6 +42,7 @@ type SummaryRow = {
   createdAt: Date;
   lastMessageAt: Date;
   turnStatus: string;
+  contextTokens: number;
 };
 
 const toSummary = (row: SummaryRow): ChatSummary => ({
@@ -53,6 +53,7 @@ const toSummary = (row: SummaryRow): ChatSummary => ({
   createdAt: row.createdAt.toISOString(),
   lastMessageAt: row.lastMessageAt.toISOString(),
   turnRunning: row.turnStatus === "running",
+  closed: closedReason(row),
 });
 
 /** The caller's chats, newest activity first, in organizations where the Assistant is available. */
@@ -132,17 +133,10 @@ export const getChatDetail = async (args: {
   return { chat: toSummary(chat), messages: await readDisplayRecord(chat.id) };
 };
 
-/** Deletes the chat, its display record and its session at once. */
+/** Deletes the chat and its display record, then its session; a failed session delete is retried nightly. */
 export const deleteChat = async (args: { userId: string; chatId: string }): Promise<void> => {
   const chat = await getOwnChat(args);
-  await db.delete(assistantChats).where(eq(assistantChats.id, chat.id));
-  if (!chat.sessionId) return;
-  try {
-    await assistantDriver().deleteSession(chat.sessionId);
-  } catch (error) {
-    // The display record is gone either way; the nightly tick deletes sessions it missed (T-730).
-    logger.error("assistant.session_delete_failed", { chatId: chat.id, error: errorName(error) });
-  }
+  await deleteChatById(chat.id);
 };
 
 /** The caller's role in an organization: owner, org admin, or anything else. */
@@ -165,6 +159,14 @@ export const listAssistantOrganizations = async (
   userId: string
 ): Promise<AssistantOrganization[]> => {
   const answers = await aiEligibilityForUser({ userId, feature: "assistant" });
+  const withChats = new Set(
+    (
+      await db
+        .selectDistinct({ organizationId: assistantChats.organizationId })
+        .from(assistantChats)
+        .where(eq(assistantChats.userId, userId))
+    ).map((row) => row.organizationId)
+  );
   const usage = await readWeeklyUsage(
     answers.filter((answer) => answer.eligible).map((answer) => answer.organizationId)
   );
@@ -181,6 +183,7 @@ export const listAssistantOrganizations = async (
       reason: answer.eligible ? null : answer.reason,
       planAllows: isAssistantPlan(await planForOrganization(answer.organizationId)),
       role,
+      hasChats: withChats.has(answer.organizationId),
       weeklyLimit: week
         ? {
             percent: Math.min(100, Math.floor((week.usedMicroUsd * 100) / week.limitMicroUsd)),

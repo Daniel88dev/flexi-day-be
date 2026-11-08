@@ -14,6 +14,7 @@ import { assertAiEligible } from "../aiFeatures/aiEligibility.js";
 import { isAiFeatureAvailable } from "../aiFeatures/aiFeatureServices.js";
 import { getUserLanguage } from "../userSettings/userSettingsServices.js";
 import { answerAssistantToolCall, runConfirmedWrite } from "./assistantTools.js";
+import { assertChatOpen, chatClosed, closedReason } from "./chatLifecycle.js";
 import { getOwnChat, roleIn, type ChatRow } from "./chatServices.js";
 import { assistantDriver } from "./driver/index.js";
 import {
@@ -31,6 +32,7 @@ import {
   providerUnavailable,
   reserveToolRound,
   reserveTurnStart,
+  sessionContextTokens,
   sessionCost,
   settleSteps,
   voidReservation,
@@ -148,6 +150,15 @@ export const isTurnRunning = async (chatId: string): Promise<boolean> => {
   return row?.turnStatus === "running";
 };
 
+/** Keeps the chat's context size, which closes it at the length ceiling. */
+const recordContext = async (chatId: string, sessionId: string): Promise<void> => {
+  const tokens = await sessionContextTokens(sessionId);
+  await db
+    .update(assistantChats)
+    .set({ contextTokens: tokens })
+    .where(and(eq(assistantChats.id, chatId), ne(assistantChats.contextTokens, tokens)));
+};
+
 /** Writes one display row; a row for an event already recorded is skipped. Answers whether it wrote. */
 const record = async (
   chatId: string,
@@ -242,6 +253,7 @@ export const prepareTurn = async (args: {
 }): Promise<PreparedTurn | RejectedTurn> => {
   const { auth } = args;
   const chat = await getOwnChat({ userId: auth.userId, chatId: args.chatId });
+  assertChatOpen(chat);
   await assertAiEligible({
     userId: auth.userId,
     organizationId: chat.organizationId,
@@ -456,6 +468,7 @@ const advance = async (turn: Advance): Promise<boolean> => {
     events,
     usage: readUsage,
   });
+  await recordContext(turn.chatId, turn.sessionId);
 
   if (isTurnEnd(last)) {
     if (last.type === "session.status_idle" && last.stop_reason.type === "refusal") {
@@ -947,6 +960,8 @@ export const decideCard = async (args: {
   if (!action || action.userId !== auth.userId) throw cardNotFound();
   const chat = await getOwnChat({ userId: auth.userId, chatId: action.chatId });
   if (action.status !== "open") throw cardSettled(action.status);
+  // A length-closed chat still settles the cards of the turn that closed it.
+  if (closedReason(chat) === "idle") throw chatClosed("idle");
   const input = inputWithReason(action, args.decision === "confirm" ? args.reason : undefined);
   await assertAiEligible({
     userId: auth.userId,

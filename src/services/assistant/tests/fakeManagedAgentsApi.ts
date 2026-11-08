@@ -17,6 +17,8 @@ type FakeSession = {
   streams: Set<ReadableStreamDefaultController<Uint8Array>>;
   usage: Json;
   budget: Json | null;
+  /** `running` refuses a delete until a `user.interrupt` idles it (modelled, not verified live). */
+  status: "idle" | "running";
 };
 
 const encoder = new TextEncoder();
@@ -165,6 +167,7 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
           cache_creation: { ephemeral_5m_input_tokens: 7713, ephemeral_1h_input_tokens: 0 },
         },
         budget: (body?.budget as Json | undefined) ?? null,
+        status: "idle",
       };
       sessions.set(session.id, session);
       return json(200, sessionBody(session, body));
@@ -183,6 +186,9 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
         return json(200, sessionBody(session, null));
       }
       if (method === "DELETE") {
+        if (session.status === "running") {
+          return apiError(409, "invalid_request_error", "session is running");
+        }
         for (const controller of session.streams) controller.close();
         sessions.delete(session.id);
         return json(200, { id: session.id, type: "session_deleted" });
@@ -202,6 +208,7 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
             "system.message must be the last event in the request"
           );
         }
+        if (events.some((event) => event.type === "user.interrupt")) session.status = "idle";
         return json(200, { data: events.map((event) => logEvent(session, event)) });
       }
     }
@@ -212,7 +219,7 @@ export const createFakeManagedAgentsApi = (options: { pageSize?: number } = {}) 
     type: "session",
     id: session.id,
     agent: session.agent,
-    status: "idle",
+    status: session.status,
     title: created?.title ?? null,
     metadata: created?.metadata ?? {},
     usage: session.usage,
