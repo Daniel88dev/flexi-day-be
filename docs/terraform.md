@@ -260,7 +260,7 @@ writes a file, a secret, a GitHub setting or AWS runs until you confirm it.
 The `prod` stage, in order:
 
 1. Both repos deploy with both switches `false` and an empty preview list, and both Terraform roots
-   are applied. That creates the two empty slots and the frontend's headers policy.
+   are applied. That creates the two empty slots and switches the frontend to the managed headers policy.
 2. Create `flexi-day-prod`, set its limit and alert, and check its members.
 3. Create its key, save it in 1Password as `Flexi Day Anthropic API key (prod)`, and run
    `terraform/scripts/put-secret.sh anthropic-api-key`.
