@@ -365,4 +365,28 @@ describe("requestContext request logging", () => {
     expect(logger.info).toHaveBeenCalledTimes(1);
     expect(vi.mocked(logger.info).mock.calls[0]![0]).toContain("/health 503");
   });
+
+  it("logs only the response line for a successful /mcp call", () => {
+    const { req, res, next, finish } = makeReqResNext({}, { path: "/mcp" });
+
+    requestContext(req, res, next);
+    finish();
+
+    expect(vi.mocked(logger.info).mock.calls.map(([message]) => message)).toEqual([
+      "POST /mcp 200",
+    ]);
+  });
+
+  it("logs both lines for a failed /mcp call", () => {
+    const { req, res, next, finish } = makeReqResNext({}, { path: "/mcp" });
+    res.statusCode = 401;
+
+    requestContext(req, res, next);
+    finish();
+
+    expect(vi.mocked(logger.info).mock.calls.map(([message]) => message)).toEqual([
+      "POST /mcp",
+      "POST /mcp 401",
+    ]);
+  });
 });

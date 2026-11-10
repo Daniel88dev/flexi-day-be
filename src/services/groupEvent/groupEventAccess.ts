@@ -1,3 +1,4 @@
+import type { AuthSession } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
 import type { DbTransaction } from "../../db/db.js";
 import { paddedMonthRange } from "../../utils/dateFunc.js";
@@ -54,17 +55,23 @@ export const loadGroupForGroupEvents = async (
 /**
  * `GET /api/group-events`: the padded month of one group's events, or of every
  * group the caller is a live member of. Never gated on the plan.
+ * `organizationId` keeps the groups to one organization (the tools' fence).
  */
-export const listGroupEventsForMonth = async (
-  userId: string,
-  query: { year: number; month: number; groupId?: string }
-): Promise<GroupEventView[]> => {
+export const listGroupEventsForMonth = async (params: {
+  auth: AuthSession;
+  query: { year: number; month: number; groupId?: string };
+  organizationId?: string;
+}): Promise<GroupEventView[]> => {
+  const { query, organizationId } = params;
+  const { userId } = params.auth;
   const targets = query.groupId
     ? [await loadGroupForGroupEvents(userId, query.groupId)]
     : await Promise.all(
-        (await getAllGroups((await getScopeEntries(userId)).map((entry) => entry.groupId))).map(
-          async (group) => ({ group, access: await resolveGroupAccess(userId, group) })
-        )
+        (await getAllGroups((await getScopeEntries(userId)).map((entry) => entry.groupId)))
+          .filter(
+            (group) => organizationId === undefined || group.organizationId === organizationId
+          )
+          .map(async (group) => ({ group, access: await resolveGroupAccess(userId, group) }))
       );
 
   const byGroup = new Map(targets.map((target) => [target.group.id, target]));
@@ -87,7 +94,10 @@ export const listGroupEventsForMonth = async (
  * `GET /api/group-events/groups`: every group the caller belongs to or
  * administers, with whether a create would pass the rights and plan checks now.
  */
-export const listGroupEventGroups = async (userId: string): Promise<GroupEventGroup[]> => {
+export const listGroupEventGroups = async (params: {
+  auth: AuthSession;
+}): Promise<GroupEventGroup[]> => {
+  const { userId } = params.auth;
   const memberGroupIds = (await getScopeEntries(userId)).map((entry) => entry.groupId);
   const administered = await getAdministrableGroupIds(userId);
   const groups = await getAllGroups([...new Set([...memberGroupIds, ...administered])]);

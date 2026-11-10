@@ -46,6 +46,8 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
   const path = redactPath(req.path);
   const query = redactQuery(req.query);
   const method = redactMethod(req.method);
+  // Node's parser refuses CR and LF in a request line; stripping them again keeps a log line one line.
+  const requestLine = `${method} ${path}`.replace(/[\r\n]/g, "");
   const startedAt = process.hrtime.bigint();
 
   const context: RequestContext = {
@@ -80,10 +82,12 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
     // The redacted path, so a templated route like `/calendars/:token.ics` can
     // be silenced — its raw path differs on every request.
     const ignored = IGNORED_PATHS.has(path);
+    // The busiest route once AI apps call it: a successful call logs its
+    // response line alone, a failed one both.
+    const responseOnly = path === "/mcp";
+    const logRequest = () => logger.info(requestLine, { "http.event": "request" });
 
-    if (!ignored) {
-      logger.info(`${method} ${path}`, { "http.event": "request" });
-    }
+    if (!ignored && !responseOnly) logRequest();
 
     // `finish` does not fire for a client that disconnects mid-request, which
     // is why the line above is emitted up front rather than only here.
@@ -95,7 +99,8 @@ export const requestContext = (req: Request, res: Response, next: NextFunction) 
       if (ignored && res.statusCode < 400) return;
 
       runWithRequestContext(context, () => {
-        logger.info(`${method} ${path} ${res.statusCode}`, {
+        if (responseOnly && res.statusCode >= 400) logRequest();
+        logger.info(`${requestLine} ${res.statusCode}`, {
           "http.event": "response",
           "http.response.status_code": res.statusCode,
           "http.route": routeOf(req) ?? path,

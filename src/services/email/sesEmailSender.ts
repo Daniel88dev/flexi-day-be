@@ -18,6 +18,7 @@ const resolveTemplateName = (template: TemplatedEmail["template"]): string =>
  */
 const assertNonEmptyData = (data: Record<string, unknown>): void => {
   for (const [key, value] of Object.entries(data)) {
+    if (typeof value === "boolean") continue;
     if (typeof value !== "string" || value.trim() === "") {
       throw new Error(`Missing or empty template variable: "${key}"`);
     }
@@ -30,13 +31,15 @@ const assertNonEmptyData = (data: Record<string, unknown>): void => {
  * not in this codebase.
  */
 export const sesEmailSender: EmailSender = {
-  async sendTemplated({ to, template, data }: TemplatedEmail): Promise<void> {
+  async sendTemplated(email: TemplatedEmail): Promise<void> {
+    const { to, template, data } = email;
     assertNonEmptyData(data as unknown as Record<string, unknown>);
 
     await client.send(
       new SendEmailCommand({
         FromEmailAddress: config.email.from,
         Destination: { ToAddresses: [to] },
+        ReplyToAddresses: "replyTo" in email ? [email.replyTo] : undefined,
         ConfigurationSetName: config.email.configurationSet,
         Content: {
           Template: {

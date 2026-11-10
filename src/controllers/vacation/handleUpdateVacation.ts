@@ -168,6 +168,7 @@ export const handleUpdateVacation = async (req: Request, res: Response) => {
         eventType: vacationEventType.Updated,
         actorUserId: auth.userId,
         reason: describeVacationChanges(row, patch),
+        channel: auth.channel,
       })),
       tx
     );

@@ -113,3 +113,34 @@ export const groupedUserIds = async (
     );
   return new Set(rows.flatMap((row) => (row.userId === null ? [] : [row.userId])));
 };
+
+/**
+ * Every organization the account holder reaches by any of the four links,
+ * oldest first. Four index-backed lookups unioned, for the reason
+ * `hasOrganizationLink` gives.
+ */
+export const linkedOrganizationIds = async (
+  userId: string,
+  tx?: DbTransaction
+): Promise<string[]> => {
+  const { rows } = await (tx ?? db).execute<{ id: string }>(sql`
+    select ${organizations.id} as id from ${organizations}
+    where ${organizations.id} in (
+      select ${organizations.id} from ${organizations}
+        where ${organizations.ownerUserId} = ${userId}
+      union
+      select ${organizationUsers.organizationId} from ${organizationUsers}
+        where ${organizationUsers.userId} = ${userId} and ${organizationUsers.deletedAt} is null
+      union
+      select ${groups.organizationId} from ${groups}
+        where ${groups.managerUserId} = ${userId} and ${groups.deletedAt} is null
+      union
+      select ${groups.organizationId} from ${groupUsers}
+        inner join ${groups} on ${groups.id} = ${groupUsers.groupId}
+        where ${groupUsers.userId} = ${userId}
+          and ${groupUsers.deletedAt} is null
+          and ${groups.deletedAt} is null
+    )
+    order by ${organizations.createdAt}, ${organizations.id}`);
+  return rows.map((row) => row.id);
+};

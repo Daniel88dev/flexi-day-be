@@ -7,7 +7,9 @@ import {
   calendarFeedLimiter,
   CREDENTIAL_GUESSING_PATHS,
   credentialsLimiter,
+  dcrDailyLimiter,
   floodLimiter,
+  mirrorRetryAfter,
   otpSendLimiter,
   passwordResetLimiter,
   signedWebhookLimiter,
@@ -41,6 +43,7 @@ import { directoryRouter } from "./routes/directoryRouter.js";
 import { directoryListRouter } from "./routes/directoryListRouter.js";
 import { attendanceRouter } from "./routes/attendanceRouter.js";
 import { handlePaddleWebhook } from "./controllers/billing/handlePaddleWebhook.js";
+import { handleAnthropicWebhook } from "./controllers/assistant/handleAnthropicWebhook.js";
 import { supportRouter } from "./routes/supportRouter.js";
 import { attachmentRouter } from "./routes/attachmentRouter.js";
 import { localAttachmentRouter } from "./routes/localAttachmentRouter.js";
@@ -49,6 +52,12 @@ import { attachmentCallbackRouter } from "./routes/attachmentCallbackRouter.js";
 import { isDiskAttachmentStore } from "./services/attachment/attachmentStore.js";
 import { isDiskOrganizationDataStore } from "./services/organizationData/organizationDataStore.js";
 import { localOrganizationDataRouter, personExportRouter } from "./routes/personExportRouter.js";
+import { aiFeaturesRouter } from "./routes/aiFeaturesRouter.js";
+import { oauthConnectContextRouter, oauthConnectRouter } from "./routes/oauthConnectRouter.js";
+import { requireAiFeature } from "./middleware/aiFeatureGuard.js";
+import { mcpRouter } from "./routes/mcpRouter.js";
+import { assistantRouter } from "./routes/assistantRouter.js";
+import { sessionDeletionDrain } from "./middleware/sessionDeletionDrain.js";
 
 export const createServer = () => {
   const app = express();
@@ -57,6 +66,7 @@ export const createServer = () => {
     .set("trust proxy", 1)
     .use(serverCors)
     .use(requestContext)
+    .use(sessionDeletionDrain)
     .use(helmetHeaders)
     .use(floodLimiter);
 
@@ -92,6 +102,78 @@ export const createServer = () => {
     tryCatch(handlePaddleWebhook)
   );
 
+  /**
+   * @openapi
+   * /api/webhooks/anthropic:
+   *   post:
+   *     tags:
+   *       - Assistant
+   *     summary: Anthropic's webhook for the Assistant's sessions
+   *     description: |
+   *       Outside session auth and ahead of the JSON parser: the Standard Webhooks
+   *       signature (`webhook-id`, `webhook-timestamp`, `webhook-signature`) over the raw
+   *       body, checked with `ANTHROPIC_WEBHOOK_SECRET`, is the only credential.
+   *       `session.status_idled` advances the running turn of the chat that owns the
+   *       session: it answers the tool calls the session waits on and records the
+   *       Assistant's text. Each event id is handled once; a failed advance forgets the
+   *       id so the retry runs again. Every other event type is acknowledged and ignored.
+   *     operationId: handleAnthropicWebhook
+   *     security: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [id, data]
+   *             properties:
+   *               id:
+   *                 type: string
+   *                 description: The event id, the dedupe key
+   *               type:
+   *                 type: string
+   *                 example: event
+   *               created_at:
+   *                 type: string
+   *                 format: date-time
+   *               data:
+   *                 type: object
+   *                 required: [id, type]
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                     description: The session id
+   *                   type:
+   *                     type: string
+   *                     example: session.status_idled
+   *     responses:
+   *       '200':
+   *         description: Handled
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   enum: [advanced, ignored, duplicate]
+   *       '400':
+   *         description: Signed, but not an event this route reads
+   *       '401':
+   *         description: Missing or wrong signature, or a timestamp outside the tolerance
+   *       '404':
+   *         description: The Assistant is off and no organization is on the preview list, or no webhook secret is set
+   *       '429':
+   *         description: Too many deliveries from one IP (`signedWebhookLimiter`)
+   */
+  app.post(
+    "/api/webhooks/anthropic",
+    requireAiFeature("assistant", "public"),
+    express.raw({ type: "application/json" }),
+    signedWebhookLimiter,
+    tryCatch(handleAnthropicWebhook)
+  );
+
   // The attachment processor's callback: same shape as the Paddle webhook,
   // signed with its own secret. Without one the route does not exist.
   if (config.attachments.callbackSecret) {
@@ -99,7 +181,39 @@ export const createServer = () => {
     app.use("/api/directory/photos/processed", photoCallbackRouter());
   }
 
+  // The authorization server AI apps connect through. Its endpoints, keys and
+  // discovery documents answer 404 while AI connections are unavailable. The
+  // RFC 8414 and RFC 9728 documents live outside `/api/auth` because the
+  // issuer and the `/mcp` resource have paths; better-auth serves them from
+  // the full path.
+  const aiConnectionsReachable = requireAiFeature("aiConnections", "public");
+  app.use(
+    ["/api/auth/oauth2", "/api/auth/jwks", "/api/auth/.well-known/oauth-authorization-server"],
+    aiConnectionsReachable
+  );
+  // better-auth's own per-address limits on these answer `X-Retry-After` only.
+  app.use("/api/auth/oauth2", mirrorRetryAfter);
+  app.post("/api/auth/oauth2/register", dcrDailyLimiter);
+  app.get(
+    [
+      "/.well-known/oauth-authorization-server/api/auth",
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+    ],
+    aiConnectionsReachable,
+    toNodeHandler(auth)
+  );
+
+  // The MCP server AI apps call with those tokens. At the root, outside `/api`
+  // and its session middleware, and ahead of the JSON parser: the SDK reads the
+  // raw body itself.
+  app.use("/mcp", mcpRouter());
+
   app.all("/api/auth/{*any}", toNodeHandler(auth)).use(express.json());
+
+  // The connect pages read the request they serve before anyone is signed in;
+  // the signed OAuth query is the credential.
+  app.use("/api/oauth-connect", apiFailureLimiter, oauthConnectContextRouter());
 
   // Local seeding/impersonation routes. `config.dev` is undefined unless the
   // environment explicitly opts in on a local database, so in every deployed
@@ -152,6 +266,9 @@ export const createServer = () => {
   app.use("/api/sync", syncRouter());
   app.use("/api/birthdays", birthdayRouter());
   app.use("/api/group-events", groupEventRouter());
+  app.use("/api/ai-features", aiFeaturesRouter());
+  app.use("/api/oauth-connect", oauthConnectRouter());
+  app.use("/api/assistant", requireAiFeature("assistant", "caller"), assistantRouter());
 
   // Platform-support read surface. `config.support` is undefined unless the
   // deploy explicitly carries an allowlist, so for everyone else these routes

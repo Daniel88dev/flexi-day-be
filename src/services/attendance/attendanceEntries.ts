@@ -166,6 +166,7 @@ export const enterAttendanceSession = async (
       sessionId: id,
       eventType: attendanceEventType.SessionCreated,
       changedByUserId: viewerUserId,
+      channel: "app",
       after: {
         businessDate: input.businessDate,
         startedAt,

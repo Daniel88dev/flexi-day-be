@@ -68,6 +68,14 @@ Account data goes:
 - Provider accounts (the password included), two-factor, pending verification tokens for the user,
   settings, notifications, calendar connections and calendar feeds.
 - The Birthday, as a tombstone with no date, so the phones that synced it drop it.
+- Every AI connection: OAuth consents and refresh and access tokens. The user row stays, so its
+  cascades never fire; the rows go explicitly, and an organization deleted with the account takes
+  every grant that names it.
+- Every Assistant chat, in every organization: the display record, its cards and held answers. The
+  chats' Anthropic sessions are queued in `assistant_session_deletions` in the same transaction and
+  deleted through the driver after the response; the nightly tick retries any that fail
+  ([`assistant-chats.md`](assistant-chats.md)). Rejected-turn counts keep their numbers with no
+  chat, as the Assistant's ledger does.
 
 The user row stays as a **Deleted account**: the id, an empty name, the email
 `<id>@deleted.invalid`, no picture, `email_verified` false and `deleted_at` set. Both columns stay
@@ -143,7 +151,9 @@ removes the person from every group of the organization, clears their approver s
 delegated admin grant, cancels pending requests and approved bookings after today with the reason
 `employment ended`, and sets `ended_at` on that date. It refuses while the person manages a group.
 Since the directory tickets it also ends a live account and an Employment without an account
-([`directory.md`](directory.md#end-employment)).
+([`directory.md`](directory.md#end-employment)). It deletes the person's Assistant chats in the
+organization and their sessions, as losing the last link does
+([`assistant-chats.md`](assistant-chats.md#leaving-an-organization)).
 
 ### Erase
 
@@ -167,6 +177,11 @@ the organization's groups (soft-deleted ones too) and the organization itself:
 - their Person exports, and the organization's Organization exports, which hold them too. A
   build in progress holds an advisory lock the erase waits on, so no ZIP lands after its row is
   gone.
+- their AI usage under their name: the Assistant's ledger rows and weekly totals lose the user and
+  keep the cost, and their daily AI connection counts and rejected turns go, so the organization's
+  totals stay the same ([`assistant-usage.md`](assistant-usage.md#erase-and-account-deletion)).
+- their Assistant chats in the organization and the chats' Anthropic sessions. Account deletion
+  already took them; the erase catches any written since.
 
 After the commit the attachment files and export ZIPs are deleted from their stores. A store
 failure is logged and the erase stands. On S3 the old versions stay behind a delete marker until
@@ -223,6 +238,8 @@ What goes with the user's own organizations and groups:
 - Every organization the user owns, with all of its groups, its subscription row, attendance
   settings and whatever cascades from it, including former members' ended Employments, Employments of
   Deleted accounts and their attendance.
+- Every Assistant chat in an owned organization, anyone's, and its Anthropic session, queued the
+  same way as the user's own chats.
 - Every export file of an owned organization, under `exports/{organizationId}/` in the
   organization-data store, removed after the commit. See
   [`person-export.md`](person-export.md#deleting-the-organization). The delete dialog lists the

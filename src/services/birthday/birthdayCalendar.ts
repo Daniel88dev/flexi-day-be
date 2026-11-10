@@ -1,5 +1,6 @@
+import type { AuthSession } from "../../middleware/authSession.js";
 import AppError from "../../utils/appError.js";
-import type { DateString } from "../../utils/dateFunc.js";
+import { paddedMonthRange, type DateString } from "../../utils/dateFunc.js";
 import { buildUserSummary } from "../../utils/userPresentation.js";
 import { canViewWholeGroup } from "../report/reportScope.js";
 import { getReportScopeEntries } from "../report/reportServices.js";
@@ -34,7 +35,7 @@ const birthdaysInScope = async (
  * the caller's own (Mine scope), with it the group's visible birthdays plus the
  * caller's own. Ordered by date, then name.
  */
-export const listBirthdaysInWindow = async (
+const listBirthdaysInWindow = async (
   viewerId: string,
   groupId: string | undefined,
   range: { startDate: DateString; endDate: DateString }
@@ -64,3 +65,19 @@ export const listBirthdaysInWindow = async (
     }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.user.name.localeCompare(b.user.name));
 };
+
+// The same window as GET /api/vacation/calendar: the month grid's leading and trailing days.
+const ADJACENT_DAYS = 6;
+
+/** A month of the calendar's birthdays, padded with the grid's neighbouring days. */
+export const listBirthdaysForMonth = async (params: {
+  auth: AuthSession;
+  year: number;
+  month: number;
+  groupId?: string | undefined;
+}): Promise<BirthdayCalendarRow[]> =>
+  listBirthdaysInWindow(
+    params.auth.userId,
+    params.groupId,
+    paddedMonthRange(params.year, params.month, ADJACENT_DAYS)
+  );

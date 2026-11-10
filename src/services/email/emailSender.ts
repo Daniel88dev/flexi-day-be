@@ -171,6 +171,19 @@ export interface TwoFactorCodeData {
 }
 
 /**
+ * `subprocessor-notice`: the 30-day notice that Anthropic becomes a sub-processor, sent once to
+ * every organization's owner. One template holds both languages; `czech` picks one at send time,
+ * so it is the only variable that may be `false`.
+ */
+export interface SubprocessorNoticeData {
+  czech: boolean;
+  name: string;
+  organizationName: string;
+  /** The day the Assistant may open, in the owner's language, e.g. "20 December 2026". */
+  startDate: string;
+}
+
+/**
  * A templated email to send. `template` is the logical template name; the
  * adapter maps it to the concrete, stage-suffixed SES template name. The
  * union keeps each template's variables tied to its name.
@@ -191,7 +204,14 @@ export type TemplatedEmail =
   | { to: string; template: "group-invite"; data: GroupInviteData }
   | { to: string; template: "directory-invite"; data: DirectoryInviteData }
   | { to: string; template: "subscription-grace"; data: SubscriptionGraceData }
-  | { to: string; template: "two-factor-code"; data: TwoFactorCodeData };
+  | { to: string; template: "two-factor-code"; data: TwoFactorCodeData }
+  | {
+      to: string;
+      /** The notice asks owners who object to reply, so the reply has to reach a person. */
+      replyTo: string;
+      template: "subprocessor-notice";
+      data: SubprocessorNoticeData;
+    };
 
 export type EmailTemplateName = TemplatedEmail["template"];
 

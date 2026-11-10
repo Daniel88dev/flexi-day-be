@@ -4,6 +4,7 @@ import { user } from "./auth-schema.js";
 import { directoryPermissionRowEnum } from "./directory-schema.js";
 import { organizations } from "./organization-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
+import { changeChannelEnum } from "./change-channel-schema.js";
 
 export enum readLogKind {
   Export = "export",
@@ -54,6 +55,7 @@ export const readLog = pgTable(
     sections: directoryPermissionRowEnum("sections").array(),
     audience: readLogAudienceEnum("audience").notNull(),
     personExportId: text("person_export_id"),
+    channel: changeChannelEnum("channel").default("app").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

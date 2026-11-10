@@ -179,12 +179,12 @@ resource "aws_secretsmanager_secret_version" "microsoft_client_secret" {
   }
 }
 
-# The two Apple .p8 keys below are the exception to the shape above: Terraform
-# owns the slot and never the value. terraform/scripts/put-p8.sh uploads each
-# key from 1Password, so neither reaches state or a plan. Each switched-on key
-# is read back by an ephemeral resource, which stores nothing, and its
-# postcondition stops the plan when the slot is empty or holds something other
-# than a PEM private key. docs/terraform.md has the runbooks.
+# The two Apple .p8 keys and the two Anthropic secrets below are the exception
+# to the shape above: Terraform owns the slot and never the value.
+# terraform/scripts/put-secret.sh uploads each from 1Password, so none reaches
+# state or a plan. Each switched-on slot is read back by an ephemeral resource,
+# which stores nothing, and its postcondition stops the plan when the slot is
+# empty or holds the wrong kind of value. docs/terraform.md has the runbooks.
 
 # Sign in with Apple. Like the APNs slot it always exists, so the key can go up
 # before apple_client_id switches it into the service.
@@ -230,7 +230,7 @@ ephemeral "aws_secretsmanager_secret_version" "apple_private_key" {
   lifecycle {
     postcondition {
       condition     = startswith(self.secret_string, "-----BEGIN PRIVATE KEY-----")
-      error_message = "The Sign in with Apple slot does not hold a PEM private key. Upload it with terraform/scripts/put-p8.sh apple."
+      error_message = "The Sign in with Apple slot does not hold a PEM private key. Upload it with terraform/scripts/put-secret.sh apple."
     }
   }
 }
@@ -261,7 +261,55 @@ ephemeral "aws_secretsmanager_secret_version" "apns_private_key" {
   lifecycle {
     postcondition {
       condition     = startswith(self.secret_string, "-----BEGIN PRIVATE KEY-----")
-      error_message = "The APNs slot does not hold a PEM private key. Upload it with terraform/scripts/put-p8.sh apns."
+      error_message = "The APNs slot does not hold a PEM private key. Upload it with terraform/scripts/put-secret.sh apns."
+    }
+  }
+}
+
+# The Assistant's Anthropic key and webhook signing secret. Both slots always
+# exist, so the values can go up before the Assistant is switched on; what
+# switches them into the service is local.assistant_reachable (apprunner.tf):
+# the Assistant switch, or any organization on the preview list.
+resource "aws_secretsmanager_secret" "anthropic_api_key" {
+  name                    = "${var.project_name}-${var.environment}-anthropic-api-key"
+  description             = "Anthropic API key of the flexi-day-prod workspace for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-anthropic-api-key"
+  }
+}
+
+ephemeral "aws_secretsmanager_secret_version" "anthropic_api_key" {
+  count     = local.assistant_reachable ? 1 : 0
+  secret_id = aws_secretsmanager_secret.anthropic_api_key.id
+
+  lifecycle {
+    postcondition {
+      condition     = startswith(self.secret_string, "sk-ant-")
+      error_message = "The Anthropic API key slot does not hold an sk-ant- key. Upload it with terraform/scripts/put-secret.sh anthropic-api-key."
+    }
+  }
+}
+
+resource "aws_secretsmanager_secret" "anthropic_webhook_secret" {
+  name                    = "${var.project_name}-${var.environment}-anthropic-webhook-secret"
+  description             = "Anthropic webhook signing secret (whsec_) for ${var.project_name}"
+  recovery_window_in_days = 0
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-anthropic-webhook-secret"
+  }
+}
+
+ephemeral "aws_secretsmanager_secret_version" "anthropic_webhook_secret" {
+  count     = local.assistant_reachable ? 1 : 0
+  secret_id = aws_secretsmanager_secret.anthropic_webhook_secret.id
+
+  lifecycle {
+    postcondition {
+      condition     = startswith(self.secret_string, "whsec_")
+      error_message = "The Anthropic webhook secret slot does not hold a whsec_ secret. Upload it with terraform/scripts/put-secret.sh anthropic-webhook-secret."
     }
   }
 }

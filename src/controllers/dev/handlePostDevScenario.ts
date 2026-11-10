@@ -8,6 +8,7 @@ import { ensureOrganizationForUser } from "../../services/organization/organizat
 import {
   addMember,
   addVacation,
+  enableDevAssistant,
   findTeam,
   generatePassword,
   nextWorkingDay,
@@ -67,6 +68,10 @@ const seedBookings = async (
   return created;
 };
 
+const ASSISTANT_ORGANIZATION = "Dev Enterprise";
+const ASSISTANT_TEAM = "Dev Enterprise Team";
+const ASSISTANT_OWNER = { local: "grace", name: "Grace Enterprise" };
+
 const ADMINISTERED_TEAM = "Dev Support";
 const ADMINISTERED_MANAGER = { local: "dave", name: "Dave Horak" };
 const ADMINISTERED_MEMBERS = [
@@ -84,7 +89,9 @@ const ADMINISTERED_MEMBERS = [
  * views. Under the fake calendar driver the owner is also connected to a fake
  * Google target. The owner, Alice (29 February) and Bob (no year) get
  * birthdays, and Dev Team gets a weekly standup, a three-day offsite and a
- * one-off planning meeting. Re-running it is a no-op rather than an error.
+ * one-off planning meeting. Grace owns "Dev Enterprise", on Enterprise with the
+ * Assistant on, where the owner and Alice are members, so the Assistant runs on
+ * the fake driver with no key. Re-running it is a no-op rather than an error.
  */
 export const handlePostDevScenario = async (req: Request, res: Response) => {
   const data = req.body as ValidatedPostDevScenarioType;
@@ -96,7 +103,7 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
   const password = data.password ?? generatePassword();
 
   const ownerEmail = (data.ownerEmail ?? `owner@${domain}`).toLowerCase();
-  const reserved = [...MEMBERS, ADMINISTERED_MANAGER, ...ADMINISTERED_MEMBERS].map(
+  const reserved = [...MEMBERS, ADMINISTERED_MANAGER, ...ADMINISTERED_MEMBERS, ASSISTANT_OWNER].map(
     (member) => `${member.local}@${domain}`
   );
   if (reserved.includes(ownerEmail)) {
@@ -293,12 +300,53 @@ export const handlePostDevScenario = async (req: Request, res: Response) => {
 
   const calendar = await connectScenarioCalendar(owner);
 
+  // A second organization on Enterprise with the Assistant on, so the panel runs on the fake
+  // driver with no key. The owner and Alice are members; the owner's own organization stays Free.
+  const graceOwner = await seedUser({
+    email: `${ASSISTANT_OWNER.local}@${domain}`,
+    name: ASSISTANT_OWNER.name,
+    password,
+  });
+  const assistantOrganizationId = await enableDevAssistant({
+    ownerUserId: graceOwner.id,
+    name: ASSISTANT_ORGANIZATION,
+  });
+  const assistantTeam =
+    (await findTeam(graceOwner.id, ASSISTANT_TEAM, assistantOrganizationId)) ??
+    (await seedTeam({
+      teamName: ASSISTANT_TEAM,
+      managerUserId: graceOwner.id,
+      organizationId: assistantOrganizationId,
+    }));
+  await addMember({
+    userId: graceOwner.id,
+    groupId: assistantTeam.id,
+    adminAccess: true,
+    approverAccess: true,
+  });
+  for (const person of [graceOwner, owner, alice]) {
+    if (person !== graceOwner) {
+      await addMember({ userId: person.id, groupId: assistantTeam.id, approverAccess: false });
+    }
+    await setQuota({ userId: person.id, groupId: assistantTeam.id, vacationDays: 22 });
+  }
+  const assistantBookingsCreated = await seedBookings(assistantTeam.id, graceOwner.id, [
+    { user: alice, day: workingDayFromToday(2), state: "approved" },
+    { user: owner, day: workingDayFromToday(4), state: "pending" },
+  ]);
+
   return res.status(201).json({
     team,
     owner,
     members,
     administeredTeam: { ...administeredTeam, manager, members: administeredMembers },
-    vacationsCreated: teamBookingsCreated + administeredBookingsCreated,
+    assistantOrganization: {
+      organizationId: assistantOrganizationId,
+      name: ASSISTANT_ORGANIZATION,
+      owner: graceOwner,
+      team: assistantTeam,
+    },
+    vacationsCreated: teamBookingsCreated + administeredBookingsCreated + assistantBookingsCreated,
     birthdaysCreated,
     groupEventsCreated,
     calendar,

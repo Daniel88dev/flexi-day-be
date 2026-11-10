@@ -4,3 +4,4 @@ node_modules
 src/db/schema/out
 lambda/attachment-processor/dist
 pnpm-lock.yaml
+eval-results

@@ -1,10 +1,16 @@
 import type { Request, Response } from "express";
-import { getDirectoryProfile } from "../../services/directory/directoryProfileServices.js";
+import { getAuth } from "../../middleware/authSession.js";
+import { readDirectoryProfile } from "../../services/directory/directoryLookups.js";
 import { requirePathParam } from "../pathParams.js";
-import { directoryViewerFor } from "./directoryViewerFor.js";
+import { requestedLanguage } from "./directoryViewerFor.js";
 
 export const handleGetDirectoryProfile = async (req: Request, res: Response) => {
   const employmentId = requirePathParam(req.params.employmentId, "employment id");
-  const viewer = await directoryViewerFor(req);
-  return res.status(200).json(await getDirectoryProfile(viewer, employmentId));
+  const profile = await readDirectoryProfile({
+    auth: getAuth(req),
+    organizationId: requirePathParam(req.params.organizationId, "organization id"),
+    employmentId,
+    language: requestedLanguage(req),
+  });
+  return res.status(200).json(profile);
 };

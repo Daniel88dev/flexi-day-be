@@ -2,6 +2,7 @@ import { index, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema.js";
 import { vacation } from "./vacation-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
+import { changeChannelEnum } from "./change-channel-schema.js";
 
 /**
  * What happened to a vacation row. The vacation table only keeps the current
@@ -31,6 +32,7 @@ export const vacationEvents = pgTable(
     // Null when the actor's account is later removed; the event itself stays.
     actorUserId: text("actor_user_id").references(() => user.id, { onDelete: "set null" }),
     reason: text("reason"),
+    channel: changeChannelEnum("channel").default("app").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("vacation_events_vacation_id_idx").on(table.vacationId, table.createdAt)]

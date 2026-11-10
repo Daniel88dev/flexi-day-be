@@ -18,6 +18,7 @@ const row = (
   vacationType: CalendarRecordType.Vacation,
   requestedDay,
   note: null,
+  createdByUserId: null,
   submittedAt: new Date("2026-12-01T09:00:00Z"),
   ...overrides,
 });

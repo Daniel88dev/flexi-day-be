@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ChangeChannel } from "../../db/schema/change-channel-schema.js";
 import type {
   attendanceClosedBy,
   attendanceEventType,
@@ -357,5 +358,6 @@ export type AttendanceEventView = {
   user: UserSummary | null;
   before: unknown;
   after: unknown;
+  channel: ChangeChannel;
   createdAt: Date;
 };

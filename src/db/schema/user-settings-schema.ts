@@ -62,6 +62,8 @@ export const userSettings = pgTable("user_settings", {
     .default(false),
   // Null means English.
   language: appLanguageEnum("language"),
+  // Compared with the banner's start date, so a later policy update shows it again.
+  privacyBannerDismissedAt: timestamp("privacy_banner_dismissed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()

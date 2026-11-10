@@ -1,0 +1,129 @@
+[
+  {
+    "data": [
+      {
+        "starting_at": "2026-09-30T00:00:00Z",
+        "ending_at": "2026-10-01T00:00:00Z",
+        "results": [
+          {
+            "amount": "900.0",
+            "context_window": "0-200k",
+            "cost_type": "tokens",
+            "currency": "USD",
+            "description": "Claude Sonnet 5.5 Usage - Output Tokens",
+            "inference_geo": "global",
+            "model": "claude-sonnet-5-5",
+            "service_tier": "standard",
+            "speed": "standard",
+            "token_type": "output_tokens",
+            "workspace_id": "wrkspc_prod"
+          }
+        ]
+      },
+      {
+        "starting_at": "2026-10-01T00:00:00Z",
+        "ending_at": "2026-10-02T00:00:00Z",
+        "results": [
+          {
+            "amount": "1000.0",
+            "context_window": "0-200k",
+            "cost_type": "tokens",
+            "currency": "USD",
+            "description": "Claude Sonnet 5.5 Usage - Output Tokens",
+            "inference_geo": "global",
+            "model": "claude-sonnet-5-5",
+            "service_tier": "standard",
+            "speed": "standard",
+            "token_type": "output_tokens",
+            "workspace_id": "wrkspc_prod"
+          },
+          {
+            "amount": "250.5",
+            "context_window": "0-200k",
+            "cost_type": "tokens",
+            "currency": "USD",
+            "description": "Claude Sonnet 5.5 Usage - Input Tokens",
+            "inference_geo": "global",
+            "model": "claude-sonnet-5-5",
+            "service_tier": "standard",
+            "speed": "standard",
+            "token_type": "uncached_input_tokens",
+            "workspace_id": "wrkspc_prod"
+          },
+          {
+            "amount": "320.0",
+            "context_window": null,
+            "cost_type": "session_usage",
+            "currency": "USD",
+            "description": "Managed Agents session runtime",
+            "inference_geo": null,
+            "model": null,
+            "service_tier": null,
+            "speed": null,
+            "token_type": null,
+            "workspace_id": "wrkspc_prod"
+          },
+          {
+            "amount": "75.0",
+            "context_window": "0-200k",
+            "cost_type": "tokens",
+            "currency": "USD",
+            "description": "Claude Haiku 5.5 Usage - Input Tokens",
+            "inference_geo": "global",
+            "model": "claude-haiku-5-5",
+            "service_tier": "standard",
+            "speed": "standard",
+            "token_type": "uncached_input_tokens",
+            "workspace_id": "wrkspc_dev"
+          }
+        ]
+      }
+    ],
+    "has_more": true,
+    "next_page": "page_2"
+  },
+  {
+    "data": [
+      {
+        "starting_at": "2026-10-31T00:00:00Z",
+        "ending_at": "2026-11-01T00:00:00Z",
+        "results": [
+          {
+            "amount": "49.5",
+            "context_window": "0-200k",
+            "cost_type": "tokens",
+            "currency": "USD",
+            "description": "Claude Haiku 5.5 Usage - Output Tokens",
+            "inference_geo": "global",
+            "model": "claude-haiku-5-5",
+            "service_tier": "standard",
+            "speed": "standard",
+            "token_type": "output_tokens",
+            "workspace_id": "wrkspc_prod"
+          }
+        ]
+      },
+      {
+        "starting_at": "2026-11-01T00:00:00Z",
+        "ending_at": "2026-11-02T00:00:00Z",
+        "results": [
+          {
+            "amount": "500.0",
+            "context_window": "0-200k",
+            "cost_type": "tokens",
+            "currency": "USD",
+            "description": "Claude Sonnet 5.5 Usage - Output Tokens",
+            "inference_geo": "global",
+            "model": "claude-sonnet-5-5",
+            "service_tier": "standard",
+            "speed": "standard",
+            "token_type": "output_tokens",
+            "workspace_id": "wrkspc_prod"
+          }
+        ]
+      }
+    ],
+    "has_more": false,
+    "next_page": null
+  }
+]

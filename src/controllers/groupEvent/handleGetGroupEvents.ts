@@ -6,5 +6,5 @@ import { listGroupEventsForMonth } from "../../services/groupEvent/groupEventAcc
 export const handleGetGroupEvents = async (req: Request, res: Response) => {
   const auth = getAuth(req);
   const query = validateGroupEventsQuery.parse(req.query);
-  return res.status(200).json(await listGroupEventsForMonth(auth.userId, query));
+  return res.status(200).json(await listGroupEventsForMonth({ auth, query }));
 };

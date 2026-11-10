@@ -7,6 +7,8 @@ import { startQuotaRolloverJob, stopQuotaRolloverJob } from "./jobs/quotaRollove
 import { startCalendarSyncQueue, stopCalendarSyncQueue } from "./jobs/calendarSyncQueueJob.js";
 import { startPersonExportQueue, stopPersonExportQueue } from "./jobs/personExportQueueJob.js";
 import { runAuthSecretCheck } from "./jobs/authSecretCheckJob.js";
+import { syncAssistantAgent } from "./services/assistant/agent/agentSync.js";
+import { startKnowledgeBase, stopKnowledgeBase } from "./services/knowledgeBase/knowledgeBase.js";
 import http from "http";
 
 const app = createServer();
@@ -26,12 +28,15 @@ server.listen(config.api.port, () => {
   startQuotaRolloverJob();
   void startCalendarSyncQueue();
   void startPersonExportQueue();
+  // A loaded bundle already synced the agent with its index; this covers a bundle that failed.
+  void startKnowledgeBase().then(() => syncAssistantAgent());
 
   const shutdown = () => {
     logger.info("Shutting down HTTP server...");
     stopQuotaRolloverJob();
     stopCalendarSyncQueue();
     stopPersonExportQueue();
+    stopKnowledgeBase();
     server.close((closeErr?: Error) => {
       if (closeErr) {
         logger.error("Error shutting down HTTP server", { err: closeErr });

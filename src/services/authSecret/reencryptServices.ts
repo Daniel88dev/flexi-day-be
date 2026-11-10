@@ -2,7 +2,7 @@ import { and, asc, gt, isNotNull, notLike, sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { symmetricDecrypt, symmetricEncrypt, type SecretConfig } from "better-auth/crypto";
 import { db } from "../../db/db.js";
-import { account, twoFactor } from "../../db/schema/auth-schema.js";
+import { account, jwks, twoFactor } from "../../db/schema/auth-schema.js";
 import { calendarConnection } from "../../db/schema/calendar-connection-schema.js";
 
 const BATCH = 200;
@@ -14,6 +14,8 @@ type EncryptedColumn = {
   column: PgColumn;
   /** better-auth stored these as plaintext before `encryptOAuthTokens`, and still reads them. */
   mayBePlaintext?: boolean;
+  /** `jwt()` stores its ciphertext as a JSON string, quotes included. */
+  jsonWrapped?: boolean;
 };
 
 const ENCRYPTED_COLUMNS: EncryptedColumn[] = [
@@ -50,7 +52,26 @@ const ENCRYPTED_COLUMNS: EncryptedColumn[] = [
     id: calendarConnection.id,
     column: calendarConnection.accessTokenEnc,
   },
+  // The key that signs AI connections' access tokens. Left behind, the second
+  // rotation makes it unreadable and no app gets a token.
+  {
+    name: "jwks.private_key",
+    table: jwks,
+    id: jwks.id,
+    column: jwks.privateKey,
+    jsonWrapped: true,
+  },
 ];
+
+const unwrap = (target: EncryptedColumn, stored: string): string | null => {
+  if (!target.jsonWrapped) return stored;
+  try {
+    const value: unknown = JSON.parse(stored);
+    return typeof value === "string" ? value : null;
+  } catch {
+    return null;
+  }
+};
 
 // The same test better-auth's `decryptOAuthToken` applies before decrypting.
 const looksEncrypted = (value: string): boolean =>
@@ -83,7 +104,11 @@ export const reencryptToCurrentVersion = async (key: SecretConfig): Promise<Reen
         .select({ id: target.id, stored: target.column })
         .from(target.table)
         .where(
-          and(gt(target.id, after), isNotNull(target.column), notLike(target.column, currentPrefix))
+          and(
+            gt(target.id, after),
+            isNotNull(target.column),
+            notLike(target.column, target.jsonWrapped ? `"${currentPrefix}` : currentPrefix)
+          )
         )
         .orderBy(asc(target.id))
         .limit(BATCH)) as { id: string; stored: string }[];
@@ -94,15 +119,18 @@ export const reencryptToCurrentVersion = async (key: SecretConfig): Promise<Reen
       for (const { id, stored } of rows) {
         if (!stored || (target.mayBePlaintext && !looksEncrypted(stored))) continue;
 
+        const ciphertext = unwrap(target, stored);
         let plain: string;
         try {
-          plain = await symmetricDecrypt({ key, data: stored });
+          if (ciphertext === null) throw new Error("Not a wrapped ciphertext");
+          plain = await symmetricDecrypt({ key, data: ciphertext });
         } catch {
           (result.unreadable[target.name] ??= []).push(id);
           continue;
         }
 
-        const next = await symmetricEncrypt({ key, data: plain });
+        const encrypted = await symmetricEncrypt({ key, data: plain });
+        const next = target.jsonWrapped ? JSON.stringify(encrypted) : encrypted;
         const updated = await db.execute(
           sql`update ${target.table} set ${sql.identifier(target.column.name)} = ${next}
               where ${target.id} = ${id} and ${target.column} = ${stored}`

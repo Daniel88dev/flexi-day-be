@@ -66,6 +66,9 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   code challenge without anyone deciding they should; if it narrowed it, a password sign-in would
   get through without its code. Putting a social path under the plugin is a product decision, not a
   fix.
+  The same holds for AI connections: an OAuth grant that starts with a social sign-in on the connect
+  sign-in page carries the signed query through the provider and reaches the organization picker
+  with no code challenge, so the grant is as single-factor as that sign-in.
   `src/tests/utils/twoFactorScope.test.ts` fails if the matcher moves either way.
 - **The Expo authorization proxy stays disabled.** `disabledPaths` in `auth.ts` lists
   `/expo-authorization-proxy`. The `expo()` plugin serves it to start a browser sign-in from the
@@ -167,8 +170,9 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   `BETTER_AUTH_SECRET` as version 1. `src/utils/auth.ts` gives better-auth the list and version 1
   as the key for ciphertext from before versioning, which names no version. better-auth encrypts
   under the newest version, tags the ciphertext `$ba$<version>$`, and decrypts with whichever
-  version the tag names. That covers TOTP secrets, backup codes, account OAuth tokens and calendar
-  tokens. Terraform keeps two versions, so a row still under the older one when the next rotation
+  version the tag names. That covers TOTP secrets, backup codes, account OAuth tokens, calendar
+  tokens and `jwks.private_key`, the key that signs AI connections' access tokens (`jwt()` stores
+  it as the ciphertext wrapped in a JSON string, so its sweep entry unwraps and rewraps it). Terraform keeps two versions, so a row still under the older one when the next rotation
   lands never reads again, and for a dormant user's TOTP secret that is a lockout. Re-encrypting on
   use would leave exactly those dormant rows behind, so `runAuthSecretCheck` runs
   `reencryptToCurrentVersion` (`src/services/authSecret/reencryptServices.ts`) on every boot: each
@@ -179,7 +183,8 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   column joins the sweep's list, or it outlives its key. `src/tests/utils/authSecretRotation.test.ts`
   fails if a TOTP code, a backup code or a calendar token written before versioning or under
   version 1 stops working after a rotation, `src/tests/e2e/authSecretReencrypt.e2e.test.ts` if the
-  sweep leaves a row on a version the next rotation drops, and
+  sweep leaves a row on a version the next rotation drops ("keeps the AI connections signing key
+  through two rotations" for `jwks`), and
   `src/services/calendarConnection/tests/connectionAccessToken.test.ts` if an unreadable token
   throws without marking the connection.
 - **A session ends by deleting its row, never by flagging it; a new Better Auth secret version
@@ -205,6 +210,191 @@ rate limit (50 requests / 10s) on top of `credentialsLimiter`.
   stops deleting the row, `src/tests/e2e/authSecretCheck.e2e.test.ts` if the check stops deleting or
   starts deleting on an unchanged secret, and `src/tests/boot.test.ts` if boot stops running it or
   starts listening before it finishes.
+
+## AI connections (`src/utils/auth.ts`, `src/utils/aiConnectionsOAuth.ts`)
+
+The backend is the OAuth 2.1 authorization server AI apps connect through: better-auth's `mcp()`
+with `cimd()` and `jwt()`. A grant acts in one organization the user picks, among those
+`aiEligibility` (`src/services/aiFeatures/aiEligibility.ts`) allows: standing in it, AI connections
+not Off, a Paid plan.
+
+- **`mcp()` is registered after `twoFactor`.** Both add after hooks, and better-auth runs them in
+  registration order. The provider's hook continues an OAuth flow whenever a response sets the
+  session cookie and the request carried the signed query. After `twoFactor`, a password sign-in
+  that ends in a challenge has already had its cookie deleted, so nothing continues until
+  `/two-factor/verify-*` sets the real one. Registered first, the provider would run the
+  authorization with the throwaway pre-challenge session, and a navigation request would leave with
+  the next step in `Location`, which survives `twoFactor` replacing the body. "yields no code from a
+  password sign-in until the challenge passes" in `src/tests/e2e/aiConnectionsOAuth.e2e.test.ts`
+  fails if the order flips. Social sign-in skips the second factor here too ("Social sign-in does
+  not run the second factor" above).
+- **Every new authorization picks its organization.** `postLogin.shouldRedirect` sends a fresh
+  authorization to the picker and clears `session.oauth_organization_id` first; only the return
+  from the picker, with a choice still eligible, goes on. Otherwise a choice left on the session
+  by an earlier connection, plus a consent on file for it, would issue a code for an organization
+  the user never picked this time. `postLogin.consentReferenceId` checks eligibility again and
+  throws when the organization stopped qualifying between picker and consent. The session field is
+  `input: false`, so only the picker route, which checks eligibility, writes it.
+- **Read only never grants `flexiday.write`.** A before hook on `/oauth2/consent` takes the scope out
+  of whatever the consent page posted when the chosen organization is Read only, because the
+  endpoint grants every requested scope when the body names none. The consent page hiding the
+  option is not the control.
+- **`/token` stays disabled.** `jwt()` would otherwise mint session JWTs signed by the same key as
+  AI connections' access tokens.
+- **Off means 404.** `/api/auth/oauth2/*`, `/api/auth/jwks`, the discovery documents and
+  `/api/oauth-connect/*` answer 404 while AI connections are unavailable (`requireAiFeature`).
+- **These events end OAuth grants, and only these.** A grant is the consent row plus every refresh
+  and access token for the same user, client and organization (`reference_id`), and ending one
+  deletes them all in one transaction (`src/services/aiConnections/grants.ts`).
+  - Disconnect in Settings: that one grant (`DELETE /api/users/me/ai-connections/:grantId`).
+  - Revoke on the AI usage page: that one grant, by the owner or an org admin of the grant's
+    organization (`DELETE /api/organization/ai/connections/:grantId`, 404 for another
+    organization's grant and while AI connections are unavailable to the organization). `src/tests/e2e/aiUsage.e2e.test.ts` checks the next MCP call fails.
+  - Password reset: every grant the user holds, in `onPasswordReset`, whether or not the address
+    was verified.
+  - Password change with `revokeOtherSessions`: every grant the user holds, in the
+    `ai-connection-grant-revocation` after hook, only once the change succeeded.
+  - Account deletion: every grant the user holds, in the deletion transaction. The user row stays,
+    so the `ON DELETE CASCADE` on these tables never fires and the rows go explicitly.
+  - The owner turning AI connections off: every grant in the organization. Lowering to Read only:
+    every grant there holding `flexiday.write`, whole; the member connects again with read access.
+    Both run inside the transaction that locks the organization row and changes the setting.
+
+  Sign-out, a password change without `revokeOtherSessions`, auth-secret rotation and turning
+  two-factor on keep every grant: a grant is not a session, and those events say nothing about the
+  app the member chose to trust. Refresh in better-auth checks no consent, so deleting the consent
+  alone would leave the app refreshing tokens the per-call check then refuses; deleting the refresh
+  tokens is what makes the next refresh answer `invalid_grant`. A reset or password change that
+  stopped deleting them would leave an attacker's app connected after the victim took the account
+  back. `src/tests/e2e/aiConnectionGrants.e2e.test.ts` drives each event and the next refresh, and
+  fails if one stops ending its grants or a keeper starts.
+
+## Tools and `/mcp` (`src/tools/`, `src/mcp/`)
+
+The Assistant and the MCP server share one tool layer. A tool must see exactly what its user sees in
+the app, inside one organization.
+
+- **The tool layer imports no database module.** An ESLint `no-restricted-imports` rule on
+  `src/tools/**` (the lint fence) bars `db/`, `drizzle-orm` and `pg`. Handlers call services that
+  take `auth` and run their own guards, so a permission check written for the app holds for the
+  tool too. `src/tools/tests/lintFence.test.ts` fails if the rule goes.
+- **Every group and person a tool's input names passes the organization fence first.** A tool
+  declares those fields in `fence`; `runTool` rejects any outside the context's organization with
+  the same 404 as a missing one. Reads without such a field pass `organizationId` to the service.
+  A user in two organizations would otherwise read the second through a grant for the first.
+- **Every `/mcp` call settles the grant again.** After the JWT verifies, `loadMcpGrant` loads the
+  consent for user, client and organization claim, the user, and `aiEligibility`. Disconnecting,
+  leaving the organization or a lapsed plan take effect on the next call, not when the token
+  expires.
+- **Approve and reject never run over `/mcp`.** They carry `assistantOnly`: `toolsFor` leaves them
+  out of `tools/list`, `/mcp` answers a call to them as an unknown tool, and `runTool` and
+  `previewTool` refuse them on any channel but `assistant`. Deciding on someone else's request
+  needs the Assistant's confirmation card; an external app has no such step.
+  `mcpWriteTools.e2e.test.ts` covers all three.
+- **Tool errors carry no user text or arguments.** A guard's refusal reaches the model with its
+  public message and public context only; anything else is one fixed message. Invalid arguments
+  name the schema's field paths, never the values.
+- **No argument or result leaves the process.** The `gen_ai.execute_tool` span carries the tool,
+  channel and outcome only (`src/tools/tests/toolSpan.test.ts`), `src/utils/sentryOptions.ts` sets
+  `dataCollection.mcp` off, and `toToolError` logs an internal error by class name. The full list
+  is under Observability below.
+
+## The Assistant's turns (`src/services/assistant/`)
+
+- **A turn advances in one idempotent step, keyed on session event ids.** `advanceTurn` lists the
+  turn's events, records each Assistant message once (unique on chat and event id) and answers each
+  waiting tool call once: the tool display row keyed on the tool-use event id is the claim, written
+  before the tool runs. The relay, the webhook and opening a chat may all run it at once without a
+  tool running twice. Recording or answering by anything else (the stream's arrival order, a counter)
+  would run a write twice the day two of them race.
+- **The webhook at `/api/webhooks/anthropic` trusts the signature alone.** It sits before the JSON
+  parser and outside `authSession`, and checks the Standard Webhooks signature over the raw bytes
+  with `ANTHROPIC_WEBHOOK_SECRET`. Without the secret the route answers 404, as it does while the
+  Assistant is off for everyone. Each event id is stored in `assistant_webhook_events`; a failed
+  advance deletes its row so Anthropic's retry runs again. `assistantWebhook.e2e.test.ts` pins it.
+- **Opening a chat catches up on missed webhooks, nothing polls.** `resumeStalledTurns` advances a
+  turn whose tool call has waited past `MISSED_WEBHOOK_GRACE_MS` with no relay in this process, logs
+  `assistant.webhook_missed`, then follows the turn. The grace keeps a relay on another instance
+  from counting as a miss, which would page someone.
+- **An older build never rolls the agent back.** The agent's metadata carries
+  `AGENT_CONFIG_VERSION`; a sync skips an agent stamped higher and updates with the version it read,
+  so a racing writer gets a 409, which is ignored. Bump the constant with any prompt or tool change;
+  `agentConfig.test.ts` pins the hash it stands for.
+- **The managed driver logs failures by status and type only.** An API error message can quote a
+  prompt or a tool result, so `assistant.provider_error` carries the operation, HTTP status, error
+  type and class name, and the caller sees 503 `ASSISTANT_UNAVAILABLE`.
+- **The screen fails closed, and a rejected message never reaches the session.** `prepareTurn`
+  screens each message after claiming the turn and before creating or sending to a session. A
+  failure or a timeout (`ASSISTANT_SCREEN_TIMEOUT_MS`) answers 503 `ASSISTANT_SCREEN_FAILED` with
+  nothing written; an off-topic message, an attack or Haiku's own refusal is recorded as a rejected
+  turn and answered with the fixed refusal. Sending first and screening beside it would let an attack
+  reach the model whenever the screen is slow. `assistantScreen.e2e.test.ts` pins every path.
+- **Text people wrote is screened before the model reads it.** `advanceTurn` runs the reads of one
+  model response, then one screen call over every `user_text` value in their results, then answers
+  them. A flagged value, or every value when the call fails, becomes
+  `[withheld: looked like instructions]`. Answering a tool call before its screen would hand the
+  model the very text the screen exists to stop. The screen logs (`assistant.screen_failed`,
+  `assistant.tool_text_withheld`) carry ids, reasons and counts, never the text.
+- **A write from the Assistant never runs before its card is confirmed.** `answerAssistantToolCall`
+  only previews a write; `advanceTurn` parks it in `assistant_pending_actions` with its validated
+  arguments, and only `decideCard` runs those exact arguments, with fresh guards. A refused confirm
+  keeps the card open and answers nothing, so every tool call is answered once: by the confirmed
+  result, "declined", or "not taken" when the user's next admitted message settles it. Card text
+  comes from the stored preview, never the model, and card previews are never logged.
+  `assistantCards.e2e.test.ts` pins every path.
+- **A reject reason typed on the card never reaches the session.** The user writes it in the card,
+  where no screen runs, so `reject_request`'s result says only `reasonGiven`. Putting the text in
+  the result would hand the model unscreened input. `assistantDecisionCards.e2e.test.ts` checks it.
+- **A round of tool results goes to the session whole, and only through the meter.** Answers wait in
+  `assistant_held_answers` until no card of their model response is open; taking them (a delete
+  that returns the rows) is the claim, so two advances can't both send them. A round the meter
+  refuses keeps its answers held, and the next admitted message carries them ahead of its text.
+  Answering a round's reads while its card is open, or interrupting the session, would leave a tool
+  call unanswered or start a model call nobody reserved.
+- **A chat never goes without its session going too.** Every path that deletes chats (own delete,
+  losing the last link, End employment, Erase, account deletion, an owned organization's deletion,
+  the 180-day sweep) and the day-30 close goes through `chatLifecycle.ts`, which writes the session
+  id into `assistant_session_deletions` in the same transaction. The session is deleted after the
+  response and on every nightly tick until the driver confirms. A raw `delete(assistantChats)`, or
+  an organization delete that leans on the cascade, would leave an Anthropic session holding the
+  chat for good. `assistantChatLifecycle.e2e.test.ts` checks every path.
+- **Leaving is decided by the links, not by a screen.** The chat delete sits in `syncEmployment`'s
+  no-link branch, ahead of the Directory early return, so every remove, revoke, group delete and
+  manager change that leaves a member with no link deletes their chats there, and End employment,
+  Erase and account deletion call it themselves. See [`assistant-chats.md`](assistant-chats.md).
+- **A closed chat takes no message.** `prepareTurn` refuses with 409 `ASSISTANT_CHAT_CLOSED` before
+  eligibility, the screen or the meter, so nothing is written, screened or charged.
+
+## Observability (`src/utils/sentryOptions.ts`, `src/utils/tracesSampler.ts`, `src/utils/aiSignals.ts`)
+
+Sentry is the only destination for traces, logs and metrics. The winston console and file transports
+write the same entries to CloudWatch, so the rules below hold for them too.
+
+- **Never logged, traced or counted:** chat text (the user's messages, the Assistant's answers,
+  rejected messages), card previews, the system prompt and the per-user `system.message`, the
+  screen's input, tool arguments and results on both channels, error messages built from any of
+  these, names and email addresses, credentials (OAuth tokens and codes, PKCE verifiers, client
+  secrets, the Anthropic key, the webhook secret), and Anthropic's full-content spans. Allowed: ids,
+  enums and numbers. `aiTelemetryPrivacy.e2e.test.ts` drives an Assistant turn, a card and `/mcp`
+  calls with marker text in each of these places and fails if any marker reaches a Sentry envelope
+  or a winston entry.
+- **Content capture stays off in config.** `sentryPrivacyAndSampling` sets `dataCollection.genAI`
+  and `dataCollection.mcp` off, sends no request bodies, and denies the `code` and `state` query
+  parameters, which carry OAuth authorization codes through redirects. The Anthropic client is
+  wrapped with `recordInputs: false, recordOutputs: false`, so the screen's `gen_ai.chat` span holds
+  the model and token counts only.
+- **The Assistant's and `/mcp`'s signals go through `aiSignal`.** Each name lists the attributes it
+  may carry and drops the rest, so a caller can't attach text by accident. `aiSignals.test.ts` pins
+  the names, levels and attributes against the spec, and fails when a name has no call site.
+- **An outside caller can't raise its own trace sampling.** The sampler answers `/mcp`, the
+  Assistant routes, the Anthropic webhook, `/api/auth/oauth2/*` and `/.well-known/*` with their own
+  rates and ignores an inbound `sentry-trace`. Inheriting there would let any client force 100%
+  tracing of its traffic and spend the organization's span quota. `/api/auth/jwks` inherits on
+  purpose: `/mcp` fetches it from this same server. `tracesSampler.test.ts` pins it.
+- **Sentry writes the one `traceparent` on calls to Anthropic.** `propagateTraceparent` is on and
+  the Anthropic SDK's own tracing and propagation are off (`anthropicClient.ts`). Two writers would
+  send two headers, which Anthropic reads as an invalid trace context; none would leave Managed
+  Agents' spans outside our traces.
 
 ## Local dev surface (`src/routes/devRouter.ts`, `src/middleware/devGuard.ts`, `src/services/dev/`)
 
@@ -308,16 +498,25 @@ read-only) to debug customer reports.
 Several limiters, not one, because a single per-IP bucket both throttles real users and
 under-protects the endpoints that matter:
 
-| Limiter                | Mounted on                                                                       | Key                            | Budget                   |
-| ---------------------- | -------------------------------------------------------------------------------- | ------------------------------ | ------------------------ |
-| `floodLimiter`         | everything                                                                       | IP                             | 5000 / 5 min             |
-| `apiFailureLimiter`    | `/api` (before session validation), unvalidated requests only                    | IP                             | 100 **failures** / 5 min |
-| `apiLimiter`           | `/api` (after the auth and dev routes)                                           | validated user id, IP fallback | 1000 / 5 min             |
-| `credentialsLimiter`   | sign-in / sign-up / reset-password / two-factor / invite link / account deletion | IP                             | 20 **failures** / 15 min |
-| `passwordResetLimiter` | `request-password-reset`                                                         | IP                             | 5 / 15 min               |
-| `otpSendLimiter`       | `two-factor/send-otp`                                                            | challenge cookie, IP fallback  | 10 / 15 min              |
-| `calendarFeedLimiter`  | `/calendars/:token.ics`                                                          | feed token                     | 120 / hour               |
-| `signedWebhookLimiter` | `/api/webhooks/paddle`, `/api/attachments/processed`                             | IP                             | 5000 / 5 min             |
+| Limiter                      | Mounted on                                                                       | Key                            | Budget                                      |
+| ---------------------------- | -------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------- |
+| `floodLimiter`               | everything                                                                       | IP                             | 5000 / 5 min                                |
+| `apiFailureLimiter`          | `/api` (before session validation), unvalidated requests only                    | IP                             | 100 **failures** / 5 min                    |
+| `apiLimiter`                 | `/api` (after the auth and dev routes)                                           | validated user id, IP fallback | 1000 / 5 min                                |
+| `credentialsLimiter`         | sign-in / sign-up / reset-password / two-factor / invite link / account deletion | IP                             | 20 **failures** / 15 min                    |
+| `passwordResetLimiter`       | `request-password-reset`                                                         | IP                             | 5 / 15 min                                  |
+| `otpSendLimiter`             | `two-factor/send-otp`                                                            | challenge cookie, IP fallback  | 10 / 15 min                                 |
+| `calendarFeedLimiter`        | `/calendars/:token.ics`                                                          | feed token                     | 120 / hour                                  |
+| `signedWebhookLimiter`       | `/api/webhooks/paddle`, `/api/webhooks/anthropic`, `/api/attachments/processed`  | IP                             | 5000 / 5 min                                |
+| `mcpUnauthBudget`            | `/mcp`, answers of 401 or 403 only                                               | IP                             | 2000 **failures** / 5 min                   |
+| `mcpCallBudget`              | `/mcp` `tools/call`                                                              | user id + OAuth client id      | 300 / 5 min                                 |
+| `mcpWriteBudget`             | `/mcp` `tools/call` of a write tool                                              | user id + OAuth client id      | 30 / hour                                   |
+| daily AI connection limit    | `/mcp` `tools/call`, Postgres `ai_connection_daily_calls`                        | organization, UTC day          | Pro 5000, Enterprise and Custom 20000 / day |
+| member daily limit           | `/mcp` `tools/call`, Postgres `ai_connection_member_daily_calls`                 | organization + user, UTC day   | 1000 / day                                  |
+| better-auth `token` rule     | `/api/auth/oauth2/token`                                                         | IP (better-auth's own)         | 600 / min                                   |
+| better-auth `authorize` rule | `/api/auth/oauth2/authorize`                                                     | IP (better-auth's own)         | 30 / min                                    |
+| better-auth `register` rule  | `/api/auth/oauth2/register`                                                      | IP (better-auth's own)         | 5 / min                                     |
+| `dcrDailyLimiter`            | `/api/auth/oauth2/register`                                                      | one global key                 | 1000 **registrations** / day                |
 
 - **`apiLimiter` keys on the session, not the IP.** Keying on the IP pools every user behind one
   office NAT, VPN or mobile CGNAT into a single allowance. Custom key generators must run IPs
@@ -359,11 +558,56 @@ under-protects the endpoints that matter:
   signing in at 9am is unaffected while a password guesser burns the budget.
 - **`calendarFeedLimiter` keys on the token.** Google polls every subscribed feed from a handful of
   shared ranges, so an IP key would throttle all users at once.
-- **`floodLimiter` skips `OPTIONS` and `/health`.** Preflights are not attack surface (CORS `maxAge`
-  caches them) and the health check must not spend a caller's budget.
+- **`floodLimiter` skips `OPTIONS`, `/health` and `/mcp`.** Preflights are not attack surface (CORS
+  `maxAge` caches them) and the health check must not spend a caller's budget. `/mcp` is skipped
+  because Anthropic makes every Claude connector call from a few fixed egress addresses, so a
+  per-IP flood bucket there would be shared by every Claude user at once. The limits below bound
+  `/mcp` instead. `src/tests/middleware/limiter.test.ts` covers all three skips.
+- **`mcpUnauthBudget` counts only requests that fail authentication, and refuses only those.**
+  `/mcp` sits outside `/api`, so neither `apiFailureLimiter` nor `apiLimiter` sees it; discovery
+  401s and expired tokens are routine there and would trip `apiFailureLimiter` within minutes on
+  Anthropic's shared addresses. Once an address has 2000 failed answers in 5 minutes, a request
+  with no token gets 429 before any work, and one whose token fails gets 429 instead of 401. A
+  token that verifies is never refused by it, so one misbehaving client behind a shared address
+  can't lock out everyone else there. JWT verification is a local signature check, which is why a
+  flood of junk tokens is cheap enough to verify before counting. Code in `src/mcp/mcpHttp.ts`.
+- **The MCP burst budgets key on user and OAuth client together.** A user with two apps gets two
+  budgets, and two users of one app never share one. 300 calls in 5 minutes is far above what a
+  person's conversation produces and stops a looping agent; 30 write calls an hour bounds the
+  emails a write sends (a created request mails its approvers, a cancel sends notices). Both are
+  in memory: two instances double them, which is accepted.
+- **The daily limits live in Postgres, and only `tools/call` counts.** They must hold across
+  deploys and instances, unlike the burst budgets. Each call upserts the organization's row and
+  the member's row for the UTC day (`date_trunc` on the database clock, so no reset job runs); a
+  row only rises while under its limit, so concurrent calls can't pass it, and a refused call
+  counts on neither row. `initialize`, `tools/list`, resources and pings don't count, and neither
+  does the Assistant, which runs tools in-process under its own Weekly limit. The member daily
+  limit exists so one looping agent can't use the whole organization's day. The first refusal of
+  a day stamps `limit_reached_at` and logs `mcp.daily_limit_reached`, once per organization and
+  day.
+- **Burst and daily limits answer as tool results; transport limits as 429.** A refused
+  `tools/call` is a normal `isError` result naming the limit and its reset in the user's app
+  language (`src/mcp/mcpLimits.ts`), because an AI app shows a bare 429 as "connection failed" or
+  retries blindly, while a tool result reaches the model, which can tell the user.
+  `mcpUnauthBudget`, the OAuth endpoints and `dcrDailyLimiter` answer 429 with `Retry-After`.
+- **The OAuth provider's limits are better-auth's, raised where Anthropic's egress shares them.**
+  Set through `mcp({ rateLimit })` in `src/utils/auth.ts` and off under vitest like the rest of
+  better-auth's limiter (`src/tests/e2e/oauthLimits.e2e.test.ts` turns it on per test). The token
+  endpoint goes from the default 20 to 600 a minute: every Claude user's code exchange and refresh
+  comes from Anthropic's addresses, and codes and refresh tokens are long, random and bound to
+  PKCE, so the limit only bounds floods. `authorize` stays at 30, a browser redirect from the
+  user's own address. better-auth answers its 429 with `X-Retry-After` only; `mirrorRetryAfter`
+  copies it to `Retry-After`.
+- **Dynamic Client Registration stays open, with three bounds.** Cursor, VS Code and other clients
+  without a pre-registered id need it. better-auth's per-address 5 a minute (these clients
+  register from the user's machine), `dcrDailyLimiter`'s 1000 successful registrations a day
+  across every address, and each registration deleting the clients older than 7 days that hold no
+  grant (no consent, refresh or access token; `pruneUnusedOAuthClients`). Clients found through a
+  metadata document are left alone. The pruning runs in the request, so no sweep job exists.
 
-The store is in-memory: counters are per-process and reset on deploy. Running more than one instance
-multiplies the effective limits — that needs a shared store before scaling out.
+The store is in-memory, except for the two daily limits, which are Postgres rows: counters are
+per-process and reset on deploy. Running more than one instance multiplies the effective limits, so
+scaling out needs a shared store first.
 
 ## Sync pull transport (`src/routes/syncRouter.ts`)
 

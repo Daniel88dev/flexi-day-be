@@ -171,6 +171,7 @@ export const closeSession = async (session: Overdue): Promise<boolean> =>
         eventType: attendanceEventType.ClockOut,
         // Null is the sweep, per `docs/attendance.md`.
         changedByUserId: null,
+        channel: "app",
         before: { endedAt: null, closedBy: null },
         after: {
           endedAt: session.closeAt,
@@ -204,6 +205,7 @@ export const closeBreak = async (entry: Overdue): Promise<boolean> =>
         sessionId: open.sessionId,
         eventType: attendanceEventType.BreakEnd,
         changedByUserId: null,
+        channel: "app",
         before: { breakId: open.id, endedAt: null, autoClosed: false },
         after: { breakId: open.id, endedAt: entry.closeAt, autoClosed: true },
       },

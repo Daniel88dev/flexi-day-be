@@ -94,6 +94,7 @@ export const requestOrganizationExport = async (
         employmentIds: person.employmentIds,
         audience: readLogAudience.Owner,
         personExportId: row!.id,
+        channel: "app" as const,
       }))
     );
   }

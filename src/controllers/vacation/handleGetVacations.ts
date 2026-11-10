@@ -8,7 +8,7 @@ import {
   vacationQueryYear,
   validateVacationListRange,
 } from "../../services/vacation/types.js";
-import { listVacationsInScope } from "./listVacationsInScope.js";
+import { listVacationsInScope } from "../../services/vacation/requestReads.js";
 import AppError from "../../utils/appError.js";
 
 const validateYear = vacationQueryYear.prefault(() => new Date().getFullYear());
@@ -54,9 +54,11 @@ export const handleGetVacations = async (req: Request, res: Response) => {
   const includeCancelled = validateFlag.parse(req.query.includeCancelled);
   const wholeRequests = validateFlag.parse(req.query.wholeRequests);
 
-  const rows = await listVacationsInScope(auth.userId, groupId, range, {
-    includeCancelled,
-    wholeRequests,
+  const rows = await listVacationsInScope({
+    auth,
+    groupId,
+    range,
+    options: { includeCancelled, wholeRequests },
   });
 
   return res.status(200).json(rows);

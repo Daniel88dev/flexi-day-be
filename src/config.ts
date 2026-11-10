@@ -1,9 +1,16 @@
 import dotenv from "dotenv";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import { hasPrice } from "./services/assistant/meter/prices.js";
+import { parseTraceRates, type TraceRates } from "./utils/tracesSampler.js";
 dotenv.config();
 
-type APIConfig = { port: number; env: "production" | "dev" | "test" };
+type APIConfig = {
+  port: number;
+  env: "production" | "dev" | "test";
+  /** This API's own origin, `BETTER_AUTH_URL`: the OAuth issuer and the `/mcp` resource hang off it. */
+  publicUrl: string;
+};
 
 type DBConfig = { database: string };
 
@@ -134,6 +141,60 @@ type ApnsConfig = {
   privateKey: string;
 };
 
+type AiFeaturesConfig = {
+  /** Kill switch for the Assistant: off answers 404 on its routes and hides its entry points. */
+  assistantEnabled: boolean;
+  /** Kill switch for AI connections (`/mcp`, its OAuth discovery and consent). */
+  aiConnectionsEnabled: boolean;
+  /** Organizations that get both features while a switch is off. */
+  previewOrganizationIds: string[];
+};
+
+export const ASSISTANT_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type AssistantEffort = (typeof ASSISTANT_EFFORTS)[number];
+
+type AssistantConfig = {
+  /** `fake` scripts sessions with no Anthropic call; production runs `managed`. */
+  driver: "managed" | "fake";
+  /** The agent's model and effort. A change is a new agent version and reaches new chats only. */
+  model: string;
+  effort: AssistantEffort;
+  /**
+   * The screen's model (`ASSISTANT_SCREEN_MODEL`), run with thinking off on every user message
+   * and metered like any model call.
+   */
+  screenModel: string;
+  /** A screen call that takes longer fails closed: nothing is sent. */
+  screenTimeoutMs: number;
+  /** The managed driver's key, agent and environment (`pnpm run assistant:provision` prints the ids). */
+  apiKey?: string;
+  agentId?: string;
+  environmentId?: string;
+  /** Standard Webhooks `whsec_` secret; without one `/api/webhooks/anthropic` answers 404. */
+  webhookSecret?: string;
+  /** Context tokens at which a chat closes, well below the harness's compaction (T-711). */
+  chatTokenCeiling: number;
+  /** Each organization's Weekly limit (`ASSISTANT_WEEKLY_LIMIT_USD`), in micro-USD. */
+  weeklyLimitMicroUsd: number;
+  /** Output tokens one step reserves. Agents take no `max_tokens`, so this is an allowance, not a cap. */
+  stepOutputReserve: number;
+};
+
+type KnowledgeBaseConfig = {
+  /** The frontend's `/help/kb.json` (`KB_BUNDLE_URL`); the docs tools, MCP and the agent prompt read it. */
+  bundleUrl: string;
+  /** How often the bundle is revalidated by ETag. */
+  refreshMs: number;
+};
+
+type PrivacyBannerConfig = {
+  /**
+   * The day the AI texts were published (`PRIVACY_BANNER_FROM`, `YYYY-MM-DD`, 00:00 UTC). The
+   * banner shows for 30 days from it, and only while AI connections is switched on.
+   */
+  from: Date | null;
+};
+
 type Config = {
   api: APIConfig;
   db: DBConfig;
@@ -160,6 +221,15 @@ type Config = {
   calendarSync?: CalendarSyncConfig;
   /** Push to phones straight through APNs. `undefined` means the log sender stands in. */
   apns?: ApnsConfig;
+  aiFeatures: AiFeaturesConfig;
+  assistant: AssistantConfig;
+  knowledgeBase: KnowledgeBaseConfig;
+  /**
+   * Sentry trace rates. `instrument.ts` reads the same variables before the
+   * app loads; parsing them here makes a bad value refuse to boot.
+   */
+  traceRates: TraceRates;
+  privacyBanner: PrivacyBannerConfig;
 };
 
 const VALID_ENVS = ["production", "dev", "test"] as const;
@@ -464,7 +534,160 @@ const parseApns = (): ApnsConfig | undefined => {
   return { keyId, teamId, topic, privateKey };
 };
 
+const parseSwitch = (key: string): boolean => {
+  const raw = process.env[key] ?? "";
+  if (raw === "" || raw === "false") return false;
+  if (raw === "true") return true;
+  throw new Error(`Invalid ${key}: "${raw}". Expected "true" or "false"`);
+};
+
+const ORGANIZATION_ID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+
+const parseAiFeatures = (): AiFeaturesConfig => {
+  const previewOrganizationIds = [
+    ...new Set(
+      (process.env.AI_PREVIEW_ORGANIZATION_IDS ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+    ),
+  ];
+  for (const id of previewOrganizationIds) {
+    if (!ORGANIZATION_ID.test(id)) {
+      throw new Error(
+        `AI_PREVIEW_ORGANIZATION_IDS contains "${id}", which is not an organization id`
+      );
+    }
+  }
+  return {
+    assistantEnabled: parseSwitch("ASSISTANT_ENABLED"),
+    aiConnectionsEnabled: parseSwitch("AI_CONNECTIONS_ENABLED"),
+    previewOrganizationIds,
+  };
+};
+
+const parsePositiveInt = (key: string, fallback: number): number => {
+  const raw = process.env[key];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${key}: "${raw}". Expected a positive integer`);
+  }
+  return value;
+};
+
+const parseWeeklyLimit = (): number => {
+  const raw = process.env.ASSISTANT_WEEKLY_LIMIT_USD;
+  if (!raw) return 10_000_000;
+  if (!/^\d+(\.\d{1,2})?$/.test(raw) || Number(raw) <= 0) {
+    throw new Error(
+      `Invalid ASSISTANT_WEEKLY_LIMIT_USD: "${raw}". Expected a positive amount in dollars`
+    );
+  }
+  return Math.round(Number(raw) * 1_000_000);
+};
+
+const parseAssistant = (): AssistantConfig => {
+  const driver =
+    process.env.ASSISTANT_DRIVER || (environment === "production" ? "managed" : "fake");
+  if (driver !== "managed" && driver !== "fake") {
+    throw new Error(`Invalid ASSISTANT_DRIVER: "${driver}". Expected "managed" or "fake"`);
+  }
+  if (environment === "production" && driver === "fake") {
+    throw new Error("ASSISTANT_DRIVER=fake must never be set when NODE_ENV=production");
+  }
+  const effort = process.env.ASSISTANT_EFFORT || "medium";
+  if (!(ASSISTANT_EFFORTS as readonly string[]).includes(effort)) {
+    throw new Error(
+      `Invalid ASSISTANT_EFFORT: "${effort}". Expected ${ASSISTANT_EFFORTS.join(", ")}`
+    );
+  }
+  const webhookSecret = process.env.ANTHROPIC_WEBHOOK_SECRET || undefined;
+  if (webhookSecret && !webhookSecret.startsWith("whsec_")) {
+    throw new Error("ANTHROPIC_WEBHOOK_SECRET must start with whsec_");
+  }
+  const model = process.env.ASSISTANT_MODEL || "claude-sonnet-5-5";
+  const screenModel = process.env.ASSISTANT_SCREEN_MODEL || "claude-haiku-5-5";
+  for (const [key, value] of [
+    ["ASSISTANT_MODEL", model],
+    ["ASSISTANT_SCREEN_MODEL", screenModel],
+  ] as const) {
+    if (!hasPrice(value)) throw new Error(`${key} ${value} has no row in the price table`);
+  }
+  const assistant: AssistantConfig = {
+    driver,
+    model,
+    screenModel,
+    effort: effort as AssistantEffort,
+    screenTimeoutMs: parsePositiveInt("ASSISTANT_SCREEN_TIMEOUT_MS", 5000),
+    agentId: process.env.ASSISTANT_AGENT_ID || undefined,
+    environmentId: process.env.ASSISTANT_ENVIRONMENT_ID || undefined,
+    chatTokenCeiling: parsePositiveInt("ASSISTANT_CHAT_TOKEN_CEILING", 100_000),
+    stepOutputReserve: parsePositiveInt("ASSISTANT_STEP_OUTPUT_RESERVE", 4096),
+    weeklyLimitMicroUsd: parseWeeklyLimit(),
+  };
+  // Non-enumerable, so a test diff, a log line or a spread of this block never carries them.
+  // The e2e setup loads `.env`, which holds the dev key.
+  return Object.defineProperties(assistant, {
+    apiKey: { value: process.env.ANTHROPIC_API_KEY || undefined, enumerable: false },
+    webhookSecret: { value: webhookSecret, enumerable: false },
+  });
+};
+
+const parseKnowledgeBase = (): KnowledgeBaseConfig => {
+  const raw = process.env.KB_BUNDLE_URL;
+  if (raw && !/^https?:\/\/[^/]/.test(raw)) {
+    throw new Error(`Invalid KB_BUNDLE_URL: "${raw}". Expected an absolute http(s) URL`);
+  }
+  return {
+    bundleUrl: raw || `${appUrl.replace(/\/+$/, "")}/help/kb.json`,
+    refreshMs: 5 * 60_000,
+  };
+};
+
+const parsePrivacyBanner = (): PrivacyBannerConfig => {
+  const raw = process.env.PRIVACY_BANNER_FROM;
+  if (!raw) return { from: null };
+  const from = new Date(`${raw}T00:00:00Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(raw) ||
+    Number.isNaN(from.getTime()) ||
+    from.toISOString().slice(0, 10) !== raw
+  ) {
+    throw new Error(`Invalid PRIVACY_BANNER_FROM: "${raw}". Expected a date as YYYY-MM-DD`);
+  }
+  return { from };
+};
+
+// Mirrored by the preconditions on aws_apprunner_service.main. A preview organization runs both
+// features with their switches off, so a non-empty list counts as on.
+const assertProductionAiConfig = (aiFeatures: AiFeaturesConfig): void => {
+  if (environment !== "production") return;
+  const preview = aiFeatures.previewOrganizationIds.length > 0;
+  const assistantOn = aiFeatures.assistantEnabled || preview;
+  const anyOn = assistantOn || aiFeatures.aiConnectionsEnabled;
+  const required = [
+    ...(assistantOn
+      ? [
+          "ANTHROPIC_API_KEY",
+          "ANTHROPIC_WEBHOOK_SECRET",
+          "ASSISTANT_AGENT_ID",
+          "ASSISTANT_ENVIRONMENT_ID",
+        ]
+      : []),
+    ...(anyOn ? ["KB_BUNDLE_URL"] : []),
+  ];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.join(", ")} must be set when NODE_ENV=production and an AI feature is on (ASSISTANT_ENABLED, AI_CONNECTIONS_ENABLED or AI_PREVIEW_ORGANIZATION_IDS)`
+    );
+  }
+};
+
 const authSecrets = parseAuthSecrets();
+const aiFeatures = parseAiFeatures();
+assertProductionAiConfig(aiFeatures);
 
 export const config: Config = {
   api: {
@@ -475,6 +698,7 @@ export const config: Config = {
       return n;
     })(),
     env: environment,
+    publicUrl: (process.env.BETTER_AUTH_URL || "http://localhost:8080").replace(/\/+$/, ""),
   },
   db: {
     database: databaseUrl,
@@ -524,6 +748,19 @@ export const config: Config = {
   organizationData: parseOrganizationData(),
   calendarSync: parseCalendarSync(),
   apns: parseApns(),
+  aiFeatures,
+  assistant: parseAssistant(),
+  knowledgeBase: parseKnowledgeBase(),
+  traceRates: parseTraceRates(process.env),
+  privacyBanner: parsePrivacyBanner(),
 };
 
-export type { ApnsConfig, CalendarSyncConfig, PaddleConfig };
+export type {
+  AiFeaturesConfig,
+  ApnsConfig,
+  AssistantConfig,
+  CalendarSyncConfig,
+  KnowledgeBaseConfig,
+  PaddleConfig,
+  PrivacyBannerConfig,
+};

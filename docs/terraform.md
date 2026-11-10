@@ -44,8 +44,9 @@ secret needs four more edits:
 App Runner injects one whole secret per env var and cannot pull a key out of a JSON secret, so give
 each variable its own plain-string secret.
 
-The two Apple `.p8` keys are the exception: a slot with no secret version, so nothing of theirs goes
-in `depends_on`. See [The Apple `.p8` keys](#the-apple-p8-keys).
+The two Apple `.p8` keys and the two Anthropic secrets are the exception: a slot with no secret
+version, so nothing of theirs goes in `depends_on`. See
+[Secrets Terraform never sees](#secrets-terraform-never-sees).
 
 ### Optional blocks
 
@@ -56,30 +57,42 @@ switch is unset. Guard the rest with `lifecycle { precondition { ... } }` in `se
 half-filled config fails at plan time rather than putting App Runner into a boot loop against
 `config.ts`.
 
-The two `.p8` slots break this shape: neither has a `count`, and `apple_client_id` and `apns_key_id`
-switch only their App Runner wiring. [The Apple `.p8` keys](#the-apple-p8-keys) explains why.
+The `.p8` and Anthropic slots break this shape: none has a `count`, and `apple_client_id`,
+`apns_key_id` and the Assistant switch only their App Runner wiring.
+[Secrets Terraform never sees](#secrets-terraform-never-sees) explains why.
 
-### The Apple `.p8` keys
+### Secrets Terraform never sees
 
-The Sign in with Apple key and the APNs key are the two secrets Terraform never sees. Terraform
-creates each slot in Secrets Manager, puts its ARN in `runtime_environment_secrets` and on the
-instance role, and stops there. It never writes a secret version, so neither key reaches state, a
-plan or `terraform.tfvars`, and no `TF_VAR_*` carries one.
+Four secrets never pass through Terraform: the Sign in with Apple key, the APNs key, the Anthropic
+API key and the Anthropic webhook signing secret. Terraform creates each slot in Secrets Manager,
+puts its ARN on the instance role and, while its switch is on, in `runtime_environment_secrets`,
+and stops there. It never writes a secret version, so no value reaches state, a plan or
+`terraform.tfvars`, and no `TF_VAR_*` carries one.
 
-`terraform/scripts/put-p8.sh apple|apns` uploads a key. It reads the 1Password Document item by
-title from the `Development` vault (`Flexi Day Sign in with Apple key` or `Flexi Day APNs key`),
-refuses anything that doesn't start with `-----BEGIN PRIVATE KEY-----` or that `openssl pkey` can't
-parse, and pipes the key into
-`aws secretsmanager put-secret-value --secret-string file:///dev/stdin`, so the key never lands in
-argv, shell history or the terminal. It prints the next step. App Runner reads a secret only at
-deployment, so a new value waits for the next one: a changed key id in `terraform.tfvars` redeploys
-on apply, and `--redeploy` starts one itself, which you need only when re-uploading the same key.
+`terraform/scripts/put-secret.sh apple|apns|anthropic-api-key|anthropic-webhook-secret` uploads one
+from the `Development` vault in 1Password:
 
-Each switched-on key has an ephemeral `aws_secretsmanager_secret_version` in `secrets.tf`. Terraform
-reads it on every plan and apply and stores nothing. A slot with no value fails the read, and a
-value without the PEM header fails its postcondition, so either one stops `terraform plan` instead
-of booting a backend that throws on the key. The check covers the header only: prove a new key
-locally first, in `.env` with its ids, where the backend parses it at boot.
+| Kind                       | 1Password item                                | Check                                    |
+| -------------------------- | --------------------------------------------- | ---------------------------------------- |
+| `apple`                    | `Flexi Day Sign in with Apple key` (Document) | PEM header, and `openssl pkey` parses it |
+| `apns`                     | `Flexi Day APNs key` (Document)               | PEM header, and `openssl pkey` parses it |
+| `anthropic-api-key`        | `Flexi Day Anthropic API key (prod)`          | `credential` starts with `sk-ant-`       |
+| `anthropic-webhook-secret` | `Flexi Day Anthropic webhook secret (prod)`   | `credential` starts with `whsec_`        |
+
+The script finds the item by title, then reads it by id, since an `op://` path can't hold the
+parentheses in `(prod)`. The value lands in a variable and is checked before anything is uploaded,
+so a failed read never stores an empty secret, then it is piped into
+`aws secretsmanager put-secret-value --secret-string file:///dev/stdin`, so it never lands in argv,
+shell history or the terminal. It prints the next step. App Runner reads a secret only at
+deployment, so a new value waits for the next one: an apply that changes the service redeploys,
+and `--redeploy` starts one itself, which you need when re-uploading into a slot already wired.
+
+Each switched-on slot has an ephemeral `aws_secretsmanager_secret_version` in `secrets.tf`.
+Terraform reads it on every plan and apply and stores nothing. A slot with no value fails the read,
+and a value without the expected start (the PEM header, `sk-ant-`, `whsec_`) fails its
+postcondition, so either one stops `terraform plan` instead of booting a backend that throws on
+the value. The check covers the start only: prove a new Apple key locally first, in `.env` with its
+ids, where the backend parses it at boot.
 
 Terraform no longer notices a value changed in AWS by hand. The `terraform.tfstate.backup` files
 written before this change still hold the old Apple key, like every other secret in state.
@@ -91,10 +104,10 @@ written before this change still hold the old Apple key, like every other secret
 `<project>-<environment>-apple-private-key` reaches the service as the runtime secret
 `APPLE_PRIVATE_KEY`. A precondition on the slot fails the plan when the switch is set without the
 other three ids, because `buildSocialProviders` registers Apple only when all five reach it. The
-key itself goes up with `put-p8.sh apple`.
+key itself goes up with `put-secret.sh apple`.
 
 The slot exists whether or not the switch is set, so in a fresh environment the key goes up before
-Apple is switched on: `terraform apply`, then `put-p8.sh apple`, then set `apple_client_id` and
+Apple is switched on: `terraform apply`, then `put-secret.sh apple`, then set `apple_client_id` and
 apply again. With the switch set and the slot empty, the plan stops before it changes anything.
 
 The key used to be written by Terraform from `TF_VAR_apple_private_key`. A `removed` block with
@@ -106,7 +119,7 @@ the key, in one sitting:
 
 1. Register a second key in Apple's portal (two per App ID) and save its `.p8` into the existing
    1Password item.
-2. `terraform/scripts/put-p8.sh apple`
+2. `terraform/scripts/put-secret.sh apple`
 3. Set the new `apple_key_id` in `terraform.tfvars`.
 4. `terraform apply`. The changed key id redeploys the service.
 5. Revoke the old key in Apple's portal.
@@ -130,7 +143,7 @@ fails the plan when `apns_key_id` is set without them.
 First rollout:
 
 1. `terraform apply` creates the empty slot.
-2. `terraform/scripts/put-p8.sh apns`
+2. `terraform/scripts/put-secret.sh apns`
 3. Set `apns_key_id` in `terraform.tfvars`.
 4. `terraform apply` wires the slot into App Runner and redeploys. If step 2 was skipped, the
    plan-time check stops this apply.
@@ -139,7 +152,7 @@ To replace the key, in one sitting:
 
 1. Create a new APNs key in Apple's portal and save its `.p8` into the existing `Flexi Day APNs key`
    item in 1Password, with its key id.
-2. `terraform/scripts/put-p8.sh apns`
+2. `terraform/scripts/put-secret.sh apns`
 3. Set the new `apns_key_id` in `terraform.tfvars`.
 4. `terraform apply`. The changed key id redeploys the service.
 5. Revoke the old key in Apple's portal.
@@ -177,6 +190,197 @@ Roll out in this order:
    (T-301). Before it, users in other companies' tenants cannot consent to the calendar scopes.
 
 Each flip changes only the App Runner env, which rolls out a new deployment.
+
+## Assistant and AI connections
+
+The Assistant and AI connections ship dark and are run from three places: the Terraform variables
+below, the Anthropic Console, and `scripts/assistant-setup.sh`, a wizard that walks the owner
+through every Console click, 1Password save, `gh` change and `terraform apply` in order. Every one
+of those steps is the owner's. A build ticket writes the Terraform and the wizard, runs `plan`, and
+stops.
+
+### What reaches App Runner
+
+| Variable                                                 | App Runner                                               | When                       |
+| -------------------------------------------------------- | -------------------------------------------------------- | -------------------------- |
+| `assistant_enabled`, `ai_connections_enabled`            | `ASSISTANT_ENABLED`, `AI_CONNECTIONS_ENABLED`            | always                     |
+| `ai_preview_organization_ids`                            | `AI_PREVIEW_ORGANIZATION_IDS`                            | when the list is not empty |
+| `assistant_driver`, `assistant_weekly_limit_usd`         | `ASSISTANT_DRIVER`, `ASSISTANT_WEEKLY_LIMIT_USD`         | always                     |
+| `kb_bundle_url`                                          | `KB_BUNDLE_URL`                                          | always                     |
+| `assistant_model`, `assistant_effort`                    | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT`                    | always                     |
+| `assistant_screen_model`, `assistant_screen_timeout_ms`  | `ASSISTANT_SCREEN_MODEL`, `ASSISTANT_SCREEN_TIMEOUT_MS`  | always                     |
+| `assistant_chat_token_ceiling`                           | `ASSISTANT_CHAT_TOKEN_CEILING`                           | always                     |
+| `assistant_step_output_reserve`                          | `ASSISTANT_STEP_OUTPUT_RESERVE`                          | always                     |
+| `sentry_traces_mcp_rate`, `sentry_traces_assistant_rate` | `SENTRY_TRACES_MCP_RATE`, `SENTRY_TRACES_ASSISTANT_RATE` | always                     |
+| `privacy_banner_from`                                    | `PRIVACY_BANNER_FROM`                                    | when it is not empty       |
+| `assistant_agent_id`, `assistant_environment_id`         | `ASSISTANT_AGENT_ID`, `ASSISTANT_ENVIRONMENT_ID`         | while the Assistant is on  |
+| slot `<project>-<environment>-anthropic-api-key`         | secret `ANTHROPIC_API_KEY`                               | while the Assistant is on  |
+| slot `<project>-<environment>-anthropic-webhook-secret`  | secret `ANTHROPIC_WEBHOOK_SECRET`                        | while the Assistant is on  |
+
+"The Assistant is on" means `assistant_enabled = true` or a non-empty preview list, because a
+preview organization gets both features with the switches off. `local.assistant_reachable` in
+`apprunner.tf` holds that rule, and `config.ts` applies the same one at boot. In production it
+refuses to start without the key, the webhook secret and both ids while the Assistant is on, and
+without `KB_BUNDLE_URL` while either feature is on. Terraform fails the plan first: a precondition
+on the service wants both ids, the ephemeral reads in `secrets.tf` want the two slots filled with
+`sk-ant-` and `whsec_` values, `kb_bundle_url` must be an https URL, and `assistant_driver` can't be
+`fake` in production.
+
+Both slots always exist, so the values go up before the Assistant is switched on, the same way as
+the `.p8` keys ([Secrets Terraform never sees](#secrets-terraform-never-sees)). The ids are public
+and live in `terraform.tfvars`. `pnpm run assistant:provision` prints them for the workspace whose
+key it runs with.
+
+### Anthropic workspaces
+
+| Workspace        | Spend limit | Email alert | Members         | Used by                                              |
+| ---------------- | ----------- | ----------- | --------------- | ---------------------------------------------------- |
+| `flexi-day-prod` | $200/month  | $100        | the owner alone | App Runner, through the two slots                    |
+| `flexi-day-dev`  | $20/month   | $10         | anyone working  | `.env` when `ASSISTANT_DRIVER=managed`               |
+| `flexi-day-eval` | $20/month   | $10         | anyone working  | the `assistant-eval` GitHub environment, `.env.eval` |
+
+The Console's session viewer shows every transcript to each Developer and Admin of a workspace,
+which is why `flexi-day-prod` has no member but the owner. Raising a limit is the owner's decision.
+When Anthropic refuses for a spend limit or for credits, every organization sees "Assistant
+unavailable" (`ASSISTANT_UNAVAILABLE`).
+
+### Setup
+
+`scripts/assistant-setup.sh <stage>` runs one stage. Each step says what to do, and nothing that
+writes a file, a secret, a GitHub setting or AWS runs until you confirm it.
+
+| Stage            | What it covers                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `dev`            | the dev workspace and its limits, the dev key into 1Password and `.env`, `assistant:provision`, the ids in `.env`               |
+| `eval`           | the eval workspace and its limits, the eval key into the `assistant-eval` environment and `.env.eval`                           |
+| `prod`           | the prod workspace, limits and members, both secrets, the prod provision, the webhook, OTel, Sentry's budget, the preview apply |
+| `required-check` | `assistant-eval` as a required check on `main`, once the eval workflow runs there                                               |
+| `launch`         | the texts, the notice email and AI connections (day 0), then the Assistant (day 30 after the notice, with a passing baseline)   |
+
+The `prod` stage, in order:
+
+1. Both repos deploy with both switches `false` and an empty preview list, and both Terraform roots
+   are applied. That creates the two empty slots and the frontend's headers policy.
+2. Create `flexi-day-prod`, set its limit and alert, and check its members.
+3. Create its key, save it in 1Password as `Flexi Day Anthropic API key (prod)`, and run
+   `terraform/scripts/put-secret.sh anthropic-api-key`.
+4. Run `pnpm run assistant:provision` with that key and put the two ids in `terraform.tfvars`.
+5. Register the webhook in the prod workspace: `https://api.flexi-day.com/api/webhooks/anthropic`,
+   event `session.status_idled`. Save its signing secret as
+   `Flexi Day Anthropic webhook secret (prod)` and run
+   `terraform/scripts/put-secret.sh anthropic-webhook-secret`.
+6. Add the OpenTelemetry destination to the `flexi-day-be` Sentry project, Metadata only, in the
+   prod workspace alone.
+7. Set Sentry's $10 a month pay-as-you-go budget if the organization has none.
+8. Add your own organization's id to `ai_preview_organization_ids` and apply. The plan reads both
+   slots and fails if either is empty, and the apply wires the secrets and ids in.
+
+The webhook route answers 404 until step 8, so a test delivery sent before then fails. Send it
+again after the apply. A missed webhook costs nothing lasting: opening the chat resumes a stalled
+turn.
+
+### Launch
+
+1. Day 0, the texts: set the frontend's `NEXT_PUBLIC_AI_TEXTS_PUBLISHED` repository variable to
+   the day (`YYYY-MM-DD`) and re-run its latest CI run on `main`. The legal pages build with the AI
+   wording and that date as "Last updated"; without the variable they keep today's wording.
+2. Day 0, the sub-processor notice: `pnpm run subprocessor-notice --dry-run` lists every owner who
+   would get it, and `--send` emails each of them once from the `flexi-day-subprocessor-notice`
+   template and records the send in `subprocessor_notices`. A re-run skips owners already sent and
+   retries failed sends. The command prints the first send time and the day the Assistant may open,
+   30 days later; record both on the launch task. `--send` needs an interactive terminal. The
+   wizard's `launch` stage runs both against production with the database URL from Secrets Manager
+   and the prod template.
+3. Day 0, once the pages are live and the notice email has gone out: set `privacy_banner_from` to
+   the same day and `ai_connections_enabled = true`, and apply. Every user then sees the Privacy
+   banner for 30 days, until they dismiss it.
+4. Day 30 after the first send, with a passing eval baseline on `main`: set
+   `assistant_enabled = true` and apply.
+
+Each flip changes only the App Runner env, which rolls out a new deployment.
+
+### Kill switches
+
+Set the switch to `false` and apply. The feature's routes answer 404 and the web app hides it once
+the deployment is live, a few minutes after the apply. Nothing is deleted: chats, AI connections and
+their grants stay, and retention keeps running.
+
+- `assistant_enabled = false` stops the Assistant for everyone off the preview list. With the list
+  empty too, the plan also takes the two secrets and the ids out of App Runner; the slots keep
+  their values for the next switch-on.
+- `ai_connections_enabled = false` stops `/mcp`, its OAuth discovery and consent for everyone off
+  the preview list, and the revoke on the AI usage page with them.
+- The AI usage page answers 404 once both are off for an organization.
+- A preview organization keeps both features while it is on the list. Remove its id and apply to
+  stop them there too.
+
+When the Anthropic side is what's wrong, the Console's workspace spend limit stops every call at
+once without a deploy. Users then see "Assistant unavailable".
+
+### Monitoring
+
+Every alert sits on a log, a metric or an error, never on a span: those three are unsampled, and
+`/mcp` traces at 5%. The owner creates the monitors and the dashboard in Sentry's `flexi-day-be`
+project after the first deploy with the code in it (the `prod` stage of the wizard walks through
+it). Notifications go by email. The signals and what each may carry are in `src/utils/aiSignals.ts`.
+
+| Alert                     | Signal                                                                       | Monitor                           | Fires when                       |
+| ------------------------- | ---------------------------------------------------------------------------- | --------------------------------- | -------------------------------- |
+| Assistant spend           | metric `assistant.cost_usd` (dollars, `purpose` main or screen)              | metric monitor, sum over 1 day    | above 30                         |
+| Reconcile drift           | log `assistant.reconcile_drift` (error, from `pnpm run assistant:reconcile`) | log monitor, count over 1 day     | 1 or more                        |
+| Screen failures           | metric `assistant.screen_failed` (`purpose`, `reason`)                       | metric monitor, count over 15 min | 5 or more                        |
+| Turn errors               | metric `assistant.session_error` (`errorType`, `retryStatus`)                | metric monitor, count over 15 min | 3 or more                        |
+| Webhook rejected          | metric `assistant.webhook_rejected` (`reason`)                               | metric monitor, count over 1 h    | 10 or more                       |
+| Webhook missed            | log `assistant.webhook_missed`                                               | log monitor, count over 1 h       | 1 or more                        |
+| Session budget reached    | log `session.budget_reached`                                                 | log monitor, count over 1 h       | 1 or more                        |
+| Context compacted         | log `agent.thread_context_compacted`                                         | log monitor, count over 1 h       | 1 or more                        |
+| Anthropic refused         | log `assistant.provider_refused` (spend limit or credits)                    | log monitor, count over 1 h       | 1 or more                        |
+| Webhook handler exception | errors on `/api/webhooks/anthropic`                                          | the existing high-priority alert  | as for any other unhandled error |
+
+`assistant.session_error` counts only errors that end a step, so Anthropic's own retries never
+reach it. `session.budget_reached` and a compaction should never happen: the meter raises the
+session budget before every step, and the chat length ceiling closes a chat before the harness
+compacts it. One occurrence means one of those is wrong.
+
+**Dashboard "Assistant and AI connections"**, no notifications:
+
+- `mcp.daily_limit_reached` log count per day, grouped by `organizationId` (with `limit`, the plan's
+  daily AI connection limit).
+- `assistant.weekly_limit_reached` log count per day, grouped by `organizationId` and `purpose`.
+- `assistant.cost_usd` sum per day, split by `purpose`.
+- `assistant.screen_failed` and `assistant.session_error` counts per hour.
+- `gen_ai.execute_tool` spans per hour by `gen_ai.tool.name` and `flexiday.tool.outcome`
+  (extrapolated from the sample).
+
+**Trace rates.** `/mcp` traces at `sentry_traces_mcp_rate` (5%) and the Assistant's routes and
+webhook at `sentry_traces_assistant_rate`, both ignoring the caller's sampling; `/health` never;
+OAuth and discovery at 0.2; the rest at 0.2 or the caller's decision. A sampled Assistant turn stores
+about 100 to 150 spans and a sampled `/mcp` call about 30 (T-727's spike). Once five organizations
+have the Assistant on, set `sentry_traces_assistant_rate = "0.2"` and apply, so the Assistant stays
+inside the organization's span quota.
+
+**Managed Agents spans.** The prod workspace's OpenTelemetry destination (Metadata only) sends
+Anthropic's turn and model-request spans to the same project. They nest under our trace because
+Sentry sends one `traceparent` on every Anthropic call, with the sampled flag of our decision, and
+Anthropic emits nothing for an unsampled one.
+
+### Rotating the Anthropic key
+
+1. Create a new key in `flexi-day-prod` and save it into the existing
+   `Flexi Day Anthropic API key (prod)` item, replacing the old value.
+2. `terraform/scripts/put-secret.sh anthropic-api-key --redeploy`
+3. Wait for the deployment to finish, then revoke the old key in the Console.
+
+A revoked key that is still deployed fails every Assistant turn, so step 3 waits for step 2.
+
+### Rotating the webhook secret
+
+1. Roll the endpoint's signing secret in the Console and save the new one into
+   `Flexi Day Anthropic webhook secret (prod)`.
+2. `terraform/scripts/put-secret.sh anthropic-webhook-secret --redeploy`
+
+Until the deployment is live, deliveries fail the signature check and log
+`assistant.webhook_rejected`. The turns they announced resume when their chat is opened.
 
 ## Adding an IAM permission
 
@@ -393,7 +597,8 @@ version 1 survives as better-auth's fallback key even after it leaves `BETTER_AU
 - No CI runs Terraform, and no package script wraps it. Nothing catches a variable declared but never
   injected, or a `terraform.tfvars.example` that has drifted from `variables.tf`. Reading both is the
   whole check.
-- Every secret but the two Apple `.p8` keys sits in plain text in `terraform.tfstate`, including the
+- Every secret but the two Apple `.p8` keys and the two Anthropic secrets sits in plain text in
+  `terraform.tfstate`, including the
   generated RDS password and the Better Auth secret. Passing a value as `TF_VAR_*` instead of
   writing it into `terraform.tfvars` changes nothing about that.
 - Raising `better_auth_secret_version` signs out every active user and voids pending email

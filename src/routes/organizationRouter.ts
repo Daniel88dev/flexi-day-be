@@ -1,4 +1,6 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
+import { requireAiFeature } from "../middleware/aiFeatureGuard.js";
+import { aiSettingsActor } from "../controllers/aiFeatures/aiSettingsActor.js";
 import { tryCatch } from "../middleware/tryCatch.js";
 import { bodyValidationMiddleware } from "../middleware/validationMiddleware.js";
 import {
@@ -26,6 +28,29 @@ import {
   validateDirectoryDeleteAllBody,
   validateEnableDirectoryBody,
 } from "../services/directory/types.js";
+import { handleGetAiSettings } from "../controllers/aiFeatures/handleGetAiSettings.js";
+import { handlePostEnableAssistant } from "../controllers/aiFeatures/handlePostEnableAssistant.js";
+import { handlePostDisableAssistant } from "../controllers/aiFeatures/handlePostDisableAssistant.js";
+import { handlePostAcceptAiAgreement } from "../controllers/aiFeatures/handlePostAcceptAiAgreement.js";
+import { handlePostEnableAiConnections } from "../controllers/aiFeatures/handlePostEnableAiConnections.js";
+import { handlePostAiConnectionsLevel } from "../controllers/aiFeatures/handlePostAiConnectionsLevel.js";
+import { handlePostDisableAiConnections } from "../controllers/aiFeatures/handlePostDisableAiConnections.js";
+import { handleGetAiUsage } from "../controllers/aiFeatures/handleGetAiUsage.js";
+import { handleGetAiUsageWeek } from "../controllers/aiFeatures/handleGetAiUsageWeek.js";
+import { handleDeleteOrganizationAiConnection } from "../controllers/aiFeatures/handleDeleteOrganizationAiConnection.js";
+import {
+  validateAiAgreementBody,
+  validateAiConnectionsLevelBody,
+  validateEnableAiConnectionsBody,
+  validateEnableAssistantBody,
+} from "../services/aiFeatures/types.js";
+
+const AI_FEATURES = ["assistant", "aiConnections"] as const;
+
+/** The AI routes' organization, resolved as their handlers do, for the kill-switch guard. */
+const administered = {
+  organizationId: async (req: Request) => (await aiSettingsActor(req)).organizationId,
+};
 
 export const organizationRouter = (): Router => {
   const app = Router();
@@ -300,7 +325,7 @@ export const organizationRouter = (): Router => {
    *           Not an admin of the organization, or a delegated admin, for whom
    *           `context.code` is `OWNER_ONLY`.
    *       '404':
-   *         description: No such organization
+   *         description: No such organization, or neither AI feature is available to it
    *       '422':
    *         description: An empty `organizationId`
    *       '503':
@@ -340,7 +365,7 @@ export const organizationRouter = (): Router => {
    *       '403':
    *         description: "Not the owner; `context.code` is `OWNER_ONLY` for a delegated admin"
    *       '404':
-   *         description: No such organization
+   *         description: No such organization, or neither AI feature is available to it
    *       '422':
    *         description: An empty `organizationId`
    */
@@ -908,6 +933,829 @@ export const organizationRouter = (): Router => {
     "/directory/agreement",
     bodyValidationMiddleware(validateDirectoryAgreementBody),
     tryCatch(handlePostAcceptDirectoryAgreement)
+  );
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     AiSettings:
+   *       type: object
+   *       required:
+   *         [organizationId, isOwner, ownerName, plan, assistant, aiConnections, agreement, memberNotice]
+   *       properties:
+   *         organizationId:
+   *           type: string
+   *         isOwner:
+   *           type: boolean
+   *         ownerName:
+   *           type: string
+   *           description: The owner's display name, for "Only <owner>, the owner, can change this".
+   *         plan:
+   *           type: string
+   *           enum: [FREE, PRO, ENTERPRISE, CUSTOM]
+   *         assistant:
+   *           type: object
+   *           required: [enabled, enabledAt, planAllows, weeklyLimitMicroUsd]
+   *           properties:
+   *             enabled:
+   *               type: boolean
+   *               description: The owner's setting. Off by default.
+   *             enabledAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *               description: When the owner last turned it on.
+   *             planAllows:
+   *               type: boolean
+   *               description: Enterprise or Custom, so the owner may turn it on.
+   *             weeklyLimitMicroUsd:
+   *               type: integer
+   *               description: The organization's Weekly limit on Assistant Usage, in micro-USD.
+   *         aiConnections:
+   *           type: object
+   *           required: [level, planAllows, dailyLimit, memberDailyLimit, grants]
+   *           properties:
+   *             level:
+   *               type: string
+   *               enum: [off, read, write]
+   *               description: |
+   *                 The owner's setting: Off (default), Read only or Read and
+   *                 write. A lapsed plan keeps it; the MCP calls are refused.
+   *             planAllows:
+   *               type: boolean
+   *               description: Any Paid plan (Pro, Enterprise, Custom, grace included).
+   *             dailyLimit:
+   *               type: integer
+   *               description: |
+   *                 The daily AI connection limit: tool calls over `/mcp` per
+   *                 UTC day for the whole organization. Pro 5000, Enterprise
+   *                 and Custom 20000, 0 on Free.
+   *             memberDailyLimit:
+   *               type: integer
+   *               description: The member daily limit, tool calls per member per UTC day (1000).
+   *             grants:
+   *               type: array
+   *               description: |
+   *                 Every AI connection in the organization, by app name. The
+   *                 owner's dialogs name what lowering to Read only (the
+   *                 `write` ones) or turning off (all) disconnects.
+   *               items:
+   *                 type: object
+   *                 required: [grantId, app, userId, personName, access]
+   *                 properties:
+   *                   grantId:
+   *                     type: string
+   *                   app:
+   *                     $ref: '#/components/schemas/AiConnectionApp'
+   *                   userId:
+   *                     type: string
+   *                   personName:
+   *                     type: string
+   *                   access:
+   *                     type: string
+   *                     enum: [read, write]
+   *         agreement:
+   *           type: object
+   *           required: [currentVersion, acceptedVersion, acceptedAt, acceptedByName, newVersionReady]
+   *           properties:
+   *             currentVersion:
+   *               type: integer
+   *             acceptedVersion:
+   *               type: integer
+   *               nullable: true
+   *               description: The newest version this organization accepted.
+   *             acceptedAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *             acceptedByName:
+   *               type: string
+   *               nullable: true
+   *             newVersionReady:
+   *               type: boolean
+   *               description: |
+   *                 The Assistant or AI connections is on and the newest
+   *                 acceptance is older than the current version.
+   *         memberNotice:
+   *           type: object
+   *           description: |
+   *             The members' notice "Tell members" sends, in both languages, so
+   *             the owner can copy the same text.
+   *           properties:
+   *             assistant:
+   *               type: object
+   *               properties:
+   *                 en:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *                 cs:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *             aiConnections:
+   *               type: object
+   *               properties:
+   *                 en:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *                 cs:
+   *                   $ref: '#/components/schemas/NoticeText'
+   *     NoticeText:
+   *       type: object
+   *       required: [title, body]
+   *       properties:
+   *         title:
+   *           type: string
+   *         body:
+   *           type: string
+   */
+
+  /**
+   * @openapi
+   * /api/organization/ai:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: The AI settings, the AI features agreement and the members' notice
+   *     description: |
+   *       Organization admins only, owner and delegate alike. Answers the
+   *       Assistant and AI connections settings, whether the plan allows each,
+   *       the agreement state and the texts "Tell members" sends. Says nothing about the kill
+   *       switches; `GET /api/ai-features/availability` does.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The AI settings
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '400':
+   *         description: |
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization, or the caller has none yet
+   */
+  app.get("/ai", tryCatch(handleGetAiSettings));
+
+  /**
+   * @openapi
+   * /api/organization/ai/assistant/enable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn the Assistant on and accept the AI features agreement
+   *     description: |
+   *       Owner only, Enterprise or Custom only. Turns the Assistant setting
+   *       on and records an acceptance of the current AI features agreement
+   *       version, once per organization and version: turning it on again
+   *       under a version already accepted writes no second row.
+   *
+   *       With `tellMembers`, after the commit every person with a bound
+   *       open Employment, Deleted accounts and the owner aside, gets one
+   *       `assistant_enabled` Notification, in-app and pushed passively,
+   *       never mailed. Its text is `memberNotice.assistant` in the reader's
+   *       language.
+   *
+   *       Answers 404 while the Assistant is unavailable to the
+   *       organization: `ASSISTANT_ENABLED` off and the organization not in
+   *       `AI_PREVIEW_ORGANIZATION_IDS`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - agreementVersion
+   *             properties:
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *                 description: The agreement version the owner was shown.
+   *               tellMembers:
+   *                 type: boolean
+   *                 default: false
+   *                 description: Send the members' notice once the Assistant is on.
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '400':
+   *         description: No unambiguous default organization
+   *       '402':
+   *         description: |
+   *           The plan is Free or Pro (`reason: PLAN_LIMIT`,
+   *           `code: ASSISTANT_PLAN_REQUIRED`).
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization, or the Assistant is unavailable to it
+   *       '409':
+   *         description: |
+   *           `ASSISTANT_ALREADY_ON`, or `AGREEMENT_VERSION_STALE` when the
+   *           version sent is not the current one.
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/assistant/enable",
+    bodyValidationMiddleware(validateEnableAssistantBody),
+    tryCatch(handlePostEnableAssistant)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/assistant/disable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn the Assistant off
+   *     description: |
+   *       Owner only, on every plan, whatever the kill switch says. Members
+   *       lose the Assistant at once; chats stay until retention deletes
+   *       them. Calling it while the Assistant is off changes nothing.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization
+   */
+  app.post("/ai/assistant/disable", tryCatch(handlePostDisableAssistant));
+
+  /**
+   * @openapi
+   * /api/organization/ai/agreement:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Accept a new version of the AI features agreement
+   *     description: |
+   *       Owner only, on every plan, while the Assistant or AI connections is on. Records an
+   *       acceptance of the current version once. Until the owner accepts,
+   *       nothing pauses; the web shows the owner a banner.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - agreementVersion
+   *             properties:
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the acceptance
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization
+   *       '409':
+   *         description: |
+   *           `AI_FEATURES_OFF` while the Assistant and AI connections are both off, or
+   *           `AGREEMENT_VERSION_STALE`.
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/agreement",
+    bodyValidationMiddleware(validateAiAgreementBody),
+    tryCatch(handlePostAcceptAiAgreement)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/enable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn AI connections on and accept the AI features agreement
+   *     description: |
+   *       Owner only, on any Paid plan (Pro, Enterprise, Custom, grace
+   *       included). Turns AI connections on at `level` ("Start with") and
+   *       records an acceptance of the current AI features agreement version,
+   *       once per organization and version: a version the Assistant's
+   *       turn-on already accepted writes no second row. Writes a setting
+   *       change log row.
+   *
+   *       With `tellMembers`, after the commit every person with a bound open
+   *       Employment, Deleted accounts and the owner aside, gets one
+   *       `ai_connections_enabled` Notification linking to Settings, in-app and
+   *       pushed passively, never mailed. Its text is
+   *       `memberNotice.aiConnections` in the reader's language.
+   *
+   *       Answers 404 while AI connections are unavailable to the
+   *       organization: `AI_CONNECTIONS_ENABLED` off and the organization not
+   *       in `AI_PREVIEW_ORGANIZATION_IDS`.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - level
+   *               - agreementVersion
+   *             properties:
+   *               level:
+   *                 type: string
+   *                 enum: [read, write]
+   *                 description: The level to start with.
+   *               agreementVersion:
+   *                 type: integer
+   *                 minimum: 1
+   *                 description: The agreement version the owner was shown.
+   *               tellMembers:
+   *                 type: boolean
+   *                 default: false
+   *                 description: Send the members' notice once AI connections are on.
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '400':
+   *         description: No unambiguous default organization
+   *       '402':
+   *         description: |
+   *           The plan is Free (`reason: PLAN_LIMIT`,
+   *           `code: AI_CONNECTIONS_PLAN_REQUIRED`).
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization, or AI connections are unavailable to it
+   *       '409':
+   *         description: |
+   *           `AI_CONNECTIONS_ALREADY_ON`, or `AGREEMENT_VERSION_STALE` when the
+   *           version sent is not the current one.
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/connections/enable",
+    bodyValidationMiddleware(validateEnableAiConnectionsBody),
+    tryCatch(handlePostEnableAiConnections)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/level:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Switch AI connections between Read only and Read and write
+   *     description: |
+   *       Owner only, while AI connections are on. Raising to `write` needs a
+   *       Paid plan and AI connections available to the organization, and no
+   *       new agreement acceptance. Lowering to `read` works on every plan,
+   *       whatever the kill switch says, and deletes every AI connection in
+   *       the organization holding write access, in the same transaction.
+   *       Each change writes a setting change log row; sending the current
+   *       level changes nothing.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required:
+   *               - level
+   *             properties:
+   *               level:
+   *                 type: string
+   *                 enum: [read, write]
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '402':
+   *         description: |
+   *           Raising on Free (`reason: PLAN_LIMIT`,
+   *           `code: AI_CONNECTIONS_PLAN_REQUIRED`).
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization, or raising while AI connections are unavailable to it
+   *       '409':
+   *         description: "`AI_CONNECTIONS_OFF`: turn AI connections on first."
+   *       '422':
+   *         description: Invalid body
+   */
+  app.post(
+    "/ai/connections/level",
+    bodyValidationMiddleware(validateAiConnectionsLevelBody),
+    tryCatch(handlePostAiConnectionsLevel)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/disable:
+   *   post:
+   *     tags:
+   *       - Organization
+   *     summary: Turn AI connections off
+   *     description: |
+   *       Owner only, on every plan, whatever the kill switch says. Deletes
+   *       every AI connection in the organization and writes a setting change
+   *       log row, in one transaction. Calling it while AI connections are off
+   *       changes nothing.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The AI settings after the change
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiSettings'
+   *       '403':
+   *         description: |
+   *           Caller does not administer the organization, or is not its owner
+   *           (`code: OWNER_ONLY`).
+   *       '404':
+   *         description: No such organization
+   */
+  app.post("/ai/connections/disable", tryCatch(handlePostDisableAiConnections));
+
+  /**
+   * @openapi
+   * components:
+   *   schemas:
+   *     AiUsageApp:
+   *       type: object
+   *       required: [grantId, app, access, connectedAt, lastUsedAt]
+   *       properties:
+   *         grantId:
+   *           type: string
+   *         app:
+   *           $ref: '#/components/schemas/AiConnectionApp'
+   *         access:
+   *           type: string
+   *           enum: [read, write]
+   *         connectedAt:
+   *           type: string
+   *           format: date-time
+   *         lastUsedAt:
+   *           type: string
+   *           format: date-time
+   *           description: The consent, or the grant's newest refresh, whichever is later.
+   *     AiUsagePerson:
+   *       type: object
+   *       required: [userId, name, assistantMicroUsd, refusedTurns]
+   *       properties:
+   *         userId:
+   *           type: string
+   *           nullable: true
+   *           description: Null for Usage whose account link was erased.
+   *         name:
+   *           type: string
+   *           nullable: true
+   *           description: |
+   *             The name the organization shows. Null shows as "Deleted
+   *             account": an erased link, or a Deleted account the
+   *             organization keeps no copy of.
+   *         assistantMicroUsd:
+   *           type: integer
+   *           description: Assistant Usage in the week, settled plus reserved, in micro-USD.
+   *         refusedTurns:
+   *           type: integer
+   *           description: Rejected turns in the week, off topic and attack together. No content.
+   *     AiUsage:
+   *       type: object
+   *       required: [organizationId, organizationName, assistant, aiConnections, people]
+   *       properties:
+   *         organizationId:
+   *           type: string
+   *         organizationName:
+   *           type: string
+   *         assistant:
+   *           type: object
+   *           required:
+   *             [on, weekStart, usedMicroUsd, limitMicroUsd, resetsAt, reached, limitReachedAt, weeks]
+   *           properties:
+   *             on:
+   *               type: boolean
+   *               description: Turned on, on a plan that includes it, and available to the organization.
+   *             weekStart:
+   *               type: string
+   *               format: date
+   *               description: Monday of the current UTC week, from the database clock.
+   *             usedMicroUsd:
+   *               type: integer
+   *               description: |
+   *                 Used this week: settled plus reserved, the same figure the
+   *                 meter checks, so answers being written count.
+   *             limitMicroUsd:
+   *               type: integer
+   *               description: The Weekly limit.
+   *             resetsAt:
+   *               type: string
+   *               format: date-time
+   *               description: Next Monday 00:00 UTC.
+   *             reached:
+   *               type: boolean
+   *               description: No turn can start until the reset; the Assistant is paused for everyone.
+   *             limitReachedAt:
+   *               type: string
+   *               format: date-time
+   *               nullable: true
+   *               description: When this week's Usage first passed that point.
+   *             weeks:
+   *               type: array
+   *               description: |
+   *                 Past weeks with Usage in the last year, newest first. A
+   *                 week counts as limit-reached by the same rule as `reached`.
+   *               items:
+   *                 type: object
+   *                 required: [weekStart, usedMicroUsd, limitReachedAt, perPerson]
+   *                 properties:
+   *                   weekStart:
+   *                     type: string
+   *                     format: date
+   *                   usedMicroUsd:
+   *                     type: integer
+   *                   limitReachedAt:
+   *                     type: string
+   *                     format: date-time
+   *                     nullable: true
+   *                   perPerson:
+   *                     type: boolean
+   *                     description: Within 180 days, so the week opens to a per-person split.
+   *         aiConnections:
+   *           type: object
+   *           required: [on, dailyLimit, memberDailyLimit, callsToday, resetsAt, days]
+   *           properties:
+   *             on:
+   *               type: boolean
+   *               description: Read only or Read and write, on a Paid plan, and available.
+   *             dailyLimit:
+   *               type: integer
+   *               description: The daily AI connection limit (0 on Free).
+   *             memberDailyLimit:
+   *               type: integer
+   *             callsToday:
+   *               type: integer
+   *               description: Counted `tools/call` requests this UTC day.
+   *             resetsAt:
+   *               type: string
+   *               format: date-time
+   *               description: Next UTC midnight.
+   *             days:
+   *               type: array
+   *               description: The last 14 UTC days, oldest first, today last; days with no calls read 0.
+   *               items:
+   *                 type: object
+   *                 required: [day, calls, limitReachedAt]
+   *                 properties:
+   *                   day:
+   *                     type: string
+   *                     format: date
+   *                   calls:
+   *                     type: integer
+   *                   limitReachedAt:
+   *                     type: string
+   *                     format: date-time
+   *                     nullable: true
+   *                     description: The first call the daily AI connection limit refused that day.
+   *         people:
+   *           type: array
+   *           description: |
+   *             Everyone with Assistant Usage or a rejected turn this week, AI
+   *             connection calls today, or an AI connection in the
+   *             organization. By Usage, then calls; Deleted accounts last.
+   *           items:
+   *             allOf:
+   *               - $ref: '#/components/schemas/AiUsagePerson'
+   *               - type: object
+   *                 required: [callsToday, apps]
+   *                 properties:
+   *                   callsToday:
+   *                     type: integer
+   *                     description: Calls today, against the member daily limit.
+   *                   apps:
+   *                     type: array
+   *                     items:
+   *                       $ref: '#/components/schemas/AiUsageApp'
+   */
+
+  /**
+   * @openapi
+   * /api/organization/ai/usage:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: The AI usage page
+   *     description: |
+   *       Owner and org admins. This week's Assistant Usage against the
+   *       Weekly limit and past weeks from the ledger, AI connection calls
+   *       for the last 14 days from the daily counters, and one row per
+   *       person with Usage, rejected turns, calls today and their AI
+   *       connections. No message content.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The organization's AI usage
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/AiUsage'
+   *       '400':
+   *         description: |
+   *           `organizationId` omitted by a delegated admin who owns no
+   *           organization and administers several.
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: |
+   *           No such organization, or the caller has none yet, or neither AI
+   *           feature is available to the organization (kill switches off and
+   *           not on the preview list)
+   */
+  app.get("/ai/usage", requireAiFeature(AI_FEATURES, administered), tryCatch(handleGetAiUsage));
+
+  /**
+   * @openapi
+   * /api/organization/ai/usage/weeks/{weekStart}:
+   *   get:
+   *     tags:
+   *       - Organization
+   *     summary: One past week of Assistant Usage, per person
+   *     description: |
+   *       Owner and org admins. The week's total, and the per-person split
+   *       while the week started within the last 180 days; `people` is null
+   *       for older weeks.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: weekStart
+   *         required: true
+   *         description: The week's Monday.
+   *         schema:
+   *           type: string
+   *           format: date
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '200':
+   *         description: The week
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               required: [weekStart, usedMicroUsd, people]
+   *               properties:
+   *                 weekStart:
+   *                   type: string
+   *                   format: date
+   *                 usedMicroUsd:
+   *                   type: integer
+   *                 people:
+   *                   type: array
+   *                   nullable: true
+   *                   description: By Usage; Deleted accounts last.
+   *                   items:
+   *                     $ref: '#/components/schemas/AiUsagePerson'
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: No such organization, or neither AI feature is available to it
+   *       '422':
+   *         description: "`weekStart` is not a date"
+   */
+  app.get(
+    "/ai/usage/weeks/:weekStart",
+    requireAiFeature(AI_FEATURES, administered),
+    tryCatch(handleGetAiUsageWeek)
+  );
+
+  /**
+   * @openapi
+   * /api/organization/ai/connections/{grantId}:
+   *   delete:
+   *     tags:
+   *       - Organization
+   *     summary: Revoke a member's AI connection
+   *     description: |
+   *       Owner and org admins, whatever the setting. Answers 404 while AI
+   *       connections are unavailable to the organization (the kill switch
+   *       off and the organization not on the preview list).
+   *       Deletes the grant's consent and every refresh and access token for
+   *       the same member, app and organization, in one transaction. The
+   *       app's next MCP call answers 401 `invalid_token` and its next
+   *       refresh `invalid_grant`. The member can connect it again while AI
+   *       connections are on.
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: grantId
+   *         required: true
+   *         schema:
+   *           type: string
+   *       - in: query
+   *         name: organizationId
+   *         schema:
+   *           type: string
+   *     responses:
+   *       '204':
+   *         description: Revoked
+   *       '403':
+   *         description: Caller does not administer this organization
+   *       '404':
+   *         description: |
+   *           No such organization, no such grant in it, or AI connections
+   *           unavailable to it
+   */
+  app.delete(
+    "/ai/connections/:grantId",
+    requireAiFeature("aiConnections", administered),
+    tryCatch(handleDeleteOrganizationAiConnection)
   );
 
   return app;

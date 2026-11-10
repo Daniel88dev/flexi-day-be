@@ -1,0 +1,192 @@
+name: assistant-eval
+
+# Real model calls in the flexi-day-eval workspace, capped at $20 a month.
+# The owner chose the triggers (T-731, T-697): the smoke set on pull requests
+# that touch an Assistant path, the full suite on main against the live help
+# bundle once a month (about $8, so help-article changes that hurt answers show
+# up), and the full suite otherwise only by manual dispatch. A pull request
+# that touches no Assistant path passes in seconds.
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "smoke: one or two cases per part; full: every case"
+        type: choice
+        options: [smoke, full]
+        default: smoke
+      model:
+        description: "Model id to run instead of ASSISTANT_MODEL's default"
+        type: string
+        default: ""
+      effort:
+        description: "Effort to run instead of ASSISTANT_EFFORT's default"
+        type: choice
+        options: [default, low, medium, high, xhigh, max]
+        default: default
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 1 * *" # the 1st of each month, 06:00 UTC, on main: full suite, live bundle
+
+env:
+  # What a pull request that touches an Assistant path runs: full or smoke.
+  PR_SCOPE: smoke
+
+# A new push to a pull request cancels its run in flight; other runs queue.
+concurrency:
+  group: assistant-eval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  changes:
+    name: Assistant paths changed
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Diff against the base branch
+        id: diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: scripts/assistant-eval-changes.sh "origin/$BASE_REF" HEAD | tee -a "$GITHUB_OUTPUT"
+
+      # Secrets never reach a fork's pull request, so the eval can't run there.
+      - name: Refuse a fork that touches the Assistant
+        if: steps.diff.outputs.run == 'true' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "::error::This pull request changes Assistant paths, but a fork's pull request gets no eval key. A maintainer has to run the eval from a branch in this repository."
+          exit 1
+
+  eval:
+    name: Run the eval
+    needs: changes
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' ||
+      (needs.changes.result == 'success' && needs.changes.outputs.run == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: assistant-eval
+    permissions:
+      contents: read
+      pull-requests: write
+
+    services:
+      postgres:
+        image: postgres:15
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node and pnpm, install dependencies
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          node-version-file: .nvmrc
+          cache: true
+          require-lockfile: true
+
+      # `src/config.ts` validates these at import; the eval makes its own database per run.
+      - name: Set up environment variables
+        run: |
+          {
+            echo "PORT=8080"
+            echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"
+            echo "BETTER_AUTH_URL=http://localhost:8080"
+            echo "TRUSTED_ORIGINS=http://localhost:3000,flexiday://"
+            echo "EVAL_DATABASE_SERVER=postgresql://postgres:password@localhost:5432/postgres"
+          } >> "$GITHUB_ENV"
+
+      - name: Choose the cases
+        id: args
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE: ${{ inputs.scope }}
+          MODEL: ${{ inputs.model }}
+          EFFORT: ${{ inputs.effort }}
+        run: |
+          args=()
+          if [ "$EVENT" = "schedule" ]; then args+=(--bundle live); fi
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$SCOPE" = "smoke" ]; then args+=(--smoke); fi
+          if [ "$EVENT" = "pull_request" ] && [ "$PR_SCOPE" = "smoke" ]; then args+=(--smoke); fi
+          if [ -n "$MODEL" ]; then args+=(--model "$MODEL"); fi
+          if [ -n "$EFFORT" ] && [ "$EFFORT" != "default" ]; then args+=(--effort "$EFFORT"); fi
+          echo "args=${args[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Run the eval
+        env:
+          ANTHROPIC_EVAL_API_KEY: ${{ secrets.ANTHROPIC_EVAL_API_KEY }}
+          ARGS: ${{ steps.args.outputs.args }}
+        run: |
+          # shellcheck disable=SC2086 # ARGS holds flags only; splitting them is intended
+          pnpm run eval:assistant $ARGS
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assistant-eval-report
+          path: |
+            eval-results/report.json
+            eval-results/summary.md
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Update the pull request comment
+        if: always() && github.event_name == 'pull_request' && hashFiles('eval-results/summary.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- assistant-eval -->")) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@eval-results/summary.md > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body-file eval-results/summary.md
+          fi
+
+  # The required check: green when the eval passed or had nothing to run.
+  assistant-eval:
+    name: assistant-eval
+    needs: [changes, eval]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Decide
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          EVAL: ${{ needs.eval.result }}
+        run: |
+          echo "changes: $CHANGES, eval: $EVAL"
+          if [ "$CHANGES" = "failure" ] || [ "$CHANGES" = "cancelled" ]; then exit 1; fi
+          if [ "$EVAL" = "success" ] || [ "$EVAL" = "skipped" ]; then exit 0; fi
+          exit 1

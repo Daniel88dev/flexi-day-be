@@ -160,7 +160,7 @@ export const validatePostVacation = z
   .object({
     groupId: z.uuid(),
     // Book on behalf of this member instead of the caller. Requires group
-    // admin rights; the handler authorizes it. Plain string, not uuid: real
+    // admin rights; `createRequest` authorizes it. Plain string, not uuid: real
     // accounts carry better-auth's 32-char alphanumeric ids.
     userId: z.string().min(1).optional(),
     from: z.coerce.date(),

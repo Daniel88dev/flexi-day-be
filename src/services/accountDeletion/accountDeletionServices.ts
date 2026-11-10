@@ -33,6 +33,8 @@ import AppError from "../../utils/appError.js";
 import { deleteStoredBytes } from "../attachment/attachmentServices.js";
 import { lockOrganization } from "../organization/organizationServices.js";
 import { updateGroupManager } from "../group/groupServices.js";
+import { deleteOrganizationGrants, deleteUserGrants } from "../aiConnections/grants.js";
+import { deleteOrganizationChats, deleteUserChats } from "../assistant/chatLifecycle.js";
 import type { AttachmentType } from "../attachment/types.js";
 import { DeletionRefusal, type DeletionBlocker, type DeletionConfirmation } from "./types.js";
 
@@ -244,6 +246,7 @@ const closeOpenSessions = async (userId: string, at: Date, tx: DbTransaction) =>
         sessionId: session.id,
         eventType: attendanceEventType.ClockOut,
         changedByUserId: null,
+        channel: "app",
         before: { endedAt: null, closedBy: null },
         after: {
           endedAt: at,
@@ -279,6 +282,7 @@ const cancelPendingRequests = async (userId: string, at: Date, tx: DbTransaction
       eventType: vacationEventType.Cancelled,
       actorUserId: null,
       reason: ACCOUNT_DELETED_REASON,
+      channel: "app",
     })),
     tx
   );
@@ -329,6 +333,8 @@ const deleteAccountData = async (userId: string, tx: DbTransaction) => {
   await tx.delete(notifications).where(eq(notifications.userId, userId));
   await tx.delete(calendarConnection).where(eq(calendarConnection.userId, userId));
   await tx.delete(calendarSync).where(eq(calendarSync.userId, userId));
+  await deleteUserGrants(userId, tx);
+  await deleteUserChats(userId, tx);
   // A tombstone rather than a delete, so the phones that synced it drop it.
   await removeBirthday(userId, tx);
 };
@@ -456,6 +462,8 @@ export const deleteAccountRows = async (
         .returning({ id: groups.id })
     ).length;
     await tx.delete(subscriptions).where(inArray(subscriptions.organizationId, ownedIds));
+    await deleteOrganizationGrants({ organizationIds: ownedIds }, tx);
+    await deleteOrganizationChats(ownedIds, tx);
     await tx.delete(organizations).where(inArray(organizations.id, ownedIds));
   }
 

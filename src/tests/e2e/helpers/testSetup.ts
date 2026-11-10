@@ -3,7 +3,7 @@ import { user } from "../../../db/schema/auth-schema.js";
 import { groups } from "../../../db/schema/group-schema.js";
 import { vacation } from "../../../db/schema/vacation-schema.js";
 import { groupUsers } from "../../../db/schema/group-users-schema.js";
-import { session } from "../../../db/schema/auth-schema.js";
+import { jwks, oauthClient, session } from "../../../db/schema/auth-schema.js";
 import { v4 as uuidv4 } from "uuid";
 import { generateId } from "better-auth";
 import { eq } from "drizzle-orm";
@@ -137,6 +137,10 @@ export async function cleanupTestData() {
     await db.delete(paddleEvents);
     // Before `user`: support_access deliberately has no ON DELETE cascade.
     await db.delete(supportAccess);
+    // Consents and tokens go with their client. The signing key goes too, so
+    // a test that plants one under its own secret leaves nothing unreadable.
+    await db.delete(oauthClient);
+    await db.delete(jwks);
     await db.delete(user);
 
     // Clear cache

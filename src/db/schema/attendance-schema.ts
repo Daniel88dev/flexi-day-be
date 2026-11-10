@@ -14,6 +14,7 @@ import { sql } from "drizzle-orm";
 import { employments } from "./employment-schema.js";
 import { user } from "./auth-schema.js";
 import { enumToPgEnum } from "../../utils/enumToPgEnum.js";
+import { changeChannelEnum } from "./change-channel-schema.js";
 
 /** Who ended a session: the person themselves, an admin correcting it, or the sweep. */
 export enum attendanceClosedBy {
@@ -190,6 +191,7 @@ export const attendanceEvents = pgTable(
     /** The fields the change touched, as they stood before and after it. */
     before: jsonb("before"),
     after: jsonb("after"),
+    channel: changeChannelEnum("channel").default("app").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("idx_attendance_events_session_id").on(table.sessionId, table.createdAt)]

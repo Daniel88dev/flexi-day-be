@@ -64,6 +64,7 @@ const seed = async () => {
     vacationId: alicePending,
     eventType: vacationEventType.Comment,
     actorUserId: ann.id,
+    channel: "app",
     reason: "alice-private-comment",
   });
   const aliceRejected = await addLeave(team, alice.id, day(11), {

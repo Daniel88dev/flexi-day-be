@@ -289,7 +289,7 @@ variable "apple_team_id" {
 }
 
 variable "apple_key_id" {
-  description = "Key ID of the Sign in with Apple key, whose .p8 goes up through terraform/scripts/put-p8.sh apple (public; plain env var). Required if apple_client_id is set."
+  description = "Key ID of the Sign in with Apple key, whose .p8 goes up through terraform/scripts/put-secret.sh apple (public; plain env var). Required if apple_client_id is set."
   type        = string
   default     = ""
 }
@@ -301,7 +301,7 @@ variable "apple_app_bundle_identifier" {
 }
 
 variable "apns_key_id" {
-  description = "Key ID of the APNs key, whose .p8 goes up through terraform/scripts/put-p8.sh apns (public; plain env var). Set it only once the key is uploaded; it wires APNS_* into App Runner. Leave empty to keep push off."
+  description = "Key ID of the APNs key, whose .p8 goes up through terraform/scripts/put-secret.sh apns (public; plain env var). Set it only once the key is uploaded; it wires APNS_* into App Runner. Leave empty to keep push off."
   type        = string
   default     = ""
 }
@@ -317,6 +317,187 @@ variable "calendar_sync_microsoft_enabled" {
   description = "Turns on Microsoft calendar direct sync (CALENDAR_SYNC_MICROSOFT_ENABLED). Needs microsoft_client_id and microsoft_client_secret set. Keep false until Entra publisher verification is done (T-301); before it, users in other companies' tenants cannot consent to the calendar scopes."
   type        = bool
   default     = false
+}
+
+# AI features: the Assistant and AI connections (docs/terraform.md has the launch order)
+variable "assistant_enabled" {
+  description = "Kill switch for the Assistant (ASSISTANT_ENABLED). Off, its routes answer 404 and the web app hides it; data stays. Organizations in ai_preview_organization_ids get it either way."
+  type        = bool
+  default     = false
+}
+
+variable "ai_connections_enabled" {
+  description = "Kill switch for AI connections (AI_CONNECTIONS_ENABLED): /mcp, its OAuth discovery and consent. Off, those answer 404 and the web app hides them; grants stay. Organizations in ai_preview_organization_ids get it either way."
+  type        = bool
+  default     = false
+}
+
+variable "ai_preview_organization_ids" {
+  description = "Organization ids that get both AI features while a switch is off (AI_PREVIEW_ORGANIZATION_IDS). Starts with the operator's own organization."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for id in var.ai_preview_organization_ids :
+      can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", id))
+    ])
+    error_message = "Each ai_preview_organization_ids entry must be an organization id (a UUID)."
+  }
+}
+
+variable "assistant_driver" {
+  description = "How the Assistant runs its sessions (ASSISTANT_DRIVER): managed (Claude Managed Agents) or fake (scripted, no Anthropic call). The backend refuses fake in production."
+  type        = string
+  default     = "managed"
+
+  validation {
+    condition     = contains(["managed", "fake"], var.assistant_driver)
+    error_message = "assistant_driver must be \"managed\" or \"fake\"."
+  }
+}
+
+variable "assistant_weekly_limit_usd" {
+  description = "Each organization's Weekly limit on Assistant Usage in dollars (ASSISTANT_WEEKLY_LIMIT_USD), at Anthropic list price, reset Monday 00:00 UTC."
+  type        = string
+  default     = "10"
+
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]{1,2})?$", var.assistant_weekly_limit_usd)) && try(tonumber(var.assistant_weekly_limit_usd) > 0, false)
+    error_message = "assistant_weekly_limit_usd must be a positive dollar amount, such as \"10\" or \"12.50\"."
+  }
+}
+
+variable "assistant_model" {
+  description = "The Assistant's model (ASSISTANT_MODEL). A change is a new agent version on the next boot and reaches new chats only. The backend refuses to start with a model that has no row in its price table."
+  type        = string
+  default     = "claude-sonnet-5-5"
+
+  validation {
+    condition     = startswith(var.assistant_model, "claude-")
+    error_message = "assistant_model must be a Claude model id, such as \"claude-sonnet-5-5\"."
+  }
+}
+
+variable "assistant_effort" {
+  description = "The Assistant's effort (ASSISTANT_EFFORT). Moves with the agent version, like assistant_model."
+  type        = string
+  default     = "medium"
+
+  validation {
+    condition     = contains(["low", "medium", "high", "xhigh", "max"], var.assistant_effort)
+    error_message = "assistant_effort must be one of low, medium, high, xhigh, max."
+  }
+}
+
+variable "assistant_screen_model" {
+  description = "The screen's model (ASSISTANT_SCREEN_MODEL), run with thinking off on every user message and on the user text in tool results. Needs a row in the backend's price table, like assistant_model."
+  type        = string
+  default     = "claude-haiku-5-5"
+
+  validation {
+    condition     = startswith(var.assistant_screen_model, "claude-")
+    error_message = "assistant_screen_model must be a Claude model id, such as \"claude-haiku-5-5\"."
+  }
+}
+
+variable "assistant_screen_timeout_ms" {
+  description = "How long the screen may take before it fails closed and nothing is sent (ASSISTANT_SCREEN_TIMEOUT_MS)."
+  type        = number
+  default     = 5000
+
+  validation {
+    condition     = var.assistant_screen_timeout_ms > 0 && floor(var.assistant_screen_timeout_ms) == var.assistant_screen_timeout_ms
+    error_message = "assistant_screen_timeout_ms must be a positive whole number of milliseconds."
+  }
+}
+
+variable "assistant_chat_token_ceiling" {
+  description = "Tokens of context at which a chat closes (ASSISTANT_CHAT_TOKEN_CEILING), below the harness's compaction."
+  type        = number
+  default     = 100000
+
+  validation {
+    condition     = var.assistant_chat_token_ceiling > 0 && floor(var.assistant_chat_token_ceiling) == var.assistant_chat_token_ceiling
+    error_message = "assistant_chat_token_ceiling must be a positive whole number of tokens."
+  }
+}
+
+variable "assistant_step_output_reserve" {
+  description = "Output tokens the meter reserves for each step (ASSISTANT_STEP_OUTPUT_RESERVE). An allowance, not a cap: agents take no max_tokens. It bounds how far concurrent steps can overshoot the Weekly limit."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.assistant_step_output_reserve > 0 && floor(var.assistant_step_output_reserve) == var.assistant_step_output_reserve
+    error_message = "assistant_step_output_reserve must be a positive whole number of tokens."
+  }
+}
+
+variable "assistant_agent_id" {
+  description = "Id of the flexi-day-assistant agent in the flexi-day-prod Anthropic workspace (ASSISTANT_AGENT_ID), printed by `pnpm run assistant:provision`. Public; plain env var. Required while the Assistant is on or the preview list is not empty."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.assistant_agent_id == "" || startswith(var.assistant_agent_id, "agent_")
+    error_message = "assistant_agent_id must be an agent id (agent_...), as assistant:provision prints it."
+  }
+}
+
+variable "assistant_environment_id" {
+  description = "Id of the flexi-day-assistant environment in the flexi-day-prod Anthropic workspace (ASSISTANT_ENVIRONMENT_ID), printed by `pnpm run assistant:provision`. Public; plain env var. Required while the Assistant is on or the preview list is not empty."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.assistant_environment_id == "" || startswith(var.assistant_environment_id, "env_")
+    error_message = "assistant_environment_id must be an environment id (env_...), as assistant:provision prints it."
+  }
+}
+
+variable "kb_bundle_url" {
+  description = "The help articles bundle the frontend publishes (KB_BUNDLE_URL), read by the Assistant's prompt and the docs tools on both channels. Always injected; the backend requires it in production while either AI feature is on."
+  type        = string
+  default     = "https://www.flexi-day.com/help/kb.json"
+
+  validation {
+    condition     = startswith(var.kb_bundle_url, "https://")
+    error_message = "kb_bundle_url must be an https URL."
+  }
+}
+
+variable "sentry_traces_mcp_rate" {
+  description = "Sentry trace sample rate for /mcp (SENTRY_TRACES_MCP_RATE). Ignores the caller's trace headers, so an outside client can't raise it."
+  type        = string
+  default     = "0.05"
+
+  validation {
+    condition     = try(tonumber(var.sentry_traces_mcp_rate) >= 0 && tonumber(var.sentry_traces_mcp_rate) <= 1, false)
+    error_message = "sentry_traces_mcp_rate must be a number from 0 to 1."
+  }
+}
+
+variable "sentry_traces_assistant_rate" {
+  description = "Sentry trace sample rate for the Assistant's chat API and its webhook (SENTRY_TRACES_ASSISTANT_RATE). 1 at launch; 0.2 once five organizations have the Assistant on (docs/terraform.md)."
+  type        = string
+  default     = "1"
+
+  validation {
+    condition     = try(tonumber(var.sentry_traces_assistant_rate) >= 0 && tonumber(var.sentry_traces_assistant_rate) <= 1, false)
+    error_message = "sentry_traces_assistant_rate must be a number from 0 to 1."
+  }
+}
+
+variable "privacy_banner_from" {
+  description = "Day 0 of the AI launch as YYYY-MM-DD (PRIVACY_BANNER_FROM). From it, every user sees the Privacy Policy banner for 30 days, only while ai_connections_enabled is true. Empty: no banner. Matches the frontend's NEXT_PUBLIC_AI_TEXTS_PUBLISHED."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.privacy_banner_from == "" || can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", var.privacy_banner_from))
+    error_message = "privacy_banner_from must be empty or a date as YYYY-MM-DD."
+  }
 }
 
 # Attachments (docs/adr/0003)

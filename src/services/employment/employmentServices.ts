@@ -15,6 +15,7 @@ import { roleChangeReason } from "../../db/schema/directory-role-schema.js";
 import { endDirectoryRoles } from "../directory/directoryRoleServices.js";
 import { isDirectoryOrganization } from "../directory/directorySettings.js";
 import { clearAtEndSections } from "../directory/retentionPurge.js";
+import { deleteMemberChats } from "../assistant/chatLifecycle.js";
 
 /**
  * Brings one person's Employment back in line with the links they actually
@@ -66,6 +67,9 @@ export const syncEmployment = async (
     });
     return;
   }
+
+  // Every link gone means they left: their chats there go, Directory or not.
+  await deleteMemberChats({ organizationId, userId }, tx);
 
   if (await isDirectoryOrganization(organizationId, tx)) return;
 

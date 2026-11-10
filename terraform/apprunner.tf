@@ -21,6 +21,13 @@ resource "aws_apprunner_auto_scaling_configuration_version" "main" {
   }
 }
 
+# A preview organization runs the Assistant with its switch off, so the
+# Anthropic secrets and ids follow this rather than assistant_enabled alone.
+# config.ts applies the same rule at boot.
+locals {
+  assistant_reachable = var.assistant_enabled || length(var.ai_preview_organization_ids) > 0
+}
+
 resource "aws_apprunner_service" "main" {
   service_name = "${var.project_name}-${var.environment}"
 
@@ -86,7 +93,38 @@ resource "aws_apprunner_service" "main" {
             # driver. The connections reuse the sign-in client secrets below.
             CALENDAR_SYNC_GOOGLE_ENABLED    = tostring(var.calendar_sync_google_enabled)
             CALENDAR_SYNC_MICROSOFT_ENABLED = tostring(var.calendar_sync_microsoft_enabled)
+
+            # AI features ship dark: both kill switches default false, and the
+            # preview list opens both to the organizations it names.
+            ASSISTANT_ENABLED      = tostring(var.assistant_enabled)
+            AI_CONNECTIONS_ENABLED = tostring(var.ai_connections_enabled)
+            ASSISTANT_DRIVER       = var.assistant_driver
+            # Each organization's Weekly limit on Assistant Usage, in dollars.
+            ASSISTANT_WEEKLY_LIMIT_USD = var.assistant_weekly_limit_usd
+            # The models, the screen's timeout and the meter's token figures.
+            # Defaults match config.ts, so the plan shows them without a change.
+            ASSISTANT_MODEL               = var.assistant_model
+            ASSISTANT_EFFORT              = var.assistant_effort
+            ASSISTANT_SCREEN_MODEL        = var.assistant_screen_model
+            ASSISTANT_SCREEN_TIMEOUT_MS   = tostring(var.assistant_screen_timeout_ms)
+            ASSISTANT_CHAT_TOKEN_CEILING  = tostring(var.assistant_chat_token_ceiling)
+            ASSISTANT_STEP_OUTPUT_RESERVE = tostring(var.assistant_step_output_reserve)
+            # The help articles bundle, read by the Assistant and the docs
+            # tools on /mcp. Required by config.ts while either feature is on.
+            KB_BUNDLE_URL = var.kb_bundle_url
+            # Trace rates for /mcp and the Assistant; every other route
+            # keeps the code's 0.2 and /health is never traced.
+            SENTRY_TRACES_MCP_RATE       = var.sentry_traces_mcp_rate
+            SENTRY_TRACES_ASSISTANT_RATE = var.sentry_traces_assistant_rate
           },
+          local.assistant_reachable ? {
+            ASSISTANT_AGENT_ID       = var.assistant_agent_id
+            ASSISTANT_ENVIRONMENT_ID = var.assistant_environment_id
+          } : {},
+          length(var.ai_preview_organization_ids) > 0 ? {
+            AI_PREVIEW_ORGANIZATION_IDS = join(",", var.ai_preview_organization_ids)
+          } : {},
+          var.privacy_banner_from != "" ? { PRIVACY_BANNER_FROM = var.privacy_banner_from } : {},
           # Google OAuth client id is public; only set when Google sign-in is
           # enabled. The matching client secret is injected below via Secrets
           # Manager. better-auth builds the callback as
@@ -163,6 +201,10 @@ resource "aws_apprunner_service" "main" {
           var.paddle_api_key != "" ? {
             PADDLE_API_KEY        = aws_secretsmanager_secret.paddle_api_key[0].arn
             PADDLE_WEBHOOK_SECRET = aws_secretsmanager_secret.paddle_webhook_secret[0].arn
+          } : {},
+          local.assistant_reachable ? {
+            ANTHROPIC_API_KEY        = aws_secretsmanager_secret.anthropic_api_key.arn
+            ANTHROPIC_WEBHOOK_SECRET = aws_secretsmanager_secret.anthropic_webhook_secret.arn
           } : {}
         )
       }
@@ -185,6 +227,21 @@ resource "aws_apprunner_service" "main" {
   }
 
   auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.main.arn
+
+  # config.ts refuses the fake driver, and a half-configured Assistant, in
+  # production; fail at plan time rather than letting App Runner boot-loop.
+  lifecycle {
+    precondition {
+      condition     = !(var.environment == "production" && var.assistant_driver == "fake")
+      error_message = "assistant_driver must be \"managed\" when environment is \"production\"."
+    }
+
+    # The two secrets are checked by their ephemeral reads in secrets.tf.
+    precondition {
+      condition     = !local.assistant_reachable || (var.assistant_agent_id != "" && var.assistant_environment_id != "")
+      error_message = "assistant_agent_id and assistant_environment_id are required while assistant_enabled is true or ai_preview_organization_ids is not empty. pnpm run assistant:provision prints them."
+    }
+  }
 
   # Secret values must exist before the first deployment resolves them, and
   # the schema must be migrated manually before the app can serve traffic.

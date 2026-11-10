@@ -107,6 +107,7 @@ export const requestPersonExport = async (
     employmentIds,
     audience: input.audience,
     personExportId: row!.id,
+    channel: "app",
   });
 
   return { row: row!, created: true };

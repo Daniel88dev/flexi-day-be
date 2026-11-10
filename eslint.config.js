@@ -19,6 +19,9 @@ export default [
       "eslint.config.js",
       "vitest.config.ts",
       "vitest.e2e.config.ts",
+      "vitest.eval.config.ts",
+      // The Assistant eval is test code, typechecked through tsconfig.test.json.
+      "src/evals/**",
       "**/tests/**",
       "**/*.test.ts",
       "**/*.spec.ts",
@@ -87,6 +90,26 @@ export default [
       "security/detect-object-injection": "off",
       "security/detect-non-literal-fs-filename": "error",
       "@typescript-eslint/no-floating-promises": "error",
+    },
+  },
+
+  // The lint fence: the tool layer reaches data only through services that take
+  // `auth` and run their own guards, so a tool sees what its user sees in the app.
+  {
+    files: ["src/tools/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/db/**", "**/db/*", "drizzle-orm", "drizzle-orm/**", "pg", "pg/**"],
+              message:
+                "The tool layer reaches data only through services that take `auth` (the lint fence, docs/invariants.md).",
+            },
+          ],
+        },
+      ],
     },
   },
 

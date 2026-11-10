@@ -5,6 +5,9 @@ import { db } from "../../db/db.js";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
 import { cleanupTestData } from "./helpers/testSetup.js";
+import { config } from "../../config.js";
+import { settleRelays } from "../../services/assistant/turnServices.js";
+import { authCookieFor } from "./helpers/authHelper.js";
 
 const DEV_TOKEN = "local-dev-token-0123456789";
 
@@ -156,5 +159,49 @@ describe("dev scenario", () => {
     const again = await runScenario();
     expect(again.body.groupEventsCreated).toBe(0);
     expect((await seededCounts()).groupEvents).toBe(3);
+  });
+
+  it("runs the Assistant for the owner in Dev Enterprise on the fake driver, with no key", async () => {
+    const saved = config.aiFeatures;
+    const savedKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    config.aiFeatures = { ...saved, assistantEnabled: true };
+    try {
+      expect(config.assistant.driver).toBe("fake");
+      const first = await runScenario();
+      expect(first.status).toBe(201);
+      const { organizationId } = first.body.assistantOrganization as { organizationId: string };
+      const cookie = await authCookieFor(first.body.owner.id as string);
+
+      const organizationsRes = await request(server.url)
+        .get("/api/assistant/organizations")
+        .set("Cookie", cookie);
+      expect(organizationsRes.body.organizations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ organizationName: "Dev Enterprise", eligible: true }),
+        ])
+      );
+
+      const created = await request(server.url)
+        .post("/api/assistant/chats")
+        .set("Cookie", cookie)
+        .send({ organizationId });
+      expect(created.status).toBe(201);
+      const chatId = created.body.chat.id as string;
+
+      const answer = await fetch(`${server.url}/api/assistant/chats/${chatId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ text: "How many days do I have left?" }),
+      });
+      expect(answer.status).toBe(200);
+      const body = await answer.text();
+      expect(body).toContain("event: done");
+      expect(body).toMatch(/\*\*VACATION\*\*: \d+ \/ \d+/);
+      await settleRelays();
+    } finally {
+      config.aiFeatures = saved;
+      if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
+    }
   });
 });

@@ -421,6 +421,10 @@ export const vacationRouter = (): Router => {
    *                           reason:
    *                             type: string
    *                             nullable: true
+   *                           channel:
+   *                             type: string
+   *                             enum: [app, assistant, mcp]
+   *                             description: What the change came through. `app` for the web and iPhone apps and for every entry from before channels were recorded.
    *                           createdAt:
    *                             type: string
    *                             format: date-time

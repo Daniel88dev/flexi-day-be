@@ -2,6 +2,8 @@ import { Cron } from "croner";
 import { config } from "../config.js";
 import { logger } from "../middleware/logger.js";
 import { rolloverQuotasForYear } from "../services/quotaRollover/quotaRolloverServices.js";
+import { runAiUsageRetention } from "./aiUsageRetentionJob.js";
+import { runAssistantChatRetention } from "./assistantChatRetentionJob.js";
 import { runAttachmentSweep } from "./attachmentSweepJob.js";
 import { runAttendanceCeilingSweep } from "./attendanceCeilingSweepJob.js";
 import { runAttendanceLocationSweep } from "./attendanceLocationSweepJob.js";
@@ -48,6 +50,8 @@ const runNightly = async (): Promise<void> => {
   await runAttendanceCeilingSweep();
   await runReadLogPurge();
   await runRetentionPurge();
+  await runAiUsageRetention();
+  await runAssistantChatRetention();
 };
 
 /**

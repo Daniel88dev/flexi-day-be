@@ -125,7 +125,7 @@ const baseBody = (overrides: Record<string, unknown> = {}) => ({
 
 describe("handlePostVacation", () => {
   beforeEach(() => {
-    // The controller bounds how far a range may sit from today, so the March
+    // The booking bounds how far a range may sit from today, so the March
     // 2024 fixtures below (chosen for their weekdays) need a matching "today".
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2024-03-01T09:00:00Z"));
