@@ -479,7 +479,7 @@ stages_prod() {
   stage "Dark deploy and the empty slots"
   say "Both repos deploy with assistant_enabled and ai_connections_enabled false and an"
   say "empty ai_preview_organization_ids. Both Terraform roots are applied: the backend"
-  say "creates the two Anthropic slots, the frontend the flexi-day-site-headers policy."
+  say "creates the two Anthropic slots, the frontend the managed headers policy."
   if need_tool aws && slot_exists flexi-day-be-production-anthropic-api-key &&
     slot_exists flexi-day-be-production-anthropic-webhook-secret; then
     say "Both Anthropic slots exist."
@@ -491,7 +491,7 @@ stages_prod() {
       skip "the backend apply"
     fi
   fi
-  if confirm "Plan and apply the frontend Terraform (the headers policy) now?"; then
+  if confirm "Plan and apply the frontend Terraform (the managed headers policy) now?"; then
     tf_apply "$FE_TF_DIR" "the frontend (flexi-day)"
   fi
   pause
