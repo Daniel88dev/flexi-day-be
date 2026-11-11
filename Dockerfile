@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # pnpm for the build stages, the same version as packageManager in package.json
-FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS pnpm
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS pnpm
 COPY --from=ghcr.io/pnpm/pnpm:12.16.1-alpine@sha256:3b67e34454e18e4797a50ade3176dde31cec13ad6670f460a81bdf6e1d8b547b /opt/pnpm /opt/pnpm
 RUN ln -s /opt/pnpm/pnpm /usr/local/bin/pnpm
 WORKDIR /app
@@ -41,7 +41,7 @@ RUN --mount=type=cache,id=pnpm,target=/var/cache/pnpm \
   pnpm install --frozen-lockfile --prod --store-dir /var/cache/pnpm
 
 # runtime stage: starts with node, so it carries no pnpm
-FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS runner
+FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS runner
 WORKDIR /app
 
 # safe defaults
