@@ -59,7 +59,8 @@ export const mcpRouter = (): Router => {
    *         description: A notification, accepted
    *       '401':
    *         description: |
-   *           No token or a bad one (`WWW-Authenticate` with `resource_metadata`),
+   *           No token or a bad one (`WWW-Authenticate` with `resource_metadata` and
+   *           `scope="flexiday.read flexiday.write"`, the scope clients then request),
    *           or `invalid_token`: the grant behind a valid token is gone (disconnected,
    *           user deleted, AI connections turned off)
    *       '403':
