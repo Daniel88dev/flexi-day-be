@@ -1,3 +1,5 @@
+import type { TextAuthor } from "../textAuthors.js";
+
 export type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 type DayRow = {
@@ -11,6 +13,8 @@ type DayRow = {
   deletedAt: Date | string | null;
   note?: string | null;
   rejectionReason?: string | null;
+  rejectedBy?: string | null;
+  rejectedByName?: string | null;
   user: { id: string; name: string };
 };
 
@@ -35,6 +39,8 @@ export type RequestSummary = {
   days: number;
   note: string | null;
   rejectionReason: string | null;
+  /** Null where the rows carry no rejecter name. */
+  rejectionReasonAuthor: TextAuthor | null;
 };
 
 /**
@@ -65,6 +71,9 @@ export const summarizeRequests = (rows: DayRow[]): RequestSummary[] => {
       days: weight,
       note: row.note ?? null,
       rejectionReason: row.rejectionReason ?? null,
+      rejectionReasonAuthor: row.rejectedByName
+        ? { userId: row.rejectedBy ?? null, name: row.rejectedByName }
+        : null,
     });
   }
   return [...byKey.values()];

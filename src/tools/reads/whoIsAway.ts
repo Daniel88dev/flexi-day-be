@@ -31,7 +31,7 @@ export const listWhoIsAwayTool = defineTool({
     const groupIds = input.groupId ? [input.groupId] : viewable.map((group) => group.groupId);
 
     const seen = new Set<string>();
-    const absences: Omit<RequestSummary, "rejectionReason">[] = [];
+    const absences: Omit<RequestSummary, "rejectionReason" | "rejectionReasonAuthor">[] = [];
     for (const groupId of groupIds) {
       const rows = await listWhoIsAway({
         auth: ctx.auth,
@@ -39,7 +39,11 @@ export const listWhoIsAwayTool = defineTool({
         range: toHalfOpen(input),
         options: { wholeRequests: true },
       });
-      for (const { rejectionReason: _reason, ...entry } of summarizeRequests(rows)) {
+      for (const {
+        rejectionReason: _reason,
+        rejectionReasonAuthor: _author,
+        ...entry
+      } of summarizeRequests(rows)) {
         const key = `${entry.requestId}:${entry.status}`;
         if (seen.has(key) || (entry.status !== "approved" && entry.status !== "pending")) continue;
         seen.add(key);
