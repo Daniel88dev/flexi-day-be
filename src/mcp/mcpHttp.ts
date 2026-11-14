@@ -12,7 +12,7 @@ import { loadMcpGrant } from "../services/aiConnections/mcpGrant.js";
 import { ipKey, mcpUnauthBudget } from "../middleware/limiter.js";
 import { auth } from "../utils/auth.js";
 import { updateRequestContext } from "../utils/requestStore.js";
-import { FLEXIDAY_READ, ORGANIZATION_CLAIM } from "../utils/aiConnectionsOAuth.js";
+import { FLEXIDAY_READ, FLEXIDAY_WRITE, ORGANIZATION_CLAIM } from "../utils/aiConnectionsOAuth.js";
 import { authInfoFor, createMcpServer, type McpPrincipal } from "./mcpServer.js";
 
 export const MCP_RESOURCE = `${config.api.publicUrl}/mcp`;
@@ -102,10 +102,16 @@ const serveVerified = async (request: Request, claims: JWTPayload): Promise<Resp
  * Verifies the access token against the issuer's keys (signature, issuer,
  * audience, expiry, `flexiday.read`), then settles the grant afresh: consent,
  * user, the organization's switch, setting and plan, and the user's standing.
+ *
+ * The challenge names write as well: MCP clients request the challenge's scope
+ * ahead of `scopes_supported`, so naming read alone meant no connection could
+ * ever ask for write. The consent page and `readOnlyConsentScopes` still drop
+ * it where the organization or the member says read only.
  */
 const protectedMcp = requireMcpAuth(auth, serveVerified, {
   resource: MCP_RESOURCE,
   requiredScopes: [FLEXIDAY_READ],
+  challengeScopes: [FLEXIDAY_READ, FLEXIDAY_WRITE],
 });
 
 const toWebRequest = (req: ExpressRequest, signal: AbortSignal): Request => {

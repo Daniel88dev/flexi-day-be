@@ -356,6 +356,13 @@ describe("/mcp", () => {
       }
     });
 
+    // Clients request the challenge's scope before `scopes_supported`, so a
+    // challenge naming read only leaves every connection read-only.
+    it("names the write scope in the 401 challenge", async () => {
+      const res = await rawPost(null);
+      expect(res.headers.get("www-authenticate")).toContain('scope="flexiday.read flexiday.write"');
+    });
+
     it("answers 401 invalid_token once the grant is revoked", async () => {
       const { accessToken, clientId } = await connectAiApp({
         serverUrl: server.url,
