@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { listOwnRequests } from "../../services/vacation/requestReads.js";
+import { listOwnRequestsWithRejecter } from "../../services/vacation/requestReads.js";
+import { authorsOf, withTextAuthors } from "../textAuthors.js";
 import { defineTool } from "../types.js";
 import { toHalfOpen, withDayRange } from "./dayRange.js";
 import { cursorField, page } from "./paging.js";
@@ -21,18 +22,30 @@ export const listMyRequestsTool = defineTool({
   kind: "read",
   userText: ["requests[].note", "requests[].rejectionReason"],
   handler: async (ctx, input) => {
-    const rows = await listOwnRequests({
+    const rows = await listOwnRequestsWithRejecter({
       auth: ctx.auth,
       range: toHalfOpen(input),
       options: { includeCancelled: input.includeCancelled ?? false, wholeRequests: true },
       organizationId: ctx.organizationId,
     });
     const { items, nextCursor } = page(summarizeRequests(rows), input.cursor);
-    return {
-      requests: items.map(
-        ({ personId: _personId, personName: _personName, ...request }) => request
-      ),
-      nextCursor,
-    };
+    return withTextAuthors(
+      {
+        requests: items.map(
+          ({
+            personId: _personId,
+            personName: _personName,
+            rejectionReasonAuthor: _author,
+            ...request
+          }) => request
+        ),
+        nextCursor,
+      },
+      authorsOf(
+        items,
+        (request) => [request.rejectionReason],
+        (request) => request.rejectionReasonAuthor
+      )
+    );
   },
 });

@@ -9,6 +9,7 @@ import { isRequestPastRetention } from "../attachment/attachmentRetention.js";
 import { MAX_ATTACHMENTS_PER_REQUEST } from "../attachment/types.js";
 import { isAttachmentUploadAvailable } from "../billing/guards.js";
 import { filterGroupIdsByOrganization, getGroup } from "../group/groupServices.js";
+import { DELETED_ACCOUNT_NAME, getActorNames } from "../person/personName.js";
 import { canViewWholeGroup } from "../report/reportScope.js";
 import { getReportScopeEntries } from "../report/reportServices.js";
 import { getVacationEvents } from "../vacationEvent/vacationEventServices.js";
@@ -52,6 +53,28 @@ export const listOwnRequests = async (params: {
     mirroredFromGroupId: null,
     mirroredFromGroupName: null,
     canApprove: canApprove(row),
+  }));
+};
+
+/**
+ * {@link listOwnRequests} in one organization, each rejected row with the name
+ * of whoever rejected it. `rejectedBy` goes null with the rejecter's account
+ * row, and the reason they wrote stays: that row reads "Deleted account".
+ */
+export const listOwnRequestsWithRejecter = async (params: {
+  auth: AuthSession;
+  range: RequestListRange;
+  options: VacationListOptions;
+  organizationId: string;
+}) => {
+  const rows = await listOwnRequests(params);
+  const nameOf = await getActorNames(
+    rows.map((row) => row.rejectedBy),
+    { organizationId: params.organizationId }
+  );
+  return rows.map((row) => ({
+    ...row,
+    rejectedByName: row.rejectedAt ? (nameOf(row.rejectedBy) ?? DELETED_ACCOUNT_NAME) : null,
   }));
 };
 
