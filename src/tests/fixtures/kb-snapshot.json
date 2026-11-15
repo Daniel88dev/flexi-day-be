@@ -1,5 +1,5 @@
 {
-  "version": "75bb3a852994",
+  "version": "291351fb2140",
   "siteUrl": "https://www.flexi-day.com",
   "languages": {
     "en": {
@@ -2104,6 +2104,8 @@
             "team attendance",
             "who is in",
             "who is clocked in",
+            "in now",
+            "who is at work right now",
             "attendance dashboard",
             "timesheet",
             "team hours",
@@ -4366,6 +4368,8 @@
             "docházka týmu",
             "kdo je v práci",
             "kdo má zaznamenaný příchod",
+            "teď v práci",
+            "kdo je teď v práci",
             "přehled docházky",
             "výkaz práce",
             "hodiny týmu",
