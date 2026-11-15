@@ -628,6 +628,59 @@ describe("Confirmation cards for the Assistant's writes", () => {
     );
   });
 
+  describe("when sending the decided round fails", () => {
+    it("still answers the confirmed card, notes the error, and sends the result with the next message", async () => {
+      const chatId = await openChat();
+      await proposeCreate(chatId);
+      const [card] = await cardsIn(chatId);
+      fakeDriverControls.answerFailure = true;
+
+      const confirmed = await decide(card!.id, "confirm");
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.card).toMatchObject({ status: "confirmed", error: null });
+      expect(confirmed.body.turnRunning).toBe(false);
+      expect(await annsVacation()).toHaveLength(2);
+      expect(await toolResults(chatId)).toEqual([]);
+      const after = await detail(chatId);
+      expect(after.chat.turnRunning).toBe(false);
+      expect(after.messages.at(-1)).toMatchObject({ kind: "notice", code: "ASSISTANT_ERROR" });
+
+      expect((await decide(card!.id, "confirm")).status).toBe(409);
+      expect(await annsVacation()).toHaveLength(2);
+
+      expect((await send(chatId, "Thanks!")).status).toBe(200);
+      await settleRelays();
+      expect((await toolResults(chatId))[0]).toMatchObject({
+        toolUseId: card!.toolUseId,
+        isError: false,
+        body: { status: "pending", firstDay: MONDAY },
+      });
+    });
+
+    it("still answers the declined card and notes the error", async () => {
+      const chatId = await openChat();
+      await proposeCreate(chatId);
+      const [card] = await cardsIn(chatId);
+      fakeDriverControls.answerFailure = true;
+
+      const declined = await decide(card!.id, "decline");
+      expect(declined.status).toBe(200);
+      expect(declined.body.card.status).toBe("declined");
+      expect(declined.body.turnRunning).toBe(false);
+      const after = await detail(chatId);
+      expect(after.chat.turnRunning).toBe(false);
+      expect(after.messages.at(-1)).toMatchObject({ kind: "notice", code: "ASSISTANT_ERROR" });
+
+      expect((await send(chatId, "Thanks!")).status).toBe(200);
+      await settleRelays();
+      expect((await toolResults(chatId))[0]).toMatchObject({
+        toolUseId: card!.toolUseId,
+        body: expect.objectContaining({ outcome: "declined" }),
+      });
+      expect(await annsVacation()).toHaveLength(0);
+    });
+  });
+
   it("answers 404 for a card that isn't the caller's", async () => {
     const chatId = await openChat();
     await proposeCreate(chatId);

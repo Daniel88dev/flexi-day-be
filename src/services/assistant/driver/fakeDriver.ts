@@ -81,6 +81,8 @@ export const fakeDriverControls = {
   deletedSessions: [] as string[],
   /** Fails every `deleteSession`, as an unreachable provider would. */
   sessionDeleteFailure: false,
+  /** Fails the next `answerToolCall` with a plain error, as a dropped connection would. */
+  answerFailure: false,
   hold(): () => void {
     let release!: () => void;
     this.gate = new Promise<void>((resolve) => {
@@ -112,6 +114,7 @@ export const fakeDriverControls = {
     this.screened = [];
     this.deletedSessions = [];
     this.sessionDeleteFailure = false;
+    this.answerFailure = false;
   },
 };
 
@@ -590,6 +593,10 @@ export const fakeDriver: AssistantDriver = {
   answerToolCall(sessionId, toolUseId, result) {
     const refused = refusedCall();
     if (refused) return refused;
+    if (fakeDriverControls.answerFailure) {
+      fakeDriverControls.answerFailure = false;
+      return Promise.reject(new Error("socket hang up"));
+    }
     const [event] = ingest(sessionOf(sessionId), [
       {
         type: "user.custom_tool_result",
