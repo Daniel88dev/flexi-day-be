@@ -29,6 +29,11 @@ describe("the unit test database guard", () => {
     await expect(runRelationalQuery()).rejects.toThrow(fixture);
   });
 
+  // Only a nested checkout, such as a git worktree, can catch a regression here.
+  it("names the module by its path from the repo root", async () => {
+    await expect(runSelect()).rejects.toThrow(/ from src\/tests\/queriesTheDatabaseFixture\.ts\./);
+  });
+
   it("says how to mock the module it named", async () => {
     await expect(runSelect()).rejects.toThrow(/vi\.mock\("<relative path>\/db\/db\.js"/);
   });
