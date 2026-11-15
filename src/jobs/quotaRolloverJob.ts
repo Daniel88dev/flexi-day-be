@@ -9,6 +9,7 @@ import { runAttendanceCeilingSweep } from "./attendanceCeilingSweepJob.js";
 import { runAttendanceLocationSweep } from "./attendanceLocationSweepJob.js";
 import { runReadLogPurge } from "./readLogPurgeJob.js";
 import { runRetentionPurge } from "./retentionPurgeJob.js";
+import { runWebhookEventPurge } from "./webhookEventPurgeJob.js";
 
 let job: Cron | null = null;
 
@@ -52,6 +53,7 @@ const runNightly = async (): Promise<void> => {
   await runRetentionPurge();
   await runAiUsageRetention();
   await runAssistantChatRetention();
+  await runWebhookEventPurge();
 };
 
 /**

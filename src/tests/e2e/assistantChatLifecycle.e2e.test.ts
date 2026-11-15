@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { config } from "../../config.js";
 import { createServer } from "../../server.js";
 import { listenOnLoopback, type LoopbackServer } from "../loopbackServer.js";
@@ -12,6 +12,7 @@ import {
   assistantPendingActions,
   assistantRejectedTurns,
   assistantSessionDeletions,
+  assistantWebhookEvents,
 } from "../../db/schema/assistant-schema.js";
 import { attendanceSessions } from "../../db/schema/attendance-schema.js";
 import { employments } from "../../db/schema/employment-schema.js";
@@ -22,6 +23,7 @@ import {
 import { organizations } from "../../db/schema/organization-schema.js";
 import { subscriptionPlan, subscriptionStatus } from "../../db/schema/subscription-schema.js";
 import { runAssistantChatRetention } from "../../jobs/assistantChatRetentionJob.js";
+import { runWebhookEventPurge } from "../../jobs/webhookEventPurgeJob.js";
 import { upsertSubscription } from "../../services/billing/subscriptionServices.js";
 import { syncEmployment } from "../../services/employment/employmentServices.js";
 import { upsertAttendanceSettings } from "../../services/organization/attendanceSettingsServices.js";
@@ -417,6 +419,25 @@ describe("Chat lifecycle and deletion", () => {
       await runAssistantChatRetention();
       expect(fakeDriverControls.deletedSessions).toEqual([sessionId]);
       expect(await outbox()).toEqual([]);
+    });
+
+    it("forgets handled webhook deliveries after 7 days and keeps fresh ones", async () => {
+      const now = new Date();
+      const old = `evt_${generateRandomUUID()}`;
+      const fresh = `evt_${generateRandomUUID()}`;
+      await db.insert(assistantWebhookEvents).values([
+        { eventId: old, eventType: "session.status_idled", receivedAt: daysAgo(7.01, now) },
+        { eventId: fresh, eventType: "session.status_idled", receivedAt: daysAgo(6.9, now) },
+      ]);
+
+      await runWebhookEventPurge(now);
+
+      const left = await db
+        .select({ eventId: assistantWebhookEvents.eventId })
+        .from(assistantWebhookEvents)
+        .where(inArray(assistantWebhookEvents.eventId, [old, fresh]));
+      expect(left).toEqual([{ eventId: fresh }]);
+      await db.delete(assistantWebhookEvents).where(eq(assistantWebhookEvents.eventId, fresh));
     });
   });
 
