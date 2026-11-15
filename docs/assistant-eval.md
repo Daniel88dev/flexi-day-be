@@ -48,9 +48,10 @@ exits 2. It does not retry.
 
 A run's cost is the sum of its ledger rows (the meter's estimate from the price table) plus the
 judge's calls. Measured on 2026-11-08: a cold first case about $0.04, a warm tool call about
-$0.005, a golden question about $0.026, a screen refusal $0.0001; the seven-case smoke set about
-$0.08. The first full run (420 cases, 504 case runs, T-734) cost $4.62 and took 35 minutes: golden
-questions $3.41, tool arguments $0.91, injection $0.22, the rest $0.06, the judge $0.03.
+$0.005, a golden question about $0.026, a screen refusal $0.0001. The first full run (420 cases,
+504 case runs, T-734) cost $4.62 and took 35 minutes: golden questions $3.41, tool arguments $0.91,
+injection $0.22, the rest $0.06, the judge $0.03. The eight-case smoke set cost $0.05 on
+2026-11-15.
 
 ## Scoring
 
@@ -78,10 +79,10 @@ the bundle's `goldenQuestions` and take turns among three member personas, so th
 parallel. A new case costs a `--case` run before it goes in: one live check catches a question the
 model answers with another tool.
 
-The smoke set is one or two cheap cases per part. It holds no labour-law case while the screen
-refuses those questions ([T-749](https://www.fenro-dashboard.com/tasks/T-749)), because a pull
-request's smoke run blocks on the bars, not on the baseline. Put `borderline.en.labour_law` back
-once T-749 is fixed.
+The smoke set is one or two cheap cases per part. `borderline.en.labour_law` checks that the message
+screen lets a time-off rights question through to the agent
+([T-749](https://www.fenro-dashboard.com/tasks/T-749)). The `tenancy_law` and `cover_letter`
+off-topic cases check that legal and drafting questions unrelated to time off stay refused.
 
 ## The KB snapshot
 
