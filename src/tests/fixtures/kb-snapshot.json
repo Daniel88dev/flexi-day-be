@@ -1,5 +1,5 @@
 {
-  "version": "106873ee1021",
+  "version": "4a673ffe785f",
   "siteUrl": "https://www.flexi-day.com",
   "languages": {
     "en": {
@@ -4538,7 +4538,7 @@
       "language": "en",
       "articleId": "account-settings",
       "question": "How do I stop getting emails about requests?",
-      "expectedArticles": ["account-settings"],
+      "expectedArticles": ["account-settings", "notifications"],
       "mustMention": ["Email notifications in Settings", "notifications stay in the app"]
     },
     {
@@ -4593,9 +4593,12 @@
     {
       "language": "en",
       "articleId": "allowances",
-      "question": "How many vacation days do I have left?",
+      "question": "I'm in two groups. Do they share one vacation allowance?",
       "expectedArticles": ["allowances"],
-      "mustMention": ["My balance on the Dashboard", "your organization's allowance"]
+      "mustMention": [
+        "each group has its own allowances",
+        "time off draws on the group it is booked in"
+      ]
     },
     {
       "language": "en",
@@ -4608,7 +4611,7 @@
       "language": "en",
       "articleId": "allowances",
       "question": "Why was my request refused for exceeding my allowance?",
-      "expectedArticles": ["allowances"],
+      "expectedArticles": ["allowances", "cant-book-time-off"],
       "mustMention": ["pending requests count too", "ask a group admin"]
     },
     {
@@ -4916,7 +4919,7 @@
       "language": "en",
       "articleId": "create-an-account",
       "question": "Do I need a credit card to start using Flexi Day?",
-      "expectedArticles": ["create-an-account"],
+      "expectedArticles": ["create-an-account", "plans-and-limits"],
       "mustMention": ["Free plan", "no credit card"]
     },
     {
@@ -5270,7 +5273,7 @@
       "language": "en",
       "articleId": "mirroring",
       "question": "Why can't I approve a request that shows in my group?",
-      "expectedArticles": ["mirroring"],
+      "expectedArticles": ["mirroring", "approve-requests"],
       "mustMention": ["mirrored records are read-only"]
     },
     {
@@ -5368,7 +5371,7 @@
       "language": "en",
       "articleId": "request-time-off",
       "question": "It says some days are already booked, what does that mean?",
-      "expectedArticles": ["request-time-off"],
+      "expectedArticles": ["request-time-off", "cant-book-time-off"],
       "mustMention": ["one booking per day", "cancel the existing request first"]
     },
     {
@@ -5507,7 +5510,7 @@
       "language": "cs",
       "articleId": "account-settings",
       "question": "Jak vypnu e-maily o žádostech?",
-      "expectedArticles": ["account-settings"],
+      "expectedArticles": ["account-settings", "notifications"],
       "mustMention": ["E-mailová oznámení v Nastavení", "oznámení zůstanou v aplikaci"]
     },
     {
@@ -5566,9 +5569,12 @@
     {
       "language": "cs",
       "articleId": "allowances",
-      "question": "Kolik dní dovolené mi ještě zbývá?",
+      "question": "Jsem ve dvou skupinách. Mají společný nárok na dovolenou?",
       "expectedArticles": ["allowances"],
-      "mustMention": ["Můj zůstatek na Přehledu", "nárok podle tvé organizace"]
+      "mustMention": [
+        "každá skupina má vlastní nároky",
+        "volno zadané ve skupině čerpá z nároku této skupiny"
+      ]
     },
     {
       "language": "cs",
@@ -5581,7 +5587,7 @@
       "language": "cs",
       "articleId": "allowances",
       "question": "Proč mi aplikace odmítla žádost kvůli překročení nároku?",
-      "expectedArticles": ["allowances"],
+      "expectedArticles": ["allowances", "cant-book-time-off"],
       "mustMention": ["počítají se i čekající žádosti", "požádej správce skupiny"]
     },
     {
@@ -5897,7 +5903,7 @@
       "language": "cs",
       "articleId": "create-an-account",
       "question": "Potřebuju platební kartu, abych mohl Flexi Day začít používat?",
-      "expectedArticles": ["create-an-account"],
+      "expectedArticles": ["create-an-account", "plans-and-limits"],
       "mustMention": ["tarif Free", "bez platební karty"]
     },
     {
@@ -6254,7 +6260,7 @@
       "language": "cs",
       "articleId": "mirroring",
       "question": "Proč nemůžu schválit žádost, která se ukazuje v mojí skupině?",
-      "expectedArticles": ["mirroring"],
+      "expectedArticles": ["mirroring", "approve-requests"],
       "mustMention": ["zrcadlené záznamy jsou jen pro čtení"]
     },
     {
@@ -6349,7 +6355,7 @@
       "language": "cs",
       "articleId": "request-time-off",
       "question": "Píše mi to, že některé dny už jsou zadané. Co to znamená?",
-      "expectedArticles": ["request-time-off"],
+      "expectedArticles": ["request-time-off", "cant-book-time-off"],
       "mustMention": ["jeden záznam na den", "nejdřív zruš původní žádost"]
     },
     {
