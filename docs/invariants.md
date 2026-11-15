@@ -311,7 +311,8 @@ the app, inside one organization.
   parser and outside `authSession`, and checks the Standard Webhooks signature over the raw bytes
   with `ANTHROPIC_WEBHOOK_SECRET`. Without the secret the route answers 404, as it does while the
   Assistant is off for everyone. Each event id is stored in `assistant_webhook_events`; a failed
-  advance deletes its row so Anthropic's retry runs again. `assistantWebhook.e2e.test.ts` pins it.
+  advance deletes its row so Anthropic's retry runs again. The nightly tick deletes rows older than
+  7 days, far past the last retry. `assistantWebhook.e2e.test.ts` pins it.
 - **Opening a chat catches up on missed webhooks, nothing polls.** `resumeStalledTurns` advances a
   turn whose tool call has waited past `MISSED_WEBHOOK_GRACE_MS` with no relay in this process, logs
   `assistant.webhook_missed`, then follows the turn. The grace keeps a relay on another instance

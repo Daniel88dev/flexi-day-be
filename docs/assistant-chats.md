@@ -27,8 +27,8 @@ someone whose only chats are in such an organization.
 
 ## The nightly tick
 
-`runAssistantChatRetention` (`src/jobs/assistantChatRetentionJob.ts`) runs last on the quota
-rollover tick:
+`runAssistantChatRetention` (`src/jobs/assistantChatRetentionJob.ts`) runs on the quota rollover
+tick:
 
 1. **Day 30.** Every chat whose last message is 30 days old and still has a session: the session is
    queued for deletion, `session_id` cleared, open cards marked `not_taken`, held answers dropped,
@@ -36,6 +36,10 @@ rollover tick:
 2. **Day 180.** Every chat whose last message is 180 days old is deleted with its display record,
    cards and held answers, and the rejected turns tied to it go too.
 3. **Drain.** Every queued session is deleted through the driver.
+
+`runWebhookEventPurge` (`src/jobs/webhookEventPurgeJob.ts`) follows it as a step of its own, so a
+failing chat sweep never holds it up. It deletes `assistant_webhook_events` rows older than 7 days.
+A row only has to outlive Anthropic's retries of its delivery, and a week is well past them.
 
 ## The session deletion queue
 

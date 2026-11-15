@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import { db } from "../../db/db.js";
 import { assistantWebhookEvents } from "../../db/schema/assistant-schema.js";
 import { advanceIdledSession } from "./turnServices.js";
@@ -9,6 +9,11 @@ export type AssistantWebhookEvent = { id: string; data: { id: string; type: stri
 export type AssistantWebhookOutcome = "advanced" | "ignored" | "duplicate";
 
 const IDLED = "session.status_idled";
+
+/** How long a handled delivery's event id is kept: well past the last retry of a delivery. */
+export const WEBHOOK_EVENT_RETENTION_DAYS = 7;
+
+const DAY_MS = 86_400_000;
 
 /**
  * Handles one verified delivery. Only `session.status_idled` does anything:
@@ -31,4 +36,14 @@ export const handleAssistantWebhook = async (
     await db.delete(assistantWebhookEvents).where(eq(assistantWebhookEvents.eventId, event.id));
     throw error;
   }
+};
+
+/** Deletes the event ids of deliveries handled more than `WEBHOOK_EVENT_RETENTION_DAYS` ago. */
+export const purgeWebhookEvents = async (now = new Date()): Promise<number> => {
+  const cutoff = new Date(now.getTime() - WEBHOOK_EVENT_RETENTION_DAYS * DAY_MS);
+  const deleted = await db
+    .delete(assistantWebhookEvents)
+    .where(lt(assistantWebhookEvents.receivedAt, cutoff))
+    .returning({ eventId: assistantWebhookEvents.eventId });
+  return deleted.length;
 };
