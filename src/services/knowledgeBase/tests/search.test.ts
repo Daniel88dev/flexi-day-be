@@ -20,6 +20,14 @@ describe("searchArticles", () => {
     expect(ids("cs", "zrušení dovolené")).toContain("cancel-or-change-a-request");
   });
 
+  it.each([
+    ["cs", "Jak zjistím, kdo je teď v práci?"],
+    ["cs", "kdo je teď v práci, kdo je pryč"],
+    ["en", "who is at work right now"],
+  ] as const)("finds team attendance first for the %s query %j", (language, query) => {
+    expect(ids(language, query)[0]).toBe("team-attendance");
+  });
+
   it("finds English articles by title, keyword and heading words", () => {
     expect(ids("en", "How do I cancel a request?")[0]).toBe("cancel-or-change-a-request");
     expect(ids("en", "two-factor")).toContain("sign-in");
