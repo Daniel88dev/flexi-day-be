@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { vi } from "vitest";
 
@@ -9,6 +10,10 @@ import { vi } from "vitest";
 
 const GUARD = "src/tests/noRealDatabase.ts";
 
+// A git worktree nests a second checkout inside the first, so the root comes from this file's
+// location.
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+
 // Where the query was built, not where it ran: `await` invokes a thenable's `then` from a
 // microtask, by which point the calling module has left the stack.
 const buildSite = (): string | undefined => {
@@ -16,7 +21,9 @@ const buildSite = (): string | undefined => {
   for (const frame of frames) {
     const [captured] = frame.match(/(?:\/|file:\/\/\/)\S*\/src\/\S*?\.ts/) ?? [];
     if (!captured) continue;
-    const path = captured.replace(/^file:\/\//, "").replace(/^.*\/flexi-day-be\//, "");
+    const absolute = captured.startsWith("file://") ? fileURLToPath(captured) : captured;
+    if (!absolute.startsWith(REPO_ROOT)) continue;
+    const path = absolute.slice(REPO_ROOT.length);
     if (!path.startsWith(GUARD)) return path;
   }
   return undefined;
