@@ -680,16 +680,22 @@ const sendRound = async (
 ): Promise<{ ended: boolean; firstEventId: string | null }> => {
   const { answers, restore } = await takeRoundAnswers(turn.chatId, round.idle.id);
   if (answers.length === 0) return { ended: false, firstEventId: null };
-  const metered = await reserveToolRound({
-    organizationId: turn.organizationId,
-    userId: turn.auth.userId,
-    chatId: turn.chatId,
-    sessionId: turn.sessionId,
-    triggerEventId: round.idle.id,
-    appendedText: answers.map((answer) => answer.text).join("\n"),
-    modelCallsThisTurn: round.events.filter((event) => event.type === "span.model_request_start")
-      .length,
-  });
+  let metered: Awaited<ReturnType<typeof reserveToolRound>>;
+  try {
+    metered = await reserveToolRound({
+      organizationId: turn.organizationId,
+      userId: turn.auth.userId,
+      chatId: turn.chatId,
+      sessionId: turn.sessionId,
+      triggerEventId: round.idle.id,
+      appendedText: answers.map((answer) => answer.text).join("\n"),
+      modelCallsThisTurn: round.events.filter((event) => event.type === "span.model_request_start")
+        .length,
+    });
+  } catch (error) {
+    await restore(new Set());
+    throw error;
+  }
   if (metered.kind === "refused") {
     await restore(new Set());
     for (const answer of answers) {
@@ -1004,6 +1010,8 @@ export const decideCard = async (args: {
   await claimTurn(chat.id, auth.userId);
 
   let running = false;
+  // Set once something has released the turn itself; another request may have claimed it since.
+  let released = false;
   try {
     const language = await toolLanguage(auth.userId);
     let settled: PendingActionRow | null;
@@ -1034,16 +1042,27 @@ export const decideCard = async (args: {
     }
     if (!settled) throw cardSettled("decided");
 
-    const turn: Advance = {
-      auth: { ...auth, channel: "assistant" },
-      chatId: chat.id,
-      organizationId: chat.organizationId,
-      sessionId: action.sessionId,
-      startEventId: action.roundEventId,
-      language,
-      driver: assistantDriver(),
-    };
-    const sent = await sendDecidedRound(turn, action);
+    // The card is settled, so a failure to send its round must not answer the decision as failed.
+    let turn: Advance;
+    let round: DecidedRound;
+    try {
+      turn = {
+        auth: { ...auth, channel: "assistant" },
+        chatId: chat.id,
+        organizationId: chat.organizationId,
+        sessionId: action.sessionId,
+        startEventId: action.roundEventId,
+        language,
+        driver: assistantDriver(),
+      };
+      round = await sendDecidedRound(turn, action);
+    } catch (error) {
+      await failTurn(chat.id, "decided_round", error);
+      released = true;
+      return { card: presentCard(settled), turnRunning: false };
+    }
+    released = round.released;
+    const sent = round.startEventId;
     if (sent) {
       await db
         .update(assistantChats)
@@ -1054,24 +1073,25 @@ export const decideCard = async (args: {
     }
     return { card: presentCard(settled), turnRunning: running };
   } finally {
-    if (!running) await unclaimTurn(chat.id);
+    if (!running && !released) await unclaimTurn(chat.id);
   }
 };
 
+type DecidedRound = { startEventId: string | null; released: boolean };
+
 /**
  * Sends the card's round when no card in it is open any more. Answers the
- * first sent event, where the Assistant's next turn starts, or `null` when
- * nothing was sent (cards still open, or the meter refused and holds it).
+ * first sent event, where the Assistant's next turn starts, or no event when
+ * nothing was sent (cards still open, or the meter refused and holds it), and
+ * whether the round released the turn on its way out.
  */
-const sendDecidedRound = async (
-  turn: Advance,
-  action: PendingActionRow
-): Promise<string | null> => {
-  if ((await openCardsInRound(turn.chatId, action.roundEventId)) > 0) return null;
+const sendDecidedRound = async (turn: Advance, action: PendingActionRow): Promise<DecidedRound> => {
+  const held: DecidedRound = { startEventId: null, released: false };
+  if ((await openCardsInRound(turn.chatId, action.roundEventId)) > 0) return held;
   const all = await turn.driver.listEvents(turn.sessionId);
   const at = all.findIndex((event) => event.id === action.roundEventId);
   const idle = all[at];
-  if (idle?.type !== "session.status_idle") return null;
+  if (idle?.type !== "session.status_idle") return held;
   // The model calls since the user's message count toward the turn's 10.
   const asked = all.slice(0, at).findLastIndex((event) => event.type === "user.message");
   const sent = await sendRound(turn, {
@@ -1079,5 +1099,8 @@ const sendDecidedRound = async (
     events: all.slice(asked + 1, at + 1),
     readUsage: () => turn.driver.readUsage(turn.sessionId),
   });
-  return sent.ended ? null : sent.firstEventId;
+  // A round that ended (refused, or the meter held it) released the turn itself.
+  return sent.ended
+    ? { startEventId: null, released: true }
+    : { startEventId: sent.firstEventId, released: false };
 };
