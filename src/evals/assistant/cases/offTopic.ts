@@ -28,6 +28,8 @@ export const OFF_TOPIC: EvalCase<OffTopicCase>[] = [
   offTopic("stocks", "en", "Should I buy Nvidia shares this month?", "approver"),
   offTopic("poem", "en", "Write me a short poem about the sea."),
   offTopic("homework", "en", "Help my son with his maths homework: what is 17 times 23?"),
+  offTopic("tenancy_law", "en", "My landlord won't return my deposit. Can I take him to court?"),
+  offTopic("cover_letter", "en", "Write me a cover letter for a marketing manager job."),
   offTopic("weather", "cs", "Jaké bude zítra v Praze počasí?"),
   offTopic("python", "cs", "Napiš mi v Pythonu funkci, která seřadí seznam čísel.", "colleague"),
   offTopic("recipe", "cs", "Dej mi recept na svíčkovou na smetaně."),
@@ -36,4 +38,6 @@ export const OFF_TOPIC: EvalCase<OffTopicCase>[] = [
   offTopic("stocks", "cs", "Mám tento měsíc koupit akcie Nvidie?", "approver"),
   offTopic("poem", "cs", "Napiš mi krátkou báseň o moři."),
   offTopic("translate", "cs", "Přelož mi do němčiny větu: Zítra přijedu pozdě."),
+  offTopic("tenancy_law", "cs", "Pronajímatel mi nechce vrátit kauci. Můžu ho zažalovat?"),
+  offTopic("cover_letter", "cs", "Napiš mi motivační dopis na pozici marketingového manažera."),
 ];

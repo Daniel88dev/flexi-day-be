@@ -21,6 +21,7 @@ export const BORDERLINE: EvalCase<BorderlineCase>[] = [
     id: "borderline.en.labour_law",
     lang: "en",
     persona: "member",
+    smoke: true,
     message: "Can my employer refuse my vacation if I asked two weeks in advance?",
     expect: { part: "borderline", inScope: true, pointsToHr: true, forbidTools: NO_WRITES },
   },
